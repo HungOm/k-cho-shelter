@@ -60,15 +60,22 @@ This is what lets people prove who they are. It is the fiddliest step; take it s
    - Application type: **Web application**
    - Name: `K'Cho Shelter web`
    - Under **Authorized JavaScript origins**, click *Add URI* and add:
-     - `https://YOUR-GITHUB-USERNAME.github.io`
-     - `https://tickets.ceamalaysia.org` — only if you are using your own subdomain (step 7b).
-       Add it now and save yourself a trip back.
+     - `https://hungom.github.io`
+     - `https://shtrtickets.ceamalaysia.org`
      - `http://localhost:8000` — only if you want to test on your own computer
-   - Click **Create**.
 
-   Add the **origin only**: `https://tickets.ceamalaysia.org`, with no path, no repository name and
-   no trailing slash. Listing several origins is normal and safe — sign-in works from any of them.
-5. Copy the **Client ID**. It looks like `1234567890-abcdef.apps.googleusercontent.com`.
+     Add the **origin only** — no path, no repository name, no trailing slash. Listing several is
+     normal and safe; sign-in works from any of them.
+   - Click **Create**.
+5. Copy the **Client ID**.
+
+> **Already done for this project.** The client is created (project `kcho-shelter`, type *Web
+> application*), both origins are registered, and the client ID is already filled into
+> `index.html`. Nothing to do here unless you are setting up a second copy.
+
+**Google also hands you a "client secret" and offers a JSON download. This app never uses it.**
+This sign-in flow has no secret — do not put that file in the repository, and do not paste its
+contents anywhere. Note the client ID and delete the download.
 
 **This client ID is not a secret.** It is meant to be public and it is safe in the repo. What
 protects it is the *Authorized JavaScript origins* list you just filled in: a sign-in token carrying
@@ -86,7 +93,7 @@ Back in the Apps Script editor:
 
    | Property | Value |
    |---|---|
-   | `GOOGLE_CLIENT_ID` | the client ID you copied in step 3 |
+   | `GOOGLE_CLIENT_ID` | `981045980686-ah7579259e9j24l2pgnsbb2v4bn0biud.apps.googleusercontent.com` |
    | `ADMIN_BOOTSTRAP_EMAIL` | your own Google email address |
 
 3. Click **Save script properties**.
@@ -154,27 +161,28 @@ Test it: paste the `/exec` URL into a browser tab. You should see
 ## Step 7 — Put the app online
 
 1. Create a new **GitHub repository**, e.g. `kcho-shelter`. Public or private both work.
-2. Open `index.html` and set your client ID near the top of the `<script>` block:
+2. The client ID is already set near the top of the `<script>` block in `index.html` — check it
+   matches the one in your Google Cloud credentials:
    ```js
-   const GOOGLE_CLIENT_ID = "1234567890-abcdef.apps.googleusercontent.com";
+   const GOOGLE_CLIENT_ID = "981045980686-….apps.googleusercontent.com";
    ```
 3. Push the project:
    ```bash
    git add .
    git commit -m "K'Cho Shelter ticket tracker"
-   git remote add origin https://github.com/YOUR-USERNAME/kcho-shelter.git
+   git remote add origin https://github.com/hungom/kcho-shelter.git
    git push -u origin main
    ```
 4. On GitHub: **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main`, folder `/ (root)`
-   → **Save**. After a minute your site is at `https://YOUR-USERNAME.github.io/kcho-shelter/`.
+   → **Save**. After a minute your site is at `https://hungom.github.io/kcho-shelter/`.
 5. Check that this address matches what you put in **Authorized JavaScript origins** in step 3.
-   The origin is just the `https://YOUR-USERNAME.github.io` part — no repository name.
+   The origin is just the `https://hungom.github.io` part — no repository name.
 
 ---
 
 ## Step 7b — Use your own address (optional but recommended)
 
-`tickets.ceamalaysia.org` looks far more trustworthy to a ticket buyer than a `github.io` address,
+`shtrtickets.ceamalaysia.org` looks far more trustworthy to a ticket buyer than a `github.io` address,
 and it costs nothing. Skip this if you are happy with the GitHub address.
 
 Pick the name carefully — once it is in DNS and in Google's settings, changing it means redoing
@@ -184,18 +192,19 @@ both. Short is better when people type it on a phone.
 
 | Type | Name | Value |
 |---|---|---|
-| CNAME | `tickets` | `YOUR-USERNAME.github.io.` |
+| CNAME | `tickets` | `hungom.github.io.` |
 
 A subdomain uses a **CNAME** record. (A records are only for an apex domain like `ceamalaysia.org`
 itself.) On Cloudflare, set the record to **DNS only** — the grey cloud, not the orange one — until
 GitHub has issued the certificate. Proxying during setup is the usual reason HTTPS gets stuck.
 
-**2. Tell GitHub.** Repo **Settings → Pages → Custom domain** → enter `tickets.ceamalaysia.org` →
-**Save**. GitHub adds a `CNAME` file to the repository. Wait for the DNS check to go green, then
+**2. Tell GitHub.** A `CNAME` file naming `shtrtickets.ceamalaysia.org` is already committed, so
+Pages should pick the domain up on its own. Check under **Settings → Pages → Custom domain**, and
+type it in there if the box is empty. Wait for the DNS check to go green, then
 tick **Enforce HTTPS**. Usually minutes; occasionally a few hours.
 
 **3. Tell Google.** In Google Cloud → **Credentials** → your OAuth client → **Authorized JavaScript
-origins**, add `https://tickets.ceamalaysia.org`. **Sign-in will not work until you do this.** Leave
+origins**, add `https://shtrtickets.ceamalaysia.org`. **Sign-in will not work until you do this.** Leave
 the `github.io` origin in the list as well, so nothing breaks while DNS spreads.
 
 Nothing changes in the Apps Script. The `/exec` address does not care which site calls it, and
@@ -204,7 +213,7 @@ access is decided by the sign-in token, not the domain. No redeploy needed.
 **Two things that catch people out:**
 
 - **The address gets shorter.** On GitHub it was `…github.io/kcho-shelter/`; on your own subdomain
-  the app sits at the root, so it is just `https://tickets.ceamalaysia.org/`.
+  the app sits at the root, so it is just `https://shtrtickets.ceamalaysia.org/`.
 - **Everyone reconnects once.** The saved Apps Script link lives in the browser and is tied to the
   old address, so it does not follow you across. Send everyone a fresh link (see *Sharing the app*
   below) and they are set again in one tap.
@@ -257,13 +266,13 @@ To remove someone, set them to *Disable*. Their access stops within a minute —
 Send them one link with the API address in the `#` part:
 
 ```
-https://tickets.ceamalaysia.org/#s=https://script.google.com/macros/s/.../exec
+https://shtrtickets.ceamalaysia.org/#s=https://script.google.com/macros/s/.../exec
 ```
 
 or, if you stayed on the GitHub address:
 
 ```
-https://YOUR-USERNAME.github.io/kcho-shelter/#s=https://script.google.com/macros/s/.../exec
+https://hungom.github.io/kcho-shelter/#s=https://script.google.com/macros/s/.../exec
 ```
 
 They tap it once and the app remembers. The `#` part is never sent to any web server, so it stays
@@ -286,7 +295,7 @@ does not update the live URL.
 origins. Both must match exactly.
 
 **Sign-in button does nothing** — the address you are visiting is not in Authorized JavaScript
-origins. Add it exactly: `https://YOUR-USERNAME.github.io` or `https://tickets.ceamalaysia.org` —
+origins. Add it exactly: `https://hungom.github.io` or `https://shtrtickets.ceamalaysia.org` —
 no repository name, no path, no trailing slash. Wait a few minutes; Google takes a little while to
 apply changes.
 
@@ -298,7 +307,7 @@ per web address, so it does not carry across. Paste the `/exec` URL once, or ope
 
 **Custom domain stuck on "certificate not yet available"** — usually Cloudflare proxying. Set the
 DNS record to **DNS only** (grey cloud), wait for GitHub to issue the certificate, then turn
-proxying back on if you want it. Also check the CNAME points at `YOUR-USERNAME.github.io`, not at
+proxying back on if you want it. Also check the CNAME points at `hungom.github.io`, not at
 the repository.
 
 **Two people saved at once** — the second gets *"changed by someone else while you were working
