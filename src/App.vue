@@ -6,12 +6,13 @@
  * moving between them keeps their scroll position and loaded data instead of
  * starting over each time.
  */
-import { ref, computed, onMounted, shallowRef } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { state, refresh, go, toast, isAdmin } from './lib/store.js'
 import { api, configure, LS } from './lib/api.js'
 
 import AppShell from './components/AppShell.vue'
 import SignIn from './components/SignIn.vue'
+import ReAuth from './components/ReAuth.vue'
 import Home from './components/Home.vue'
 import Search from './components/Search.vue'
 import Sell from './components/Sell.vue'
@@ -89,30 +90,73 @@ function signOut() {
 // ---------- Google sign-in ----------
 
 let tokenWaiter = null
+let renewing = null          // one shared renewal, however many calls fail at once
+let renewTimer = null
+const reauth = ref(false)    // the "sign in again" overlay
 
 function onCredential(res) {
   configure({ idToken: res.credential })
+  scheduleRenewal(res.credential)
+  reauth.value = false
   if (tokenWaiter) { const w = tokenWaiter; tokenWaiter = null; w(true); return }
   start()
 }
 
-/** Renews the hour-long token quietly, rather than interrupting a sale. */
+/** The token's own expiry, read from the JWT. Not trusted — only used for timing. */
+function tokenExpiry(jwt) {
+  try {
+    const part = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const exp = JSON.parse(atob(part)).exp
+    return exp ? exp * 1000 : 0
+  } catch { return 0 }
+}
+
+/**
+ * Renew a few minutes early, while nobody is mid-sale.
+ *
+ * Waiting for a request to fail means the interruption lands exactly when
+ * somebody is saving something.
+ */
+function scheduleRenewal(jwt) {
+  clearTimeout(renewTimer)
+  const exp = tokenExpiry(jwt)
+  if (!exp) return
+  const wait = exp - Date.now() - 5 * 60 * 1000
+  renewTimer = setTimeout(() => { renew() }, Math.max(30_000, wait))
+}
+
+/**
+ * Try quietly first; ask the person only if that fails.
+ *
+ * Deduplicated on purpose: a refresh fires five requests, and without this
+ * every one of them would raise its own sign-in prompt.
+ */
 function renew() {
-  return new Promise(resolve => {
+  if (renewing) return renewing
+
+  renewing = new Promise(resolve => {
     const g = window.google?.accounts?.id
     if (!g) return resolve(false)
+
     let settled = false
-    tokenWaiter = ok => { if (!settled) { settled = true; resolve(ok) } }
-    try {
-      g.prompt(n => {
-        if (n.isNotDisplayed?.() || n.isSkippedMoment?.()) tokenWaiter?.(false)
-      })
-    } catch { tokenWaiter?.(false) }
-    setTimeout(() => tokenWaiter?.(false), 8000)
-  }).then(ok => {
-    if (!ok) { phase.value = 'error'; errorMsg.value = 'Your sign-in ran out. Please sign in again.' }
-    return ok
-  })
+    const finish = ok => { if (!settled) { settled = true; resolve(ok) } }
+    tokenWaiter = finish
+
+    // One Tap may be suppressed, and under FedCM the old "was it shown?"
+    // signals are unreliable, so treat silence as failure and move on.
+    try { g.prompt() } catch { /* fall through to asking */ }
+    setTimeout(() => { if (!settled) askToSignInAgain(finish) }, 3500)
+  }).finally(() => { renewing = null })
+
+  return renewing
+}
+
+/** Silent renewal did not work — put the button in front of them and wait. */
+function askToSignInAgain(finish) {
+  reauth.value = true
+  // No timeout here: they may be away from the phone. The overlay keeps every
+  // loaded ticket and every open form intact until they come back.
+  tokenWaiter = ok => { reauth.value = false; finish(ok) }
 }
 
 function initGoogle() {
@@ -122,13 +166,14 @@ function initGoogle() {
     client_id: clientId.value,
     callback: onCredential,
     auto_select: true,
-    cancel_on_tap_outside: false
+    cancel_on_tap_outside: false,
+    use_fedcm_for_prompt: true
   })
-  // SignIn.vue calls this once its target element is in the DOM.
+  // SignIn.vue and ReAuth.vue call this once their target element exists.
   window.__renderGoogleButton = el => {
     if (!el) return
     g.renderButton(el, { theme: 'outline', size: 'large', shape: 'pill', width: 280 })
-    g.prompt()
+    try { g.prompt() } catch { /* the button is enough */ }
   }
 }
 
@@ -234,6 +279,12 @@ function seeTickets(book) {
                 @see-tickets="seeTickets" />
     <SettleBook v-else-if="modal?.kind === 'settle'" :book="modal.payload"
                 @close="closeModal" @settled="afterBookChange" />
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="fade">
+      <ReAuth v-if="reauth" />
+    </Transition>
   </Teleport>
 
   <Toasts />

@@ -323,6 +323,11 @@ DNS record to **DNS only** (grey cloud), wait for GitHub to issue the certificat
 proxying back on if you want it. Also check the CNAME points at `hungom.github.io`, not at
 the repository.
 
+**It works for a while, then stops** — Google signs everyone out after an hour.
+The app now notices, keeps everything on screen, and shows "Your sign-in has expired"
+with a button. Tap it and carry on — nothing in progress is lost. If no button
+appears, reload the page.
+
 **Two people saved at once** — the second gets *"changed by someone else while you were working
 on it"*. That is the system doing its job. Refresh and redo that one entry.
 
