@@ -141,6 +141,7 @@ function isTrue_(v) {
 // ============ USERS (the access list) ============
 
 function handleListUsers(payload, user) {
+  var superEmail = superAdminEmail_();
   var sheet = sheet_(SHEET.USERS);
   if (sheet.getLastRow() < 2) return { users: [] };
   var map = headerMap(sheet);
@@ -150,18 +151,33 @@ function handleListUsers(payload, user) {
   for (var i = 0; i < values.length; i++) {
     var r = rowToObject_(values[i], map);
     if (!r.Email) continue;
+    var rowEmail = String(r.Email).trim().toLowerCase();
+
+    // An ordinary admin is never shown the super admin — not the row, not the
+    // address. There is nothing they could do with it here anyway, and the
+    // account above you is the one worth attacking.
+    var rowIsSuper = !!superEmail && rowEmail === superEmail;
+    if (rowIsSuper && !user.isSuperAdmin) continue;
+
     out.push({
-      email: String(r.Email).trim().toLowerCase(),
+      email: rowEmail,
       name: r.Name,
       role: String(r.Role || '').toLowerCase(),
       active: isTrue_(r.Active),
       agentId: r.Agent_ID || '',
       addedBy: r.Added_By || '',
       addedDate: toIso_(r.Added_Date),
-      isYou: String(r.Email).trim().toLowerCase() === user.email
+      isYou: rowEmail === user.email,
+      isSuperAdmin: rowIsSuper
     });
   }
-  return { users: out, bootstrapAdmin: bootstrapAdminEmail_() };
+
+  // The super admin's address goes out only to the super admin.
+  return {
+    users: out,
+    youAreSuperAdmin: !!user.isSuperAdmin,
+    superAdmin: user.isSuperAdmin ? superEmail : ''
+  };
 }
 
 function handleUpsertUser(payload, user) {
@@ -185,6 +201,13 @@ function handleUpsertUser(payload, user) {
   var sheet = sheet_(SHEET.USERS);
   var map = headerMap(sheet);
   var existing = lookupUser(email);
+
+  // Only the super admin may mint an admin, alter an existing admin, or touch
+  // the super admin's own row. Without this any admin could promote a second
+  // admin and the tree would have no top.
+  if (role === ROLES.ADMIN) requireSuperAdmin_(user, 'Granting the admin role');
+  if (existing && existing.role === ROLES.ADMIN) requireSuperAdmin_(user, 'Changing an admin account');
+  if (isSuperAdminEmail_(email)) requireSuperAdmin_(user, 'Changing the super admin account');
 
   if (existing && existing.row) {
     sheet.getRange(existing.row, map.Role).setValue(role);
@@ -215,6 +238,16 @@ function handleSetUserStatus(payload, user) {
   var email = requireField_(payload, 'email').toLowerCase();
   if (payload.active === undefined) throw new ApiError('MISSING_FIELD', 'active is required.');
 
+  // The super admin cannot be switched off from inside the app, by anybody --
+  // including the super admin. Checked first so the refusal reads the same
+  // whoever asks, and before the row lookup, because the account need not have
+  // a row in the Users tab at all.
+  if (isSuperAdminEmail_(email)) {
+    throw new ApiError('SUPER_ADMIN_ONLY',
+      'The super admin account cannot be enabled or disabled from the app. '
+      + 'Change SUPER_ADMIN_EMAIL in Script Properties instead.');
+  }
+
   // Locking yourself out of your own system is a support call you cannot make.
   if (email === user.email && !payload.active) {
     throw new ApiError('BAD_REQUEST', 'You cannot disable your own account.');
@@ -222,6 +255,8 @@ function handleSetUserStatus(payload, user) {
 
   var existing = lookupUser(email);
   if (!existing || !existing.row) throw new ApiError('USER_NOT_FOUND', email + ' is not on the access list.');
+
+  if (existing.role === ROLES.ADMIN) requireSuperAdmin_(user, 'Enabling or disabling an admin');
 
   var sheet = sheet_(SHEET.USERS);
   var map = headerMap(sheet);

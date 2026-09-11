@@ -32,3 +32,6 @@ Thumbs.db
 *.tmp
 *.temp
 node_modules/
+
+# Build output — GitHub Actions builds and publishes this
+dist/

@@ -35,10 +35,27 @@ Most agents never open the app at all: they take paper books and hand back money
 
 | Role | Can do |
 |---|---|
-| Admin | Everything |
+| Super admin | Everything, plus the things below that nobody else can do |
+| Admin | Books, agents, settlement, and adding helpers — but not other admins |
 | Recorder | Record sales, manage books, settle |
 | Agent | Record sales only on books issued to them |
 | View only | Totals and reports, no phone numbers |
+
+There is exactly **one super admin**, and it is not a row in the sheet. It is an email address in a
+Script Property (`SUPER_ADMIN_EMAIL`), which only the owner of the Apps Script project can change —
+so no admin can promote themselves, and neither can anyone editing the spreadsheet by hand. Six
+things are reserved to it:
+
+- granting or removing the **admin** role
+- disabling or re-enabling an **admin**
+- **exporting the entry list** — every buyer's name and phone number in one file
+- **voiding** a sold ticket
+- **recording a winner**
+- reading the **audit log**
+
+Admins are not shown the super admin at all: the row is filtered out of the people list and the
+address is never sent to the browser. An admin who tries any of the six anyway is refused by the
+server, not merely by a hidden button.
 
 ## What it does
 
@@ -79,23 +96,42 @@ printing disconnects every record from the tickets in people's hands.
 
 ## Layout
 
+A Vue 3 app built with Vite. GitHub Actions builds and publishes it on every push,
+so you never run a build yourself.
+
 ```
-index.html              the whole app, one file
-apps_script/
-  Config.gs             config reader, ticket<->book arithmetic
-  Auth.gs               token verification, allowlist, role checks
-  Api.gs                router, responses, rate limiting, write lock
-  Tickets.gs            sell, reserve, correct, bulk entry
-  Books.gs              issue, transfer, return, settle
-  People.gs             agents and users
-  Reports.gs            reconciliation, outstanding, draw readiness
-  Setup.gs              first-time setup, backups, health check
-tests/
-  run.sh                runs every test on plain node
-  mock.js               in-memory stand-in for the Apps Script services
-  *.test.js             numbering, search, settlement
-SETUP.md                step-by-step setup
+src/
+  App.vue               sign-in, which screen shows, which dialog is open
+  style.css             the design system — 17px base, 52px targets, dark mode
+  lib/
+    api.js              transport (POST as text/plain, silent token renewal)
+    store.js            one reactive store; screens derive from it
+    search.js           the search index and matching rules
+    format.js           money, dates, plain-word labels
+  components/
+    AppShell.vue        bottom tabs on a phone, sidebar on a desktop
+    Home.vue  Search.vue  Sell.vue  Books.vue
+    Agents.vue  Money.vue  Draw.vue  Admin.vue
+    SellTicket.vue      the two-mode sale flow
+    ui/                 Sheet, Empty, Toasts, BookGrid, StatusPill, Progress
+    modals/             IssueBooks, SettleBook, BookDetail, Receipt, forms
+apps_script/            the backend — see SETUP.md
+  Config.gs  Auth.gs  Api.gs  Tickets.gs  Books.gs  People.gs  Reports.gs  Setup.gs
+tests/                  ./tests/run.sh
+.github/workflows/      builds and deploys on push to master
 ```
+
+### Working on it
+
+```bash
+npm install
+npm run dev        # http://localhost:5173 with hot reload
+npm run build      # production build into dist/
+./tests/run.sh     # all tests
+```
+
+Pushing to `master` builds and publishes automatically. **GitHub Pages must be set
+to "GitHub Actions" as its source**, not "Deploy from a branch".
 
 ## On security and privacy
 
@@ -129,10 +165,24 @@ delete it a set period after the draw.
 ```
 
 Plain Node, nothing to install. The Apps Script services are stood up in memory
-(`tests/mock.js`) so the real handlers run against a real sheet-like store.
+(`tests/mock.cjs`) so the real handlers run against a sheet-like store.
 
-Covered: ticket↔book numbering across different configs (including an exhaustive
-round-trip over all 6,000 tickets), search matching, settlement arithmetic and the
-one-source reconciliation rule, double-sell and stale-edit refusal, book ownership,
-role enforcement on every admin action, reservations released on return, unsold
-tickets voided with a lost book, and all-or-nothing bulk entry.
+| Suite | Covers |
+|---|---|
+| `numbering` | ticket↔book arithmetic across different configs, plus an exhaustive round-trip over all 6,000 tickets |
+| `settlement` | settlement maths, the one-source reconciliation rule, double-sell and stale-edit refusal, book ownership, reservations released on return, all-or-nothing bulk entry |
+| `superadmin` | the root account: cannot be disabled or demoted from inside the app, only it can create or change an organiser, and it is hidden from ordinary admins |
+| `search` | folding, spelling tolerance, phone formats, book ranges, and match ordering |
+
+## Two things worth knowing
+
+**On design.** The interface is built for someone who is not confident with phones:
+17px base text, nothing interactive under 44px, four tabs plus a More sheet rather
+than eight tabs that overflow, and plain words throughout — "With a seller", not
+"Assigned". Recording a sale asks one question per screen by default, with a quick
+mode for whoever is keying in a stack of stubs.
+
+**On the super admin.** One email, held in a Script Property outside the
+spreadsheet. Nothing in the app can grant it, and no admin can disable or demote
+it — that takes opening the Apps Script project, which only its owner can do. It
+is also the way back in before the Users tab has any rows.

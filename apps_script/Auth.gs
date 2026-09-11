@@ -166,13 +166,41 @@ function invalidateUserCache(email) {
 }
 
 /**
- * Bootstrap: the email in ADMIN_BOOTSTRAP_EMAIL is always treated as admin,
- * even before the Users tab has any rows. Without this you can lock yourself
- * out of your own spreadsheet on the first deploy.
+ * THE SUPER ADMIN — one email, held in a Script Property, deliberately kept
+ * outside the database.
+ *
+ * Nothing inside the app can change it: not an admin, not a row in the Users
+ * tab, not somebody editing the spreadsheet by hand. Moving it means opening
+ * the Apps Script project, which only the script's owner can do. That is what
+ * makes it a root account rather than simply another admin.
+ *
+ * It also still does the original bootstrap job: this address is an admin even
+ * before the Users tab has any rows, so a fresh deploy cannot lock you out.
+ *
+ * SUPER_ADMIN_EMAIL is the name to use. ADMIN_BOOTSTRAP_EMAIL is read as the
+ * old name so a deployment set up before this change keeps working untouched.
  */
-function bootstrapAdminEmail_() {
-  var email = PropertiesService.getScriptProperties().getProperty('ADMIN_BOOTSTRAP_EMAIL');
+function superAdminEmail_() {
+  var p = PropertiesService.getScriptProperties();
+  var email = p.getProperty('SUPER_ADMIN_EMAIL') || p.getProperty('ADMIN_BOOTSTRAP_EMAIL');
   return email ? email.trim().toLowerCase() : '';
+}
+
+function isSuperAdminEmail_(email) {
+  var su = superAdminEmail_();
+  return !!su && String(email || '').trim().toLowerCase() === su;
+}
+
+/**
+ * Guard for anything only the super admin may do. The router calls it for a
+ * whole action; the user-management handlers call it for the specific parts
+ * that touch an admin account.
+ */
+function requireSuperAdmin_(user, what) {
+  if (!user || !user.isSuperAdmin) {
+    throw new ApiError('SUPER_ADMIN_ONLY',
+      (what || 'That') + ' can only be done by the super admin.');
+  }
 }
 
 // ============ THE GATE ============
@@ -193,12 +221,13 @@ var ADMIN_ONLY = [];
  * @param {Array}  allowedRoles  roles permitted; empty/null means any signed-in user
  * @return {Object} {email, name, role, active, agentId, isAdmin}
  */
-function requireUser(idToken, allowedRoles) {
+function requireUser(idToken, allowedRoles, needSuper) {
   var identity = verifyIdToken(idToken);
   var user = lookupUser(identity.email);
+  var isSuper = isSuperAdminEmail_(identity.email);
 
   if (!user) {
-    if (identity.email === bootstrapAdminEmail_()) {
+    if (isSuper) {
       user = {
         email: identity.email,
         name: identity.name,
@@ -213,6 +242,15 @@ function requireUser(idToken, allowedRoles) {
     }
   }
 
+  // Decided before the active check on purpose: the super admin cannot be
+  // switched off from inside the app, so a Users row set to FALSE (or a role
+  // typed down to 'viewer' in the sheet) must not lock the owner out.
+  user.isSuperAdmin = isSuper;
+  if (isSuper) {
+    user.role = ROLES.ADMIN;
+    user.active = true;
+  }
+
   if (!user.active) {
     throw new ApiError('ACCOUNT_DISABLED', 'This account has been disabled.');
   }
@@ -220,6 +258,10 @@ function requireUser(idToken, allowedRoles) {
   user.isAdmin = (user.role === ROLES.ADMIN);
   user.googleSub = identity.sub;
   user.displayName = user.name || identity.name;
+
+  // Super-admin-only actions are checked before the role list, because admins
+  // pass every role check below and would otherwise walk straight through.
+  if (needSuper) requireSuperAdmin_(user, 'This');
 
   // Note the absence of an `allowedRoles.length` test here. ADMIN_ONLY is an
   // empty list, and an empty list must deny everyone who is not an admin --

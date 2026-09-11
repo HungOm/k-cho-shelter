@@ -1,4 +1,4 @@
-require('./mock.js');
+require('./mock.cjs');
 const fs=require('fs'), path=__dirname+'/../apps_script/';
 for(const f of ['Config.gs','Auth.gs','Api.gs','Tickets.gs','Books.gs','People.gs','Reports.gs'])
   eval(fs.readFileSync(path+f,'utf8'));
@@ -218,14 +218,21 @@ console.log('role enforcement (registry + requireUser)');
     }
     return 'ALLOWED';
   }
-  const adminOnly=['issue_books','transfer_books','settle_book','set_book_status','void_ticket',
-                   'upsert_user','set_user_status','upsert_agent','read_audit','export_entries','record_winner'];
-  for(const a of adminOnly){
+  const adminOnly=['issue_books','transfer_books','settle_book','set_book_status',
+                   'upsert_user','set_user_status','upsert_agent'];
+  // These four sit behind a second gate as well: admin clears the role check
+  // here and is then refused for not being the super admin. That layer is
+  // covered in superadmin.test.cjs; this block tests only the role beneath it.
+  const superOnly=['void_ticket','read_audit','export_entries','record_winner'];
+
+  for(const a of adminOnly.concat(superOnly)){
     eq(gate('viewer',reg[a].roles),'DENIED',`viewer blocked from ${a}`);
     eq(gate('agent',reg[a].roles),'DENIED',`agent blocked from ${a}`);
     eq(gate('recorder',reg[a].roles),'DENIED',`recorder blocked from ${a}`);
-    eq(gate('admin',reg[a].roles),'ALLOWED',`admin allowed ${a}`);
+    eq(gate('admin',reg[a].roles),'ALLOWED',`admin clears the role gate for ${a}`);
   }
+  for(const a of adminOnly) ok(!reg[a].sup,`${a} is admin-only, not super-only`);
+  for(const a of superOnly) ok(reg[a].sup===true,`${a} also needs the super admin`);
   // recorders must still be able to do their job
   for(const a of ['sell_ticket','reserve_ticket','bulk_record_sales','correct_ticket']){
     eq(gate('recorder',reg[a].roles),'ALLOWED',`recorder can ${a}`);

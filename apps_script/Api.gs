@@ -32,7 +32,7 @@ function actionRegistry() {
     reserve_ticket:        { fn: handleReserveTicket,     roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'write', lock: true },
     release_ticket:        { fn: handleReleaseTicket,     roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'write', lock: true },
     correct_ticket:        { fn: handleCorrectTicket,     roles: [ROLES.RECORDER], kind: 'write', lock: true },
-    void_ticket:           { fn: handleVoidTicket,        roles: ADMIN_ONLY, kind: 'write', lock: true },
+    void_ticket:           { fn: handleVoidTicket,        roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
     bulk_record_sales:     { fn: handleBulkRecordSales,   roles: [ROLES.RECORDER], kind: 'bulk', lock: true },
 
     // --- books ---
@@ -57,12 +57,12 @@ function actionRegistry() {
     report_overdue:        { fn: handleReportOverdue,     roles: [ROLES.RECORDER], kind: 'report' },
     report_missing_contact:{ fn: handleReportMissingContact, roles: [ROLES.RECORDER], kind: 'report' },
     report_draw_ready:     { fn: handleReportDrawReady,   roles: [ROLES.VIEWER, ROLES.RECORDER], kind: 'report' },
-    export_entries:        { fn: handleExportEntries,     roles: ADMIN_ONLY, kind: 'report' },
+    export_entries:        { fn: handleExportEntries,     roles: ADMIN_ONLY, sup: true, kind: 'report' },
     agent_statement:       { fn: handleAgentStatement,    roles: [ROLES.AGENT, ROLES.RECORDER], kind: 'report' },
-    read_audit:            { fn: handleReadAudit,         roles: ADMIN_ONLY, kind: 'read' },
+    read_audit:            { fn: handleReadAudit,         roles: ADMIN_ONLY, sup: true, kind: 'read' },
 
     // --- winners ---
-    record_winner:         { fn: handleRecordWinner,      roles: ADMIN_ONLY, kind: 'write', lock: true },
+    record_winner:         { fn: handleRecordWinner,      roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
     list_winners:          { fn: handleListWinners,       roles: [ROLES.VIEWER, ROLES.RECORDER], kind: 'read' }
   };
 }
@@ -130,7 +130,7 @@ function route_(req) {
     // nothing about the data.
     if (spec.pub) return jsonOut_({ ok: true, data: spec.fn(req.payload) });
 
-    var user = requireUser(req.idToken, spec.roles);
+    var user = requireUser(req.idToken, spec.roles, spec.sup);
     checkRateLimit(user.email, spec.kind || 'read');
 
     var result = spec.lock
@@ -209,6 +209,7 @@ function handleWhoami(payload, user) {
     email: user.email,
     name: user.displayName,
     role: user.role,
+    isSuperAdmin: !!user.isSuperAdmin,
     agentId: user.agentId,
     myBooks: myBooks,
     config: {

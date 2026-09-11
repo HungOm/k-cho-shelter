@@ -94,12 +94,25 @@ Back in the Apps Script editor:
    | Property | Value |
    |---|---|
    | `GOOGLE_CLIENT_ID` | the client ID you copied in step 3 |
-   | `ADMIN_BOOTSTRAP_EMAIL` | your own Google email address |
+   | `SUPER_ADMIN_EMAIL` | your own Google email address |
 
 3. Click **Save script properties**.
 
-`ADMIN_BOOTSTRAP_EMAIL` is your way back in: that address is always treated as an admin, even before
-the Users tab exists. Without it you can lock yourself out of your own spreadsheet.
+`SUPER_ADMIN_EMAIL` is the **super admin** — one account, above every other, and the most important
+setting in this list.
+
+It is your way back in: that address is treated as an admin even before the Users tab exists, so a
+fresh deploy cannot lock you out. It is also the only account that can hand out or take away the
+admin role, disable another admin, export the entry list, void a sold ticket, record a winner, or
+read the audit log. Ordinary admins never see it — not the row, not the address.
+
+It is deliberately kept here, in Script Properties, rather than in the spreadsheet. Nothing inside
+the app can change it, and neither can anybody editing the Sheet by hand. Moving it to another
+person means coming back to this screen, which only the owner of the script can open. Put your own
+address in it, not a shared mailbox.
+
+> Set up before this change? `ADMIN_BOOTSTRAP_EMAIL` is still read as the old name, so your
+> deployment keeps working. Rename it to `SUPER_ADMIN_EMAIL` when convenient.
 
 ---
 

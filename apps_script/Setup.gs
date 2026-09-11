@@ -348,9 +348,9 @@ function applyValidationAndFormatting_(cfg) {
 }
 
 function seedBootstrapAdmin_() {
-  var email = bootstrapAdminEmail_();
+  var email = superAdminEmail_();
   if (!email) {
-    Logger.log('No ADMIN_BOOTSTRAP_EMAIL set in Script Properties — do that before deploying.');
+    Logger.log('No SUPER_ADMIN_EMAIL set in Script Properties — do that before deploying.');
     return;
   }
   var sheet = ss_().getSheetByName(SHEET.USERS);
@@ -360,8 +360,8 @@ function seedBootstrapAdmin_() {
       if (String(existing[i][0]).trim().toLowerCase() === email) return;
     }
   }
-  sheet.appendRow([email, 'Administrator', ROLES.ADMIN, true, '', '', 'setup', new Date()]);
-  Logger.log('Added ' + email + ' as admin.');
+  sheet.appendRow([email, 'Super administrator', ROLES.ADMIN, true, '', '', 'setup', new Date()]);
+  Logger.log('Added ' + email + ' as the super admin.');
 }
 
 // ============ BACKUP ============
