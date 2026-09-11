@@ -165,8 +165,10 @@ async function start() {
     state.user = me
     state.cfg = me.config
     phase.value = 'ready'
-    await refresh()
-    state.ready = true
+    // Deliberately not awaited into the catch below: once whoami has answered,
+    // the sign-in worked. A report that fails afterwards is a missing panel,
+    // not a failed login, and must not throw the user back to this screen.
+    refresh().finally(() => { state.ready = true })
   } catch (err) {
     phase.value = 'error'
     errorMsg.value = err.code === 'NOT_AUTHORIZED'

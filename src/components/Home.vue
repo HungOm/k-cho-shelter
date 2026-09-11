@@ -3,7 +3,7 @@
  * Home answers two questions before you touch anything: how is the raffle
  * going, and what needs doing. Every attention row is a shortcut to the fix.
  */
-import { state, overview, attention, gettingStarted, isAdmin, canWrite, go } from '../lib/store.js'
+import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh } from '../lib/store.js'
 import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
 
@@ -18,6 +18,29 @@ function doStep(action) {
 
 <template>
   <div>
+    <!-- the spreadsheet has not been prepared yet -->
+    <div v-if="state.needsSetup" class="card setup">
+      <h3>⚙️ The spreadsheet is not ready yet</h3>
+      <p>
+        Your sign-in worked — but the tabs the app reads from have not been made.
+        Somebody needs to open the spreadsheet, go to
+        <b>Extensions → Apps Script</b>, choose <b>setup</b> from the list at the top
+        and press <b>Run</b>. It takes about a minute.
+      </p>
+      <p class="muted small">
+        Set the ticket numbers in the <b>Config</b> tab first — they are fixed
+        once the tickets are made.
+      </p>
+      <button class="btn primary" @click="refresh()">Check again</button>
+    </div>
+
+    <!-- something did not load, but the rest of the app still works -->
+    <div v-else-if="state.problems.length" class="note warn">
+      <b>Some things could not be loaded.</b>
+      <div v-for="p in state.problems" :key="p.what">{{ p.what }} — {{ p.message }}</div>
+      <button class="btn sm" style="margin-top:10px" @click="refresh()">Try again</button>
+    </div>
+
     <!-- first run: what to do, in order -->
     <div v-if="gettingStarted" class="card">
       <h3>Let's get started</h3>
@@ -92,6 +115,7 @@ function doStep(action) {
 
 <style scoped>
 .sect { margin: 22px 2px 10px; }
+.setup { border-left: 4px solid var(--warn); }
 
 /* getting started */
 .steps { margin-top: 6px; }
