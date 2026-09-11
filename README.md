@@ -69,6 +69,10 @@ every change, and a nightly backup of the whole spreadsheet to Drive.
 
 See **[SETUP.md](SETUP.md)**. About 30 minutes, mostly clicking through Google's console.
 
+It runs on a free `github.io` address, or on your own subdomain (step 7b) — one DNS record plus the
+new address added to the OAuth origins. Buyers trust `tickets.ceamalaysia.org` rather more than a
+`github.io` link.
+
 Ticket numbering — prefix, padding, how many, how many per book, price, currency — is all set in a
 **Config** tab in the Sheet before you print. It locks once tickets exist, because renumbering after
 printing disconnects every record from the tickets in people's hands.
@@ -86,6 +90,10 @@ apps_script/
   People.gs             agents and users
   Reports.gs            reconciliation, outstanding, draw readiness
   Setup.gs              first-time setup, backups, health check
+tests/
+  run.sh                runs every test on plain node
+  mock.js               in-memory stand-in for the Apps Script services
+  *.test.js             numbering, search, settlement
 SETUP.md                step-by-step setup
 ```
 

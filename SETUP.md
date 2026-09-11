@@ -59,10 +59,15 @@ This is what lets people prove who they are. It is the fiddliest step; take it s
 4. Search for **Credentials** → **+ Create Credentials** → **OAuth client ID**.
    - Application type: **Web application**
    - Name: `K'Cho Shelter web`
-   - Under **Authorized JavaScript origins**, click *Add URI* and add **both**:
+   - Under **Authorized JavaScript origins**, click *Add URI* and add:
      - `https://YOUR-GITHUB-USERNAME.github.io`
-     - `http://localhost:8000` (only if you want to test on your own computer)
+     - `https://tickets.ceamalaysia.org` — only if you are using your own subdomain (step 7b).
+       Add it now and save yourself a trip back.
+     - `http://localhost:8000` — only if you want to test on your own computer
    - Click **Create**.
+
+   Add the **origin only**: `https://tickets.ceamalaysia.org`, with no path, no repository name and
+   no trailing slash. Listing several origins is normal and safe — sign-in works from any of them.
 5. Copy the **Client ID**. It looks like `1234567890-abcdef.apps.googleusercontent.com`.
 
 **This client ID is not a secret.** It is meant to be public and it is safe in the repo. What
@@ -167,6 +172,49 @@ Test it: paste the `/exec` URL into a browser tab. You should see
 
 ---
 
+## Step 7b — Use your own address (optional but recommended)
+
+`tickets.ceamalaysia.org` looks far more trustworthy to a ticket buyer than a `github.io` address,
+and it costs nothing. Skip this if you are happy with the GitHub address.
+
+Pick the name carefully — once it is in DNS and in Google's settings, changing it means redoing
+both. Short is better when people type it on a phone.
+
+**1. Point the name at GitHub.** With whoever manages DNS for `ceamalaysia.org`, add one record:
+
+| Type | Name | Value |
+|---|---|---|
+| CNAME | `tickets` | `YOUR-USERNAME.github.io.` |
+
+A subdomain uses a **CNAME** record. (A records are only for an apex domain like `ceamalaysia.org`
+itself.) On Cloudflare, set the record to **DNS only** — the grey cloud, not the orange one — until
+GitHub has issued the certificate. Proxying during setup is the usual reason HTTPS gets stuck.
+
+**2. Tell GitHub.** Repo **Settings → Pages → Custom domain** → enter `tickets.ceamalaysia.org` →
+**Save**. GitHub adds a `CNAME` file to the repository. Wait for the DNS check to go green, then
+tick **Enforce HTTPS**. Usually minutes; occasionally a few hours.
+
+**3. Tell Google.** In Google Cloud → **Credentials** → your OAuth client → **Authorized JavaScript
+origins**, add `https://tickets.ceamalaysia.org`. **Sign-in will not work until you do this.** Leave
+the `github.io` origin in the list as well, so nothing breaks while DNS spreads.
+
+Nothing changes in the Apps Script. The `/exec` address does not care which site calls it, and
+access is decided by the sign-in token, not the domain. No redeploy needed.
+
+**Two things that catch people out:**
+
+- **The address gets shorter.** On GitHub it was `…github.io/kcho-shelter/`; on your own subdomain
+  the app sits at the root, so it is just `https://tickets.ceamalaysia.org/`.
+- **Everyone reconnects once.** The saved Apps Script link lives in the browser and is tied to the
+  old address, so it does not follow you across. Send everyone a fresh link (see *Sharing the app*
+  below) and they are set again in one tap.
+
+> If you later publish the OAuth consent screen with a homepage on `ceamalaysia.org`, Google will
+> ask you to prove you own the domain via Search Console. Adding a JavaScript origin, as above,
+> needs no verification.
+
+---
+
 ## Step 8 — First sign-in
 
 1. Open your Pages URL.
@@ -209,6 +257,12 @@ To remove someone, set them to *Disable*. Their access stops within a minute —
 Send them one link with the API address in the `#` part:
 
 ```
+https://tickets.ceamalaysia.org/#s=https://script.google.com/macros/s/.../exec
+```
+
+or, if you stayed on the GitHub address:
+
+```
 https://YOUR-USERNAME.github.io/kcho-shelter/#s=https://script.google.com/macros/s/.../exec
 ```
 
@@ -231,9 +285,21 @@ does not update the live URL.
 `GOOGLE_CLIENT_ID` in Script Properties, or your Pages address is missing from Authorized JavaScript
 origins. Both must match exactly.
 
-**Sign-in button does nothing** — your Pages URL is not in Authorized JavaScript origins. Add
-`https://YOUR-USERNAME.github.io` (no repository name, no trailing slash) and wait a few minutes;
-Google takes a little while to apply changes.
+**Sign-in button does nothing** — the address you are visiting is not in Authorized JavaScript
+origins. Add it exactly: `https://YOUR-USERNAME.github.io` or `https://tickets.ceamalaysia.org` —
+no repository name, no path, no trailing slash. Wait a few minutes; Google takes a little while to
+apply changes.
+
+**Sign-in stopped working right after moving to the custom domain** — that is the same thing. The
+new origin has to be added in Google Cloud; the old one being there does not cover it.
+
+**It asks for the Apps Script link again after moving domains** — expected. That setting is stored
+per web address, so it does not carry across. Paste the `/exec` URL once, or open a `#s=` link.
+
+**Custom domain stuck on "certificate not yet available"** — usually Cloudflare proxying. Set the
+DNS record to **DNS only** (grey cloud), wait for GitHub to issue the certificate, then turn
+proxying back on if you want it. Also check the CNAME points at `YOUR-USERNAME.github.io`, not at
+the repository.
 
 **Two people saved at once** — the second gets *"changed by someone else while you were working
 on it"*. That is the system doing its job. Refresh and redo that one entry.
