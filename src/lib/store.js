@@ -37,7 +37,11 @@ export const state = reactive({
   sellMode: localStorage.getItem(LS.mode) || 'steps',   // 'steps' | 'quick'
   query: '',
   filterStatus: '',
-  filterAgent: ''
+  filterAgent: '',
+
+  // what failed on the last load, and whether the spreadsheet is set up at all
+  problems: [],
+  needsSetup: false
 })
 
 let index = []
@@ -188,32 +192,62 @@ export function reindex() {
   index = buildIndex(state.tickets, agentMap.value)
 }
 
-export async function refresh({ quiet = true } = {}) {
+/**
+ * Loads each part of the picture independently.
+ *
+ * This used to be one try block, so a single failing call threw the user back
+ * to the sign-in error screen after they had already signed in successfully.
+ * The commonest cause was the spreadsheet not being set up yet: the backend
+ * throws SHEET_MISSING, and a working account looked like a broken login.
+ *
+ * Now one failure costs you one panel, and the reason is reported.
+ */
+export async function refresh() {
   state.loading = true
-  try {
-    if (!state.tickets.length) await loadSnapshot()
-    else await loadDelta()
+  state.problems = []
+  state.needsSetup = false
 
-    const [agents, books] = await Promise.all([
-      api('list_agents', {}),
-      api('list_books', {})
-    ])
-    state.agents = agents.agents
-    state.books = books.books
-    state.bookStats = books.stats
+  const step = async (what, fn) => {
+    try { await fn() } catch (err) {
+      if (err.code === 'SHEET_MISSING' || err.code === 'NOT_CONFIGURED') state.needsSetup = true
+      state.problems.push({ what, code: err.code, message: err.message })
+    }
+  }
+
+  try {
+    await step('tickets', async () => {
+      if (!state.tickets.length) await loadSnapshot()
+      else await loadDelta()
+    })
+
+    await step('sellers', async () => {
+      state.agents = (await api('list_agents', {})).agents
+    })
+
+    await step('books', async () => {
+      const books = await api('list_books', {})
+      state.books = books.books
+      state.bookStats = books.stats
+    })
+
     reindex()
 
-    const draw = await api('report_draw_ready', {})
-    state.totals = draw.totals
-    state.bookStats = draw.booksByStatus
+    await step('totals', async () => {
+      const draw = await api('report_draw_ready', {})
+      state.totals = draw.totals
+      state.bookStats = draw.booksByStatus
+    })
 
+    // Only roles the server allows — asking anyway would add a guaranteed
+    // failure to the list for every agent and viewer.
     if (isAdmin.value || state.user?.role === 'recorder') {
-      const od = await api('report_overdue', {})
-      state.overdue = od.overdue
+      await step('overdue books', async () => {
+        state.overdue = (await api('report_overdue', {})).overdue
+      })
     }
 
     state.lastSync = new Date().toISOString()
-    return true
+    return state.problems.length === 0
   } finally {
     state.loading = false
   }
