@@ -1,0 +1,34 @@
+# --- Data files: NEVER commit these ---
+# Ticket exports contain buyer names and phone numbers.
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.json.bak
+backup/
+exports/
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
+client_secret*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
+node_modules/
