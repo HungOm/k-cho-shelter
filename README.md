@@ -70,7 +70,7 @@ every change, and a nightly backup of the whole spreadsheet to Drive.
 See **[SETUP.md](SETUP.md)**. About 30 minutes, mostly clicking through Google's console.
 
 It runs on a free `github.io` address, or on your own subdomain (step 7b) — one DNS record plus the
-new address added to the OAuth origins. Buyers trust `tickets.ceamalaysia.org` rather more than a
+new address added to the OAuth origins. Buyers trust `shtrtickets.ceamalaysia.org` rather more than a
 `github.io` link.
 
 Ticket numbering — prefix, padding, how many, how many per book, price, currency — is all set in a
