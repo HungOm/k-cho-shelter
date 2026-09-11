@@ -529,14 +529,19 @@ class ApiFail extends Error {
    Connection + sign-in
    ============================================================ */
 function readFragment() {
-  // Admin shares one link: index.html#s=<exec-url>&cid=<client-id>
+  // Admin shares one link: index.html#s=<exec-url>
   // A fragment is never sent to any server and never lands in Pages logs.
+  //
+  // The client ID is deliberately NOT read from the link. A crafted
+  // #cid=<someone-else's-id> would point sign-in at their OAuth app and hand
+  // them the name and email of everyone who tapped it. It has to be baked into
+  // GOOGLE_CLIENT_ID above, or typed into the setup screen on purpose.
   if (!location.hash || location.hash.length < 2) return;
   const p = new URLSearchParams(location.hash.slice(1));
-  const s = p.get("s"), cid = p.get("cid");
-  if (s) localStorage.setItem(LS.url, s.trim());
-  if (cid) localStorage.setItem(LS.cid, cid.trim());
-  if (s || cid) history.replaceState(null, "", location.pathname + location.search);
+  const s = p.get("s");
+  if (!s) return;
+  localStorage.setItem(LS.url, s.trim());
+  history.replaceState(null, "", location.pathname + location.search);
 }
 
 function loadConnection() {
