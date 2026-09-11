@@ -160,7 +160,7 @@ Test it: paste the `/exec` URL into a browser tab. You should see
 
 ## Step 7 — Put the app online
 
-1. Create a new **GitHub repository**, e.g. `kcho-shelter`. Public or private both work.
+1. Create a new **GitHub repository**, named `k-cho-shelter`. Public or private both work.
 2. The client ID sits near the top of the `<script>` block in `index.html`. Check it matches the
    one in your Google Cloud credentials:
    ```js
@@ -170,11 +170,11 @@ Test it: paste the `/exec` URL into a browser tab. You should see
    ```bash
    git add .
    git commit -m "K'Cho Shelter ticket tracker"
-   git remote add origin https://github.com/hungom/kcho-shelter.git
-   git push -u origin main
+   git remote add origin git@github.com:HungOm/k-cho-shelter.git
+   git push -u origin master
    ```
 4. On GitHub: **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main`, folder `/ (root)`
-   → **Save**. After a minute your site is at `https://hungom.github.io/kcho-shelter/`.
+   → **Save**. After a minute your site is at `https://hungom.github.io/k-cho-shelter/`.
 5. Check that this address matches what you put in **Authorized JavaScript origins** in step 3.
    The origin is just the `https://hungom.github.io` part — no repository name.
 
@@ -272,7 +272,7 @@ https://shtrtickets.ceamalaysia.org/#s=https://script.google.com/macros/s/.../ex
 or, if you stayed on the GitHub address:
 
 ```
-https://hungom.github.io/kcho-shelter/#s=https://script.google.com/macros/s/.../exec
+https://hungom.github.io/k-cho-shelter/#s=https://script.google.com/macros/s/.../exec
 ```
 
 They tap it once and the app remembers. The `#` part is never sent to any web server, so it stays
