@@ -1,0 +1,147 @@
+<script setup>
+/**
+ * Home answers two questions before you touch anything: how is the raffle
+ * going, and what needs doing. Every attention row is a shortcut to the fix.
+ */
+import { state, overview, attention, gettingStarted, isAdmin, canWrite, go } from '../lib/store.js'
+import Progress from './ui/Progress.vue'
+import BookGrid from './ui/BookGrid.vue'
+
+const emit = defineEmits(['issue', 'add-agent', 'open-book'])
+
+function doStep(action) {
+  if (action === 'add-agent') emit('add-agent')
+  else if (action === 'issue') emit('issue')
+  else if (action === 'sell') go('sell')
+}
+</script>
+
+<template>
+  <div>
+    <!-- first run: what to do, in order -->
+    <div v-if="gettingStarted" class="card">
+      <h3>Let's get started</h3>
+      <p class="muted small">Four things, once.</p>
+      <div class="steps">
+        <div v-for="(s, i) in gettingStarted" :key="i"
+             :class="['step', { done: s.done, now: !s.done && gettingStarted.findIndex(x => !x.done) === i }]"
+             @click="!s.done && s.action && doStep(s.action)">
+          <span class="mark">{{ s.done ? '✓' : i + 1 }}</span>
+          <span class="grow">
+            <span class="t">{{ s.title }}</span>
+            <span class="d">{{ s.detail }}</span>
+          </span>
+          <span v-if="!s.done && s.action" class="chev">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- money raised -->
+    <Progress v-if="overview" v-bind="{
+      percent: overview.percent, collected: overview.collected, target: overview.target,
+      currency: overview.currency, sold: overview.sold, total: state.cfg.totalTickets,
+      outstanding: overview.outstanding }" />
+    <div v-else class="card"><div class="skel" style="height:52px"></div></div>
+
+    <!-- what needs doing -->
+    <template v-if="attention.length">
+      <h3 class="sect">Needs looking at</h3>
+      <TransitionGroup name="pop" tag="div">
+        <button v-for="a in attention" :key="a.key" :class="['attn', a.tone]" @click="go(a.go)">
+          <span class="em">{{ a.icon }}</span>
+          <span class="grow">
+            <span class="t">{{ a.title }}</span>
+            <span class="d">{{ a.detail }}</span>
+          </span>
+          <span class="chev">›</span>
+        </button>
+      </TransitionGroup>
+    </template>
+    <div v-else-if="overview" class="note ok">
+      <b>All good.</b> Nothing needs your attention right now.
+    </div>
+
+    <!-- shortcuts -->
+    <h3 class="sect">What do you want to do?</h3>
+    <div class="quick">
+      <button v-if="canWrite" @click="go('sell')">
+        <span class="em">🎟️</span><span>Write down a sale</span>
+      </button>
+      <button @click="go('search')">
+        <span class="em">🔍</span><span>Find a ticket</span>
+      </button>
+      <button v-if="isAdmin" @click="emit('issue')">
+        <span class="em">📚</span><span>Give out books</span>
+      </button>
+      <button v-if="isAdmin" @click="emit('add-agent')">
+        <span class="em">👥</span><span>Add a seller</span>
+      </button>
+    </div>
+
+    <!-- the whole raffle at a glance -->
+    <div class="card">
+      <div class="spread" style="margin-bottom:14px">
+        <h3 style="margin:0">All the books</h3>
+        <button class="btn sm" @click="go('books')">See list</button>
+      </div>
+      <BookGrid :books="state.books" :limit="180"
+                @pick="b => emit('open-book', b)" @more="go('books')" />
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.sect { margin: 22px 2px 10px; }
+
+/* getting started */
+.steps { margin-top: 6px; }
+.step {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 14px 0; border-bottom: 1px solid var(--border);
+}
+.step:last-child { border-bottom: 0; }
+.step[class*="now"], .step:not(.done) { cursor: pointer; }
+.step .mark {
+  flex: 0 0 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--muted);
+  font-weight: 800; font-size: .95rem;
+}
+.step.done .mark { background: var(--ok-soft); color: var(--ok); }
+.step.now .mark { background: var(--brand); color: var(--brand-ink); }
+.step .t { display: block; font-weight: 700; }
+.step.done .t { color: var(--muted); }
+.step .d { display: block; font-size: .9rem; color: var(--muted); margin-top: 1px; }
+.step .chev { color: var(--muted); font-size: 1.4rem; line-height: 1; }
+
+/* attention rows */
+.attn {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 16px 18px; margin-bottom: 9px; min-height: 74px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 4px solid var(--muted); border-radius: var(--r);
+  cursor: pointer; text-align: left;
+  transition: transform .14s var(--ease), box-shadow .14s;
+}
+.attn:hover { transform: translateX(3px); box-shadow: var(--shadow); }
+.attn.bad  { border-left-color: var(--bad); }
+.attn.warn { border-left-color: var(--warn); }
+.attn .em { font-size: 1.6rem; line-height: 1; }
+.attn .t { display: block; font-weight: 700; font-size: 1.02rem; }
+.attn .d { display: block; font-size: .88rem; color: var(--muted); margin-top: 2px; }
+.attn .chev { color: var(--muted); font-size: 1.5rem; }
+
+/* shortcuts */
+.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.quick button {
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  padding: 22px 12px; min-height: 112px; justify-content: center;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--r); cursor: pointer;
+  font-weight: 700; font-size: .98rem; text-align: center; line-height: 1.3;
+  transition: transform .14s var(--ease), border-color .14s, box-shadow .14s;
+}
+.quick button:hover { border-color: var(--brand); transform: translateY(-3px); box-shadow: var(--shadow); }
+.quick button:active { transform: translateY(0) scale(.98); }
+.quick .em { font-size: 1.9rem; line-height: 1; }
+</style>

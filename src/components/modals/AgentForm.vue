@@ -1,0 +1,50 @@
+<script setup>
+import { ref } from 'vue'
+import { api, toast, refresh } from '../../lib/store.js'
+import Sheet from '../ui/Sheet.vue'
+
+const props = defineProps({ agent: Object })
+const emit = defineEmits(['close', 'saved'])
+
+const name = ref(props.agent?.name || '')
+const phone = ref(props.agent?.phone || '')
+const zone = ref(props.agent?.zone || '')
+const busy = ref(false)
+
+async function save() {
+  if (!name.value.trim()) return toast('What is their name?', 'bad')
+  busy.value = true
+  try {
+    await api('upsert_agent', {
+      agentId: props.agent?.id || '',
+      name: name.value.trim(), phone: phone.value.trim(), zone: zone.value.trim()
+    })
+    toast('Saved', 'ok')
+    await refresh()
+    emit('saved')
+  } catch (err) { toast(err.message, 'bad') } finally { busy.value = false }
+}
+</script>
+
+<template>
+  <Sheet :title="agent ? 'Edit seller' : 'Add a seller'"
+         subtitle="Someone who carries books. No Google account needed." @close="emit('close')">
+    <div class="field">
+      <label for="an">Their name <span class="req">*</span></label>
+      <input id="an" v-model="name" class="xl" autocomplete="off" autofocus>
+    </div>
+    <div class="field">
+      <label for="ap">Phone number</label>
+      <input id="ap" v-model="phone" type="tel" inputmode="tel" autocomplete="off" placeholder="012-345 6789">
+      <p class="hint">Used to send reminders about books on WhatsApp.</p>
+    </div>
+    <div class="field">
+      <label for="az">Church or area <span class="opt">— not required</span></label>
+      <input id="az" v-model="zone" autocomplete="off">
+    </div>
+    <template #actions>
+      <button class="btn" @click="emit('close')">Cancel</button>
+      <button class="btn primary" :disabled="busy" @click="save">{{ busy ? 'Saving…' : 'Save' }}</button>
+    </template>
+  </Sheet>
+</template>
