@@ -184,6 +184,84 @@ td.num{font-variant-numeric:tabular-nums}
 @media(max-width:520px){.bulkrow{grid-template-columns:1fr 1fr;grid-template-areas:"t t" "n n" "p x"}
   .bulkrow .bt{grid-area:t}.bulkrow .bn{grid-area:n}.bulkrow .bp{grid-area:p}.bulkrow .bx{grid-area:x}}
 
+
+/* ---------- home dashboard ---------- */
+.hero{background:linear-gradient(135deg,var(--primary),color-mix(in srgb,var(--primary) 70%,#0ea5e9));
+  color:var(--primary-ink);border-radius:var(--radius);padding:18px;margin-bottom:12px;box-shadow:var(--shadow)}
+.hero .raised{font-size:1.9rem;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.hero .of{opacity:.85;font-size:.82rem;margin-top:2px}
+.bar{height:9px;border-radius:99px;background:rgba(255,255,255,.28);margin:12px 0 7px;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:99px;background:#fff;width:0;
+  transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.hero .legend{display:flex;justify-content:space-between;font-size:.74rem;opacity:.9;font-weight:600}
+
+.attn{display:flex;align-items:center;gap:11px;width:100%;padding:12px 14px;background:var(--surface);
+  border:1px solid var(--border);border-left:3px solid var(--muted);border-radius:10px;margin-bottom:8px;
+  cursor:pointer;text-align:left;transition:transform .12s,box-shadow .12s}
+.attn:hover{transform:translateX(2px);box-shadow:var(--shadow)}
+.attn.bad{border-left-color:var(--danger)}
+.attn.warn{border-left-color:var(--warn)}
+.attn.ok{border-left-color:var(--ok)}
+.attn .em{font-size:1.35rem;line-height:1}
+.attn .t{font-weight:700;font-size:.9rem}
+.attn .d{font-size:.76rem;color:var(--muted);margin-top:1px}
+.attn .go{color:var(--muted);font-size:1.1rem}
+
+.quick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.quick button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:15px 8px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  cursor:pointer;font-weight:700;font-size:.82rem;transition:transform .12s,border-color .12s}
+.quick button:hover{border-color:var(--primary);transform:translateY(-2px)}
+.quick button .em{font-size:1.5rem}
+
+/* ---------- first-run checklist ---------- */
+.steps{counter-reset:step}
+.step{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--border)}
+.step:last-child{border-bottom:0}
+.step .mark{flex:0 0 26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  background:var(--surface-2);color:var(--muted);font-weight:800;font-size:.8rem}
+.step.done .mark{background:var(--ok-bg);color:var(--ok)}
+.step.now .mark{background:var(--primary);color:var(--primary-ink)}
+.step .t{font-weight:700;font-size:.88rem}
+.step.done .t{color:var(--muted);text-decoration:line-through}
+.step .d{font-size:.78rem;color:var(--muted);margin-top:1px}
+
+/* ---------- book grid ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:4px}
+.bk{aspect-ratio:1;border:0;border-radius:5px;cursor:pointer;font-size:.6rem;font-weight:700;
+  display:grid;place-items:center;color:#fff;transition:transform .1s;padding:0}
+.bk:hover{transform:scale(1.18);z-index:2;box-shadow:var(--shadow)}
+.bk.s-Unassigned{background:var(--surface-2);color:var(--muted)}
+.bk.s-Out{background:#2563eb}
+.bk.s-Returned{background:#d97706}
+.bk.s-Settled{background:#16a34a}
+.bk.s-Lost{background:#dc2626}
+.bk.s-Void{background:#525252}
+.bk.late{outline:2px solid var(--danger);outline-offset:-2px}
+.keys{display:flex;flex-wrap:wrap;gap:10px;font-size:.72rem;color:var(--muted);margin:10px 0 0}
+.keys span{display:flex;align-items:center;gap:4px}
+.keys i{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+/* ---------- search hint chips ---------- */
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{padding:5px 11px;border-radius:99px;border:1px solid var(--border);background:var(--surface);
+  font-size:.76rem;cursor:pointer;color:var(--muted);font-weight:600}
+.chip:hover{border-color:var(--primary);color:var(--primary)}
+
+/* ---------- skeletons ---------- */
+.skel{height:14px;border-radius:6px;background:linear-gradient(90deg,var(--surface-2),var(--border),var(--surface-2));
+  background-size:200% 100%;animation:sweep 1.2s linear infinite}
+@keyframes sweep{to{background-position:-200% 0}}
+.skelrow{padding:12px 14px;border-bottom:1px solid var(--border)}
+.skelrow .skel+.skel{margin-top:7px;width:60%;height:10px}
+
+/* ---------- richer empty states ---------- */
+.empty .big{font-size:2.4rem;margin-bottom:8px}
+.empty h3{margin:0 0 4px}
+.empty .btn{margin-top:14px}
+.screen{animation:rise .22s ease}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+
 @media print{
   .appbar,.nav,#toast,.noprint{display:none!important}
   .screen{padding:0}
@@ -249,8 +327,32 @@ td.num{font-variant-numeric:tabular-nums}
     </div>
   </header>
 
-  <!-- ---- SEARCH (home) ---- -->
-  <section class="screen active" id="sc-search">
+  <!-- ---- HOME ---- -->
+  <section class="screen active" id="sc-home">
+    <div class="wrap">
+      <div id="firstRun"></div>
+      <div id="homeHero"></div>
+      <div id="homeAttention"></div>
+
+      <div class="quick" id="homeQuick"></div>
+
+      <div class="card">
+        <div class="spread"><h3 style="margin:0">Books at a glance</h3>
+          <button class="btn sm" onclick="go('books')">Open</button></div>
+        <div class="grid" id="homeGrid" style="margin-top:10px"></div>
+        <div class="keys">
+          <span><i style="background:var(--surface-2);border:1px solid var(--border)"></i>In the safe</span>
+          <span><i style="background:#2563eb"></i>Out with agents</span>
+          <span><i style="background:#d97706"></i>Returned</span>
+          <span><i style="background:#16a34a"></i>Settled</span>
+          <span><i style="background:#dc2626"></i>Lost</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---- SEARCH ---- -->
+  <section class="screen" id="sc-search">
     <div class="wrap">
       <div class="card">
         <input id="q" type="search" placeholder="Ticket number, name, phone, book…"
@@ -270,6 +372,7 @@ td.num{font-variant-numeric:tabular-nums}
           </select>
           <button class="btn sm" onclick="clearSearch()">Clear</button>
         </div>
+        <div class="chips" id="searchChips"></div>
       </div>
 
       <div class="spread small muted" style="margin:0 2px 8px">
@@ -342,6 +445,20 @@ td.num{font-variant-numeric:tabular-nums}
           <button class="btn sm" onclick="openTransfer()">Transfer</button>
           <button class="btn sm" onclick="openReturn()">Return</button>
           <button class="btn sm danger" onclick="openBookStatus()">Lost / void</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="spread"><h3 style="margin:0">Every book</h3>
+          <span class="tiny muted">tap one to open it</span></div>
+        <div class="grid" id="bookGrid" style="margin-top:10px"></div>
+        <div class="keys">
+          <span><i style="background:var(--surface-2);border:1px solid var(--border)"></i>In the safe</span>
+          <span><i style="background:#2563eb"></i>Out</span>
+          <span><i style="background:#d97706"></i>Returned</span>
+          <span><i style="background:#16a34a"></i>Settled</span>
+          <span><i style="background:#dc2626"></i>Lost</span>
+          <span><i style="outline:2px solid var(--danger);outline-offset:-2px;background:transparent"></i>overdue</span>
         </div>
       </div>
 
@@ -673,7 +790,9 @@ async function afterSignIn() {
   applyRoleVisibility();
   addBulkRow();
 
+  renderSearchChips();
   await refreshData(false);
+  go("home");
   if (isAdmin() || state.user.role === "recorder") loadOverdue();
 }
 
@@ -693,6 +812,7 @@ function showGate(which, msg) {
    Each person only sees the screens their job uses.
    ============================================================ */
 const SCREENS = [
+  { id:"home",   icon:"🏠", label:"Home",   roles:["admin","recorder","agent","viewer"] },
   { id:"search", icon:"🔍", label:"Search", roles:["admin","recorder","agent","viewer"] },
   { id:"sell",   icon:"🎟️", label:"Sell",   roles:["admin","recorder","agent"] },
   { id:"books",  icon:"📚", label:"Books",  roles:["admin","recorder"] },
@@ -731,7 +851,8 @@ function go(id) {
   document.querySelectorAll("#navBar button").forEach(b =>
     b.classList.toggle("on", b.dataset.screen === id));
   window.scrollTo(0, 0);
-  if (id === "books") { renderBookStats(); renderBooks(); }
+  if (id === "home") loadHome();
+  if (id === "books") { renderBookStats(); renderBooks(); renderBookGrid("bookGrid"); }
   if (id === "agents") { renderAgents(); loadOverdue(); }
   if (id === "money") loadMoney();
   if (id === "draw") loadDraw();
@@ -762,6 +883,7 @@ async function refreshData(showToast) {
 
     state.lastSync = new Date().toISOString();
     runSearch();
+    if (document.getElementById("sc-home").classList.contains("active")) loadHome();
     if (showToast) toast("Up to date", "ok");
   } catch (err) {
     toast(err.message, "bad");
@@ -773,8 +895,12 @@ async function refreshData(showToast) {
 async function loadSnapshot() {
   state.tickets = [];
   let offset = 0;
+  const results = document.getElementById("results");
+  if (results) results.innerHTML = skeletonRows(8);
   for (let guard = 0; guard < 40; guard++) {
     const page = await api("read_snapshot", { offset, limit: 2000 });
+    const count = document.getElementById("resultCount");
+    if (count && page.total) count.textContent = `loading ${(offset + page.returned).toLocaleString()} of ${page.total.toLocaleString()}…`;
     page.rows.forEach(r => state.tickets.push(wireToTicket(page.fields, r)));
     if (!page.hasMore) break;
     offset += page.returned;
@@ -945,9 +1071,16 @@ function renderResults(hits, total) {
     : "No matches";
 
   if (!hits.length) {
-    ul.innerHTML = `<li><div class="empty"><div class="big">🔍</div>
-      <div>Nothing found.</div>
-      <div class="small" style="margin-top:6px">Try the last digits of the ticket, a name, or a phone number.</div></div></li>`;
+    const query = document.getElementById("q").value.trim();
+    ul.innerHTML = !state.tickets.length
+      ? `<li><div class="empty"><div class="big">🎟️</div>
+          <h3>No tickets yet</h3>
+          <div class="small">Set your numbers in the Config tab of the spreadsheet,<br>then run <b>setup()</b> in the Apps Script editor.</div>
+          <button class="btn" onclick="go('home')">Back to start</button></div></li>`
+      : `<li><div class="empty"><div class="big">🔍</div>
+          <h3>Nothing matches ${query ? `“${esc(query)}”` : "those filters"}</h3>
+          <div class="small">Try the last few digits of the ticket, part of a name,<br>or a phone number in any format.</div>
+          <button class="btn" onclick="clearSearch()">Clear search</button></div></li>`;
     return;
   }
 
@@ -981,6 +1114,187 @@ function fillAgentSelects() {
     el.innerHTML = opts;
     el.value = keep;
   });
+}
+
+
+/* ============================================================
+   Home — what's going on, and what to do next
+   ============================================================ */
+async function loadHome() {
+  renderFirstRun();
+  renderQuickActions();
+  renderBookGrid("homeGrid", 240);
+
+  const hero = document.getElementById("homeHero");
+  const attn = document.getElementById("homeAttention");
+  if (!hero.innerHTML) hero.innerHTML = `<div class="hero"><div class="skel" style="height:44px;background:rgba(255,255,255,.25)"></div></div>`;
+
+  try {
+    const d = await api("report_draw_ready", {});
+    state.bookStats = d.booksByStatus;
+    const t = d.totals, cur = d.currency, c = state.cfg;
+    const target = c.totalTickets * c.ticketPrice;
+    const pct = target ? Math.min(100, (t.expected / target) * 100) : 0;
+
+    hero.innerHTML = `
+      <div class="hero">
+        <div class="raised">${esc(cur)} ${fmtMoney(t.collected)}</div>
+        <div class="of">handed in so far${t.outstanding > 0 ? ` · ${esc(cur)} ${fmtMoney(t.outstanding)} still owed` : ""}</div>
+        <div class="bar"><i id="heroBar"></i></div>
+        <div class="legend">
+          <span>${t.ticketsSold.toLocaleString()} of ${c.totalTickets.toLocaleString()} tickets sold</span>
+          <span>${Math.round(pct)}% of ${esc(cur)} ${fmtMoney(target)}</span>
+        </div>
+      </div>`;
+    // animate on the next frame so the transition actually runs
+    requestAnimationFrame(() => {
+      const b = document.getElementById("heroBar");
+      if (b) b.style.width = pct + "%";
+    });
+
+    renderAttention(d, cur);
+  } catch (err) {
+    hero.innerHTML = `<div class="note bad">${esc(err.message)}</div>`;
+    attn.innerHTML = "";
+  }
+}
+
+/** The "needs your attention" list — each row is a tap straight to the fix. */
+function renderAttention(d, cur) {
+  const box = document.getElementById("homeAttention");
+  const t = d.totals;
+  const rows = [];
+  const overdue = (state.overdue || []).length;
+
+  if (overdue) rows.push(["bad", "⏰", `${overdue} book${overdue === 1 ? "" : "s"} overdue`,
+    "Past the return date — chase the agent", "go('agents')"]);
+
+  if (t.missingContact) rows.push(["bad", "📵", `${t.missingContact} sold ticket${t.missingContact === 1 ? "" : "s"} with no contact`,
+    "You could not tell these people if they win", "go('draw');loadMissing()"]);
+
+  if (t.outstanding > 0) rows.push(["warn", "💰", `${esc(cur)} ${fmtMoney(t.outstanding)} not handed in`,
+    "Money recorded as sold but not yet received", "go('money')"]);
+
+  const unsettled = (d.booksByStatus.Out || 0) + (d.booksByStatus.Returned || 0);
+  if (unsettled) rows.push(["", "📚", `${unsettled} book${unsettled === 1 ? "" : "s"} still open`,
+    "Out with agents or waiting to be settled", "go('books')"]);
+
+  if (!rows.length) {
+    box.innerHTML = `<div class="note ok"><b>✅ Nothing needs attention.</b> Everything is settled and every sold ticket has contact details.</div>`;
+    return;
+  }
+
+  box.innerHTML = `<h3 style="margin:14px 2px 8px">Needs your attention</h3>` + rows.map(r => `
+    <button class="attn ${r[0]}" onclick="${r[4]}">
+      <span class="em">${r[1]}</span>
+      <span class="grow"><span class="t">${r[2]}</span><span class="d">${r[3]}</span></span>
+      <span class="go">›</span>
+    </button>`).join("");
+}
+
+function renderQuickActions() {
+  const q = document.getElementById("homeQuick");
+  const acts = [];
+  if (canWrite()) acts.push(["🎟️", "Record a sale", "go('sell')"]);
+  if (canWrite()) acts.push(["🔍", "Find a ticket", "go('search');document.getElementById('q').focus()"]);
+  if (isAdmin()) acts.push(["📚", "Issue books", "openIssue()"]);
+  if (isAdmin()) acts.push(["👥", "Add an agent", "openAgent()"]);
+  q.innerHTML = acts.map(a =>
+    `<button onclick="${a[2]}"><span class="em">${a[0]}</span>${a[1]}</button>`).join("");
+}
+
+/**
+ * First-run guide. Volunteers land on an empty app with no idea what comes
+ * first; this disappears on its own once the raffle is actually running.
+ */
+function renderFirstRun() {
+  const box = document.getElementById("firstRun");
+  if (!isAdmin()) { box.innerHTML = ""; return; }
+
+  const hasTickets = state.tickets.length > 0;
+  const hasAgents = state.agents.length > 0;
+  const booksOut = (state.bookStats && state.bookStats.Out) || 0;
+  const sold = state.tickets.filter(t => t.status === "Sold" || t.status === "Donated").length;
+
+  if (hasTickets && hasAgents && booksOut && sold) { box.innerHTML = ""; return; }
+
+  const steps = [
+    [hasTickets, "Create the tickets", hasTickets
+      ? `${state.tickets.length.toLocaleString()} tickets ready`
+      : "Run setup() in the Apps Script editor after setting the Config tab", ""],
+    [hasAgents, "Add your agents", hasAgents
+      ? `${state.agents.length} agent${state.agents.length === 1 ? "" : "s"}`
+      : "The people who will carry books. No Google account needed.", "openAgent()"],
+    [booksOut > 0, "Issue books to them", booksOut
+      ? `${booksOut} books out`
+      : "Hand out a range of books and print a receipt", "openIssue()"],
+    [sold > 0, "Record sales", sold
+      ? `${sold} recorded`
+      : "As they happen, or in a batch when books come back", "go('sell')"]
+  ];
+
+  const firstTodo = steps.findIndex(x => !x[0]);
+  box.innerHTML = `<div class="card">
+    <h3>Getting started</h3>
+    <div class="steps">` + steps.map((x, i) => `
+      <div class="step ${x[0] ? "done" : i === firstTodo ? "now" : ""}"
+           ${!x[0] && x[3] ? `onclick="${x[3]}" style="cursor:pointer"` : ""}>
+        <span class="mark">${x[0] ? "✓" : i + 1}</span>
+        <span class="grow"><span class="t">${x[1]}</span><span class="d">${esc(x[2])}</span></span>
+        ${!x[0] && i === firstTodo && x[3] ? `<span class="go">›</span>` : ""}
+      </div>`).join("") + `</div></div>`;
+}
+
+/**
+ * The whole raffle as coloured tiles. Six hundred rows in a table tell you
+ * nothing; six hundred squares tell you at a glance how much stock is still
+ * in the safe and who is sitting on it.
+ */
+function renderBookGrid(elId, limit) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const books = state.books || [];
+  if (!books.length) {
+    el.innerHTML = `<p class="small muted" style="margin:0">No books yet — run setup() to create them.</p>`;
+    return;
+  }
+  const shown = limit ? books.slice(0, limit) : books;
+  el.innerHTML = shown.map(b => {
+    const n = String(b.book).replace(/\D/g, "").replace(/^0+/, "") || "0";
+    const title = `${b.book} · ${b.status}${b.agentName ? " · " + b.agentName : ""}${b.sold ? " · " + b.sold + " sold" : ""}`;
+    return `<button class="bk s-${esc(b.status)}${b.daysOverdue > 0 ? " late" : ""}"
+      title="${esc(title)}" onclick="openBook('${esc(b.book)}','${esc(b.agentId || "")}')">${n}</button>`;
+  }).join("") + (limit && books.length > limit
+    ? `<button class="bk s-Unassigned" onclick="go('books')" title="See all">+${books.length - limit}</button>` : "");
+}
+
+/** Example searches, because an empty box does not explain what it accepts. */
+function renderSearchChips() {
+  const el = document.getElementById("searchChips");
+  if (!el) return;
+  const c = state.cfg;
+  const sample = c.ticketPrefix + String(c.ticketStart + 720).padStart(c.ticketDigits, "0");
+  const tail = String(c.ticketStart + 720).padStart(c.ticketDigits, "0").replace(/^0+/, "").slice(-3);
+  el.innerHTML = [
+    [tail, `last digits — finds ${sample}`],
+    ["a name", "partial, and forgiving of spelling"],
+    ["012-345 6789", "any phone format"],
+    [c.bookPrefix + "1", "a whole book"]
+  ].map(x => `<button class="chip" title="${esc(x[1])}" onclick="fillSearch('${esc(x[0])}')">${esc(x[0])}</button>`).join("");
+}
+
+function fillSearch(v) {
+  go("search");
+  const q = document.getElementById("q");
+  q.value = v === "a name" ? "" : v;
+  q.focus();
+  runSearch();
+}
+
+function skeletonRows(n) {
+  let out = "";
+  for (let i = 0; i < n; i++) out += `<li class="skelrow"><div class="skel" style="width:40%"></div><div class="skel"></div></li>`;
+  return out;
 }
 
 /* ============================================================
@@ -1240,12 +1554,14 @@ async function renderBooks() {
   const status = document.getElementById("bkStatus").value;
   const agent = document.getElementById("bkAgent").value;
   const ul = document.getElementById("bookList");
-  ul.innerHTML = `<li><div class="empty"><div class="spinner"></div></div></li>`;
+  ul.innerHTML = skeletonRows(6);
 
   try {
     const r = await api("list_books", { status, agentId: agent });
     state.bookStats = r.stats;
+    state.books = r.books;
     renderBookStats();
+    renderBookGrid("bookGrid");
     renderBookRows(r.books);
   } catch (err) {
     ul.innerHTML = `<li><div class="empty">${esc(err.message)}</div></li>`;
@@ -1255,7 +1571,14 @@ async function renderBooks() {
 function renderBookRows(books) {
   const ul = document.getElementById("bookList");
   if (!books.length) {
-    ul.innerHTML = `<li><div class="empty"><div class="big">📚</div><div>No books here.</div></div></li>`;
+    const f = document.getElementById("bkStatus").value;
+    ul.innerHTML = `<li><div class="empty"><div class="big">📚</div>
+      <h3>No ${f ? esc(f.toLowerCase()) : ""} books</h3>
+      <div class="small">${f === "Out"
+        ? "Nothing is out with an agent right now."
+        : "Nothing here with those filters."}</div>
+      ${isAdmin() && f === "Out" ? `<button class="btn primary" onclick="openIssue()">Issue books to an agent</button>` : ""}
+      </div></li>`;
     return;
   }
   ul.innerHTML = books.map(b => {
@@ -1526,7 +1849,11 @@ function renderAgents() {
   const ul = document.getElementById("agentList");
   if (!state.agents.length) {
     ul.innerHTML = `<li><div class="empty"><div class="big">👥</div>
-      <div>No agents yet.</div><div class="small">Add the people who will hold books.</div></div></li>`;
+      <h3>No agents yet</h3>
+      <div class="small">Agents are the people who carry books and sell tickets.<br>
+      They need no Google account — just a name and a phone number.</div>
+      ${isAdmin() ? `<button class="btn primary" onclick="openAgent()">Add your first agent</button>` : ""}
+      </div></li>`;
     return;
   }
   ul.innerHTML = state.agents.map(a => `
@@ -1743,7 +2070,7 @@ async function loadDraw() {
 
 async function loadMissing() {
   const box = document.getElementById("missingList");
-  box.innerHTML = `<div class="spinner"></div>`;
+  box.innerHTML = `<div class="skel" style="width:50%"></div><div class="skel" style="margin-top:8px"></div>`;
   try {
     const r = await api("report_missing_contact", { limit: 200 });
     if (!r.total) { box.innerHTML = `<div class="note ok small">Every sold ticket has a name and phone.</div>`; return; }
@@ -1906,7 +2233,7 @@ function renderConfig() {
 
 async function loadAudit() {
   const box = document.getElementById("auditList");
-  box.innerHTML = `<div class="spinner"></div>`;
+  box.innerHTML = `<div class="skel" style="width:45%"></div><div class="skel" style="margin-top:8px"></div>`;
   try {
     const r = await api("read_audit", { limit: 100 });
     box.innerHTML = r.entries.map(e => `

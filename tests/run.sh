@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 fail=0
-for t in numbering search settlement; do
+for t in numbering search settlement ui; do
   echo "── $t"
   node "$t.test.js" | tail -1
   node "$t.test.js" > /dev/null || fail=1
