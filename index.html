@@ -29,6 +29,10 @@
   }
 }
 *{box-sizing:border-box}
+/* The browser's own [hidden]{display:none} is a weak rule that any explicit
+   display: declaration beats. Several elements here are both display:flex and
+   toggled via el.hidden, so this has to win. */
+[hidden]{display:none!important}
 html,body{margin:0;padding:0}
 body{
   background:var(--bg); color:var(--text);
