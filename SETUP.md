@@ -93,7 +93,7 @@ Back in the Apps Script editor:
 
    | Property | Value |
    |---|---|
-   | `GOOGLE_CLIENT_ID` | `981045980686-ah7579259e9j24l2pgnsbb2v4bn0biud.apps.googleusercontent.com` |
+   | `GOOGLE_CLIENT_ID` | the client ID you copied in step 3 |
    | `ADMIN_BOOTSTRAP_EMAIL` | your own Google email address |
 
 3. Click **Save script properties**.
@@ -161,10 +161,10 @@ Test it: paste the `/exec` URL into a browser tab. You should see
 ## Step 7 — Put the app online
 
 1. Create a new **GitHub repository**, e.g. `kcho-shelter`. Public or private both work.
-2. The client ID is already set near the top of the `<script>` block in `index.html` — check it
-   matches the one in your Google Cloud credentials:
+2. The client ID sits near the top of the `<script>` block in `index.html`. Check it matches the
+   one in your Google Cloud credentials:
    ```js
-   const GOOGLE_CLIENT_ID = "981045980686-….apps.googleusercontent.com";
+   const GOOGLE_CLIENT_ID = "1234567890-abcdef.apps.googleusercontent.com";
    ```
 3. Push the project:
    ```bash
