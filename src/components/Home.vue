@@ -8,7 +8,7 @@ import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
 import Bi from './ui/Bi.vue'
 
-const emit = defineEmits(['issue', 'add-agent', 'open-book'])
+const emit = defineEmits(['issue', 'add-agent', 'open-book', 'sell-book'])
 
 function doStep(action) {
   if (action === 'add-agent') emit('add-agent')
@@ -93,6 +93,9 @@ function doStep(action) {
       </button>
       <button @click="go('search')">
         <span class="em">🔍</span><Bi text="Find a ticket" />
+      </button>
+      <button v-if="canWrite" @click="emit('sell-book')">
+        <span class="em">📗</span><Bi text="Sell a whole book" />
       </button>
       <button v-if="isAdmin" @click="emit('issue')">
         <span class="em">📚</span><Bi text="Give out books" />

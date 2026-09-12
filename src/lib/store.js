@@ -45,6 +45,9 @@ export const state = reactive({
   problems: [],
   needsSetup: false,
 
+  // how many requests are waiting on a second person
+  pendingApprovals: 0,
+
   // true while showing the local copy, before the full table has arrived
   fromCache: false,
   ticketVersion: 0
@@ -310,6 +313,13 @@ export async function refresh() {
         state.overdue = (await api('report_overdue', {})).overdue
       })
     }
+
+    // Quiet on purpose: an older deployment has no approvals at all, and a
+    // missing action must not show up as a broken panel.
+    try {
+      const a = await api('list_approvals', { status: 'Pending' })
+      state.pendingApprovals = (a.requests || []).length
+    } catch { state.pendingApprovals = 0 }
 
     // Never the device clock: a phone running fast would set a cursor in the
     // future and silently skip every row written in between.

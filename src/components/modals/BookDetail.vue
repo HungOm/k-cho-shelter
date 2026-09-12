@@ -6,7 +6,7 @@ import Sheet from '../ui/Sheet.vue'
 import StatusPill from '../ui/StatusPill.vue'
 
 const props = defineProps({ book: Object })
-const emit = defineEmits(['close', 'settle', 'receipt', 'see-tickets'])
+const emit = defineEmits(['close', 'settle', 'receipt', 'see-tickets', 'sell-book'])
 const currency = computed(() => state.cfg?.currency || '')
 const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status))
 </script>
