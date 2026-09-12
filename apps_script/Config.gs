@@ -365,12 +365,22 @@ function findTicketRow(sheet, ticketNumber, cfg) {
   var idx = ticketIndex(ticketNumber, cfg);
   if (!idx) return 0;
 
+  // Compare against the canonical spelling, never against what the caller
+  // typed. ticketIndex is deliberately tolerant — "KS-3721" plainly means
+  // KS-03721, and refusing it would be unhelpful — so matching the raw input
+  // against the stored key misses, falls through to the scan, misses again,
+  // and logs SCHEMA_DRIFT on the way past. That alarm means "the sheet has
+  // been re-sorted and the arithmetic no longer holds", which is a serious
+  // thing to go looking for, and it was firing on a perfectly ordered sheet
+  // because somebody left off a leading zero.
+  var canonical = ticketNumberAt(idx, cfg);
+
   var fastRow = idx + 1; // +1 for the header row
   if (fastRow <= sheet.getLastRow()) {
     var probe = String(sheet.getRange(fastRow, 1).getValue() || '').trim();
-    if (probe.toUpperCase() === String(ticketNumber).trim().toUpperCase()) return fastRow;
+    if (probe.toUpperCase() === canonical.toUpperCase()) return fastRow;
   }
-  return scanForKey_(sheet, ticketNumber, 'ticket');
+  return scanForKey_(sheet, canonical, 'ticket');
 }
 
 function findBookRow(sheet, bookNumber, cfg) {
@@ -378,12 +388,14 @@ function findBookRow(sheet, bookNumber, cfg) {
   var idx = bookIndex(bookNumber, cfg);
   if (!idx) return 0;
 
+  var canonical = bookNumberAt(idx, cfg);   // same reason as findTicketRow
+
   var fastRow = idx + 1;
   if (fastRow <= sheet.getLastRow()) {
     var probe = String(sheet.getRange(fastRow, 1).getValue() || '').trim();
-    if (probe.toUpperCase() === String(bookNumber).trim().toUpperCase()) return fastRow;
+    if (probe.toUpperCase() === canonical.toUpperCase()) return fastRow;
   }
-  return scanForKey_(sheet, bookNumber, 'book');
+  return scanForKey_(sheet, canonical, 'book');
 }
 
 function scanForKey_(sheet, key, kind) {
