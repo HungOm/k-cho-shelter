@@ -19,6 +19,46 @@ export function bookNumber(raw) {
 
 const num = b => parseInt(String(b).replace(/\D/g, ''), 10)
 
+/**
+ * Whatever somebody typed, turned into the exact ticket number stored in the
+ * sheet — or null if it is not a real ticket.
+ *
+ * This matters more than it looks. It used to be copied into two components,
+ * and the settlement screen is one of them: that is the list of tickets an
+ * agent physically handed back, and anything NOT on it is counted as sold and
+ * charged to them. A "KS-3" that fails to match KS-00003 does not error — it
+ * quietly moves one ticket to the sold side and adds its price to what that
+ * volunteer owes.
+ *
+ * The server canonicalises now too, so this is belt and braces. It costs
+ * nothing and it keeps the screen honest about what it is about to send.
+ */
+export function resolveTicketNumber(raw) {
+  const cfg = state.cfg
+  if (!cfg) return null
+  const text = String(raw ?? '').trim()
+  if (!text) return null
+
+  // Exactly as stored, or the same but for case.
+  if (state.byNumber[text]) return text
+  const upper = text.toUpperCase()
+  if (state.byNumber[upper]) return upper
+
+  const digits = text.replace(/\D/g, '')
+  if (!digits) return null
+
+  // The canonical form: prefix plus the number padded to its full width.
+  const padded = cfg.ticketPrefix + digits.padStart(cfg.ticketDigits, '0')
+  if (state.byNumber[padded]) return padded
+
+  // Last resort, and only when it is unambiguous. Matching the first ticket
+  // whose digits merely END with what was typed would resolve "13" to KS-00013
+  // or KS-00113 depending on row order, which is exactly the kind of silent
+  // wrong answer this function exists to prevent.
+  const hits = state.tickets.filter(t => t.number.replace(/\D/g, '').endsWith(digits))
+  return hits.length === 1 ? hits[0].number : null
+}
+
 /** Turns [1,2,3,7,8] into "1–3 and 7–8" — a list of numbers is unreadable. */
 export function describeRuns(numbers) {
   if (!numbers.length) return ''
@@ -35,6 +75,17 @@ export function describeRuns(numbers) {
   if (parts.length === 1) return parts[0]
   if (parts.length === 2) return parts.join(' and ')
   return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]
+}
+
+/**
+ * "Pa Thang (Agent ID: A001)" — the same shape the server puts on a blocked
+ * line, so the warning you get before sending and the refusal you get back
+ * name the person the same way.
+ */
+export function holderLabel(book) {
+  const id = book.agentId || ''
+  const name = book.agentName || ''
+  return (name && id) ? `${name} (Agent ID: ${id})` : (name || id)
 }
 
 /**
@@ -68,7 +119,7 @@ export function inspectRange(from, to, isFree = b => b.status === 'Unassigned') 
     if (!book) { missing.push(n); continue }
     if (isFree(book)) { free.push(n); continue }
     taken.push(n)
-    const who = book.agentName || book.agentId || ''
+    const who = holderLabel(book)
     if (who) holders.set(who, (holders.get(who) || 0) + 1)
   }
 
