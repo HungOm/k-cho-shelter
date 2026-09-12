@@ -387,8 +387,25 @@ function handleCorrectTicket(payload, user) {
   if (!Object.keys(patch).length) {
     throw new ApiError('NOTHING_TO_DO', 'No changed fields were supplied.');
   }
-  if (patch.Status && !user.isAdmin && patch.Status === TICKET_STATUS.VOID) {
-    throw new ApiError('INSUFFICIENT_ROLE', 'Only an admin can void a ticket.');
+  // A status change is not an ordinary correction, and this is the field that
+  // makes correct_ticket dangerous: Void and Donated each have their own action
+  // with its own gate. void_ticket is super-admin-only, so allowing the same
+  // value through here was a way straight around that gate -- and it logged as
+  // CORRECT rather than VOID, so the audit trail did not show a ticket leaving
+  // the draw. Both statuses are now refused outright, for everyone.
+  if (patch.Status !== undefined) {
+    var nextStatus = String(patch.Status);
+    if (nextStatus === TICKET_STATUS.VOID) {
+      throw new ApiError('USE_VOID_ACTION',
+        'Voiding a ticket is done with the void action, not a correction.');
+    }
+    if (nextStatus === TICKET_STATUS.DONATED) {
+      throw new ApiError('USE_SELL_ACTION',
+        'A donated ticket is recorded when the sale is recorded, not by correction.');
+    }
+    if (!user.isAdmin) {
+      throw new ApiError('INSUFFICIENT_ROLE', 'Only an admin can change a ticket status.');
+    }
   }
 
   var version = writeTicketRow_(ctx.sheet, ctx.map, ctx.row, t, patch, user);

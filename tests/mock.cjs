@@ -1,6 +1,8 @@
 /* Minimal in-memory stand-in for the Apps Script services the code touches. */
 function makeSheet(name, headers, id){
-  const data=[headers.slice()];
+  // A sheet made with no headers models a freshly inserted tab: empty, and the
+  // first row appended becomes its header row, as in real Apps Script.
+  const data=headers.length?[headers.slice()]:[];
   const chain=new Proxy({},{get:()=>()=>chain});
   const sh={
     _data:data, getName:()=>name, setName:n=>{name=n;},
@@ -10,7 +12,8 @@ function makeSheet(name, headers, id){
     getConditionalFormatRules:()=>[], setConditionalFormatRules:()=>{},
     getLastRow:()=>{ let n=0; for(let i=0;i<data.length;i++) if(data[i] && data[i].some(c=>c!==''&&c!=null)) n=i+1; return n; },
     getLastColumn:()=>headers.length,
-    appendRow:r=>{ const row=new Array(headers.length).fill(''); r.forEach((v,i)=>row[i]=v); data.push(row); },
+    appendRow:r=>{ if(!headers.length) headers=r.slice();
+                   const row=new Array(Math.max(headers.length,r.length)).fill(''); r.forEach((v,i)=>row[i]=v); data.push(row); },
     getRange:(r,c,nr=1,nc=1)=>({
       getValues:()=>{ const out=[]; for(let i=0;i<nr;i++){ const row=data[r-1+i]||new Array(headers.length).fill('');
                        out.push(row.slice(c-1,c-1+nc)); } return out; },

@@ -28,6 +28,10 @@ function actionRegistry() {
     read_delta:            { fn: handleReadDelta,         roles: null, kind: 'read' },
     read_version:          { fn: handleReadVersion,       roles: null, kind: 'read' },
 
+    // ---- who may do what ----
+    list_permissions:      { fn: handleListPermissions,   roles: ADMIN_ONLY, sup: true, kind: 'read' },
+    set_permission:        { fn: handleSetPermission,     roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
+
     // --- tickets ---
     sell_ticket:           { fn: handleSellTicket,        roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'write', lock: true },
     reserve_ticket:        { fn: handleReserveTicket,     roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'write', lock: true },
@@ -65,6 +69,57 @@ function actionRegistry() {
     // --- winners ---
     record_winner:         { fn: handleRecordWinner,      roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
     list_winners:          { fn: handleListWinners,       roles: [ROLES.VIEWER, ROLES.RECORDER], kind: 'read' }
+  };
+}
+
+/**
+ * Labels for the permissions screen. Kept beside the registry rather than in it
+ * so the registry stays a list of gates, but out of it so the gates stay
+ * readable. `danger` marks the ones that take something away from somebody:
+ * money already recorded, or a ticket's place in the draw.
+ */
+function actionMeta() {
+  return {
+    whoami:                 { group: 'Basics',  label: 'Sign in' },
+    read_snapshot:          { group: 'Basics',  label: 'Load the tickets' },
+    read_delta:             { group: 'Basics',  label: 'Load what changed' },
+    read_version:          { group: 'Basics',  label: 'Check for changes' },
+
+    sell_ticket:            { group: 'Tickets', label: 'Record a sale' },
+    reserve_ticket:         { group: 'Tickets', label: 'Hold a ticket' },
+    release_ticket:         { group: 'Tickets', label: 'Let a held ticket go' },
+    correct_ticket:         { group: 'Tickets', label: 'Correct a sale', danger: true },
+    void_ticket:            { group: 'Tickets', label: 'Void a ticket', danger: true },
+    bulk_record_sales:      { group: 'Tickets', label: 'Record many sales at once' },
+
+    list_books:             { group: 'Books',   label: 'See the books' },
+    issue_books:            { group: 'Books',   label: 'Give books to a seller' },
+    transfer_books:         { group: 'Books',   label: 'Move books between sellers' },
+    return_books:           { group: 'Books',   label: 'Take books back' },
+    set_book_status:        { group: 'Books',   label: 'Mark a book lost, or reopen it', danger: true },
+    restock_books:          { group: 'Books',   label: 'Put unsold tickets back', danger: true },
+    handover_receipt:       { group: 'Books',   label: 'Print a handover receipt' },
+
+    settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },
+    report_outstanding:     { group: 'Money',   label: 'Who still owes money' },
+    agent_statement:        { group: 'Money',   label: "A seller's statement" },
+
+    list_agents:            { group: 'People',  label: 'See the sellers' },
+    upsert_agent:           { group: 'People',  label: 'Add or change a seller' },
+    list_users:             { group: 'People',  label: 'See who can sign in' },
+    upsert_user:            { group: 'People',  label: 'Add or change a user' },
+    set_user_status:        { group: 'People',  label: 'Turn an account on or off', danger: true },
+
+    report_overdue:         { group: 'Reports', label: 'Books that are late' },
+    report_missing_contact: { group: 'Reports', label: 'Tickets with no phone number' },
+    report_draw_ready:      { group: 'Reports', label: 'Is the draw ready' },
+    export_entries:         { group: 'Reports', label: 'Download the entry list', danger: true },
+    read_audit:             { group: 'Reports', label: 'The activity log' },
+    record_winner:          { group: 'Reports', label: 'Record a winner', danger: true },
+    list_winners:           { group: 'Reports', label: 'See the winners' },
+
+    list_permissions:       { group: 'Access',  label: 'See who can do what' },
+    set_permission:         { group: 'Access',  label: 'Change who can do what', danger: true }
   };
 }
 
@@ -131,7 +186,7 @@ function route_(req) {
     // nothing about the data.
     if (spec.pub) return jsonOut_({ ok: true, data: spec.fn(req.payload) });
 
-    var user = requireUser(req.idToken, spec.roles, spec.sup);
+    var user = requireUser(req.idToken, spec.roles, spec.sup, req.action);
     checkRateLimit(user.email, spec.kind || 'read');
 
     var result = spec.lock
