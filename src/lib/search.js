@@ -54,11 +54,18 @@ export function closeEnough(a, b) {
   return prev[n] <= 2
 }
 
-export function buildIndex(tickets, agentMap) {
+export function buildIndex(tickets, agentMap, bookHolders = {}) {
   return tickets.map(t => {
     const digits = t.number.replace(/\D/g, '')
     const name = fold(t.name)
+    const held = bookHolders[t.book.toUpperCase()] || null
     return {
+      // Who is holding the book this ticket is in — separate from who sold it.
+      // Searching a seller's name must find their whole stock, not only the
+      // part they have already sold.
+      held,
+      holderName: fold(held?.agentName || ''),
+      isOut: !!held?.out,
       t,
       digits,
       name,
@@ -110,12 +117,13 @@ export function scoreEntry(e, q, qDigits, bookRange) {
   if (!q) return 0
   if (e.name && e.name.includes(q)) return 60
   if (e.agentName && e.agentName.includes(q)) return 40
+  if (e.holderName && e.holderName.includes(q)) return 38
   if (e.zone && e.zone.includes(q)) return 30
   if (q.length >= 4 && e.nameTokens.some(tok => closeEnough(tok, q))) return 25
   return 0
 }
 
-export function runSearch(index, { query = '', status = '', agent = '', limit = 300 } = {}) {
+export function runSearch(index, { query = '', status = '', agent = '', where = '', limit = 300 } = {}) {
   const raw = query.trim()
   const q = fold(raw)
   const qDigits = raw.replace(/\D/g, '')
@@ -124,7 +132,11 @@ export function runSearch(index, { query = '', status = '', agent = '', limit = 
   const hits = []
   for (const e of index) {
     if (status && e.t.status !== status) continue
-    if (agent && e.t.agent !== agent) continue
+    // An agent filter means "anything to do with this person": tickets they
+    // sold, and tickets sitting in books they are holding.
+    if (agent && e.t.agent !== agent && e.held?.agentId !== agent) continue
+    if (where === 'out' && !e.isOut) continue
+    if (where === 'office' && e.isOut) continue
     if (!q && !bookRange) {
       hits.push({ e, score: 1 })
       if (hits.length > 600) break

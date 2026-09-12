@@ -11,7 +11,7 @@
  * A sold ticket nobody can telephone is a winner you cannot find.
  */
 import { ref, computed, nextTick, watch } from 'vue'
-import { state, optimistic, toast, setSellMode, agentMap } from '../lib/store.js'
+import { state, optimistic, toast, setSellMode, agentMap, whereIs } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
 import { money, STATUS_WORDS } from '../lib/format.js'
 import Sheet from './ui/Sheet.vue'
@@ -43,6 +43,7 @@ const phoneOk = computed(() => phoneDigits(phone.value).length >= 7)
 const canSell = computed(() => nameOk.value && phoneOk.value)
 
 const agent = computed(() => agentMap.value[t.value?.agent])
+const place = computed(() => whereIs(t.value))
 
 async function focusFirst() {
   await nextTick()
@@ -131,6 +132,17 @@ async function correct() {
 
 <template>
   <Sheet :title="t.number" :subtitle="`${t.book}${agent ? ' · ' + agent.name : ''}`" @close="emit('close')">
+
+    <!-- An unsold ticket in a book somebody is carrying is not free stock. It
+         is 200km away, and it may already have been sold on paper. -->
+    <div v-if="!done && place?.out && t.status === 'Available'" class="note warn">
+      <b>This one is with {{ place.agentName || place.agentId }}.</b>
+      The ticket itself is not here, and they may already have sold it without
+      writing it down. Check with them before selling it to anybody else.
+    </div>
+    <div v-else-if="!done && place?.status === 'Lost' && t.status !== 'Sold'" class="note bad">
+      <b>This book was reported lost.</b> The ticket cannot win.
+    </div>
 
     <!-- saved -->
     <div v-if="done" class="success">
