@@ -140,21 +140,55 @@ function seedConfig_() {
   sheet.setColumnWidth(3, 420);
 }
 
+var MAX_TOTAL_TICKETS = 50000;
+
+/**
+ * Whether the padding settings can still express the highest ticket and book
+ * number a given total implies.
+ *
+ * Shared by setup and by expandTickets, so a raise on a running raffle is held
+ * to exactly the rule a fresh project is held to. Widening the padding later is
+ * not an option — it renumbers every ticket already printed — so the only place
+ * this can be got right is before the tickets are made.
+ *
+ * Returns '' when it fits, otherwise the sentence saying what does not.
+ */
+function numberingFitProblem_(cfg, total) {
+  var start = cfgNum(cfg, 'TICKET_START', 1);
+  var per = cfgNum(cfg, 'TICKETS_PER_BOOK', 10);
+  var tDigits = cfgNum(cfg, 'TICKET_DIGITS', 4);
+  var bDigits = cfgNum(cfg, 'BOOK_DIGITS', 3);
+
+  var highest = start + total - 1;
+  if (String(highest).length > tDigits) {
+    return 'TICKET_DIGITS is ' + tDigits + ', too small for the highest ticket number ' +
+      highest + '. Use at least ' + String(highest).length + ' digits.';
+  }
+
+  // Never checked before this existed: a 1000-book raffle on BOOK_DIGITS=3
+  // throws nothing, it just prints Book-001 next to Book-1000.
+  var books = Math.ceil(total / per);
+  if (String(books).length > bDigits) {
+    return 'BOOK_DIGITS is ' + bDigits + ', too small for the highest book number ' +
+      books + '. Use at least ' + String(books).length + ' digits.';
+  }
+  return '';
+}
+
 function validateConfig_(cfg) {
   var total = cfgNum(cfg, 'TOTAL_TICKETS', 0);
   var per = cfgNum(cfg, 'TICKETS_PER_BOOK', 0);
   var digits = cfgNum(cfg, 'TICKET_DIGITS', 0);
-  var start = cfgNum(cfg, 'TICKET_START', 1);
 
-  if (total < 1 || total > 50000) throw new Error('TOTAL_TICKETS must be between 1 and 50000.');
+  if (total < 1 || total > MAX_TOTAL_TICKETS) {
+    throw new Error('TOTAL_TICKETS must be between 1 and ' + MAX_TOTAL_TICKETS + '.');
+  }
   if (per < 1 || per > 1000) throw new Error('TICKETS_PER_BOOK must be between 1 and 1000.');
   if (digits < 1 || digits > 10) throw new Error('TICKET_DIGITS must be between 1 and 10.');
 
-  var highest = start + total - 1;
-  if (String(highest).length > digits) {
-    throw new Error('TICKET_DIGITS is ' + digits + ', too small for the highest ticket number ' +
-      highest + '. Use at least ' + String(highest).length + ' digits.');
-  }
+  var fit = numberingFitProblem_(cfg, total);
+  if (fit) throw new Error(fit);
+
   if (cfgFloat(cfg, 'TICKET_PRICE', 0) <= 0) throw new Error('TICKET_PRICE must be greater than zero.');
 }
 
@@ -208,11 +242,11 @@ function generateTicketsAndBooks_(cfg, force) {
 }
 
 /** Writes large blocks in chunks so a 6000-row generate does not time out. */
-function writeInChunks_(sheet, rows) {
+function writeInChunks_(sheet, rows, startRow) {
   if (!rows.length) return;
   var CHUNK = 1000;
   var width = rows[0].length;
-  var startRow = 2;
+  startRow = startRow || 2;
   for (var i = 0; i < rows.length; i += CHUNK) {
     var slice = rows.slice(i, i + CHUNK);
     sheet.getRange(startRow + i, 1, slice.length, width).setValues(slice);
@@ -482,4 +516,200 @@ function showConfig() {
   lines.push('last ticket  = ' + ticketNumberAt(cfgNum(cfg, 'TOTAL_TICKETS', 0), cfg));
   Logger.log(lines.join('\n'));
   return lines.join('\n');
+}
+
+// ============ GROWING A RAFFLE THAT OUTGREW ITS RANGE ============
+/**
+ * Adding tickets to a raffle that is already running.
+ *
+ * Raising the total is safe in a way that lowering it never is. A ticket number
+ * is prefix + pad(start + i - 1, digits), and this moves none of those three
+ * inputs — so every ticket already printed keeps the number on the paper, every
+ * book keeps its range, and the only thing that happens is new rows on the end.
+ *
+ * Lowering is refused outright and always will be. ticketIndex() treats any
+ * position past TOTAL_TICKETS as "no such ticket", so a smaller total does not
+ * raise an error anywhere: it silently un-sells every ticket above the new line,
+ * including ones somebody has paid for.
+ *
+ * This is also the only sanctioned way to move a key in LOCKED_CONFIG_KEYS. It
+ * is allowed to because it re-stamps the numbering fingerprint itself, at the
+ * very end, once the rows the new total promises actually exist.
+ */
+function handleExpandTickets(payload, user) {
+  requireSuperAdmin_(user, 'Adding more tickets to a running raffle');
+
+  var cfg = getConfig();
+  var current = cfgNum(cfg, 'TOTAL_TICKETS', 0);
+  var per = cfgNum(cfg, 'TICKETS_PER_BOOK', 10);
+  var target = parseInt(requireField_(payload, 'totalTickets'), 10);
+
+  if (isNaN(target)) {
+    throw new ApiError('BAD_REQUEST', 'totalTickets must be a whole number.');
+  }
+
+  // --- the conditions, cheapest and most alarming first ---
+
+  if (target < current) {
+    throw new ApiError('CANNOT_SHRINK',
+      'The raffle has ' + current + ' tickets and cannot be reduced to ' + target + '. ' +
+      'Every ticket above ' + target + ' would stop existing, including ones already sold, ' +
+      'and nothing would report an error. Tickets can only be added.');
+  }
+  if (target === current) {
+    throw new ApiError('NO_CHANGE', 'The raffle already has ' + current + ' tickets.');
+  }
+  if (target > MAX_TOTAL_TICKETS) {
+    throw new ApiError('TOO_MANY',
+      'The most this system holds is ' + MAX_TOTAL_TICKETS + ' tickets.');
+  }
+
+  // A partial last book would have to be rewritten rather than appended to,
+  // which would take this out of append-only territory for one row.
+  if (current % per !== 0) {
+    throw new ApiError('PARTIAL_BOOK',
+      'The last book is not full: ' + current + ' tickets does not divide into books of ' +
+      per + '. Growing would have to rewrite that book rather than add to the end, ' +
+      'so it is refused. This raffle has to keep the range it started with.');
+  }
+
+  var fit = numberingFitProblem_(cfg, target);
+  if (fit) {
+    throw new ApiError('NUMBERING_TOO_SMALL', fit +
+      ' The padding cannot be widened now — that would renumber every ticket already ' +
+      'printed — so this raffle cannot grow that far.');
+  }
+
+  // The arithmetic that makes a ticket cost zero lookups assumes ticket i sits
+  // on row i+1. If the sheet has drifted from that, appending to the end would
+  // put new tickets on rows that do not match their numbers.
+  var ticketsSheet = sheet_(SHEET.TICKETS);
+  var booksSheet = sheet_(SHEET.BOOKS);
+  var currentBooks = totalBooks(cfg);
+  var ticketRows = Math.max(0, ticketsSheet.getLastRow() - 1);
+  var bookRows = Math.max(0, booksSheet.getLastRow() - 1);
+
+  if (ticketRows !== current || bookRows !== currentBooks) {
+    throw new ApiError('SHEET_DRIFT',
+      'The sheet does not match the settings: the Config tab says ' + current + ' tickets in ' +
+      currentBooks + ' books, but the sheet holds ' + ticketRows + ' ticket rows and ' +
+      bookRows + ' book rows. Adding to the end would put new tickets on the wrong rows. ' +
+      'Sort this out before growing the raffle.');
+  }
+
+  var newBooks = Math.ceil(target / per);
+  var addedTickets = target - current;
+  var addedBooks = newBooks - currentBooks;
+
+  // --- preview by default, like every other wide operation here ---
+  var dryRun = payload.dryRun === undefined ? true : !!payload.dryRun;
+  if (dryRun) {
+    return {
+      dryRun: true,
+      from: current, to: target,
+      addedTickets: addedTickets, addedBooks: addedBooks,
+      firstNewTicket: ticketNumberAt(current + 1, cfg),
+      lastNewTicket: ticketNumberAt(target, cfg),
+      firstNewBook: bookNumberAt(currentBooks + 1, cfg),
+      lastNewBook: bookNumberAt(newBooks, cfg),
+      unchanged: 'Tickets ' + ticketNumberAt(1, cfg) + ' to ' + ticketNumberAt(current, cfg) +
+        ' keep the numbers they were printed with.',
+      message: 'Nothing was changed. Send the same request with dryRun:false and ' +
+        'confirm:"' + target + '" to apply it.'
+    };
+  }
+
+  // Typing the number back is the last thing between a slip of the finger and
+  // four thousand rows.
+  if (String(payload.confirm || '') !== String(target)) {
+    throw new ApiError('CONFIRM_REQUIRED',
+      'Send confirm:"' + target + '" to add ' + addedTickets + ' tickets.');
+  }
+
+  // --- rows first, settings last ---
+  // If this dies halfway the sheet carries rows the app cannot see, because
+  // ticketIndex stops at TOTAL_TICKETS, and running it again finishes the job.
+  // Writing the setting first would leave a raffle promising tickets that do
+  // not exist, which is the failure that cannot be walked back.
+
+  var tMap = {};
+  for (var c = 0; c < COLS.TICKETS.length; c++) tMap[COLS.TICKETS[c]] = c;
+  var tRows = [];
+  for (var i = current + 1; i <= target; i++) {
+    var row = new Array(COLS.TICKETS.length).fill('');
+    row[tMap.Ticket_Number] = ticketNumberAt(i, cfg);
+    row[tMap.Status] = TICKET_STATUS.AVAILABLE;
+    row[tMap.Book_Number] = bookNumberAt(Math.ceil(i / per), cfg);
+    row[tMap.Version] = 1;
+    tRows.push(row);
+  }
+  writeInChunks_(ticketsSheet, tRows, current + 2);
+
+  var bRows = [];
+  for (var b = currentBooks + 1; b <= newBooks; b++) {
+    var br = new Array(COLS.BOOKS.length).fill('');
+    br[0] = bookNumberAt(b, cfg);
+    br[1] = ticketNumberAt((b - 1) * per + 1, cfg);
+    br[2] = ticketNumberAt(Math.min(b * per, target), cfg);
+    br[3] = BOOK_STATUS.UNASSIGNED;
+    br[13] = 1;
+    bRows.push(br.slice(0, 16));
+  }
+  writeInChunks_(booksSheet, bRows, currentBooks + 2);
+  SpreadsheetApp.flush();
+
+  // Now the rows exist, the setting may name them, and the fingerprint may
+  // bless the setting. In that order.
+  setConfigValue_('TOTAL_TICKETS', target);
+  restampNumberingFingerprint_();
+
+  // The variance highlight was ranged to the last row it found at install
+  // time, so without this the new books never turn red on a mismatch.
+  reapplyVarianceHighlight_();
+
+  bumpBookCacheVersion();
+  logAudit('EXPAND_TICKETS', {
+    from: current, to: target, addedTickets: addedTickets, addedBooks: addedBooks
+  }, user.email);
+
+  return {
+    from: current, to: target,
+    addedTickets: addedTickets, addedBooks: addedBooks,
+    firstNewTicket: ticketNumberAt(current + 1, cfg),
+    lastNewTicket: ticketNumberAt(target, cfg),
+    firstNewBook: bookNumberAt(currentBooks + 1, cfg),
+    lastNewBook: bookNumberAt(newBooks, cfg)
+  };
+}
+
+/**
+ * Re-ranges the red "declared and recorded disagree" highlight over every book
+ * row, replacing the bounded rule installed at setup rather than stacking a
+ * second one on top of it.
+ */
+function reapplyVarianceHighlight_() {
+  var sheet = sheet_(SHEET.BOOKS);
+  var map = headerMap(sheet);
+  var col = map.Variance_Amount;
+  if (!col) return;
+
+  var kept = [];
+  var rules = sheet.getConditionalFormatRules();
+  for (var i = 0; i < rules.length; i++) {
+    var ranges = rules[i].getRanges();
+    var touchesVariance = false;
+    for (var r = 0; r < ranges.length; r++) {
+      if (ranges[r].getColumn() === col) { touchesVariance = true; break; }
+    }
+    if (!touchesVariance) kept.push(rules[i]);
+  }
+
+  var lastRow = Math.max(2, sheet.getLastRow());
+  kept.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenNumberNotEqualTo(0)
+    .setBackground('#fee2e2')
+    .setFontColor('#991b1b')
+    .setRanges([sheet.getRange(2, col, lastRow - 1, 1)])
+    .build());
+  sheet.setConditionalFormatRules(kept);
 }

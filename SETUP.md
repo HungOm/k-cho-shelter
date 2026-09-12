@@ -133,10 +133,10 @@ address in it, not a shared mailbox.
    |---|---|---|
    | `TICKET_PREFIX` | `KS-` | whatever goes before the number, or blank |
    | `TICKET_START` | `1` | the first ticket number |
-   | `TICKET_DIGITS` | `4` | padding — `4` gives `KS-0001` |
-   | `TOTAL_TICKETS` | `6000` | how many tickets you are printing |
+   | `TICKET_DIGITS` | `5` | padding — `5` gives `KS-00001` |
+   | `TOTAL_TICKETS` | `10000` | how many tickets you are printing |
    | `TICKETS_PER_BOOK` | `10` | how many in one physical book |
-   | `BOOK_PREFIX` / `BOOK_DIGITS` | `Book-` / `3` | `Book-001` |
+   | `BOOK_PREFIX` / `BOOK_DIGITS` | `Book-` / `4` | `Book-0001` |
    | `TICKET_PRICE` | `10` | price of one ticket |
    | `CURRENCY` | `RM` | |
    | `DEFAULT_DUE_DAYS` | `30` | how long agents keep books |
@@ -147,6 +147,33 @@ address in it, not a shared mailbox.
 
 > `regenerate` refuses to run once any ticket has been sold. At that point the printed tickets in
 > people's hands are the real record, and renumbering would disconnect every one of them.
+
+**Pick the padding for the raffle you might end up with, not the one you are printing.**
+`TICKET_DIGITS` and `BOOK_DIGITS` are the two settings that can never be changed afterwards — widening
+them renumbers every ticket already printed. The defaults above leave room to grow to 10,000 tickets
+in 1,000 books. If there is any chance of going further, set them higher now; it costs nothing.
+
+### Growing a raffle that is already running
+
+If the project expands after tickets are out, the super admin can add more — `expand_tickets`. It only
+ever adds. A total can never be reduced, because every ticket above a lowered line would quietly stop
+existing, including ones already paid for.
+
+It previews first. Send the new total and read back what it would do; nothing is written until you send
+it again with `dryRun: false` and the new total typed into `confirm`.
+
+Tickets already printed keep the numbers they were printed with — a ticket number is worked out from
+the prefix, the start and the padding, and none of those move. Only new rows are added on the end.
+
+It refuses, with an explanation, when:
+
+| | |
+|---|---|
+| the new total is lower than, or the same as, the current one | tickets would stop existing |
+| the padding cannot express the new highest ticket or book number | widening it would renumber everything |
+| the last book is not full (e.g. 6,005 tickets in books of 10) | that book would have to be rewritten, not added to |
+| the sheet no longer matches the Config tab | new rows would land on the wrong lines |
+| the new total is above 50,000 | the ceiling for one spreadsheet |
 
 ---
 
