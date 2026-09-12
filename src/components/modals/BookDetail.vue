@@ -34,6 +34,7 @@ const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status)
 
     <template #actions>
       <button class="btn" @click="emit('see-tickets', book)">See its tickets</button>
+      <button v-if="book.available" class="btn" @click="emit('sell-book', book)">Sell it whole</button>
       <button v-if="isAdmin && canSettle" class="btn primary" @click="emit('settle', book)">Count it in</button>
       <button v-else-if="isAdmin && book.agentId" class="btn" @click="emit('receipt', book.agentId)">Receipt</button>
       <button v-else class="btn" @click="emit('close')">Close</button>

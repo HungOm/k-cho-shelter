@@ -70,7 +70,11 @@ async function go() {
     // The server decides this needs a second person; it also wrote the sentence
     // the approver will read, so we hand its own summary straight back.
     if (err.code === 'APPROVAL_REQUIRED') {
-      emit('needs-approval', { action: call[0], payload: call[1], summary: err.details?.summary || err.message })
+      emit('needs-approval', {
+        action: call[0], payload: call[1],
+        summary: err.details?.summary || err.message,
+        detail: err.details?.detail || null
+      })
       return
     }
     if (err.code === 'TRANSFER_BLOCKED' && err.details?.blocked) blocked.value = err.details.blocked

@@ -323,6 +323,7 @@ function seeTickets(book) {
                 @close="closeModal"
                 @settle="b => openModal('settle', b)"
                 @receipt="id => openModal('receipt', id)"
+                @sell-book="b => openModal('sellbook', b)"
                 @see-tickets="seeTickets" />
     <SettleBook v-else-if="modal?.kind === 'settle'" :book="modal.payload"
                 @close="closeModal" @settled="afterBookChange" />
