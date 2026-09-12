@@ -174,7 +174,7 @@ console.log('raising the total by hand is explained, not just refused');
   eq(e.code, 'NUMBERING_CHANGED', 'it is still refused');
   ok(/no ticket rows were created/.test(e.message),
     'the message says what is actually wrong — the rows do not exist');
-  ok(/Add more tickets/.test(e.message), 'and names the tool that does it properly');
+  ok(/Make more tickets/.test(e.message), 'and names the screen that does it properly');
   eq(e.details.fixBySetting, '100', 'details carry the value to restore');
   eq(e.details.useAction, 'expand_tickets', 'and the action to use instead');
 
@@ -187,7 +187,7 @@ console.log('raising the total by hand is explained, not just refused');
   setConfig('TICKET_PREFIX', 'CS-');
   const e2 = errOf(() => assertNumberingUnchanged_());
   eq(e2.code, 'NUMBERING_CHANGED', 'a prefix change is still refused');
-  ok(!/Add more tickets/.test(e2.message),
+  ok(!/Make more tickets/.test(e2.message),
     'and is not mistaken for an attempt to release tickets');
 
   // Lowering TOTAL_TICKETS by hand is not the friendly case either — it is the
@@ -195,7 +195,7 @@ console.log('raising the total by hand is explained, not just refused');
   world(100, 20000);
   setConfig('TOTAL_TICKETS', '50');
   const e3 = errOf(() => assertNumberingUnchanged_());
-  ok(!/Add more tickets/.test(e3.message), 'lowering is not treated as a release attempt');
+  ok(!/Make more tickets/.test(e3.message), 'lowering is not treated as a release attempt');
 }
 
 // ============ 6. a sanctioned release leaves the raffle writable ============
