@@ -36,12 +36,15 @@ var APPROVAL_STATUS = {
 // ============ WHAT NEEDS TWO PEOPLE ============
 
 /**
- * The summary is generated HERE, at request time, and stored on the row — so
- * the sentence the approver reads is written by the same code that decides
- * whether approval is needed. Deriving it again in the browser would let the
+ * Decides whether an action needs two people, and if so writes the sentence the
+ * approver will read — HERE, at request time, so the words come from the same
+ * code that made the decision. Deriving them again in the browser would let the
  * two drift, and the drift would only show up on the day it mattered.
  *
- * Returns '' when the action can just be done.
+ * Returns '' when the action can just be done, otherwise
+ * `{ text, kind, ...facts }`. The facts are the same sentence in pieces, so a
+ * client can compose it in another language without parsing English prose. The
+ * stored `text` stays the record of what was actually approved.
  */
 function approvalSummaryFor_(action, payload) {
   payload = payload || {};
@@ -53,26 +56,47 @@ function approvalSummaryFor_(action, payload) {
     var status = String(payload.status || '');
     var books = expandBookRange_(payload, getConfig());
     if (books.length <= 1) return '';
-    var tail = (status === BOOK_STATUS.LOST || status === BOOK_STATUS.VOID)
-      ? ' Unsold tickets in them are voided and leave the draw.'
-      : '';
-    return 'Mark ' + books.length + ' books as ' + status + ' — ' +
-      books[0] + ' to ' + books[books.length - 1] + '.' + tail;
+    var voids = (status === BOOK_STATUS.LOST || status === BOOK_STATUS.VOID);
+    var tail = voids ? ' Unsold tickets in them are voided and leave the draw.' : '';
+    return {
+      kind: 'set_book_status',
+      books: books.length,
+      firstBook: books[0],
+      lastBook: books[books.length - 1],
+      status: status,
+      voidsTickets: voids,
+      tickets: books.length * cfgNum(getConfig(), 'TICKETS_PER_BOOK', 10),
+      text: 'Mark ' + books.length + ' books as ' + status + ' — ' +
+        books[0] + ' to ' + books[books.length - 1] + '.' + tail
+    };
   }
 
   if (action === 'restock_books') {
     var r = expandBookRange_(payload, getConfig());
     if (!r.length) return '';
-    return 'Put ' + r.length + ' book' + (r.length === 1 ? '' : 's') +
-      ' back on the shelf — ' + r[0] +
-      (r.length > 1 ? ' to ' + r[r.length - 1] : '') +
-      '. The settlement figures already recorded against ' +
-      (r.length === 1 ? 'it' : 'them') + ' are cleared.';
+    return {
+      kind: 'restock_books',
+      books: r.length,
+      firstBook: r[0],
+      lastBook: r[r.length - 1],
+      text: 'Put ' + r.length + ' book' + (r.length === 1 ? '' : 's') +
+        ' back on the shelf — ' + r[0] +
+        (r.length > 1 ? ' to ' + r[r.length - 1] : '') +
+        '. The settlement figures already recorded against ' +
+        (r.length === 1 ? 'it' : 'them') + ' are cleared.'
+    };
   }
 
   if (action === 'settle_book' && payload.force) {
-    return 'Settle ' + String(payload.bookNumber || 'a book') +
-      ' again, over a settlement that is already recorded.';
+    var bn = String(payload.bookNumber || '');
+    return {
+      kind: 'resettle_book',
+      books: 1,
+      firstBook: bn,
+      lastBook: bn,
+      text: 'Settle ' + (bn || 'a book') +
+        ' again, over a settlement that is already recorded.'
+    };
   }
 
   return '';
@@ -113,10 +137,13 @@ function readPendingRaw_() {
 }
 
 function approvalToWire_(r) {
+  var detail = null;
+  if (r.Detail) { try { detail = JSON.parse(r.Detail); } catch (e) { detail = null; } }
   return {
     requestId: String(r.Request_ID),
     action: String(r.Action),
     summary: String(r.Summary || ''),
+    detail: detail,
     requestedBy: String(r.Requested_By || ''),
     requestedAt: toIso_(r.Requested_At),
     expiresAt: toIso_(r.Expires_At),
@@ -166,10 +193,11 @@ function handleRequestApproval(payload, user) {
     throw new ApiError('INSUFFICIENT_ROLE', 'Your role (' + user.role + ') cannot do this.');
   }
 
-  var summary = approvalSummaryFor_(action, inner);
-  if (!summary) {
+  var need = approvalSummaryFor_(action, inner);
+  if (!need) {
     throw new ApiError('NOTHING_TO_DO', 'That action does not need anybody else to approve it.');
   }
+  var summary = need.text;
 
   var json = JSON.stringify(inner);
   if (json.length > APPROVAL_PAYLOAD_MAX) {
@@ -188,6 +216,9 @@ function handleRequestApproval(payload, user) {
   row[map.Action - 1] = action;
   row[map.Payload - 1] = json;
   row[map.Summary - 1] = summary;
+  // Tolerated as absent: a Pending tab made before this column existed still
+  // works, it just cannot be re-rendered in another language.
+  if (map.Detail) row[map.Detail - 1] = JSON.stringify(need);
   row[map.Requested_By - 1] = user.email;
   row[map.Requested_At - 1] = now;
   row[map.Expires_At - 1] = expires;
@@ -199,6 +230,7 @@ function handleRequestApproval(payload, user) {
     requestId: requestId,
     action: action,
     summary: summary,
+    detail: need,
     expiresAt: expires.toISOString()
   };
 }
