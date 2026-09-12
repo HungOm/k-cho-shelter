@@ -140,22 +140,22 @@ export const attention = computed(() => {
   const open = (state.bookStats.Out || 0) + (state.bookStats.Returned || 0)
 
   if (late) items.push({
-    key: 'overdue', tone: 'bad', icon: '⏰',
+    key: 'overdue', tone: 'bad', icon: 'clock',
     title: `${late} book${late === 1 ? '' : 's'} not returned`,
     detail: 'Past the date they were due back', go: 'agents'
   })
   if (o.missingContact) items.push({
-    key: 'contact', tone: 'bad', icon: '📵',
+    key: 'contact', tone: 'bad', icon: 'phoneOff',
     title: `${o.missingContact} ticket${o.missingContact === 1 ? '' : 's'} with no phone number`,
     detail: 'You could not tell these people if they win', go: 'draw'
   })
   if (o.outstanding > 0) items.push({
-    key: 'money', tone: 'warn', icon: '💰',
+    key: 'money', tone: 'warn', icon: 'money',
     title: `${o.currency} ${o.outstanding.toFixed(2)} not handed in yet`,
     detail: 'Sold, but the money has not come back', go: 'money'
   })
   if (open) items.push({
-    key: 'open', tone: '', icon: '📚',
+    key: 'open', tone: '', icon: 'books',
     title: `${open} book${open === 1 ? '' : 's'} still out`,
     detail: 'With agents, or waiting to be counted', go: 'books'
   })
