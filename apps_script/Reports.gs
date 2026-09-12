@@ -14,7 +14,21 @@
  * one of them ever feeds the total.
  */
 
-var DECLARED_STATUSES = [BOOK_STATUS.SETTLED, BOOK_STATUS.LOST];
+/**
+ * Deliberately a function rather than a top-level array.
+ *
+ * BOOK_STATUS is declared in Config.gs, and Apps Script concatenates .gs files
+ * in whatever order the project holds them — not alphabetically, and not in an
+ * order this file controls. Evaluated at load time, [BOOK_STATUS.SETTLED,
+ * BOOK_STATUS.LOST] silently becomes [undefined, undefined] if Reports.gs is
+ * ever placed first, and nothing throws: settled and lost books would simply
+ * stop matching, and start counting toward the total on recorded figures
+ * instead of declared ones. A money bug with no error message. Resolved at call
+ * time, the order cannot matter.
+ */
+function declaredStatuses_() {
+  return [BOOK_STATUS.SETTLED, BOOK_STATUS.LOST];
+}
 
 /** Loads tickets once and groups them by book. */
 function ticketsByBook_() {
@@ -67,7 +81,7 @@ function buildBookLedger_() {
     var b = books[i];
     var key = String(b.Book_Number).toUpperCase();
     var recorded = summariseTickets_(data.byBook[key] || [], price);
-    var useDeclared = DECLARED_STATUSES.indexOf(String(b.Status)) !== -1;
+    var useDeclared = declaredStatuses_().indexOf(String(b.Status)) !== -1;
 
     var declaredSold = parseInt(b.Declared_Sold, 10) || 0;
     var amountDue = parseFloat(b.Amount_Due);
