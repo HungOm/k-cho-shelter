@@ -105,8 +105,9 @@ Two kinds of toggle are shown but cannot be moved, and the server refuses them t
 super-admin-only features, which cannot be given away at all, and user management, which
 always stays with organisers because turning it off would lock everybody out.
 
-**Destructive changes need two people.** Small fixes go through directly. Anything that
-cancels tickets across a range of books is refused, and the person is offered "Ask the
+**Destructive changes need two people.** Small fixes go through directly. Three things do
+not: marking a run of books lost or void, putting books back on the shelf, and settling a
+book that is already settled. Each is refused, and the person is offered "Ask the
 organiser". The sentence the approver reads is written by the server — by the same code
 that executes it — so what is approved is what happens, and approving carries it out
 immediately in the requester's name. Requests lapse after a day.
