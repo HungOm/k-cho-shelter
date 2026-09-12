@@ -135,6 +135,27 @@ function actionMeta() {
   };
 }
 
+/**
+ * Writes that provably never touch the Tickets sheet.
+ *
+ * The ticket cache is invalidated after every write, deliberately bluntly —
+ * a missed invalidation offers somebody a ticket that is already sold, which is
+ * far worse than a wasted one. But blunt had a cost worth removing: adding a
+ * seller threw away the whole cached ticket table, so the next screen re-read
+ * six thousand rows to show a name that has nothing to do with tickets.
+ *
+ * Only actions that touch people, permissions, approvals or book bookkeeping
+ * are listed. Anything that reaches a ticket — directly, or through
+ * settleTicketRows_, releaseReservedInBook_ or voidUnsoldInBook_ — is left off,
+ * and a test re-derives this list from the source so it cannot go stale
+ * quietly.
+ */
+var NO_TICKET_WRITES = [
+  'upsert_agent', 'upsert_user', 'set_user_status', 'set_permission',
+  'request_approval', 'cancel_approval', 'record_winner',
+  'issue_books', 'transfer_books'
+];
+
 // ============ ENTRY POINTS ============
 
 function doGet(e) {
@@ -220,7 +241,10 @@ function route_(req) {
     // been sold, so every successful write invalidates it -- including the few
     // that touch no tickets at all. An unnecessary bump costs one sheet read;
     // a missed one costs the raffle its integrity.
-    if (spec.kind === 'write' || spec.kind === 'bulk') bumpTicketCacheVersion();
+    if ((spec.kind === 'write' || spec.kind === 'bulk') &&
+        NO_TICKET_WRITES.indexOf(req.action) === -1) {
+      bumpTicketCacheVersion();
+    }
 
     return jsonOut_({ ok: true, data: result });
 
