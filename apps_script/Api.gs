@@ -45,6 +45,7 @@ function actionRegistry() {
     correct_ticket:        { fn: handleCorrectTicket,     roles: [ROLES.RECORDER], kind: 'write', lock: true },
     void_ticket:           { fn: handleVoidTicket,        roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
     bulk_record_sales:     { fn: handleBulkRecordSales,   roles: [ROLES.RECORDER], kind: 'bulk', lock: true },
+    sell_book:             { fn: handleSellBook,          roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'bulk', lock: true },
 
     // --- books ---
     list_books:            { fn: handleListBooks,         roles: null, kind: 'read' },
@@ -97,6 +98,7 @@ function actionMeta() {
     correct_ticket:         { group: 'Tickets', label: 'Correct a sale', danger: true },
     void_ticket:            { group: 'Tickets', label: 'Void a ticket', danger: true },
     bulk_record_sales:      { group: 'Tickets', label: 'Record many sales at once' },
+    sell_book:              { group: 'Tickets', label: 'Sell a whole book to one buyer' },
 
     list_books:             { group: 'Books',   label: 'See the books' },
     issue_books:            { group: 'Books',   label: 'Give books to a seller' },
