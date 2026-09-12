@@ -11,6 +11,7 @@ import { ref, computed } from 'vue'
 import { state, api, toast, refresh, loadDelta } from '../../lib/store.js'
 import { inspectRange, bookNumber } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
+import FreeRuns from '../ui/FreeRuns.vue'
 
 const props = defineProps({ kind: String })   // 'transfer' | 'return' | 'mark'
 const emit = defineEmits(['close', 'done', 'needs-approval'])
@@ -40,6 +41,11 @@ const TITLES = {
 }
 const title = computed(() => TITLES[props.kind][0])
 const subtitle = computed(() => TITLES[props.kind][1])
+
+function useRun(r) {
+  from.value = String(r.from)
+  to.value = r.count <= 50 ? String(r.to) : ''
+}
 
 async function go() {
   if (!from.value) return toast('Which books?', 'bad')
@@ -88,6 +94,11 @@ async function go() {
     <div v-if="kind === 'mark'" class="note warn">
       This cancels every unsold ticket in those books so they cannot win. Sold tickets are untouched.
     </div>
+
+    <!-- Transfer and bring-back only make sense for books already out, so the
+         runs shown are the ones out with somebody, not the ones on the shelf. -->
+    <FreeRuns v-if="kind !== 'mark'" :is-free="isRelevant"
+              label="Out now" noun="out with sellers" @pick="useRun" />
 
     <div class="row">
       <div class="field grow">

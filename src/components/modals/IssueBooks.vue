@@ -5,6 +5,7 @@ import { state, api, toast, refresh } from '../../lib/store.js'
 import { money } from '../../lib/format.js'
 import { inspectRange, bookNumber } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
+import FreeRuns from '../ui/FreeRuns.vue'
 
 const emit = defineEmits(['close', 'issued'])
 
@@ -26,6 +27,17 @@ function defaultDue() {
 const range = computed(() => inspectRange(from.value, to.value))
 const count = computed(() => range.value?.count || 0)
 const canIssue = computed(() => !!range.value && !range.value.noneFree)
+
+/**
+ * Tapping a run fills the first box always, and the second only when the run is
+ * small enough to be a plausible single handover. Filling "to" with 2000 from a
+ * 1,400-book run would put a number in front of them that the server refuses
+ * anyway — the cap is 300 — so the end is left for them to decide.
+ */
+function useRun(r) {
+  from.value = String(r.from)
+  to.value = r.count <= 50 ? String(r.to) : ''
+}
 
 /** Offer the first run big enough, so nobody has to hunt for free books. */
 function useSuggestion() {
@@ -67,10 +79,13 @@ async function issue() {
       <label for="ia">Who is taking them? <span class="req">*</span></label>
       <select id="ia" v-model="agentId">
         <option v-for="a in state.agents.filter(x => x.active)" :key="a.id" :value="a.id">
-          {{ a.name }}<template v-if="a.booksOut"> — already has {{ a.booksOut }}</template>
+          {{ a.name }}<template v-if="a.booksOut"> — holding {{ a.booksOut }}
+            {{ a.booksOut === 1 ? 'book' : 'books' }}</template>
         </option>
       </select>
     </div>
+
+    <FreeRuns @pick="useRun" />
 
     <div class="row">
       <div class="field grow">

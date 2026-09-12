@@ -333,6 +333,10 @@ function handleWhoami(payload, user) {
       ticketDigits: cfgNum(cfg, 'TICKET_DIGITS', 4),
       ticketStart: cfgNum(cfg, 'TICKET_START', 1),
       totalTickets: cfgNum(cfg, 'TOTAL_TICKETS', 0),
+      // The planned final size, so the release screen can show how much is left
+      // to come and stop offering steps that would go past it. Zero means no
+      // ceiling was set. The server still refuses ABOVE_CEILING regardless.
+      ticketCeiling: cfgNum(cfg, 'TICKET_CEILING', 0),
       ticketsPerBook: cfgNum(cfg, 'TICKETS_PER_BOOK', 10),
       bookPrefix: cfg.BOOK_PREFIX,
       bookDigits: cfgNum(cfg, 'BOOK_DIGITS', 3),

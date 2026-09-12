@@ -156,6 +156,47 @@ function buildMessage(taken, missing, free, holders, count) {
   return parts.join(' ')
 }
 
+/**
+ * Every unbroken run of free books.
+ *
+ * Deliberately runs and not numbers. Roughly 1,780 of 2,000 books are free at
+ * the start, and a list of 1,780 numbers tells nobody anything. Four runs tell
+ * them everything, and a run is also how books are actually handed over — one
+ * unbroken stretch to one person.
+ *
+ * "Free" is status Unassigned only. A Returned or Settled book is physically
+ * back in the office but cannot be handed out again until it is restocked, and
+ * offering it here would produce a refusal at save time — which is exactly the
+ * wasted typing this is meant to remove.
+ */
+export function freeRuns(isFree = b => b.status === 'Unassigned') {
+  if (!state.books.length) return { runs: [], total: 0 }
+  const sorted = [...state.books].sort((x, y) => num(x.book) - num(y.book))
+  const runs = []
+  let start = null, prev = null, total = 0
+
+  for (const book of sorted) {
+    const n = num(book.book)
+    if (isFree(book)) {
+      total++
+      if (start === null) { start = prev = n; continue }
+      if (n === prev + 1) { prev = n; continue }
+      runs.push({ from: start, to: prev, count: prev - start + 1 })
+      start = prev = n
+    } else if (start !== null) {
+      runs.push({ from: start, to: prev, count: prev - start + 1 })
+      start = prev = null
+    }
+  }
+  if (start !== null) runs.push({ from: start, to: prev, count: prev - start + 1 })
+  return { runs, total }
+}
+
+/** "1–30", or just "77" when the run is a single book. */
+export function runLabel(r) {
+  return r.from === r.to ? String(r.from) : `${r.from}–${r.to}`
+}
+
 /** The first run of this many consecutive free books, so nobody has to guess. */
 export function nextFreeRun(size, isFree = b => b.status === 'Unassigned') {
   if (!size || !state.books.length) return null
