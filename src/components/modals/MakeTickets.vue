@@ -1,10 +1,12 @@
 <script setup>
 /**
- * Releasing the next batch of tickets.
+ * Creating ticket rows that do not exist yet.
  *
- * Framed as RELEASING, never "adding". Tickets cannot be taken away again —
- * shrinking is refused — so a word that sounds reversible would be a lie at the
- * exact moment somebody is deciding.
+ * Not to be confused with TicketsInPlay, which is the one people will actually
+ * use. That moves a line and can be moved back; this writes rows and cannot be
+ * undone. The two were briefly the same idea and the words still want to blur,
+ * so this screen says MAKE throughout and never "release" — release now means
+ * putting existing tickets into play, which is the reversible one.
  *
  * The flow is preview first, always: ask the server what it would do, show the
  * ticket range in words, and only then let them type the number back to
@@ -25,7 +27,12 @@ const busy = ref(false)
 const done = ref(false)
 
 const cfg = computed(() => state.cfg)
-const current = computed(() => cfg.value?.totalTickets || 0)
+// Expansion creates ROWS, so it counts from what has been generated — not from
+// what is in play. These are different numbers now: a raffle can have 20,000
+// made with 10,000 sellable, and expanding from 10,000 would refuse as
+// CANNOT_SHRINK while looking to the reader like it should obviously work.
+const current = computed(() => cfg.value?.generatedTickets ?? cfg.value?.totalTickets ?? 0)
+const inPlay = computed(() => cfg.value?.totalTickets || 0)
 const ceiling = computed(() => cfg.value?.ticketCeiling || 0)
 const headroom = computed(() => ceiling.value ? ceiling.value - current.value : null)
 const perBook = computed(() => cfg.value?.ticketsPerBook || 10)
@@ -56,9 +63,9 @@ function explain(err) {
       return `This raffle is planned to end at ${Number(d.ceiling).toLocaleString()} tickets, ` +
              `and ${Number(d.requested).toLocaleString()} is past that. If the plan really has ` +
              `changed, the ceiling is set in the Config tab — but check the number first, ` +
-             `because releasing cannot be undone.`
+             `because making tickets cannot be undone.`
     case 'CANNOT_SHRINK':
-      return 'Tickets cannot be taken back once they exist. You can only go up.'
+      return 'Ticket rows cannot be removed once they exist. This can only go up.'
     case 'NO_CHANGE':
       return 'That is the number you already have.'
     case 'PARTIAL_BOOK':
@@ -111,46 +118,55 @@ async function release() {
 </script>
 
 <template>
-  <Sheet title="Release more tickets"
-         subtitle="Bring the next batch into the raffle" @close="emit('close')">
+  <Sheet title="Make more tickets"
+         subtitle="Create new ticket rows that do not exist yet" @close="emit('close')">
 
     <!-- done -->
     <template v-if="done">
       <div class="ok">
         <div class="tick">✓</div>
-        <h2>{{ preview.addedTickets.toLocaleString() }} tickets released</h2>
+        <h2>{{ preview.addedTickets.toLocaleString() }} tickets made</h2>
         <p class="muted">
           {{ preview.firstNewTicket }} to {{ preview.lastNewTicket }},
           in {{ preview.addedBooks }} new {{ preview.addedBooks === 1 ? 'book' : 'books' }}
           ({{ preview.firstNewBook }}–{{ preview.lastNewBook }})
         </p>
       </div>
-      <div class="note info">These are ready to hand out. Print them before you do.</div>
+      <div class="note info">
+        These now exist and are in play. Print them before you hand them out.
+      </div>
     </template>
 
     <template v-else>
       <div class="now">
-        <div><span>Live now</span><b>{{ current.toLocaleString() }}</b></div>
+        <div><span>Made so far</span><b>{{ current.toLocaleString() }}</b></div>
+        <div v-if="inPlay < current"><span>Of those, in play</span><b>{{ inPlay.toLocaleString() }}</b></div>
         <div v-if="ceiling">
           <span>Planned total</span><b>{{ ceiling.toLocaleString() }}</b>
         </div>
         <div v-if="headroom !== null">
-          <span>Still to release</span><b>{{ headroom.toLocaleString() }}</b>
+          <span>Still to make</span><b>{{ headroom.toLocaleString() }}</b>
         </div>
       </div>
 
       <div v-if="headroom === 0" class="note warn">
-        Every ticket in the plan has been released.
+        Every ticket in the plan has already been made.
       </div>
 
       <template v-else>
+        <div class="note plain">
+          This creates tickets that do not exist yet, and cannot be undone. To
+          sell fewer of the tickets you already have, use <b>Tickets in play</b>
+          instead — that one can be moved back.
+        </div>
+
         <label>How many more?</label>
         <div class="chips">
           <button v-for="n in steps" :key="n" class="chip" @click="choose(n)">
             + {{ n.toLocaleString() }}
           </button>
           <button v-if="headroom" class="chip" @click="choose(headroom)">
-            + {{ headroom.toLocaleString() }} (all the rest)
+            + {{ headroom.toLocaleString() }} (the rest of the plan)
           </button>
         </div>
 
@@ -159,7 +175,7 @@ async function release() {
           <input id="rt" v-model="target" class="xl" inputmode="numeric"
                  :placeholder="String(current + 1000)">
           <p v-if="adding" class="hint">
-            That releases <b>{{ adding.toLocaleString() }}</b> more
+            That makes <b>{{ adding.toLocaleString() }}</b> more
             ({{ Math.ceil(adding / perBook) }} books).
           </p>
         </div>
@@ -168,7 +184,7 @@ async function release() {
 
         <!-- the preview, which wrote nothing -->
         <div v-if="preview && !problem" class="note info">
-          <b>This would release {{ preview.addedTickets.toLocaleString() }} tickets</b><br>
+          <b>This would make {{ preview.addedTickets.toLocaleString() }} new tickets</b><br>
           {{ preview.firstNewTicket }} to {{ preview.lastNewTicket }},
           making {{ preview.addedBooks }} new
           {{ preview.addedBooks === 1 ? 'book' : 'books' }}
@@ -186,8 +202,8 @@ async function release() {
           <input id="rc" v-model="typed" inputmode="numeric" autocomplete="off"
                  :placeholder="String(wanted)">
           <p class="hint">
-            Releasing cannot be undone — tickets can never be taken back out of the
-            raffle. Typing the number is the check.
+            Making tickets cannot be undone — rows can never be removed once they
+            exist. Typing the number is the check.
           </p>
         </div>
       </template>
@@ -201,7 +217,7 @@ async function release() {
           {{ busy ? 'Checking…' : 'See what this does' }}
         </button>
         <button v-else class="btn primary" :disabled="busy || !confirmed" @click="release">
-          {{ busy ? 'Releasing…' : 'Release them' }}
+          {{ busy ? 'Making…' : 'Make them' }}
         </button>
       </template>
       <button v-else class="btn block" @click="emit('close')">Close</button>
@@ -218,6 +234,7 @@ async function release() {
 .now span { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; }
 .now b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.note.plain { background: var(--surface-2); color: var(--muted); }
 .ok { text-align: center; padding: 18px 0 10px; }
 .ok .tick {
   width: 72px; height: 72px; margin: 0 auto 14px; border-radius: 50%;

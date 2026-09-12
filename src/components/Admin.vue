@@ -9,16 +9,30 @@ import { ref, onMounted, computed } from 'vue'
 import { state, api, toast, isSuper, go } from '../lib/store.js'
 import { money, dateTime } from '../lib/format.js'
 
-const emit = defineEmits(['add-user', 'release-tickets'])
+const emit = defineEmits(['add-user', 'make-tickets', 'tickets-in-play'])
 
 /**
- * A raffle that has reached its planned size is a finished state, not an empty
- * form. Offering a Release button there would only ever come back NO_CHANGE or
- * ABOVE_CEILING, which reads as a fault rather than as "you are done".
- * A ceiling of 0 means none was set, so headroom is unknown, not zero.
+ * Three numbers, and keeping them apart is the whole point of this card.
+ *
+ *   made    — ticket rows that exist. Only ever goes up, and not easily.
+ *   live    — how many of those are sellable right now. Moves freely.
+ *   waiting — the difference: printed, paid for, and deliberately not yet out.
+ *
+ * `totalTickets` means LIVE, which is right for the progress bar and the money
+ * target — a raffle holding half its tickets back should read "1,248 of 10,000",
+ * not "of 20,000". It is the wrong number for anything about creating rows.
  */
-const allReleased = computed(() =>
-  !!c.value?.ticketCeiling && c.value.totalTickets >= c.value.ticketCeiling)
+const made = computed(() => c.value?.generatedTickets ?? c.value?.totalTickets ?? 0)
+const live = computed(() => c.value?.totalTickets || 0)
+const waiting = computed(() => c.value?.heldBackTickets ?? Math.max(0, made.value - live.value))
+
+/**
+ * Whether any more rows could ever be created. A ceiling of 0 means none was
+ * set, so headroom is unknown rather than zero — offering the button is right
+ * in that case, refusing to is not.
+ */
+const allMade = computed(() =>
+  !!c.value?.ticketCeiling && made.value >= c.value.ticketCeiling)
 
 const users = ref(null)
 const audit = ref(null)
@@ -107,19 +121,34 @@ async function loadAudit() {
     <div v-if="isSuper && c" class="card">
       <div class="spread">
         <div class="grow">
-          <h3 style="margin:0">Release more tickets</h3>
+          <h3 style="margin:0">Tickets in play</h3>
           <p class="muted small" style="margin:4px 0 0">
-            <template v-if="allReleased">
-              All {{ c.totalTickets.toLocaleString() }} tickets have been released.
-              There are no more to come.
+            <template v-if="waiting">
+              {{ live.toLocaleString() }} of {{ made.toLocaleString() }} can be sold.
+              {{ waiting.toLocaleString() }} are printed and waiting.
             </template>
             <template v-else>
-              {{ c.totalTickets.toLocaleString() }} are live<template v-if="c.ticketCeiling">
-              of {{ c.ticketCeiling.toLocaleString() }} planned</template>.
+              All {{ live.toLocaleString() }} tickets that have been made are in play.
             </template>
           </p>
         </div>
-        <button v-if="!allReleased" class="btn" @click="emit('release-tickets')">Release</button>
+        <button class="btn" @click="emit('tickets-in-play')">Change</button>
+      </div>
+
+      <!-- Creating rows is a different and heavier thing, so it sits under a
+           divider rather than beside the everyday button. -->
+      <div class="sub">
+        <span class="muted small grow">
+          <template v-if="allMade">
+            All {{ made.toLocaleString() }} planned tickets have been made.
+          </template>
+          <template v-else>
+            Need more than {{ made.toLocaleString() }} tickets altogether?
+          </template>
+        </span>
+        <button v-if="!allMade" class="btn sm ghost" @click="emit('make-tickets')">
+          Make more
+        </button>
       </div>
     </div>
 
@@ -128,11 +157,13 @@ async function loadAudit() {
       <div class="tablewrap">
         <table>
           <tbody>
-            <tr><td>Tickets live</td><td>{{ c.totalTickets.toLocaleString() }} — {{ c.ticketPrefix }}{{ String(c.ticketStart).padStart(c.ticketDigits, '0') }} onwards</td></tr>
+            <tr><td>Tickets in play</td><td>{{ live.toLocaleString() }} — {{ c.ticketPrefix }}{{ String(c.ticketStart).padStart(c.ticketDigits, '0') }} onwards</td></tr>
+            <tr v-if="waiting"><td>Printed and waiting</td><td>{{ waiting.toLocaleString() }}</td></tr>
+            <tr v-if="waiting"><td>Made altogether</td><td>{{ made.toLocaleString() }}</td></tr>
             <tr v-if="c.ticketCeiling"><td>Planned total</td><td>{{ c.ticketCeiling.toLocaleString() }}</td></tr>
             <tr><td>In each book</td><td>{{ c.ticketsPerBook }} — that makes {{ c.totalBooks }} books</td></tr>
             <tr><td>Price</td><td>{{ money(c.ticketPrice, c.currency) }} each</td></tr>
-            <tr><td>If all sold</td><td>{{ money(c.totalTickets * c.ticketPrice, c.currency) }}</td></tr>
+            <tr><td>If all sold</td><td>{{ money(live * c.ticketPrice, c.currency) }}<span v-if="waiting" class="muted small"> — of what is in play</span></td></tr>
             <tr><td>Books due back after</td><td>{{ c.defaultDueDays }} days</td></tr>
             <tr><td>Draw date</td><td>{{ c.drawDate || 'not set' }}</td></tr>
           </tbody>
@@ -161,6 +192,10 @@ async function loadAudit() {
 </template>
 
 <style scoped>
+.sub {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+}
 .log { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .log:last-child { border-bottom: 0; }
 </style>
