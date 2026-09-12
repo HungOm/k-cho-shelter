@@ -6,9 +6,9 @@
  * moving between them keeps their scroll position and loaded data instead of
  * starting over each time.
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state, refresh, go, toast, isAdmin } from './lib/store.js'
-import { api, configure, LS } from './lib/api.js'
+import { api, configure, tokenIsStale, LS } from './lib/api.js'
 
 import AppShell from './components/AppShell.vue'
 import SignIn from './components/SignIn.vue'
@@ -95,6 +95,7 @@ let renewTimer = null
 const reauth = ref(false)    // the "sign in again" overlay
 
 function onCredential(res) {
+  lastToken = res.credential
   configure({ idToken: res.credential })
   scheduleRenewal(res.credential)
   reauth.value = false
@@ -159,6 +160,20 @@ function askToSignInAgain(finish) {
   tokenWaiter = ok => { reauth.value = false; finish(ok) }
 }
 
+/**
+ * Phones suspend timers while the screen is off, so the scheduled renewal may
+ * simply never have run. Check the moment the app comes back into view.
+ */
+let lastToken = ''
+
+function wake() {
+  if (document.visibilityState !== 'visible') return
+  if (!lastToken) return
+  // The old timer may have been killed, or be about to fire at the wrong time.
+  scheduleRenewal(lastToken)
+  if (tokenIsStale(5 * 60 * 1000)) renew()
+}
+
 function initGoogle() {
   const g = window.google?.accounts?.id
   if (!g) return setTimeout(initGoogle, 150)
@@ -180,6 +195,9 @@ function initGoogle() {
 // ---------- boot ----------
 
 onMounted(async () => {
+  document.addEventListener('visibilitychange', wake)
+  window.addEventListener('focus', wake)
+
   readFragment()
   let url = ''
   try {
@@ -223,6 +241,12 @@ async function start() {
         : err.message
   }
 }
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', wake)
+  window.removeEventListener('focus', wake)
+  clearTimeout(renewTimer)
+})
 
 // ---------- modal plumbing ----------
 

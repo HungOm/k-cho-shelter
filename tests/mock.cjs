@@ -36,8 +36,15 @@ global.SpreadsheetApp={
   flush:()=>{}, getUi:()=>{throw new Error('no ui');}
 };
 const cache={};
-global.CacheService={getScriptCache:()=>({get:k=>cache[k]||null,put:(k,v)=>{cache[k]=v;},remove:k=>{delete cache[k];}})};
+global.CacheService={getScriptCache:()=>({
+  get:k=>cache[k]||null,
+  put:(k,v)=>{ if(String(v).length>100000) throw new Error('cache value too large'); cache[k]=v; },
+  remove:k=>{delete cache[k];},
+  getAll:ks=>{ const o={}; ks.forEach(k=>{ if(cache[k]!=null) o[k]=cache[k]; }); return o; },
+  putAll:(obj)=>{ for(const k in obj){ if(String(obj[k]).length>100000) throw new Error('cache value too large'); cache[k]=obj[k]; } }
+})};
 global.__clearCache=()=>{ for(const k in cache) delete cache[k]; };
+global.__cacheRaw=cache;
 const props={};
 global.PropertiesService={getScriptProperties:()=>({getProperty:k=>props[k]||null,setProperty:(k,v)=>{props[k]=v;}})};
 global.__props=props;

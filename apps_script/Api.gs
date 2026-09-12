@@ -26,6 +26,7 @@ function actionRegistry() {
     // --- reading ---
     read_snapshot:         { fn: handleReadSnapshot,      roles: null, kind: 'read' },
     read_delta:            { fn: handleReadDelta,         roles: null, kind: 'read' },
+    read_version:          { fn: handleReadVersion,       roles: null, kind: 'read' },
 
     // --- tickets ---
     sell_ticket:           { fn: handleSellTicket,        roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'write', lock: true },
@@ -136,6 +137,13 @@ function route_(req) {
     var result = spec.lock
       ? withLock_(function () { return spec.fn(req.payload, user); })
       : spec.fn(req.payload, user);
+
+    // One choke point, deliberately blunt. A cached ticket table that outlives
+    // the write which changed it would offer somebody a ticket that has already
+    // been sold, so every successful write invalidates it -- including the few
+    // that touch no tickets at all. An unnecessary bump costs one sheet read;
+    // a missed one costs the raffle its integrity.
+    if (spec.kind === 'write' || spec.kind === 'bulk') bumpTicketCacheVersion();
 
     return jsonOut_({ ok: true, data: result });
 
