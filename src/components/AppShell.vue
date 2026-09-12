@@ -8,20 +8,22 @@
  */
 import { ref, computed } from 'vue'
 import { state, isAdmin, go, attention } from '../lib/store.js'
+import Logo from './ui/Logo.vue'
+import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
 
 const SCREENS = [
-  { id: 'home',   icon: '🏠', label: 'Home',    roles: ['admin', 'recorder', 'agent', 'viewer'] },
-  { id: 'search', icon: '🔍', label: 'Find',    roles: ['admin', 'recorder', 'agent', 'viewer'] },
-  { id: 'sell',   icon: '🎟️', label: 'Sell',    roles: ['admin', 'recorder', 'agent'] },
-  { id: 'books',  icon: '📚', label: 'Books',   roles: ['admin', 'recorder'] },
-  { id: 'agents', icon: '👥', label: 'Sellers', roles: ['admin', 'recorder'] },
-  { id: 'money',  icon: '💰', label: 'Money',   roles: ['admin', 'recorder', 'viewer'] },
-  { id: 'draw',   icon: '🏆', label: 'Draw',    roles: ['admin', 'recorder', 'viewer'] },
-  { id: 'admin',  icon: '⚙️', label: 'Setup',   roles: ['admin'] },
+  { id: 'home',   icon: 'home', label: 'Home',    roles: ['admin', 'recorder', 'agent', 'viewer'] },
+  { id: 'search', icon: 'search', label: 'Find',    roles: ['admin', 'recorder', 'agent', 'viewer'] },
+  { id: 'sell',   icon: 'ticket', label: 'Sell',    roles: ['admin', 'recorder', 'agent'] },
+  { id: 'books',  icon: 'books', label: 'Books',   roles: ['admin', 'recorder'] },
+  { id: 'agents', icon: 'people', label: 'Sellers', roles: ['admin', 'recorder'] },
+  { id: 'money',  icon: 'money', label: 'Money',   roles: ['admin', 'recorder', 'viewer'] },
+  { id: 'draw',   icon: 'trophy', label: 'Draw',    roles: ['admin', 'recorder', 'viewer'] },
+  { id: 'admin',  icon: 'gear', label: 'Setup',   roles: ['admin'] },
   // Super admin only, so it is filtered by more than role — see `visible`.
-  { id: 'permissions', icon: '🔑', label: 'Access', roles: ['admin'], sup: true },
-  { id: 'approvals', icon: '🖐️', label: 'Approvals', roles: ['admin', 'recorder', 'agent'] }
+  { id: 'permissions', icon: 'key', label: 'Access', roles: ['admin'], sup: true },
+  { id: 'approvals', icon: 'hand', label: 'Approvals', roles: ['admin', 'recorder', 'agent'] }
 ]
 
 const visible = computed(() => SCREENS.filter(s =>
@@ -61,10 +63,11 @@ defineEmits(['signout'])
     <!-- desktop sidebar -->
     <aside class="sidebar noprint">
       <div class="brand">
-        <span class="mark">🎟️</span>
+        <Logo :size="42" />
         <span class="grow">
           <b>{{ state.cfg?.eventName || "K'Cho Shelter" }}</b>
           <small>{{ state.cfg?.orgName }}</small>
+          <span v-if="state.cfg?.projectCode" class="code">{{ state.cfg.projectCode }}</span>
         </span>
       </div>
 
@@ -72,7 +75,7 @@ defineEmits(['signout'])
         <button v-for="s in visible" :key="s.id"
                 :class="['navitem', { on: state.screen === s.id }]"
                 @click="go(s.id)">
-          <span class="ic">{{ s.icon }}</span>
+          <Icon :name="s.icon" :size="21" />
           <Bi class="grow" :text="s.label" />
           <span v-if="badges[s.id]" class="pill bad">{{ badges[s.id] }}</span>
         </button>
@@ -90,7 +93,7 @@ defineEmits(['signout'])
     <div class="main">
       <!-- phone title bar -->
       <header class="appbar noprint">
-        <span class="mark">🎟️</span>
+        <Logo :size="34" />
         <span class="grow">
           <b>{{ state.cfg?.eventName || "K'Cho Shelter" }}</b>
           <small>{{ state.user?.name }} · {{ roleWord }}</small>
@@ -108,7 +111,7 @@ defineEmits(['signout'])
                 :class="['tab', { on: state.screen === s.id }]"
                 @click="go(s.id)">
           <span class="ic">
-            {{ s.icon }}
+            <Icon :name="s.icon" :size="22" />
             <i v-if="badges[s.id]" class="dot"></i>
           </span>
           <Bi :text="s.label" class="mid" />
@@ -116,7 +119,7 @@ defineEmits(['signout'])
         <button v-if="moreTabs.length" :class="['tab', { on: moreActive }]"
                 @click="showMore = true" aria-label="More screens">
           <span class="ic">
-            ⋯
+            <Icon name="more" :size="22" />
             <i v-if="moreBadge" class="dot"></i>
           </span>
           <Bi text="More" class="mid" />
@@ -131,7 +134,7 @@ defineEmits(['signout'])
             <button v-for="s in moreTabs" :key="s.id"
                     :class="['morerow', { on: state.screen === s.id }]"
                     @click="pick(s.id)">
-              <span class="ic">{{ s.icon }}</span>
+              <Icon :name="s.icon" :size="22" />
               <Bi class="grow" :text="s.label" />
               <span v-if="badges[s.id]" class="pill bad">{{ badges[s.id] }}</span>
               <span class="chev">›</span>
@@ -151,7 +154,11 @@ defineEmits(['signout'])
 .sidebar { display: none; }
 
 .brand { display: flex; align-items: center; gap: 11px; padding: 20px 18px 16px; }
-.brand .mark { font-size: 1.6rem; }
+.brand .code {
+  display: inline-block; margin-top: 4px; padding: 1px 8px;
+  border-radius: 999px; background: var(--brand-soft); color: var(--brand);
+  font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+}
 .brand b { display: block; font-size: 1rem; line-height: 1.25; }
 .brand small { display: block; color: var(--muted); font-size: .78rem; }
 
@@ -164,7 +171,7 @@ defineEmits(['signout'])
 }
 .navitem:hover { background: var(--surface-2); color: var(--text); }
 .navitem.on { background: var(--brand-soft); color: var(--brand); }
-.navitem .ic { font-size: 1.25rem; line-height: 1; flex: 0 0 26px; text-align: center; }
+.navitem :deep(.ic) { flex: 0 0 21px; }
 .navitem :deep(.bi) { align-items: flex-start; }
 
 .who {
@@ -183,7 +190,7 @@ defineEmits(['signout'])
   padding: 12px 16px; background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
-.appbar .mark { font-size: 1.35rem; }
+
 .appbar b { display: block; font-size: .98rem; line-height: 1.2;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appbar small { display: block; color: var(--muted); font-size: .78rem; }
@@ -211,7 +218,7 @@ defineEmits(['signout'])
   transition: color .14s, background .14s;
 }
 .tab.on { color: var(--brand); background: var(--brand-soft); }
-.tab .ic { position: relative; font-size: 1.35rem; line-height: 1.1; }
+.tab .ic { position: relative; display: flex; }
 .tab .dot {
   position: absolute; top: -1px; right: -5px;
   width: 9px; height: 9px; border-radius: 50%;
@@ -237,7 +244,7 @@ defineEmits(['signout'])
 }
 .morerow:hover { background: var(--surface-2); }
 .morerow.on { background: var(--brand-soft); color: var(--brand); }
-.morerow .ic { font-size: 1.4rem; }
+.morerow :deep(.ic) { flex: 0 0 22px; }
 .morerow .chev { color: var(--muted); font-size: 1.4rem; }
 
 /* ---------- wide screens: swap tabs for the sidebar ---------- */

@@ -10,6 +10,7 @@ import { api, toast, state } from '../../lib/store.js'
 import { money, date } from '../../lib/format.js'
 import { waNumber } from '../../lib/search.js'
 import Sheet from '../ui/Sheet.vue'
+import Logo from '../ui/Logo.vue'
 
 const props = defineProps({ agentId: String })
 const emit = defineEmits(['close'])
@@ -73,8 +74,13 @@ const waLink = computed(() => {
     </div>
     <div v-else class="paper">
       <p v-if="isReprint" class="stamp">Reprint — a copy of the books still out, not a new handover</p>
-      <h2 style="margin-bottom:2px">{{ r.org }}</h2>
-      <p class="muted small">{{ r.event }}</p>
+      <div class="head">
+        <Logo :size="54" big />
+        <div class="grow">
+          <h2 style="margin-bottom:2px">{{ r.org }}</h2>
+          <p class="muted small" style="margin:0">{{ r.event }}</p>
+        </div>
+      </div>
       <hr class="hr">
       <div class="facts">
         <div class="f"><span>Given to</span><b>{{ r.agent.name }}</b></div>
@@ -125,6 +131,7 @@ const waLink = computed(() => {
   border-radius: var(--r-sm); color: var(--warn);
   font-weight: 600; font-size: .85rem;
 }
+.head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .facts { display: grid; gap: 12px; }
 .f { display: flex; justify-content: space-between; gap: 14px; }
 .f span { color: var(--muted); }

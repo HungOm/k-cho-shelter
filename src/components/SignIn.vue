@@ -7,6 +7,7 @@
  * at this screen is usually not the person who set the system up.
  */
 import { ref, onMounted, watch, nextTick } from 'vue'
+import Logo from './ui/Logo.vue'
 
 const props = defineProps({
   phase: String,          // 'loading' | 'setup' | 'signin' | 'error'
@@ -44,9 +45,10 @@ onMounted(async () => {
 <template>
   <div class="gate">
     <div class="box">
-      <div class="mark">🎟️</div>
+      <Logo :size="76" big class="mark" />
       <h1>K'Cho Shelter</h1>
       <p class="muted">Raffle ticket record</p>
+      <p class="tiny muted credit">K'Cho Ethnic Association Malaysia</p>
 
       <!-- checking -->
       <div v-if="phase === 'loading'" class="pad">
@@ -107,7 +109,8 @@ onMounted(async () => {
   border-radius: 24px; padding: 36px 28px; max-width: 460px; width: 100%;
   box-shadow: var(--shadow-lg); text-align: center;
 }
-.mark { font-size: 3.2rem; line-height: 1; margin-bottom: 10px; }
+.mark { margin: 0 auto 14px; }
+.credit { margin-top: -2px; }
 .box h1 { font-size: 1.5rem; margin-bottom: 2px; }
 .pad { margin-top: 26px; }
 .left { text-align: left; }

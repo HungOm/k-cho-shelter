@@ -6,6 +6,7 @@
 import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh } from '../lib/store.js'
 import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
+import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
 
 const emit = defineEmits(['issue', 'add-agent', 'open-book', 'sell-book'])
@@ -21,7 +22,7 @@ function doStep(action) {
   <div>
     <!-- the spreadsheet has not been prepared yet -->
     <div v-if="state.needsSetup" class="card setup">
-      <h3>⚙️ The spreadsheet is not ready yet</h3>
+      <h3 class="row"><Icon name="gear" :size="22" /> The spreadsheet is not ready yet</h3>
       <p>
         Your sign-in worked — but the tabs the app reads from have not been made.
         Somebody needs to open the spreadsheet, go to
@@ -87,7 +88,7 @@ function doStep(action) {
       <h3 class="sect"><Bi text="Needs looking at" /></h3>
       <TransitionGroup name="pop" tag="div">
         <button v-for="a in attention" :key="a.key" :class="['attn', a.tone]" @click="go(a.go)">
-          <span class="em">{{ a.icon }}</span>
+          <Icon :name="a.icon" :size="24" class="em" />
           <span class="grow">
             <span class="t">{{ a.title }}</span>
             <span class="d">{{ a.detail }}</span>
@@ -104,19 +105,19 @@ function doStep(action) {
     <h3 class="sect"><Bi text="What do you want to do?" /></h3>
     <div class="quick">
       <button v-if="canWrite" @click="go('sell')">
-        <span class="em">🎟️</span><Bi class="mid" text="Write down a sale" />
+        <Icon name="ticket" :size="30" class="em" /><Bi class="mid" text="Write down a sale" />
       </button>
       <button @click="go('search')">
-        <span class="em">🔍</span><Bi class="mid" text="Find a ticket" />
+        <Icon name="search" :size="30" class="em" /><Bi class="mid" text="Find a ticket" />
       </button>
       <button v-if="canWrite" @click="emit('sell-book')">
-        <span class="em">📗</span><Bi text="Sell a whole book" class="mid" />
+        <Icon name="bookPlus" :size="30" class="em" /><Bi text="Sell a whole book" class="mid" />
       </button>
       <button v-if="isAdmin" @click="emit('issue')">
-        <span class="em">📚</span><Bi class="mid" text="Give out books" />
+        <Icon name="books" :size="30" class="em" /><Bi class="mid" text="Give out books" />
       </button>
       <button v-if="isAdmin" @click="emit('add-agent')">
-        <span class="em">👥</span><Bi class="mid" text="Add a seller" />
+        <Icon name="people" :size="30" class="em" /><Bi class="mid" text="Add a seller" />
       </button>
     </div>
 
@@ -177,7 +178,7 @@ function doStep(action) {
 .attn:hover { transform: translateX(3px); box-shadow: var(--shadow); }
 .attn.bad  { border-left-color: var(--bad); }
 .attn.warn { border-left-color: var(--warn); }
-.attn .em { font-size: 1.6rem; line-height: 1; }
+.attn .em { flex: 0 0 24px; }
 .attn .t { display: block; font-weight: 700; font-size: 1.02rem; }
 .attn .d { display: block; font-size: .88rem; color: var(--muted); margin-top: 2px; }
 .attn .chev { color: var(--muted); font-size: 1.5rem; }
@@ -194,5 +195,5 @@ function doStep(action) {
 }
 .quick button:hover { border-color: var(--brand); transform: translateY(-3px); box-shadow: var(--shadow); }
 .quick button:active { transform: translateY(0) scale(.98); }
-.quick .em { font-size: 1.9rem; line-height: 1; }
+.quick .em { color: var(--brand); }
 </style>
