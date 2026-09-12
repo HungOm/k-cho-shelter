@@ -468,6 +468,121 @@ function settleTicketRows_(bookNumber, range, unsoldSet, agentId, price, user, n
   return sold;
 }
 
+// ============ SELLING A WHOLE BOOK ============
+
+/**
+ * One buyer takes a whole book, or several.
+ *
+ * Ten tickets to the same person is an ordinary way to sell at a community
+ * event, and typing ten identical rows by hand is both slow and the easiest
+ * place in the app to mistype a phone number — which is the field the draw
+ * depends on.
+ *
+ * Every ticket carries the same buyer. That is correct rather than a shortcut:
+ * they really do hold all ten, and each one still resolves to a findable person
+ * when a number comes up. This is the difference from settlement, which marks a
+ * book sold with the buyer fields left blank on purpose.
+ *
+ * Tickets already sold to somebody else are skipped and reported, never
+ * overwritten.
+ */
+function handleSellBook(payload, user) {
+  var cfg = getConfig();
+  var books = expandBookRange_(payload, cfg);
+  if (!books.length) throw new ApiError('BAD_REQUEST', 'No books were named.');
+  if (books.length > 20) {
+    throw new ApiError('RANGE_TOO_LARGE', 'Sell at most 20 books to one buyer at a time.');
+  }
+
+  var buyerName = requireField_(payload, 'buyerName');
+  var buyerPhone = normalisePhone(payload.buyerPhone);
+  if (buyerPhone.length < 7) {
+    throw new ApiError('BAD_PHONE',
+      'A phone number is needed — without one you cannot tell them if they win.');
+  }
+
+  var price = cfgFloat(cfg, 'TICKET_PRICE', 10);
+  var donated = !!payload.donated;
+  var status = donated ? TICKET_STATUS.DONATED : TICKET_STATUS.SOLD;
+  var now = new Date();
+
+  var sheet = sheet_(SHEET.TICKETS);
+  var map = headerMap(sheet);
+  var lastCol = sheet.getLastColumn();
+
+  // Pass 1: check every book before writing any of them, so a range that goes
+  // wrong half way through does not leave half a sale recorded.
+  var plan = [];
+  for (var i = 0; i < books.length; i++) {
+    var range = ticketRangeOfBook(books[i], cfg);
+    if (!range) throw new ApiError('BOOK_NOT_FOUND', 'Book ' + books[i] + ' does not exist.');
+    assertCanWriteTicket(user, ticketNumberAt(range.first, cfg), { force: payload.force });
+    plan.push({ book: books[i], range: range });
+  }
+
+  var sold = [];
+  var skipped = [];
+
+  for (var p = 0; p < plan.length; p++) {
+    var r = plan[p].range;
+    var count = r.last - r.first + 1;
+    var startRow = r.first + 1;
+    var values = sheet.getRange(startRow, 1, count, lastCol).getValues();
+    var agentId = payload.agentId || heldByAgent_(plan[p].book) || user.agentId || '';
+
+    for (var v = 0; v < values.length; v++) {
+      var num = String(values[v][map.Ticket_Number - 1] || '').trim();
+      var st = String(values[v][map.Status - 1] || '');
+
+      if (st === TICKET_STATUS.SOLD || st === TICKET_STATUS.DONATED) {
+        skipped.push({ ticketNumber: num, reason: 'already sold' });
+        continue;
+      }
+      if (st === TICKET_STATUS.VOID) {
+        skipped.push({ ticketNumber: num, reason: 'voided' });
+        continue;
+      }
+
+      values[v][map.Status - 1] = status;
+      values[v][map.Buyer_Name - 1] = buyerName;
+      values[v][map.Buyer_Phone - 1] = buyerPhone;
+      values[v][map.Buyer_Zone - 1] = payload.buyerZone || '';
+      values[v][map.Sold_By_Agent - 1] = agentId;
+      values[v][map.Amount - 1] = donated ? 0 : price;
+      values[v][map.Payment_Status - 1] = payload.paymentStatus || 'Paid';
+      values[v][map.Sale_Date - 1] = now;
+      values[v][map.Source - 1] = 'book sale';
+      values[v][map.Version - 1] = (parseInt(values[v][map.Version - 1], 10) || 0) + 1;
+      values[v][map.Recorded_By - 1] = user.email;
+      values[v][map.Modified_Date - 1] = now;
+      sold.push(num);
+    }
+
+    sheet.getRange(startRow, 1, count, lastCol).setValues(values);
+  }
+
+  if (!sold.length) {
+    throw new ApiError('NOTHING_TO_DO',
+      'Every ticket in ' + (books.length === 1 ? 'that book' : 'those books') +
+      ' was already sold or voided. Nothing was changed.');
+  }
+
+  bumpBookCacheVersion();
+  logAudit('SELL_BOOK', {
+    books: books, buyer: buyerName, sold: sold.length, skipped: skipped.length, donated: donated
+  }, user.email);
+
+  return {
+    books: books,
+    sold: sold.length,
+    tickets: sold,
+    skipped: skipped,
+    amount: donated ? 0 : sold.length * price,
+    currency: cfg.CURRENCY || 'RM',
+    buyerName: buyerName
+  };
+}
+
 // ============ STATUS CHANGES (lost / void / reopen) ============
 
 function handleSetBookStatus(payload, user) {
