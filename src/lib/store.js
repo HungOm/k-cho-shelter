@@ -8,6 +8,7 @@
 import { reactive, computed, ref } from 'vue'
 import { api, ApiError, LS } from './api.js'
 import { buildIndex, runSearch } from './search.js'
+import { saveTickets, loadTickets, clearCache } from './cache.js'
 
 export const TICKET_STATUS = {
   AVAILABLE: 'Available', RESERVED: 'Reserved', SOLD: 'Sold',
@@ -41,7 +42,11 @@ export const state = reactive({
 
   // what failed on the last load, and whether the spreadsheet is set up at all
   problems: [],
-  needsSetup: false
+  needsSetup: false,
+
+  // true while showing the local copy, before the full table has arrived
+  fromCache: false,
+  ticketVersion: 0
 })
 
 let index = []
@@ -159,24 +164,73 @@ function toTicket(fields, row) {
   return t
 }
 
+/**
+ * Paint from the local copy first.
+ *
+ * Ticket numbers, statuses and books come straight off the device, so the app
+ * is usable in well under a second. Buyer names and phone numbers are not on
+ * the device by design, so they arrive with the network load a moment later —
+ * which is why search by name is briefly unavailable and then simply works.
+ */
+export async function bootFromCache() {
+  try {
+    const v = await loadTickets()
+    if (!v?.rows?.length) return false
+    state.tickets = v.rows.map(row => toTicket(v.fields, row))
+    state.ticketVersion = v.version || 0
+    state.lastSync = v.serverTime || null
+    state.fromCache = true
+    reindex()
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function forgetCache() {
+  state.fromCache = false
+  state.ticketVersion = 0
+  try { await clearCache() } catch { /* nothing to forget */ }
+}
+
 export async function loadSnapshot() {
   const tickets = []
+  const raw = []
   let offset = 0
+  let fields = null
+  let version = 0
+  let serverTime = ''
+
   for (let guard = 0; guard < 40; guard++) {
     const page = await api('read_snapshot', { offset, limit: 2000 })
-    page.rows.forEach(r => tickets.push(toTicket(page.fields, r)))
+    fields = page.fields
+    version = page.version || version
+    serverTime = page.serverTime || serverTime
+    page.rows.forEach(r => { tickets.push(toTicket(page.fields, r)); raw.push(r) })
     state.loadProgress = page.total ? { done: tickets.length, total: page.total } : null
     if (!page.hasMore) break
     offset += page.returned
   }
+
   state.tickets = tickets
+  state.ticketVersion = version
+  state.lastSync = serverTime || state.lastSync
+  state.fromCache = false
   state.loadProgress = null
   reindex()
+
+  // Personal columns are stripped inside saveTickets, not here, so there is
+  // exactly one place that decides what may touch the disk.
+  if (fields) saveTickets({ fields, rows: raw, version, serverTime }).catch(() => {})
 }
 
 export async function loadDelta() {
   if (!state.lastSync) return loadSnapshot()
   const d = await api('read_delta', { since: state.lastSync })
+  if (d.version) state.ticketVersion = d.version
+  // The server's clock, never the phone's — a device running fast would set a
+  // cursor in the future and silently skip every row written in between.
+  if (d.serverTime) state.lastSync = d.serverTime
   if (!d.rows.length) return
   for (const row of d.rows) {
     const t = toTicket(d.fields, row)
@@ -216,8 +270,18 @@ export async function refresh() {
 
   try {
     await step('tickets', async () => {
-      if (!state.tickets.length) await loadSnapshot()
-      else await loadDelta()
+      // Showing the cached skeleton still means the personal columns are
+      // missing, so a full load is required however current the version is.
+      if (!state.tickets.length || state.fromCache) return loadSnapshot()
+
+      // Otherwise ask the cheapest question in the API — two script properties,
+      // no spreadsheet — and only fetch rows when something has actually moved.
+      const v = await api('read_version', {})
+      if (v.tickets === state.ticketVersion) {
+        state.lastSync = v.serverTime || state.lastSync
+        return
+      }
+      await loadDelta()
     })
 
     await step('sellers', async () => {
@@ -246,7 +310,8 @@ export async function refresh() {
       })
     }
 
-    state.lastSync = new Date().toISOString()
+    // Never the device clock: a phone running fast would set a cursor in the
+    // future and silently skip every row written in between.
     return state.problems.length === 0
   } finally {
     state.loading = false

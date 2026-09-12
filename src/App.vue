@@ -7,7 +7,7 @@
  * starting over each time.
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, refresh, go, toast, isAdmin } from './lib/store.js'
+import { state, refresh, go, toast, isAdmin, bootFromCache, forgetCache } from './lib/store.js'
 import { api, configure, tokenIsStale, LS } from './lib/api.js'
 
 import AppShell from './components/AppShell.vue'
@@ -77,13 +77,17 @@ function connect({ url, cid }) {
   location.reload()
 }
 
-function reset() {
+async function reset() {
   try { localStorage.removeItem(LS.url); localStorage.removeItem(LS.cid) } catch {}
+  await forgetCache()
   location.reload()
 }
 
-function signOut() {
+async function signOut() {
   try { window.google?.accounts?.id?.disableAutoSelect() } catch {}
+  // Somebody who has signed out must not still have the ticket table on their
+  // phone, even with the names already stripped out of it.
+  await forgetCache()
   location.reload()
 }
 
@@ -228,11 +232,20 @@ async function start() {
     state.user = me
     state.cfg = me.config
     phase.value = 'ready'
+    // Paint from the local copy first — ticket numbers and statuses are on the
+    // device, so the app is usable before the network answers. Buyer names are
+    // deliberately not stored, so they land with the refresh below.
+    await bootFromCache()
     // Deliberately not awaited into the catch below: once whoami has answered,
     // the sign-in worked. A report that fails afterwards is a missing panel,
     // not a failed login, and must not throw the user back to this screen.
     refresh().finally(() => { state.ready = true })
   } catch (err) {
+    // Access refused or withdrawn: drop the local copy before showing the door.
+    if (String(err.code || '').startsWith('AUTH') ||
+        err.code === 'NOT_AUTHORIZED' || err.code === 'ACCOUNT_DISABLED') {
+      forgetCache()
+    }
     phase.value = 'error'
     errorMsg.value = err.code === 'NOT_AUTHORIZED'
       ? 'This Google account is not on the list yet. Ask the organiser to add it.'

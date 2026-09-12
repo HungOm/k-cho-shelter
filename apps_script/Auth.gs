@@ -221,7 +221,7 @@ var ADMIN_ONLY = [];
  * @param {Array}  allowedRoles  roles permitted; empty/null means any signed-in user
  * @return {Object} {email, name, role, active, agentId, isAdmin}
  */
-function requireUser(idToken, allowedRoles, needSuper) {
+function requireUser(idToken, allowedRoles, needSuper, action) {
   var identity = verifyIdToken(idToken);
   var user = lookupUser(identity.email);
   var isSuper = isSuperAdminEmail_(identity.email);
@@ -259,19 +259,17 @@ function requireUser(idToken, allowedRoles, needSuper) {
   user.googleSub = identity.sub;
   user.displayName = user.name || identity.name;
 
-  // Super-admin-only actions are checked before the role list, because admins
-  // pass every role check below and would otherwise walk straight through.
+  // Super-admin-only actions are checked before everything else, because admins
+  // pass every check below and would otherwise walk straight through.
   if (needSuper) requireSuperAdmin_(user, 'This');
 
-  // Note the absence of an `allowedRoles.length` test here. ADMIN_ONLY is an
-  // empty list, and an empty list must deny everyone who is not an admin --
-  // short-circuiting on length would skip the check entirely and let a
-  // view-only account reach every admin action.
-  if (allowedRoles && !user.isAdmin) {
-    if (allowedRoles.indexOf(user.role) === -1) {
-      throw new ApiError('INSUFFICIENT_ROLE',
-        'Your role (' + user.role + ') cannot do this.');
-    }
+  // One decision, whether or not a Permissions tab exists. Note the absence of
+  // an `allowedRoles.length` test: ADMIN_ONLY is an empty list, and an empty
+  // list must deny everyone who is not an admin -- short-circuiting on length
+  // would skip the check and let a view-only account reach every admin action.
+  if (!isActionAllowed_(action || '', { roles: allowedRoles, sup: needSuper }, user)) {
+    throw new ApiError('INSUFFICIENT_ROLE',
+      'Your role (' + user.role + ') cannot do this.');
   }
 
   // Record the Google subject id on first sign-in, so a recycled email address
@@ -308,6 +306,212 @@ function bookCacheVersion_() {
 }
 
 /** Called after any write to the Books sheet, so every user sees it at once. */
+// ============ THE PERMISSIONS TABLE ============
+
+/**
+ * The registry's `roles:` is the DEFAULT, not the law. A Permissions tab lets
+ * the super admin switch any action on or off for any role from inside the app,
+ * with no redeploy.
+ *
+ * Three things the table can never do, because each one is a way of taking the
+ * system away from the person who owns it:
+ *
+ *   - grant anything marked sup:true. An admin who could grant themselves
+ *     read_audit could then erase the record of having done it.
+ *   - take user management away from admins. One toggle would otherwise leave
+ *     nobody able to undo the toggle.
+ *   - apply to the super admin at all, who passes everything by definition.
+ *
+ * A missing tab, a missing row, or a blank cell all mean "no opinion" and fall
+ * through to the registry — so a spreadsheet built before this existed behaves
+ * exactly as it did.
+ */
+var PERMISSION_ROLES = ['admin', 'recorder', 'agent', 'viewer'];
+var PERMISSION_LOCKED_FOR_ADMIN = ['list_users', 'upsert_user', 'set_user_status'];
+var PERMISSION_CACHE_TTL = 300;
+
+function permissionCacheVersion_() {
+  return PropertiesService.getScriptProperties().getProperty('PERM_CACHE_V') || '0';
+}
+
+function bumpPermissionCacheVersion() {
+  var props = PropertiesService.getScriptProperties();
+  var next = (parseInt(props.getProperty('PERM_CACHE_V') || '0', 10) + 1) % 1000000;
+  props.setProperty('PERM_CACHE_V', String(next));
+}
+
+/** {action: {role: true|false}}. Empty when the tab is absent. */
+function permissionsTable_() {
+  var cache = CacheService.getScriptCache();
+  var key = 'perms_' + permissionCacheVersion_();
+  var hit = cache.get(key);
+  if (hit) { try { return JSON.parse(hit); } catch (e) { /* rebuild */ } }
+
+  var table = {};
+  var sheet = null;
+  try { sheet = ss_().getSheetByName(SHEET.PERMISSIONS); } catch (e) { sheet = null; }
+
+  if (sheet && sheet.getLastRow() > 1) {
+    var map = headerMap(sheet);
+    var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var action = String(values[i][map.Action - 1] || '').trim();
+      if (!action) continue;
+      var row = {};
+      for (var r = 0; r < PERMISSION_ROLES.length; r++) {
+        var role = PERMISSION_ROLES[r];
+        if (!map[role]) continue;
+        var raw = values[i][map[role] - 1];
+        if (raw === '' || raw === null || raw === undefined) continue;   // blank = no opinion
+        row[role] = isTrue_(raw);
+      }
+      table[action] = row;
+    }
+  }
+
+  cache.put(key, JSON.stringify(table), PERMISSION_CACHE_TTL);
+  return table;
+}
+
+/** true, false, or null when the table has no opinion. */
+function permissionFor_(action, role) {
+  if (!action) return null;
+  var table = permissionsTable_();
+  if (!table[action]) return null;
+  var v = table[action][role];
+  return (v === true || v === false) ? v : null;
+}
+
+/**
+ * The whole decision, in the order that matters. The super admin first and the
+ * sup:true bar second, so nothing below can reach past either.
+ */
+function isActionAllowed_(action, spec, user) {
+  if (user.isSuperAdmin) return true;
+  if (spec.sup) return false;
+  if (user.isAdmin && PERMISSION_LOCKED_FOR_ADMIN.indexOf(action) !== -1) return true;
+
+  var override = permissionFor_(action, user.role);
+  if (override !== null) return override;
+
+  if (!spec.roles) return true;        // any signed-in user
+  if (user.isAdmin) return true;       // admins pass the registry defaults
+  return spec.roles.indexOf(user.role) !== -1;
+}
+
+/** Creates the tab on first write, so an existing sheet needs no re-setup. */
+function ensurePermissionsSheet_() {
+  var ss = ss_();
+  var sheet = ss.getSheetByName(SHEET.PERMISSIONS);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(SHEET.PERMISSIONS);
+  sheet.appendRow(COLS.PERMISSIONS);
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
+/** What the registry alone would say, before the table has an opinion. */
+function defaultAllows_(spec, role) {
+  if (spec.sup) return false;
+  if (!spec.roles) return true;
+  if (role === ROLES.ADMIN) return true;
+  return spec.roles.indexOf(role) !== -1;
+}
+
+function handleListPermissions(payload, user) {
+  var reg = actionRegistry();
+  var meta = actionMeta();
+  var table = permissionsTable_();
+  var out = [];
+
+  for (var action in reg) {
+    var spec = reg[action];
+    if (spec.pub) continue;                       // ping needs no permission
+    var m = meta[action] || {};
+    var defaults = {};
+    var current = {};
+    for (var i = 0; i < PERMISSION_ROLES.length; i++) {
+      var role = PERMISSION_ROLES[i];
+      var def = defaultAllows_(spec, role);
+      defaults[role] = def;
+      var override = (table[action] && (table[action][role] === true || table[action][role] === false))
+        ? table[action][role] : null;
+      current[role] = spec.sup ? false : (override === null ? def : override);
+    }
+    out.push({
+      action: action,
+      group: m.group || 'Other',
+      label: m.label || action,
+      danger: !!m.danger,
+      sup: !!spec.sup,
+      lockedFor: PERMISSION_LOCKED_FOR_ADMIN.indexOf(action) !== -1 ? [ROLES.ADMIN] : [],
+      defaults: defaults,
+      current: current
+    });
+  }
+
+  out.sort(function (a, b) {
+    if (a.group === b.group) return a.label < b.label ? -1 : 1;
+    return a.group < b.group ? -1 : 1;
+  });
+
+  return { roles: PERMISSION_ROLES, actions: out };
+}
+
+function handleSetPermission(payload, user) {
+  var action = requireField_(payload, 'action');
+  var role = String(payload.role || '').trim().toLowerCase();
+  if (payload.allowed === undefined) {
+    throw new ApiError('MISSING_FIELD', 'allowed is required (true or false).');
+  }
+  var allowed = !!payload.allowed;
+
+  var reg = actionRegistry();
+  var spec = reg[action];
+  if (!spec) throw new ApiError('UNKNOWN_ACTION', 'There is no action called "' + action + '".');
+  if (PERMISSION_ROLES.indexOf(role) === -1) {
+    throw new ApiError('BAD_REQUEST', 'Role must be one of: ' + PERMISSION_ROLES.join(', '));
+  }
+
+  // The three invariants. Each one exists because breaking it is a way to take
+  // the system away from the person who owns it.
+  if (spec.pub) {
+    throw new ApiError('BAD_REQUEST', 'That action is open to everyone and has no permission to set.');
+  }
+  if (spec.sup) {
+    throw new ApiError('SUPER_ADMIN_ONLY',
+      'That is reserved to the super admin and cannot be handed to a role.');
+  }
+  if (!allowed && role === ROLES.ADMIN && PERMISSION_LOCKED_FOR_ADMIN.indexOf(action) !== -1) {
+    throw new ApiError('BAD_REQUEST',
+      'Admins have to keep this one. Without it nobody but you could put it back.');
+  }
+
+  var sheet = ensurePermissionsSheet_();
+  var map = headerMap(sheet);
+  var col = map[role];
+  if (!col) throw new ApiError('SHEET_MISSING', 'The Permissions tab has no "' + role + '" column.');
+
+  var rowNum = 0;
+  if (sheet.getLastRow() > 1) {
+    var existing = sheet.getRange(2, map.Action, sheet.getLastRow() - 1, 1).getValues();
+    for (var i = 0; i < existing.length; i++) {
+      if (String(existing[i][0]).trim() === action) { rowNum = i + 2; break; }
+    }
+  }
+  if (!rowNum) {
+    var blank = new Array(COLS.PERMISSIONS.length).fill('');
+    blank[map.Action - 1] = action;
+    sheet.appendRow(blank);
+    rowNum = sheet.getLastRow();
+  }
+  sheet.getRange(rowNum, col).setValue(allowed);
+
+  bumpPermissionCacheVersion();
+  logAudit('SET_PERMISSION', { action: action, role: role, allowed: allowed }, user.email);
+  return { action: action, role: role, allowed: allowed };
+}
+
 function ticketCacheVersion_() {
   var props = PropertiesService.getScriptProperties();
   return props.getProperty('TICKET_CACHE_V') || '0';

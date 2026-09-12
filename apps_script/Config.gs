@@ -16,6 +16,7 @@ var SHEET = {
   BOOK_HISTORY: 'Book_History',
   AGENTS: 'Agents',
   USERS: 'Users',
+  PERMISSIONS: 'Permissions',
   WINNERS: 'Winners',
   CONFIG: 'Config',
   AUDIT: '_AuditLog'
@@ -42,6 +43,7 @@ var COLS = {
   BOOK_HISTORY: ['Timestamp', 'Book_Number', 'From_Agent', 'To_Agent', 'Action', 'By_User', 'Note'],
   AGENTS: ['Agent_ID', 'Name', 'Phone', 'Zone', 'Active', 'Notes'],
   USERS: ['Email', 'Name', 'Role', 'Active', 'Agent_ID', 'Google_Sub', 'Added_By', 'Added_Date'],
+  PERMISSIONS: ['Action', 'admin', 'recorder', 'agent', 'viewer'],
   WINNERS: ['Ticket_Number', 'Prize', 'Drawn_Date', 'Buyer_Name', 'Buyer_Phone',
             'Notified', 'Claimed', 'Claimed_Date', 'Notes', 'Recorded_By'],
   CONFIG: ['Key', 'Value', 'Notes'],
