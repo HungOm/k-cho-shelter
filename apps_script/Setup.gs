@@ -536,6 +536,102 @@ function showConfig() {
  * is allowed to because it re-stamps the numbering fingerprint itself, at the
  * very end, once the rows the new total promises actually exist.
  */
+/**
+ * Moves the line between tickets that are in play and tickets held back.
+ *
+ * Unlike expand_tickets this writes one cell, not ten thousand rows, and it is
+ * reversible in both directions — a held-back ticket keeps its row, its number
+ * and anything written on it, so releasing and un-releasing destroy nothing.
+ * That is what makes it safe to offer without the typed confirmation expansion
+ * demands.
+ *
+ * The one direction that needs a guard is DOWN, and only because of what is
+ * already recorded above the line: pulling back a ticket somebody has bought,
+ * or a book a seller is holding, would hide a real obligation rather than
+ * cancel it. Those are refused and named.
+ */
+function handleSetActiveTickets(payload, user) {
+  requireSuperAdmin_(user, 'Releasing or holding back tickets');
+
+  var cfg = getConfig();
+  var generated = cfgNum(cfg, 'TOTAL_TICKETS', 0);
+  var per = cfgNum(cfg, 'TICKETS_PER_BOOK', 10);
+  var current = activeTickets(cfg);
+  var target = parseInt(requireField_(payload, 'activeTickets'), 10);
+
+  if (isNaN(target) || target < 1) {
+    throw new ApiError('BAD_REQUEST', 'activeTickets must be a whole number of at least 1.');
+  }
+  if (target === current) {
+    throw new ApiError('NO_CHANGE', current + ' tickets are already in play.');
+  }
+  if (target > generated) {
+    throw new ApiError('NOT_GENERATED',
+      'Only ' + generated + ' tickets have been created, so ' + target + ' cannot be put ' +
+      'into play. Create more first with "Add more tickets", which writes the rows.',
+      { generated: generated, requested: target, useAction: 'expand_tickets' });
+  }
+  // A book is one physical object. Half a book in play would mean a seller
+  // holding paper where some stubs record a sale and some refuse.
+  if (target % per !== 0 && target !== generated) {
+    throw new ApiError('PARTIAL_BOOK',
+      target + ' is not a whole number of books of ' + per + '. Choose a multiple of ' +
+      per + ' so no book is half in play.');
+  }
+
+  // --- pulling back: only what nobody is relying on ---
+  if (target < current) {
+    var rows = cachedTicketRows_();
+    var statusAt = TICKET_WIRE_FIELDS.indexOf('Status');
+    var committed = [];
+    for (var i = target; i < Math.min(current, rows.length) && committed.length < 6; i++) {
+      var st = String(rows[i][statusAt] || '');
+      if (st === TICKET_STATUS.SOLD || st === TICKET_STATUS.DONATED ||
+          st === TICKET_STATUS.RESERVED) {
+        committed.push(rows[i][0] + ' (' + st.toLowerCase() + ')');
+      }
+    }
+    if (committed.length) {
+      throw new ApiError('TICKETS_IN_USE',
+        'Tickets above ' + target + ' are already spoken for — ' + committed.join(', ') +
+        '. Holding them back would hide them rather than undo them, so it is refused.',
+        { examples: committed });
+    }
+
+    var heldBooks = [];
+    var index = indexBooks_(readBooksRaw_());
+    for (var b = Math.floor(target / per) + 1; b <= activeBooks(cfg) && heldBooks.length < 6; b++) {
+      var book = index[bookNumberAt(b, cfg).toUpperCase()];
+      if (book && book.Status !== BOOK_STATUS.UNASSIGNED) {
+        heldBooks.push(book.Book_Number + ' (' + String(book.Status).toLowerCase() + ')');
+      }
+    }
+    if (heldBooks.length) {
+      throw new ApiError('BOOKS_IN_USE',
+        'Books above ' + target + ' are out or already counted — ' + heldBooks.join(', ') +
+        '. Take them back before holding those tickets back.',
+        { examples: heldBooks });
+    }
+  }
+
+  setConfigValue_('ACTIVE_TICKETS', target);
+  bumpTicketCacheVersion();
+  bumpBookCacheVersion();
+
+  logAudit('SET_ACTIVE_TICKETS', { from: current, to: target, generated: generated }, user.email);
+
+  return {
+    from: current, to: target,
+    generated: generated,
+    heldBack: generated - target,
+    activeBooks: Math.ceil(target / per),
+    firstTicket: ticketNumberAt(1, cfg),
+    lastTicket: ticketNumberAt(target, cfg),
+    released: target > current ? target - current : 0,
+    pulledBack: target < current ? current - target : 0
+  };
+}
+
 function handleExpandTickets(payload, user) {
   requireSuperAdmin_(user, 'Adding more tickets to a running raffle');
 
