@@ -58,6 +58,7 @@ function actionRegistry() {
     handover_receipt:      { fn: handleHandoverReceipt,   roles: ADMIN_ONLY, kind: 'report' },
     expand_tickets:        { fn: handleExpandTickets,     roles: ADMIN_ONLY, sup: true, kind: 'bulk', lock: true },
     set_active_tickets:    { fn: handleSetActiveTickets,  roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
+    set_ticket_ceiling:    { fn: handleSetTicketCeiling,  roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
 
     // --- agents & users ---
     list_agents:           { fn: handleListAgents,        roles: null, kind: 'read' },
@@ -111,6 +112,7 @@ function actionMeta() {
     handover_receipt:       { group: 'Books',   label: 'Print a handover receipt' },
     expand_tickets:         { group: 'Books',   label: 'Add more tickets to the raffle', danger: true },
     set_active_tickets:     { group: 'Books',   label: 'Release or hold back tickets', danger: true },
+    set_ticket_ceiling:     { group: 'Books',   label: 'Change the planned size of the raffle' },
 
     settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },
     report_outstanding:     { group: 'Money',   label: 'Who still owes money' },

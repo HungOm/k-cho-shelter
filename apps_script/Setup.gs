@@ -461,6 +461,34 @@ function verifyIntegrity() {
     problems.push('Books: expected ' + expectedBooks + ', found ' + actualBooks);
   }
 
+  // The one thing set_active_tickets guards against and a hand edit does not:
+  // an ACTIVE_TICKETS typed straight into the Config tab, below tickets that
+  // are already sold. Those tickets stop being loaded, so the money they
+  // represent disappears from every total while the sale itself still sits in
+  // the sheet. Loud rather than silent, and reversible by raising the number
+  // back — but worth naming here rather than leaving somebody to work it out
+  // from a total that dropped overnight.
+  var live = activeTickets(cfg);
+  if (tSheet && live < actualTickets) {
+    var sMap = headerMap(tSheet);
+    var above = actualTickets - live;
+    var stat = tSheet.getRange(live + 2, sMap.Status, above, 1).getValues();
+    var nums = tSheet.getRange(live + 2, sMap.Ticket_Number, above, 1).getValues();
+    var stranded = [];
+    for (var s = 0; s < stat.length && stranded.length < 5; s++) {
+      var v = String(stat[s][0] || '');
+      if (v === TICKET_STATUS.SOLD || v === TICKET_STATUS.DONATED || v === TICKET_STATUS.RESERVED) {
+        stranded.push(String(nums[s][0]).trim() + ' (' + v.toLowerCase() + ')');
+      }
+    }
+    if (stranded.length) {
+      problems.push('ACTIVE_TICKETS is ' + live + ', but tickets above that line are already ' +
+        'spoken for — ' + stranded.join(', ') + '. They are not being loaded, so their money ' +
+        'is missing from every total. Raise ACTIVE_TICKETS back to at least ' + actualTickets +
+        ', or use "Release or hold back tickets", which refuses this.');
+    }
+  }
+
   // Ticket numbers must sit in the row the arithmetic predicts, or every fast
   // path falls back to a scan.
   if (tSheet && actualTickets > 0) {
@@ -536,6 +564,53 @@ function showConfig() {
  * is allowed to because it re-stamps the numbering fingerprint itself, at the
  * very end, once the rows the new total promises actually exist.
  */
+/**
+ * Changes the planned final size of the raffle.
+ *
+ * The ceiling is a guard against a slipped digit, not a commitment, so it is
+ * meant to move when the plan does. It refuses to sit below the tickets that
+ * already exist, because a ceiling under the floor would read as "this raffle
+ * is over its limit" for ever without describing anything anybody can fix.
+ */
+function handleSetTicketCeiling(payload, user) {
+  requireSuperAdmin_(user, 'Changing the planned size of the raffle');
+
+  var cfg = getConfig();
+  var generated = cfgNum(cfg, 'TOTAL_TICKETS', 0);
+  var current = cfgNum(cfg, 'TICKET_CEILING', 0);
+  var raw = payload.ceiling;
+  if (raw === undefined || raw === null || String(raw).trim() === '') raw = 0;
+
+  var target = parseInt(raw, 10);
+  if (isNaN(target) || target < 0) {
+    throw new ApiError('BAD_REQUEST', 'The ceiling must be a whole number, or blank for none.');
+  }
+  if (target === current) {
+    throw new ApiError('NO_CHANGE', target ? 'The ceiling is already ' + target + '.'
+                                           : 'There is already no ceiling.');
+  }
+  if (target > 0 && target < generated) {
+    throw new ApiError('BELOW_GENERATED',
+      'This raffle already has ' + generated + ' tickets, so a ceiling of ' + target +
+      ' would be below what exists. Tickets cannot be removed, so set the ceiling to ' +
+      generated + ' or more.',
+      { generated: generated, requested: target });
+  }
+  if (target > MAX_TOTAL_TICKETS) {
+    throw new ApiError('TOO_MANY',
+      'The most this system holds is ' + MAX_TOTAL_TICKETS + ' tickets.');
+  }
+
+  setConfigValue_('TICKET_CEILING', target || '');
+  logAudit('SET_TICKET_CEILING', { from: current || 'none', to: target || 'none' }, user.email);
+
+  return {
+    from: current, to: target,
+    generated: generated,
+    stillToRelease: target > 0 ? Math.max(0, target - generated) : null
+  };
+}
+
 /**
  * Moves the line between tickets that are in play and tickets held back.
  *
