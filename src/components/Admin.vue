@@ -6,7 +6,7 @@
  * the spreadsheet, so nothing in this screen can grant it or take it away.
  */
 import { ref, onMounted, computed } from 'vue'
-import { state, api, toast, isSuper } from '../lib/store.js'
+import { state, api, toast, isSuper, go } from '../lib/store.js'
 import { money, dateTime } from '../lib/format.js'
 
 const emit = defineEmits(['add-user'])
@@ -81,6 +81,18 @@ async function loadAudit() {
       <p v-if="!isSuper" class="hint">
         Only the super admin can add or change an organiser.
       </p>
+    </div>
+
+    <div v-if="isSuper" class="card">
+      <div class="spread">
+        <div class="grow">
+          <h3 style="margin:0">Who can do what</h3>
+          <p class="muted small" style="margin:4px 0 0">
+            Turn any feature on or off for each kind of user.
+          </p>
+        </div>
+        <button class="btn" @click="go('permissions')">Open</button>
+      </div>
     </div>
 
     <div v-if="c" class="card">
