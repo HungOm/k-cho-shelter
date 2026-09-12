@@ -62,11 +62,18 @@ defineEmits(['signout'])
   <div class="shell">
     <!-- desktop sidebar -->
     <aside class="sidebar noprint">
-      <div class="brand">
+      <!--
+        The organisation line is deliberately absent here. The mark beside the
+        title is the credit, and repeating "K'Cho Ethnic Association Malaysia"
+        underneath pushed the header to five wrapped lines in a 246px column.
+        CEAM is spelled out in full where there is room for it and where it
+        matters: the sign-in screen, and the handover receipt that physically
+        goes out with a seller.
+      -->
+      <div class="brand" :title="state.cfg?.orgName">
         <Logo :size="42" />
         <span class="grow">
           <b>{{ state.cfg?.eventName || "K'Cho Shelter" }}</b>
-          <small>{{ state.cfg?.orgName }}</small>
           <span v-if="state.cfg?.projectCode" class="code">{{ state.cfg.projectCode }}</span>
         </span>
       </div>
@@ -159,8 +166,11 @@ defineEmits(['signout'])
   border-radius: 999px; background: var(--brand-soft); color: var(--brand);
   font-size: .72rem; font-weight: 700; letter-spacing: .02em;
 }
-.brand b { display: block; font-size: 1rem; line-height: 1.25; }
-.brand small { display: block; color: var(--muted); font-size: .78rem; }
+.brand b {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; font-size: 1rem; line-height: 1.25;
+}
+
 
 .sidebar nav { display: flex; flex-direction: column; gap: 3px; padding: 6px 12px; flex: 1; }
 .navitem {

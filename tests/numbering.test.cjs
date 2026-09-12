@@ -62,6 +62,35 @@ run('no prefix, starts at 5000, uneven', {TICKET_PREFIX:'',TICKET_START:'5000',T
   eq(r.first,21,'partial book first'); eq(r.last,23,'partial book clamped to total');
 });
 
+// --- the shape actually in use at CEAM Shelter ---
+run('live shape: KS- 5 digits, 20,000 tickets, Book- 4 digits',
+    {TICKET_PREFIX:'KS-',TICKET_START:'1',TICKET_DIGITS:'5',TOTAL_TICKETS:'20000',
+     TICKETS_PER_BOOK:'10',BOOK_PREFIX:'Book-',BOOK_DIGITS:'4'}, cfg=>{
+  // Every ticket number is five digits, always. Never KS-1, never KS-3721.
+  eq(ticketNumberAt(1,cfg),'KS-00001','first ticket is padded to five');
+  eq(ticketNumberAt(2,cfg),'KS-00002','and the second');
+  eq(ticketNumberAt(3721,cfg),'KS-03721','a four-digit number still gets five places');
+  eq(ticketNumberAt(20000,cfg),'KS-20000','the last one fills all five');
+  eq(totalBooks(cfg),2000,'2000 books');
+  eq(bookNumberAt(1,cfg),'Book-0001','books are padded to four');
+  eq(bookNumberAt(2000,cfg),'Book-2000','and the last one fills them');
+  eq(bookOfTicket('KS-03721',cfg),'Book-0373','ticket 3721 is in book 373');
+  eq(ticketIndex('KS-03721',cfg),3721,'and reads back');
+
+  // Reading is deliberately tolerant — somebody typing KS-3721 means KS-03721,
+  // and refusing them would be unhelpful. What matters is that the CANONICAL
+  // form is always padded, so a tolerant read still lands on the stored number.
+  eq(ticketIndex('KS-3721',cfg),3721,'an unpadded number still reads');
+  eq(ticketNumberAt(ticketIndex('KS-3721',cfg),cfg),'KS-03721',
+     'and canonicalises back to the padded form');
+  eq(ticketNumberAt(ticketIndex('KS-00001',cfg),cfg),'KS-00001','padded input is unchanged');
+
+  // Nothing anywhere may emit a short form.
+  var short = 0;
+  for (var i=1;i<=20000;i++) if (ticketNumberAt(i,cfg).length !== 8) short++;
+  eq(short,0,'all 20,000 numbers are exactly KS- plus five digits');
+});
+
 // --- every ticket maps to a book that contains it (exhaustive) ---
 console.log('\nexhaustive round-trip over 6000 tickets');
 {

@@ -56,6 +56,7 @@ function actionRegistry() {
     set_book_status:       { fn: handleSetBookStatus,     roles: ADMIN_ONLY, kind: 'bulk', lock: true },
     restock_books:         { fn: handleRestockBooks,      roles: ADMIN_ONLY, kind: 'bulk', lock: true },
     handover_receipt:      { fn: handleHandoverReceipt,   roles: ADMIN_ONLY, kind: 'report' },
+    expand_tickets:        { fn: handleExpandTickets,     roles: ADMIN_ONLY, sup: true, kind: 'bulk', lock: true },
 
     // --- agents & users ---
     list_agents:           { fn: handleListAgents,        roles: null, kind: 'read' },
@@ -107,6 +108,7 @@ function actionMeta() {
     set_book_status:        { group: 'Books',   label: 'Mark a book lost, or reopen it', danger: true },
     restock_books:          { group: 'Books',   label: 'Put unsold tickets back', danger: true },
     handover_receipt:       { group: 'Books',   label: 'Print a handover receipt' },
+    expand_tickets:         { group: 'Books',   label: 'Add more tickets to the raffle', danger: true },
 
     settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },
     report_outstanding:     { group: 'Money',   label: 'Who still owes money' },

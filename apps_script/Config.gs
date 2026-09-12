@@ -88,11 +88,12 @@ var CLOSED_BOOK_STATUSES = [BOOK_STATUS.SETTLED, BOOK_STATUS.VOID];
 var CONFIG_DEFAULTS = [
   ['TICKET_PREFIX', 'KS-', 'Text before the number. May be empty. LOCKED after setup.'],
   ['TICKET_START', '1', 'First ticket number. LOCKED after setup.'],
-  ['TICKET_DIGITS', '4', 'Zero padding, e.g. 4 gives KS-0001. LOCKED after setup.'],
-  ['TOTAL_TICKETS', '6000', 'How many tickets exist. LOCKED after setup.'],
+  ['TICKET_DIGITS', '5', 'Zero padding, e.g. 5 gives KS-00001. LOCKED after setup.'],
+  ['TOTAL_TICKETS', '10000', 'How many tickets exist. Only the super admin can raise it later, '
+    + 'and only upwards — see expandTickets. Never lower it.'],
   ['TICKETS_PER_BOOK', '10', 'Tickets in one physical book. LOCKED after setup.'],
   ['BOOK_PREFIX', 'Book-', 'Text before the book number. LOCKED after setup.'],
-  ['BOOK_DIGITS', '3', 'Zero padding, e.g. 3 gives Book-001. LOCKED after setup.'],
+  ['BOOK_DIGITS', '4', 'Zero padding, e.g. 4 gives Book-0001. LOCKED after setup.'],
   ['TICKET_PRICE', '10', 'Price of one ticket. Can be changed later.'],
   ['CURRENCY', 'RM', 'Shown on reports and receipts.'],
   ['DEFAULT_DUE_DAYS', '30', 'Default return period when books are issued.'],
@@ -142,15 +143,36 @@ var LOCK_TIMEOUT_MS = 20000;
  * first sight rather than treated as a failure — otherwise turning this on
  * would lock out every raffle already running.
  */
+/**
+ * The fingerprint itself, in one place. It is written by two callers — the
+ * check below and the re-stamp that ends a sanctioned expand — and two copies
+ * of this loop would drift the first time the key list changed.
+ */
+function numberingFingerprint_(cfg) {
+  cfg = cfg || getConfig();
+  var parts = [];
+  for (var i = 0; i < LOCKED_CONFIG_KEYS.length; i++) {
+    parts.push(LOCKED_CONFIG_KEYS[i] + '=' + String(cfg[LOCKED_CONFIG_KEYS[i]] || ''));
+  }
+  return parts.join('|');
+}
+
+/**
+ * Re-records the fingerprint after the one operation allowed to move a locked
+ * key. Called LAST, once the rows the new setting promises actually exist —
+ * stamping it earlier would bless a total the sheet cannot back.
+ */
+function restampNumberingFingerprint_() {
+  invalidateConfigCache();
+  PropertiesService.getScriptProperties()
+    .setProperty('NUMBERING_FINGERPRINT', numberingFingerprint_(getConfig()));
+}
+
 function assertNumberingUnchanged_() {
   var props = PropertiesService.getScriptProperties();
   var cfg = getConfig();
 
-  var current = [];
-  for (var i = 0; i < LOCKED_CONFIG_KEYS.length; i++) {
-    current.push(LOCKED_CONFIG_KEYS[i] + '=' + String(cfg[LOCKED_CONFIG_KEYS[i]] || ''));
-  }
-  var now = current.join('|');
+  var now = numberingFingerprint_(cfg);
   var seen = props.getProperty('NUMBERING_FINGERPRINT');
 
   if (!seen) { props.setProperty('NUMBERING_FINGERPRINT', now); return; }
@@ -220,6 +242,28 @@ function getConfig() {
 
   cache.put('config_v1', JSON.stringify(cfg), CONFIG_CACHE_TTL);
   return cfg;
+}
+
+/**
+ * Writes one Config value back to the sheet. Deliberately not exposed as an
+ * API action: the only caller is the expand below, which has already proved
+ * the change is safe. Anything else belongs in the Config tab, by hand.
+ */
+function setConfigValue_(key, value) {
+  var sheet = sheet_(SHEET.CONFIG);
+  var last = sheet.getLastRow();
+  if (last > 1) {
+    var keys = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (var i = 0; i < keys.length; i++) {
+      if (String(keys[i][0] || '').trim() === key) {
+        sheet.getRange(i + 2, 2).setValue(value);
+        invalidateConfigCache();
+        return;
+      }
+    }
+  }
+  sheet.appendRow([key, value, '']);
+  invalidateConfigCache();
 }
 
 function invalidateConfigCache() {

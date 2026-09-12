@@ -8,6 +8,7 @@
  */
 import { ref, onMounted, watch, nextTick } from 'vue'
 import Logo from './ui/Logo.vue'
+import { state } from '../lib/store.js'
 
 const props = defineProps({
   phase: String,          // 'loading' | 'setup' | 'signin' | 'error'
@@ -48,7 +49,11 @@ onMounted(async () => {
       <Logo :size="76" big class="mark" />
       <h1>K'Cho Shelter</h1>
       <p class="muted">Raffle ticket record</p>
-      <p class="tiny muted credit">K'Cho Ethnic Association Malaysia</p>
+      <!-- The config has not loaded before sign-in, so this falls back to the
+           registered name. Once signed in it follows the Config tab. -->
+      <p class="tiny muted credit">
+        {{ state.cfg?.orgName || "K'Cho Ethnic Association Malaysia" }}
+      </p>
 
       <!-- checking -->
       <div v-if="phase === 'loading'" class="pad">
