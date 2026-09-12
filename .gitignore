@@ -35,3 +35,7 @@ node_modules/
 
 # Build output — GitHub Actions builds and publishes this
 dist/
+
+# Apps Script link. Holds the script id, which identifies the project — keep it
+# out of a public repo for the same reason the client id came out of SETUP.md.
+.clasp.json
