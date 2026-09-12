@@ -45,15 +45,15 @@ function doStep(action) {
     <!-- first run: what to do, in order -->
     <div v-if="gettingStarted" class="card">
       <h3><Bi text="Let's get started" /></h3>
-      <p class="muted small">Four things, once.</p>
+      <p class="muted small"><Bi text="Four things, once." /></p>
       <div class="steps">
         <div v-for="(s, i) in gettingStarted" :key="i"
              :class="['step', { done: s.done, now: !s.done && gettingStarted.findIndex(x => !x.done) === i }]"
              @click="!s.done && s.action && doStep(s.action)">
           <span class="mark">{{ s.done ? '✓' : i + 1 }}</span>
           <span class="grow">
-            <span class="t">{{ s.title }}</span>
-            <span class="d">{{ s.detail }}</span>
+            <span class="t"><Bi :text="s.title" /></span>
+            <span class="d"><Bi :text="s.detail" /></span>
           </span>
           <span v-if="!s.done && s.action" class="chev">›</span>
         </div>
@@ -65,7 +65,22 @@ function doStep(action) {
       percent: overview.percent, collected: overview.collected, target: overview.target,
       currency: overview.currency, sold: overview.sold, total: state.cfg.totalTickets,
       outstanding: overview.outstanding }" />
-    <div v-else class="card"><div class="skel" style="height:52px"></div></div>
+
+    <!-- An empty grey box tells nobody anything. Say what is happening, and
+         count up while it happens, because on a big raffle this takes a while. -->
+    <div v-else class="card loading">
+      <div class="spin"></div>
+      <div class="grow">
+        <b><Bi text="Getting your raffle" /></b>
+        <div class="small muted">
+          <template v-if="state.loadProgress">
+            {{ state.loadProgress.done.toLocaleString() }} of
+            {{ state.loadProgress.total.toLocaleString() }} tickets
+          </template>
+          <template v-else>One moment…</template>
+        </div>
+      </div>
+    </div>
 
     <!-- what needs doing -->
     <template v-if="attention.length">
@@ -89,19 +104,19 @@ function doStep(action) {
     <h3 class="sect"><Bi text="What do you want to do?" /></h3>
     <div class="quick">
       <button v-if="canWrite" @click="go('sell')">
-        <span class="em">🎟️</span><Bi text="Write down a sale" />
+        <span class="em">🎟️</span><Bi class="mid" text="Write down a sale" />
       </button>
       <button @click="go('search')">
-        <span class="em">🔍</span><Bi text="Find a ticket" />
+        <span class="em">🔍</span><Bi class="mid" text="Find a ticket" />
       </button>
       <button v-if="canWrite" @click="emit('sell-book')">
-        <span class="em">📗</span><Bi text="Sell a whole book" />
+        <span class="em">📗</span><Bi text="Sell a whole book" class="mid" />
       </button>
       <button v-if="isAdmin" @click="emit('issue')">
-        <span class="em">📚</span><Bi text="Give out books" />
+        <span class="em">📚</span><Bi class="mid" text="Give out books" />
       </button>
       <button v-if="isAdmin" @click="emit('add-agent')">
-        <span class="em">👥</span><Bi text="Add a seller" />
+        <span class="em">👥</span><Bi class="mid" text="Add a seller" />
       </button>
     </div>
 
@@ -120,6 +135,14 @@ function doStep(action) {
 <style scoped>
 .sect { margin: 22px 2px 10px; }
 .setup { border-left: 4px solid var(--warn); }
+
+.loading { display: flex; align-items: center; gap: 16px; }
+.loading .spin {
+  flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--brand);
+  animation: turn .8s linear infinite;
+}
+@keyframes turn { to { transform: rotate(360deg) } }
 
 /* getting started */
 .steps { margin-top: 6px; }

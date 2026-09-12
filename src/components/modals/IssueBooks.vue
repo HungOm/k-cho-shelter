@@ -49,8 +49,11 @@ async function issue() {
       dueDate: due.value
     })
     toast(`${r.issued} books given to ${r.agent.name}`, 'ok')
-    await refresh()
+    // Close first. The write is done and the toast has said so; reloading the
+    // whole ticket table before closing reads as a hang, which is exactly what
+    // it looked like on a 20,000-ticket raffle.
     emit('issued', r.agent.id)
+    refresh()
   } catch (err) {
     if (err.code === 'BOOKS_NOT_AVAILABLE' && err.details?.blocked) blocked.value = err.details.blocked
     else toast(err.message, 'bad', err.code)

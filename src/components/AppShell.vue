@@ -50,7 +50,7 @@ const showMore = ref(false)
 function pick(id) { showMore.value = false; go(id) }
 
 const roleWord = computed(() => ({
-  admin: 'Organiser', recorder: 'Helper', agent: 'Seller', viewer: 'Can only look'
+  admin: 'Organiser', recorder: 'Helper', agent: 'Seller who signs in', viewer: 'Can only look'
 }[state.user?.role] || state.user?.role))
 
 defineEmits(['signout'])
@@ -111,7 +111,7 @@ defineEmits(['signout'])
             {{ s.icon }}
             <i v-if="badges[s.id]" class="dot"></i>
           </span>
-          <Bi :text="s.label" />
+          <Bi :text="s.label" class="mid" />
         </button>
         <button v-if="moreTabs.length" :class="['tab', { on: moreActive }]"
                 @click="showMore = true" aria-label="More screens">
@@ -119,7 +119,7 @@ defineEmits(['signout'])
             ⋯
             <i v-if="moreBadge" class="dot"></i>
           </span>
-          <Bi text="More" />
+          <Bi text="More" class="mid" />
         </button>
       </nav>
 
@@ -164,7 +164,8 @@ defineEmits(['signout'])
 }
 .navitem:hover { background: var(--surface-2); color: var(--text); }
 .navitem.on { background: var(--brand-soft); color: var(--brand); }
-.navitem .ic { font-size: 1.25rem; line-height: 1; }
+.navitem .ic { font-size: 1.25rem; line-height: 1; flex: 0 0 26px; text-align: center; }
+.navitem :deep(.bi) { align-items: flex-start; }
 
 .who {
   display: flex; align-items: center; gap: 10px;

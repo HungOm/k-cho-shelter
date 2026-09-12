@@ -17,7 +17,7 @@ const superAdmin = ref('')
 const c = computed(() => state.cfg)
 
 const ROLE_WORDS = {
-  admin: 'Organiser', recorder: 'Helper', agent: 'Seller', viewer: 'Can only look'
+  admin: 'Organiser', recorder: 'Helper', agent: 'Seller who signs in', viewer: 'Can only look'
 }
 
 onMounted(loadUsers)

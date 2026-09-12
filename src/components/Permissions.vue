@@ -14,12 +14,12 @@ import { api, toast, isSuper } from '../lib/store.js'
 import Empty from './ui/Empty.vue'
 
 const ROLE_WORDS = {
-  admin: 'Organiser', recorder: 'Helper', agent: 'Seller', viewer: 'Can only look'
+  admin: 'Organiser', recorder: 'Helper', agent: 'Seller who signs in', viewer: 'Can only look'
 }
 const ROLE_BLURB = {
   admin: 'Runs the raffle day to day',
   recorder: 'Writes down sales and looks after books',
-  agent: 'Sells from the books they are holding',
+  agent: 'A seller who also uses the app, for their own books only',
   viewer: 'Sees totals, never phone numbers'
 }
 

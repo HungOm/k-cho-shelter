@@ -32,7 +32,10 @@ function waLink(o) {
       <h1 style="margin:0">Sellers</h1>
       <button v-if="isAdmin" class="btn primary" @click="emit('add-agent')">Add someone</button>
     </div>
-    <p class="muted">People who carry books. They do not need a Google account.</p>
+    <p class="muted">
+      People who carry books and sell tickets. Most never open the app —
+      a name and a phone number is all that is needed.
+    </p>
 
     <div v-if="state.overdue.length" class="card late">
       <div class="spread" style="margin-bottom:8px">

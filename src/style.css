@@ -248,10 +248,38 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
 /* ---------- print ---------- */
+/* Paper is not a screen. Everything here drags the app back to plain ink:
+   no chrome, no dark theme, no scroll boxes that would cut a long book list
+   off at whatever happened to fit on the monitor. */
 @media print {
+  /* A dark-mode screen prints as white text on white paper — a blank sheet
+     and a very confused volunteer. Force the light tokens for both themes. */
+  :root, :root:not([data-theme="light"]) {
+    --bg: #fff; --surface: #fff; --surface-2: #fff;
+    --text: #000; --muted: #444; --border: #999;
+    --shadow: none; --shadow-lg: none;
+  }
+
   .noprint, .appbar, .tabs, .sidebar, .toasts { display: none !important; }
-  body { background: #fff; }
+  body { background: #fff; overflow: visible !important; }
   .card { box-shadow: none; border: 1px solid #999; }
   .sheet { box-shadow: none !important; max-height: none !important; }
-  .backdrop { position: static !important; background: none !important; }
+  .backdrop {
+    position: static !important; background: none !important;
+    backdrop-filter: none !important; display: block !important;
+  }
+
+  /* A sheet printing itself wants the whole page: the screen it was opened
+     on top of must not come out stapled to the front. */
+  body.printing .shell { display: none !important; }
+  body.printing .sheet { max-width: none !important; border-radius: 0 !important; }
+  body.printing .sheet > .head { border-bottom: 0; padding: 0 0 6px; }
+  body.printing .sheet > .head .x { display: none !important; }
+  body.printing .sheet > .body { padding: 0; overflow: visible !important; }
+  .tablewrap { overflow: visible !important; }
+
+  /* Keep a receipt's signature lines with the list they belong to. */
+  .sign { break-inside: avoid; }
+  tr, .f { break-inside: avoid; }
+  thead { display: table-header-group; }
 }

@@ -62,9 +62,8 @@ async function go() {
       mark: `${r.changed} books marked, ${r.ticketsVoided} tickets cancelled`
     }[props.kind]
     toast(said, 'ok')
-    await loadDelta()
-    refresh()
     emit('done')
+    loadDelta().then(refresh)
   } catch (err) {
     // The server decides this needs a second person; it also wrote the sentence
     // the approver will read, so we hand its own summary straight back.

@@ -54,8 +54,7 @@ async function sell() {
       buyerZone: zone.value.trim()
     })
     result.value = r
-    await loadDelta()
-    refresh()
+    loadDelta().then(refresh)
   } catch (err) {
     toast(err.message, 'bad', err.code)
   } finally {

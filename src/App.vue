@@ -314,7 +314,8 @@ function seeTickets(book) {
     <SellTicket v-if="modal?.kind === 'ticket'" :ticket="modal.payload"
                 @close="closeModal" @saved="closeModal" />
     <AgentForm v-else-if="modal?.kind === 'agent'" :agent="modal.payload"
-               @close="closeModal" @saved="closeModal" />
+               @close="closeModal" @saved="closeModal"
+               @receipt="id => openModal('receipt', id)" />
     <UserForm v-else-if="modal?.kind === 'user'" @close="closeModal" @saved="closeModal" />
     <IssueBooks v-else-if="modal?.kind === 'issue'"
                 @close="closeModal" @issued="id => openModal('receipt', id)" />
