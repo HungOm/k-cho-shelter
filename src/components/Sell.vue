@@ -10,6 +10,7 @@ import { ref, computed, nextTick } from 'vue'
 import { state, api, toast, loadDelta, canWrite } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
 import { money } from '../lib/format.js'
+import { resolveTicketNumber } from '../lib/books.js'
 import Bi from './ui/Bi.vue'
 
 const emit = defineEmits(['open'])
@@ -27,17 +28,8 @@ const value = computed(() => filled.value * (state.cfg?.ticketPrice || 0))
 
 /** Accepts a full number or just the trailing digits people actually remember. */
 function resolve(raw) {
-  const s = raw.trim()
-  if (!s) return null
-  if (state.byNumber[s]) return state.byNumber[s]
-  const up = s.toUpperCase()
-  if (state.byNumber[up]) return state.byNumber[up]
-  const digits = s.replace(/\D/g, '')
-  if (!digits) return null
-  const padded = state.cfg.ticketPrefix + digits.padStart(state.cfg.ticketDigits, '0')
-  if (state.byNumber[padded]) return state.byNumber[padded]
-  const matches = state.tickets.filter(t => t.number.replace(/\D/g, '').endsWith(digits))
-  return matches.length === 1 ? matches[0] : null
+  const n = resolveTicketNumber(raw)
+  return n ? state.byNumber[n] : null
 }
 
 function findOne() {

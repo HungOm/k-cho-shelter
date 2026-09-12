@@ -230,7 +230,8 @@ function describeBlocked_(blocked, verb) {
     var who = names[e.agentId];
     e.agentName = (who && who.name) ? who.name : '';
     e.holder = holderLabel_(e.agentId, names);
-    e.reason = e.reason || (verb + ' ' + e.status + (e.holder ? ' with ' + e.holder : ''));
+    e.reason = e.reason ||
+      (verb + ' ' + e.status + (e.holder ? ' ' + (e.prep || 'with') + ' ' + e.holder : ''));
   }
   return blocked;
 }
@@ -326,7 +327,7 @@ function handleTransferBooks(payload, user) {
         reason: 'is ' + String(b.Status).toLowerCase() + ', not out with anyone' });
     }
     if (String(b.Held_By_Agent) === toAgentId) {
-      blocked.push({ book: numbers[i], status: 'held', agentId: toAgentId });
+      blocked.push({ book: numbers[i], status: 'held', prep: 'by', agentId: toAgentId });
     }
   }
   if (blocked.length) {

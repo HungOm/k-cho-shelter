@@ -10,6 +10,7 @@
 import { ref, computed } from 'vue'
 import { state, api, toast, refresh, loadDelta } from '../../lib/store.js'
 import { money } from '../../lib/format.js'
+import { resolveTicketNumber } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ book: Object })
@@ -30,20 +31,18 @@ const unsoldList = computed(() =>
 
 const sold = computed(() => {
   if (lost.value) return parseInt(soldCount.value, 10) || 0
-  return Math.max(0, per.value - unsoldList.value.length)
+  // Only tickets that actually resolved count as returned. Counting a typo as
+  // returned would show the agent owing less than the server will charge them.
+  const good = unsoldList.value.length - unresolved.value.length
+  return Math.max(0, per.value - good)
 })
 const due = computed(() => sold.value * price.value)
 const paidNum = computed(() => parseFloat(paid.value) || 0)
 const diff = computed(() => paidNum.value - due.value)
 
-function resolve(raw) {
-  const digits = String(raw).replace(/\D/g, '')
-  if (!digits) return raw
-  const padded = state.cfg.ticketPrefix + digits.padStart(state.cfg.ticketDigits, '0')
-  if (state.byNumber[padded]) return padded
-  const hit = state.tickets.find(t => t.number.replace(/\D/g, '').endsWith(digits))
-  return hit ? hit.number : raw
-}
+/** Anything that does not resolve is shown back, not silently sent. */
+const unresolved = computed(() =>
+  unsoldList.value.filter(r => !resolveTicketNumber(r)))
 
 async function settle() {
   if (paid.value === '') return toast('How much money did they hand in?', 'bad')
@@ -95,6 +94,15 @@ async function settle() {
              :placeholder="String(due)">
     </div>
 
+    <!-- A number here that is not a real ticket must never be sent quietly.
+         Anything NOT on this list counts as sold and is charged to the agent,
+         so one that fails to match moves a ticket to the sold side and adds its
+         price to what that volunteer owes. -->
+    <div v-if="unresolved.length" class="note bad">
+      <b>Not a ticket in this raffle:</b> {{ unresolved.join(', ') }}
+      <div class="small">Check the number. Until it is right, these would be counted as sold.</div>
+    </div>
+
     <div :class="['note', paid !== '' && Math.abs(diff) > 0.005 ? 'warn' : 'info']">
       <b>{{ sold }}</b> sold · should be <b>{{ money(due, currency) }}</b>
       <template v-if="paid !== ''"> · handed in <b>{{ money(paidNum, currency) }}</b></template>
@@ -110,7 +118,7 @@ async function settle() {
 
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
-      <button class="btn primary" :disabled="busy" @click="settle">
+      <button class="btn primary" :disabled="busy || unresolved.length" @click="settle">
         {{ busy ? 'Saving…' : 'Finish this book' }}
       </button>
     </template>
