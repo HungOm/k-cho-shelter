@@ -124,8 +124,9 @@ function expandBookRange_(payload, cfg) {
     var list = [];
     for (var i = 0; i < payload.bookNumbers.length; i++) {
       var n = String(payload.bookNumbers[i]).trim();
-      if (!bookIndex(n, cfg)) throw new ApiError('BOOK_NOT_FOUND', 'Book "' + n + '" does not exist.');
-      list.push(n);
+      var nIdx = bookIndex(n, cfg);
+      if (!nIdx) throw new ApiError('BOOK_NOT_FOUND', 'Book "' + n + '" does not exist.');
+      list.push(bookNumberAt(nIdx, cfg));   // canonical, for the same reason
     }
     return list;
   }
@@ -196,6 +197,44 @@ function handleListBooks(payload, user) {
 
 // ============ ISSUE ============
 
+/**
+ * "Pa Thang (Agent ID: A001)".
+ *
+ * A blocked line that says only "already out with A001" asks whoever is
+ * reading it to know the agent IDs by heart, which nobody does. The name goes
+ * first because that is what they actually know; the ID stays because it is
+ * what the Books tab and every report are keyed on, and because two people
+ * called Pa Thang is not a hypothetical.
+ */
+function holderLabel_(agentId, names) {
+  var id = String(agentId || '').trim();
+  if (!id) return '';
+  var who = names[id];
+  return (who && who.name) ? who.name + ' (Agent ID: ' + id + ')' : id;
+}
+
+/**
+ * Turns the facts gathered during validation into the sentence the client
+ * shows. The names are read only when something is actually blocked, so the
+ * ordinary path never pays for a lookup it does not use.
+ *
+ * Each entry keeps its parts alongside the finished sentence, so a client can
+ * compose it in another language without parsing English prose.
+ */
+function describeBlocked_(blocked, verb) {
+  if (!blocked.length) return blocked;
+  var names = agentNameMap_();
+  for (var i = 0; i < blocked.length; i++) {
+    var e = blocked[i];
+    if (e.missing) { e.reason = 'not found'; continue; }
+    var who = names[e.agentId];
+    e.agentName = (who && who.name) ? who.name : '';
+    e.holder = holderLabel_(e.agentId, names);
+    e.reason = e.reason || (verb + ' ' + e.status + (e.holder ? ' with ' + e.holder : ''));
+  }
+  return blocked;
+}
+
 function handleIssueBooks(payload, user) {
   var cfg = getConfig();
   var agentId = requireField_(payload, 'agentId');
@@ -217,13 +256,17 @@ function handleIssueBooks(payload, user) {
   var blocked = [];
   for (var i = 0; i < numbers.length; i++) {
     var b = index[numbers[i].toUpperCase()];
-    if (!b) { blocked.push({ book: numbers[i], reason: 'not found' }); continue; }
+    if (!b) { blocked.push({ book: numbers[i], missing: true }); continue; }
     if (b.Status !== BOOK_STATUS.UNASSIGNED && !payload.force) {
-      blocked.push({ book: numbers[i], reason: 'already ' + String(b.Status).toLowerCase() +
-        (b.Held_By_Agent ? ' with ' + b.Held_By_Agent : '') });
+      blocked.push({
+        book: numbers[i],
+        status: String(b.Status).toLowerCase(),
+        agentId: String(b.Held_By_Agent || '').trim()
+      });
     }
   }
   if (blocked.length) {
+    describeBlocked_(blocked, 'already');
     throw new ApiError('BOOKS_NOT_AVAILABLE',
       blocked.length + ' of ' + numbers.length + ' books are not free to issue. Nothing was changed.',
       { blocked: blocked });
@@ -277,15 +320,17 @@ function handleTransferBooks(payload, user) {
   var blocked = [];
   for (var i = 0; i < numbers.length; i++) {
     var b = index[numbers[i].toUpperCase()];
-    if (!b) { blocked.push({ book: numbers[i], reason: 'not found' }); continue; }
+    if (!b) { blocked.push({ book: numbers[i], missing: true }); continue; }
     if (b.Status !== BOOK_STATUS.OUT) {
-      blocked.push({ book: numbers[i], reason: 'is ' + String(b.Status).toLowerCase() + ', not out with anyone' });
+      blocked.push({ book: numbers[i], status: String(b.Status).toLowerCase(), agentId: '',
+        reason: 'is ' + String(b.Status).toLowerCase() + ', not out with anyone' });
     }
     if (String(b.Held_By_Agent) === toAgentId) {
-      blocked.push({ book: numbers[i], reason: 'already held by ' + toAgentId });
+      blocked.push({ book: numbers[i], status: 'held', agentId: toAgentId });
     }
   }
   if (blocked.length) {
+    describeBlocked_(blocked, 'already');
     throw new ApiError('TRANSFER_BLOCKED',
       'Some books cannot be transferred. Nothing was changed.', { blocked: blocked });
   }
@@ -433,7 +478,13 @@ function handleSettleBook(payload, user) {
       if (!uIdx || uIdx < range.first || uIdx > range.last) {
         throw new ApiError('NOT_IN_BOOK', 'Ticket ' + unsold[u] + ' is not in book ' + bookNumber + '.');
       }
-      unsoldSet[un] = true;
+      // Keyed by the canonical number, because settleTicketRows_ looks these up
+      // against what is stored in the sheet. Keyed by the raw input, "KS-3721"
+      // passed the check above and then failed to match KS-03721 — so a ticket
+      // the agent had physically handed back was marked SOLD and its price
+      // added to what they owed. The tolerant parse has to be followed through
+      // to the comparison, or it turns into a silent charge.
+      unsoldSet[ticketNumberAt(uIdx, cfg)] = true;
     }
     declaredSold = settleTicketRows_(bookNumber, range, unsoldSet, agentId, price, user, now);
   }
