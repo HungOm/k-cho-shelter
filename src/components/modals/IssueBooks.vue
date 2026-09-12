@@ -3,6 +3,7 @@
 import { ref, computed } from 'vue'
 import { state, api, toast, refresh } from '../../lib/store.js'
 import { money } from '../../lib/format.js'
+import { inspectRange, bookNumber } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 
 const emit = defineEmits(['close', 'issued'])
@@ -20,17 +21,19 @@ function defaultDue() {
   return d.toISOString().slice(0, 10)
 }
 
-function bookNum(raw) {
-  const digits = String(raw).replace(/\D/g, '')
-  if (!digits) return ''
-  return state.cfg.bookPrefix + digits.padStart(state.cfg.bookDigits, '0')
-}
+// Resolved locally against books already loaded, so the answer appears as they
+// type rather than after a save they had to wait for.
+const range = computed(() => inspectRange(from.value, to.value))
+const count = computed(() => range.value?.count || 0)
+const canIssue = computed(() => !!range.value && !range.value.noneFree)
 
-const count = computed(() => {
-  const a = parseInt(from.value, 10), b = parseInt(to.value || from.value, 10)
-  if (isNaN(a)) return 0
-  return Math.max(0, Math.abs((isNaN(b) ? a : b) - a) + 1)
-})
+/** Offer the first run big enough, so nobody has to hunt for free books. */
+function useSuggestion() {
+  const n = range.value?.nextRun
+  if (!n) return
+  from.value = String(n.from)
+  to.value = n.to === n.from ? '' : String(n.to)
+}
 const worth = computed(() => count.value * (state.cfg?.ticketsPerBook || 0) * (state.cfg?.ticketPrice || 0))
 
 async function issue() {
@@ -41,8 +44,8 @@ async function issue() {
   try {
     const r = await api('issue_books', {
       agentId: agentId.value,
-      fromBook: bookNum(from.value),
-      toBook: bookNum(to.value || from.value),
+      fromBook: bookNumber(from.value),
+      toBook: bookNumber(to.value || from.value),
       dueDate: due.value
     })
     toast(`${r.issued} books given to ${r.agent.name}`, 'ok')
@@ -78,10 +81,22 @@ async function issue() {
     </div>
     <p class="hint" style="margin-top:-8px">Leave the second box empty for a single book.</p>
 
-    <div v-if="count" class="note info mt">
+    <!-- clean range -->
+    <div v-if="range?.allFree" class="note info mt">
       <b>{{ count }} {{ count === 1 ? 'book' : 'books' }}</b>
       · {{ count * state.cfg.ticketsPerBook }} tickets
       · worth {{ money(worth, state.cfg.currency) }} if they all sell
+    </div>
+
+    <!-- some or all of it is already out -->
+    <div v-else-if="range" :class="['note', range.noneFree ? 'bad' : 'warn', 'mt']">
+      <b>{{ range.message }}</b>
+      <div v-if="range.nextRun" class="mt">
+        <button class="btn sm" @click="useSuggestion">
+          Use {{ range.nextRun.from }}<template v-if="range.nextRun.to !== range.nextRun.from">–{{ range.nextRun.to }}</template>
+          instead<template v-if="range.nextRun.short"> ({{ range.nextRun.available }} free)</template>
+        </button>
+      </div>
     </div>
 
     <div class="field mt">
@@ -89,14 +104,15 @@ async function issue() {
       <input id="id" v-model="due" type="date">
     </div>
 
+    <!-- the server refused: it names every blocked book, so show them all -->
     <div v-if="blocked" class="note bad">
-      <b>These books are not free:</b>
-      <div v-for="b in blocked" :key="b.book">{{ b.book }} — {{ b.reason }}</div>
+      <b>Nothing was changed. These are not free:</b>
+      <div v-for="b in blocked" :key="b.book" class="tiny">{{ b.book }} — {{ b.reason }}</div>
     </div>
 
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
-      <button class="btn primary" :disabled="busy || !count" @click="issue">
+      <button class="btn primary" :disabled="busy || !count || !canIssue" @click="issue">
         {{ busy ? 'Saving…' : `Give out ${count || ''}` }}
       </button>
     </template>

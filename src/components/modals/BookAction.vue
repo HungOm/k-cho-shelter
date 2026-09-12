@@ -9,6 +9,7 @@
  */
 import { ref, computed } from 'vue'
 import { state, api, toast, refresh, loadDelta } from '../../lib/store.js'
+import { inspectRange, bookNumber } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ kind: String })   // 'transfer' | 'return' | 'mark'
@@ -23,11 +24,14 @@ const busy = ref(false)
 const blocked = ref(null)
 
 const cfg = computed(() => state.cfg)
-const count = computed(() => {
-  const a = parseInt(from.value, 10), b = parseInt(to.value || from.value, 10)
-  if (isNaN(a)) return 0
-  return Math.max(0, Math.abs((isNaN(b) ? a : b) - a) + 1)
-})
+// Transfer and bring-back only make sense for books that are actually out;
+// reporting lost applies to anything that exists.
+const isRelevant = computed(() => props.kind === 'mark'
+  ? (b => b.status !== 'Unassigned')
+  : (b => b.status === 'Out'))
+const range = computed(() => inspectRange(from.value, to.value, isRelevant.value))
+const count = computed(() => range.value?.count || 0)
+const usable = computed(() => !!range.value && !range.value.noneFree)
 
 const TITLES = {
   transfer: ['Pass books to someone else', 'They stay out, just with a different person'],
@@ -37,20 +41,15 @@ const TITLES = {
 const title = computed(() => TITLES[props.kind][0])
 const subtitle = computed(() => TITLES[props.kind][1])
 
-function bookNum(raw) {
-  const d = String(raw).replace(/\D/g, '')
-  return d ? cfg.value.bookPrefix + d.padStart(cfg.value.bookDigits, '0') : ''
-}
-
 async function go() {
   if (!from.value) return toast('Which books?', 'bad')
   if (props.kind === 'mark' && !reason.value.trim()) return toast('Please say why', 'bad')
 
-  const range = { fromBook: bookNum(from.value), toBook: bookNum(to.value || from.value) }
+  const books = { fromBook: bookNumber(from.value), toBook: bookNumber(to.value || from.value) }
   const call = {
-    transfer: ['transfer_books', { ...range, toAgentId: agentId.value }],
-    return:   ['return_books', range],
-    mark:     ['set_book_status', { ...range, status: status.value, reason: reason.value.trim(), dryRun: false }]
+    transfer: ['transfer_books', { ...books, toAgentId: agentId.value }],
+    return:   ['return_books', books],
+    mark:     ['set_book_status', { ...books, status: status.value, reason: reason.value.trim(), dryRun: false }]
   }[props.kind]
 
   busy.value = true
@@ -101,9 +100,15 @@ async function go() {
         <input id="bat" v-model="to" class="xl" inputmode="numeric" placeholder="leave empty for one">
       </div>
     </div>
-    <div v-if="count" class="note info">
+    <div v-if="range?.allFree" class="note info">
       <b>{{ count }} {{ count === 1 ? 'book' : 'books' }}</b>
       · up to {{ count * cfg.ticketsPerBook }} tickets
+    </div>
+    <div v-else-if="range" :class="['note', range.noneFree ? 'bad' : 'warn']">
+      <b v-if="kind === 'mark'">{{ range.message }}</b>
+      <b v-else>
+        {{ range.freeCount }} of {{ count }} can be moved — the rest are not out with anyone.
+      </b>
     </div>
 
     <div v-if="kind === 'transfer'" class="field">
@@ -137,7 +142,7 @@ async function go() {
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
       <button :class="['btn', kind === 'mark' ? 'danger' : 'primary']"
-              :disabled="busy || !count" @click="go">
+              :disabled="busy || !count || !usable" @click="go">
         {{ busy ? 'Saving…' : title }}
       </button>
     </template>

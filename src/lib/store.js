@@ -16,6 +16,15 @@ export const TICKET_STATUS = {
   DONATED: 'Donated', VOID: 'Void'
 }
 
+/**
+ * Read at module load, so it cannot be allowed to throw: a browser with storage
+ * blocked (a locked-down profile, some private windows) would otherwise fail
+ * the import and take the entire app down before it rendered anything.
+ */
+function readSellMode() {
+  try { return localStorage.getItem(LS.mode) || 'steps' } catch { return 'steps' }
+}
+
 export const state = reactive({
   // session
   ready: false,
@@ -36,7 +45,7 @@ export const state = reactive({
   loading: false,
   loadProgress: null,
   lastSync: null,
-  sellMode: localStorage.getItem(LS.mode) || 'steps',   // 'steps' | 'quick'
+  sellMode: readSellMode(),                             // 'steps' | 'quick'
   query: '',
   filterStatus: '',
   filterAgent: '',
