@@ -308,6 +308,17 @@ function bookCacheVersion_() {
 }
 
 /** Called after any write to the Books sheet, so every user sees it at once. */
+function ticketCacheVersion_() {
+  var props = PropertiesService.getScriptProperties();
+  return props.getProperty('TICKET_CACHE_V') || '0';
+}
+
+function bumpTicketCacheVersion() {
+  var props = PropertiesService.getScriptProperties();
+  var next = (parseInt(props.getProperty('TICKET_CACHE_V') || '0', 10) + 1) % 1000000;
+  props.setProperty('TICKET_CACHE_V', String(next));
+}
+
 function bumpBookCacheVersion() {
   var props = PropertiesService.getScriptProperties();
   var next = (parseInt(props.getProperty('BOOK_CACHE_V') || '0', 10) + 1) % 1000000;

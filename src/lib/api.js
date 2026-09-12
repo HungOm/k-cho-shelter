@@ -19,12 +19,45 @@ export class ApiError extends Error {
 
 let apiUrl = ''
 let idToken = ''
+let idTokenExpiresAt = 0
 let onAuthExpired = null
+
+/** The token's own expiry, read from the JWT. Used only for timing. */
+function readExpiry(jwt) {
+  try {
+    const part = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const exp = JSON.parse(atob(part)).exp
+    return exp ? exp * 1000 : 0
+  } catch { return 0 }
+}
 
 export function configure(opts) {
   if (opts.apiUrl !== undefined) apiUrl = opts.apiUrl
-  if (opts.idToken !== undefined) idToken = opts.idToken
+  if (opts.idToken !== undefined) {
+    idToken = opts.idToken
+    idTokenExpiresAt = readExpiry(idToken)
+  }
   if (opts.onAuthExpired) onAuthExpired = opts.onAuthExpired
+}
+
+export function tokenExpiresAt() { return idTokenExpiresAt }
+
+/** True when the token is gone or about to be. */
+export function tokenIsStale(marginMs = 30_000) {
+  return !!idToken && !!idTokenExpiresAt && Date.now() > idTokenExpiresAt - marginMs
+}
+
+/**
+ * Renew before sending, not after failing.
+ *
+ * A phone suspends timers while it is locked, so the scheduled renewal may
+ * never have run. Discovering that through a 401 means the person's first tap
+ * after lunch fails and raises a sign-in prompt. Holding the request for a
+ * moment instead means they see nothing at all.
+ */
+async function ensureFresh() {
+  if (!onAuthExpired || !tokenIsStale()) return
+  await onAuthExpired()
 }
 
 export function hasConnection() {
@@ -33,6 +66,9 @@ export function hasConnection() {
 
 export async function api(action, payload = {}, opts = {}) {
   if (!apiUrl) throw new ApiError('NO_CONNECTION', 'Not connected to the spreadsheet yet.')
+
+  // Skipped on the retry after a renewal, or it would renew about renewing.
+  if (!opts.noRetry) await ensureFresh()
 
   let res
   try {

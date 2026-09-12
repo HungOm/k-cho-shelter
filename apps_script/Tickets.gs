@@ -41,16 +41,92 @@ var TICKET_WIRE_FIELDS = [
   'Notes', 'Source', 'Version', 'Recorded_By', 'Modified_Date'
 ];
 
-function ticketToWire_(t, user) {
+var WIRE_PHONE = TICKET_WIRE_FIELDS.indexOf('Buyer_Phone');
+var WIRE_MODIFIED = TICKET_WIRE_FIELDS.indexOf('Modified_Date');
+
+/** The row as it is cached: every field, nothing masked, dates already ISO. */
+function ticketToWireRaw_(t) {
   var row = [];
   for (var i = 0; i < TICKET_WIRE_FIELDS.length; i++) {
-    var f = TICKET_WIRE_FIELDS[i];
-    var v = t[f];
-    if (f === 'Buyer_Phone' && user && user.role === ROLES.VIEWER) v = maskPhone_(v);
+    var v = t[TICKET_WIRE_FIELDS[i]];
     if (v instanceof Date) v = v.toISOString();
     row.push(v === null || v === undefined ? '' : v);
   }
   return row;
+}
+
+/**
+ * Masking happens on the way OUT, never on the way into the cache: it depends
+ * on who is asking, and caching one view-only user's masked copy would serve
+ * that copy to everybody.
+ */
+function maskWireRow_(row, user) {
+  if (!user || user.role !== ROLES.VIEWER) return row;
+  var copy = row.slice();
+  copy[WIRE_PHONE] = maskPhone_(copy[WIRE_PHONE]);
+  return copy;
+}
+
+function ticketToWire_(t, user) {
+  return maskWireRow_(ticketToWireRaw_(t), user);
+}
+
+// ============ THE TICKET TABLE CACHE ============
+
+/**
+ * Reading six thousand rows out of the spreadsheet takes the better part of a
+ * second, and a cold boot did it three times over — once per snapshot page —
+ * while read_delta did it again just to find the four rows that had changed.
+ *
+ * The wire payload is cached instead, keyed by a counter the router bumps after
+ * every write. Keying by version rather than by time is the point: a stale
+ * table cannot outlive the write that invalidated it, so nobody is ever offered
+ * a ticket that somebody else has already sold.
+ *
+ * CacheService refuses a value over 100 KB, so the JSON is split across
+ * numbered keys with a count key beside it. A missing chunk (eviction is always
+ * allowed) falls back to the sheet rather than serving half a table.
+ */
+var TICKET_CACHE_TTL = 21600;      // 6 hours; the version key is the real expiry
+var TICKET_CHUNK_CHARS = 90000;    // under the 100 KB per-value ceiling
+
+function cachedTicketRows_() {
+  var cache = CacheService.getScriptCache();
+  var prefix = 'tix_' + ticketCacheVersion_() + '_';
+
+  var countRaw = cache.get(prefix + 'n');
+  if (countRaw) {
+    var n = parseInt(countRaw, 10);
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(prefix + i);
+    var got = cache.getAll(keys) || {};
+    var parts = [];
+    var complete = true;
+    for (var k = 0; k < n; k++) {
+      var piece = got[prefix + k];
+      if (piece === null || piece === undefined) { complete = false; break; }
+      parts.push(piece);
+    }
+    if (complete) {
+      try { return JSON.parse(parts.join('')); } catch (e) { /* rebuild below */ }
+    }
+  }
+
+  var tickets = readTicketsRaw_();
+  var rows = [];
+  for (var t = 0; t < tickets.length; t++) rows.push(ticketToWireRaw_(tickets[t]));
+
+  var json = JSON.stringify(rows);
+  var chunks = {};
+  var count = 0;
+  for (var p = 0; p < json.length; p += TICKET_CHUNK_CHARS) {
+    chunks[prefix + count] = json.substring(p, p + TICKET_CHUNK_CHARS);
+    count++;
+  }
+  chunks[prefix + 'n'] = String(count);
+  try { cache.putAll(chunks, TICKET_CACHE_TTL); } catch (e) { /* over quota: serve uncached */ }
+
+  return rows;
 }
 
 function maskPhone_(phone) {
@@ -67,18 +143,22 @@ function handleReadSnapshot(payload, user) {
   var offset = parseInt(payload.offset || 0, 10) || 0;
   var limit = Math.min(parseInt(payload.limit || 2000, 10) || 2000, 3000);
 
-  var tickets = readTicketsRaw_();
-  var slice = tickets.slice(offset, offset + limit);
+  var all = cachedTicketRows_();
+  var slice = all.slice(offset, offset + limit);
   var rows = [];
-  for (var i = 0; i < slice.length; i++) rows.push(ticketToWire_(slice[i], user));
+  for (var i = 0; i < slice.length; i++) rows.push(maskWireRow_(slice[i], user));
 
   return {
     fields: TICKET_WIRE_FIELDS,
     rows: rows,
     offset: offset,
     returned: rows.length,
-    total: tickets.length,
-    hasMore: offset + rows.length < tickets.length
+    total: all.length,
+    hasMore: offset + rows.length < all.length,
+    // Stamped so the client can tell later whether anything has moved without
+    // asking for the rows again.
+    version: ticketCacheVersion_(),
+    serverTime: new Date().toISOString()
   };
 }
 
@@ -92,15 +172,35 @@ function handleReadDelta(payload, user) {
     throw new ApiError('BAD_REQUEST', 'read_delta needs a valid "since" timestamp.');
   }
 
-  var tickets = readTicketsRaw_();
+  var all = cachedTicketRows_();
+  var cutoff = since.getTime();
   var rows = [];
-  for (var i = 0; i < tickets.length; i++) {
-    var modified = tickets[i].Modified_Date;
-    if (modified instanceof Date && modified.getTime() > since.getTime()) {
-      rows.push(ticketToWire_(tickets[i], user));
-    }
+  for (var i = 0; i < all.length; i++) {
+    var modified = all[i][WIRE_MODIFIED];
+    if (!modified) continue;
+    var at = new Date(modified).getTime();
+    if (at > cutoff) rows.push(maskWireRow_(all[i], user));
   }
-  return { fields: TICKET_WIRE_FIELDS, rows: rows, count: rows.length };
+  return {
+    fields: TICKET_WIRE_FIELDS,
+    rows: rows,
+    count: rows.length,
+    version: ticketCacheVersion_(),
+    serverTime: new Date().toISOString()
+  };
+}
+
+/**
+ * The cheapest call in the API: two Script Property reads and no spreadsheet at
+ * all. A client polls this to find out whether it is out of date, and only asks
+ * for rows when one of the counters has moved.
+ */
+function handleReadVersion(payload, user) {
+  return {
+    tickets: ticketCacheVersion_(),
+    books: bookCacheVersion_(),
+    serverTime: new Date().toISOString()
+  };
 }
 
 // ============ WRITING ============
