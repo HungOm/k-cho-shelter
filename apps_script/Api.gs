@@ -220,6 +220,11 @@ function route_(req) {
     if (spec.pub) return jsonOut_({ ok: true, data: spec.fn(req.payload) });
 
     var user = requireUser(req.idToken, spec.roles, spec.sup, req.action);
+
+    // Before anything is written, not after. A changed prefix means the numbers
+    // in the sheet and the numbers the code computes have stopped agreeing, and
+    // writing into that gap makes the damage permanent.
+    if (spec.kind === 'write' || spec.kind === 'bulk') assertNumberingUnchanged_();
     checkRateLimit(user.email, spec.kind || 'read');
 
     // Two-person control, checked before the action runs rather than after.
@@ -335,6 +340,7 @@ function handleWhoami(payload, user) {
       defaultDueDays: cfgNum(cfg, 'DEFAULT_DUE_DAYS', 30),
       eventName: cfg.EVENT_NAME || '',
       orgName: cfg.ORG_NAME || '',
+      projectCode: cfg.PROJECT_CODE || '',
       drawDate: cfg.DRAW_DATE || ''
     }
   };
