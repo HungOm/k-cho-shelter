@@ -9,7 +9,16 @@ import { ref, onMounted, computed } from 'vue'
 import { state, api, toast, isSuper, go } from '../lib/store.js'
 import { money, dateTime } from '../lib/format.js'
 
-const emit = defineEmits(['add-user'])
+const emit = defineEmits(['add-user', 'release-tickets'])
+
+/**
+ * A raffle that has reached its planned size is a finished state, not an empty
+ * form. Offering a Release button there would only ever come back NO_CHANGE or
+ * ABOVE_CEILING, which reads as a fault rather than as "you are done".
+ * A ceiling of 0 means none was set, so headroom is unknown, not zero.
+ */
+const allReleased = computed(() =>
+  !!c.value?.ticketCeiling && c.value.totalTickets >= c.value.ticketCeiling)
 
 const users = ref(null)
 const audit = ref(null)
@@ -95,12 +104,32 @@ async function loadAudit() {
       </div>
     </div>
 
+    <div v-if="isSuper && c" class="card">
+      <div class="spread">
+        <div class="grow">
+          <h3 style="margin:0">Release more tickets</h3>
+          <p class="muted small" style="margin:4px 0 0">
+            <template v-if="allReleased">
+              All {{ c.totalTickets.toLocaleString() }} tickets have been released.
+              There are no more to come.
+            </template>
+            <template v-else>
+              {{ c.totalTickets.toLocaleString() }} are live<template v-if="c.ticketCeiling">
+              of {{ c.ticketCeiling.toLocaleString() }} planned</template>.
+            </template>
+          </p>
+        </div>
+        <button v-if="!allReleased" class="btn" @click="emit('release-tickets')">Release</button>
+      </div>
+    </div>
+
     <div v-if="c" class="card">
       <h3>How this raffle is set up</h3>
       <div class="tablewrap">
         <table>
           <tbody>
-            <tr><td>Tickets</td><td>{{ c.totalTickets.toLocaleString() }} — {{ c.ticketPrefix }}{{ String(c.ticketStart).padStart(c.ticketDigits, '0') }} onwards</td></tr>
+            <tr><td>Tickets live</td><td>{{ c.totalTickets.toLocaleString() }} — {{ c.ticketPrefix }}{{ String(c.ticketStart).padStart(c.ticketDigits, '0') }} onwards</td></tr>
+            <tr v-if="c.ticketCeiling"><td>Planned total</td><td>{{ c.ticketCeiling.toLocaleString() }}</td></tr>
             <tr><td>In each book</td><td>{{ c.ticketsPerBook }} — that makes {{ c.totalBooks }} books</td></tr>
             <tr><td>Price</td><td>{{ money(c.ticketPrice, c.currency) }} each</td></tr>
             <tr><td>If all sold</td><td>{{ money(c.totalTickets * c.ticketPrice, c.currency) }}</td></tr>
