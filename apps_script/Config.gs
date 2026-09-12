@@ -101,6 +101,10 @@ var CONFIG_DEFAULTS = [
   ['ORG_NAME', "K'Cho Ethnic Association Malaysia", 'Shown on receipts.'],
   ['PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. '
     + 'NOT part of ticket numbers, so it is safe to change at any time.'],
+  ['TICKET_CEILING', '', 'How many tickets this raffle plans to reach in the end, e.g. 20000. '
+    + 'A guard, not a promise: releasing more than this is refused, so a slipped digit '
+    + 'cannot generate ten times the tickets you meant. Blank means no ceiling. '
+    + 'Raise it when the plan changes — it is not part of numbering.'],
   ['DRAW_DATE', '', 'Draw date, e.g. 2026-12-20.']
 ];
 
@@ -191,6 +195,26 @@ function assertNumberingUnchanged_() {
     if (before[key] !== undefined && before[key] !== nowVal) {
       changed.push(key + ': "' + before[key] + '" became "' + nowVal + '"');
     }
+  }
+
+  // The likeliest way to land here is not vandalism, it is somebody raising
+  // TOTAL_TICKETS in the Config tab to release more tickets — a reasonable thing
+  // to try, since the Config tab is documented as editable. It fails safe but it
+  // fails wide: every sale is refused until the number goes back. Say so, and
+  // name the tool that does it properly, rather than leaving them to guess.
+  var onlyTotalRaised = changed.length === 1 &&
+    changed[0].indexOf('TOTAL_TICKETS') === 0 &&
+    cfgNum(cfg, 'TOTAL_TICKETS', 0) > parseInt(before.TOTAL_TICKETS, 10);
+
+  if (onlyTotalRaised) {
+    throw new ApiError('NUMBERING_CHANGED',
+      'TOTAL_TICKETS was raised from ' + before.TOTAL_TICKETS + ' to ' +
+      cfgNum(cfg, 'TOTAL_TICKETS', 0) + ' by hand, but no ticket rows were created — ' +
+      'so the raffle now claims tickets that do not exist, and every sale is refused ' +
+      'until it is put back. Set it to ' + before.TOTAL_TICKETS + ' again in the Config ' +
+      'tab, then release more tickets with "Add more tickets", which writes the rows ' +
+      'and the setting together.',
+      { changed: changed, fixBySetting: before.TOTAL_TICKETS, useAction: 'expand_tickets' });
   }
 
   throw new ApiError('NUMBERING_CHANGED',
