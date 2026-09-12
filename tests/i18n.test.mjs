@@ -73,8 +73,6 @@ console.log('the untranslated-by-design list is honoured')
   for (const b of banned) ok(!(b in MY), `${b} must not be translated — it is data`)
 }
 
-console.log(`\n${pass} passed, ${fail} failed`)
-process.exit(fail ? 1 : 0)
 
 /**
  * Every error code the server can throw must have a Burmese line.
@@ -102,9 +100,29 @@ process.exit(fail ? 1 : 0)
       for (const k of m[1].matchAll(/([A-Z_]{3,})\s*:/g)) codes.add(k[1])
     }
   }
+  /**
+   * Codes a volunteer should never see, where English is the better answer.
+   *
+   * These mean the software is wrong, not that the person did something wrong.
+   * A Burmese sentence would invite them to fix it; the bare English code is
+   * what somebody needs to read back down a phone when reporting it.
+   */
+  const INTERNAL = new Set([
+    'UNKNOWN_ACTION',      // the app asked for something this backend has no name for
+    'PAYLOAD_TOO_LARGE',   // a request the client should have split
+    'USE_SELL_ACTION',     // routing guidance aimed at the caller, not the user
+    'USE_VOID_ACTION'
+  ])
+
   ok(codes.size > 20, `found the server's error codes (${codes.size})`)
-  const missing = [...codes].filter(c => !MY_ERRORS[c]).sort()
+  for (const c of INTERNAL) {
+    ok(!MY_ERRORS[c], `${c} is deliberately left in English`)
+  }
+  const missing = [...codes].filter(c => !MY_ERRORS[c] && !INTERNAL.has(c)).sort()
   ok(missing.length === 0,
     missing.length ? `every server code is translated — missing: ${missing.join(', ')}`
                    : 'every server code is translated')
 }
+
+console.log(`\n${pass} passed, ${fail} failed`)
+process.exit(fail ? 1 : 0)

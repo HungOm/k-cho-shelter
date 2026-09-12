@@ -33,7 +33,8 @@ import BookDetail from './components/modals/BookDetail.vue'
 import Receipt from './components/modals/Receipt.vue'
 import SellBook from './components/modals/SellBook.vue'
 import BookAction from './components/modals/BookAction.vue'
-import ReleaseTickets from './components/modals/ReleaseTickets.vue'
+import MakeTickets from './components/modals/MakeTickets.vue'
+import TicketsInPlay from './components/modals/TicketsInPlay.vue'
 import AskApproval from './components/modals/AskApproval.vue'
 import Toasts from './components/ui/Toasts.vue'
 
@@ -369,7 +370,8 @@ function seeTickets(book) {
                    @return-books="openModal('bookaction', 'return')"
                    @mark="openModal('bookaction', 'mark')"
                    @record-winner="openModal('winner')"
-                   @release-tickets="openModal('release')" />
+                   @make-tickets="openModal('make')"
+                   @tickets-in-play="openModal('inplay')" />
       </KeepAlive>
     </Transition>
   </AppShell>
@@ -399,8 +401,11 @@ function seeTickets(book) {
                 @needs-approval="r => openModal('askapproval', r)" />
     <AskApproval v-else-if="modal?.kind === 'askapproval'" :request="modal.payload"
                  @close="closeModal" @sent="closeModal" />
-    <ReleaseTickets v-else-if="modal?.kind === 'release'"
+    <MakeTickets v-else-if="modal?.kind === 'make'"
                     @close="closeModal" @released="closeModal" />
+    <TicketsInPlay v-else-if="modal?.kind === 'inplay'"
+                   @close="closeModal" @done="closeModal"
+                   @make-more="openModal('make')" />
   </Teleport>
 
   <Teleport to="body">
