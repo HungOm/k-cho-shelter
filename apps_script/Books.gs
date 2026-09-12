@@ -164,6 +164,14 @@ function handleListBooks(payload, user) {
   var status = String(payload.status || '').trim();
   var agentId = String(payload.agentId || '').trim();
 
+  // Books whose tickets are held back are left out entirely rather than shown
+  // as stock. The books screen is what an organiser counts when deciding how
+  // much is left to give out, and counting tickets nobody can sell yet would
+  // make that number a lie.
+  var cfg = getConfig();
+  var liveBooks = activeBooks(cfg);
+  var generatedBooks = totalBooks(cfg);
+
   // An agent only ever sees their own books.
   if (user.role === ROLES.AGENT) agentId = user.agentId;
 
@@ -171,6 +179,7 @@ function handleListBooks(payload, user) {
   var stats = {};
   for (var i = 0; i < ledger.rows.length; i++) {
     var r = ledger.rows[i];
+    if (bookIndex(r.book, cfg) > liveBooks) continue;   // held back
     stats[r.status] = (stats[r.status] || 0) + 1;
     if (status && r.status !== status) continue;
     if (agentId && r.agentId !== agentId) continue;
@@ -192,7 +201,12 @@ function handleListBooks(payload, user) {
     });
   }
 
-  return { books: books, stats: stats, currency: ledger.currency, total: ledger.rows.length };
+  return {
+    books: books, stats: stats, currency: ledger.currency,
+    total: Math.min(liveBooks, ledger.rows.length),
+    generatedBooks: generatedBooks,
+    heldBackBooks: Math.max(0, generatedBooks - liveBooks)
+  };
 }
 
 // ============ ISSUE ============
@@ -254,10 +268,17 @@ function handleIssueBooks(payload, user) {
   }
 
   // Validate all before writing any.
+  var liveBooks = activeBooks(cfg);
   var blocked = [];
   for (var i = 0; i < numbers.length; i++) {
     var b = index[numbers[i].toUpperCase()];
     if (!b) { blocked.push({ book: numbers[i], missing: true }); continue; }
+    // Held back. Handing this over would give somebody paper whose tickets
+    // refuse to record a sale, which they would only discover at the doorstep.
+    if (bookIndex(numbers[i], cfg) > liveBooks) {
+      blocked.push({ book: numbers[i], status: 'not released yet', agentId: '' });
+      continue;
+    }
     if (b.Status !== BOOK_STATUS.UNASSIGNED && !payload.force) {
       blocked.push({
         book: numbers[i],

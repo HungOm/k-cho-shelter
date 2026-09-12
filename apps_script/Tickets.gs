@@ -143,8 +143,15 @@ function handleReadSnapshot(payload, user) {
   var offset = parseInt(payload.offset || 0, 10) || 0;
   var limit = Math.min(parseInt(payload.limit || 2000, 10) || 2000, 3000);
 
+  // Only what is in play. Held-back tickets keep their rows and their cache
+  // entry — the line moves by changing one number, so nothing is rebuilt when
+  // more are released — but they are not sent, which is the point: a raffle
+  // holding back half its tickets loads half the data.
+  var cfg = getConfig();
   var all = cachedTicketRows_();
-  var slice = all.slice(offset, offset + limit);
+  var active = Math.min(activeTickets(cfg), all.length);
+
+  var slice = all.slice(offset, Math.min(offset + limit, active));
   var rows = [];
   for (var i = 0; i < slice.length; i++) rows.push(maskWireRow_(slice[i], user));
 
@@ -153,8 +160,9 @@ function handleReadSnapshot(payload, user) {
     rows: rows,
     offset: offset,
     returned: rows.length,
-    total: all.length,
-    hasMore: offset + rows.length < all.length,
+    total: active,
+    generated: all.length,
+    hasMore: offset + rows.length < active,
     // Stamped so the client can tell later whether anything has moved without
     // asking for the rows again.
     version: ticketCacheVersion_(),
@@ -173,9 +181,10 @@ function handleReadDelta(payload, user) {
   }
 
   var all = cachedTicketRows_();
+  var active = Math.min(activeTickets(getConfig()), all.length);
   var cutoff = since.getTime();
   var rows = [];
-  for (var i = 0; i < all.length; i++) {
+  for (var i = 0; i < active; i++) {          // held-back tickets never appear
     var modified = all[i][WIRE_MODIFIED];
     if (!modified) continue;
     var at = new Date(modified).getTime();
@@ -416,6 +425,12 @@ function handleCorrectTicket(payload, user) {
 function handleVoidTicket(payload, user) {
   var ticketNumber = requireField_(payload, 'ticketNumber');
   var reason = requireField_(payload, 'reason');
+
+  // This handler deliberately does not go through assertCanWriteTicket — a
+  // super admin voids a ticket regardless of who holds the book. But a ticket
+  // that is not in play yet is a different matter: voiding it would take it out
+  // of the draw before anybody had decided to release it.
+  assertTicketReleased_(ticketNumber);
 
   var ctx = loadTicket_(ticketNumber);
   var t = ctx.ticket;

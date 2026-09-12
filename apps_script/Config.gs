@@ -101,6 +101,10 @@ var CONFIG_DEFAULTS = [
   ['ORG_NAME', "K'Cho Ethnic Association Malaysia", 'Shown on receipts.'],
   ['PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. '
     + 'NOT part of ticket numbers, so it is safe to change at any time.'],
+  ['ACTIVE_TICKETS', '', 'How many of the generated tickets are IN PLAY, counting from the '
+    + 'first. Blank means all of them. Lower than TOTAL_TICKETS holds the rest back: they '
+    + 'are not loaded, not sellable, and their books cannot be given out until released. '
+    + 'Must be a whole number of books. Change it with "Release more tickets", not by hand.'],
   ['TICKET_CEILING', '', 'How many tickets this raffle plans to reach in the end, e.g. 20000. '
     + 'A guard, not a promise: releasing more than this is refused, so a slipped digit '
     + 'cannot generate ten times the tickets you meant. Blank means no ceiling. '
@@ -356,6 +360,43 @@ function bookNumberAt(index, cfg) {
 function totalBooks(cfg) {
   cfg = cfg || getConfig();
   return Math.ceil(cfgNum(cfg, 'TOTAL_TICKETS', 0) / cfgNum(cfg, 'TICKETS_PER_BOOK', 10));
+}
+
+/**
+ * GENERATED vs IN PLAY — two different numbers, and the distinction matters.
+ *
+ * TOTAL_TICKETS is how many ticket rows exist. It can only ever grow, because
+ * lowering it makes ticketIndex() treat everything above the line as no such
+ * ticket, which would silently un-sell paid tickets.
+ *
+ * ACTIVE_TICKETS is how many of those are in play right now, counting from the
+ * first. It is allowed to move in both directions, because nothing is destroyed
+ * either way: a held-back ticket keeps its row, its number and anything already
+ * written on it. That is the whole reason this is a second number rather than a
+ * ticket status — a status would have to be written onto ten thousand rows to
+ * change, and would land in the reports as if it meant something about the sale.
+ *
+ * Blank or zero means every generated ticket is in play, which is what an
+ * existing raffle has and what a raffle that never wants phasing keeps.
+ */
+function activeTickets(cfg) {
+  cfg = cfg || getConfig();
+  var total = cfgNum(cfg, 'TOTAL_TICKETS', 0);
+  var active = cfgNum(cfg, 'ACTIVE_TICKETS', 0);
+  if (active <= 0 || active > total) return total;
+  return active;
+}
+
+/** Books holding at least one ticket that is in play. */
+function activeBooks(cfg) {
+  cfg = cfg || getConfig();
+  return Math.ceil(activeTickets(cfg) / cfgNum(cfg, 'TICKETS_PER_BOOK', 10));
+}
+
+/** True when some generated tickets are being held back. */
+function hasHeldBackTickets(cfg) {
+  cfg = cfg || getConfig();
+  return activeTickets(cfg) < cfgNum(cfg, 'TOTAL_TICKETS', 0);
 }
 
 /** The book a ticket belongs to — pure arithmetic, no I/O. */

@@ -566,6 +566,26 @@ function getBookOwnerMap() {
  *
  * Cost: O(1) arithmetic to find the book, then one cached map lookup.
  */
+/**
+ * A ticket that has not been released is not writable by anybody, for any
+ * reason. Its own function rather than a line inside assertCanWriteTicket
+ * because handleVoidTicket does not go through that gate — it is the one write
+ * path that never has, so gating reads alone would leave a held-back ticket
+ * voidable, and it would come out of the draw before anyone had decided to
+ * release it.
+ */
+function assertTicketReleased_(ticketNumber, cfg) {
+  cfg = cfg || getConfig();
+  var active = activeTickets(cfg);
+  var idx = ticketIndex(ticketNumber, cfg);
+  if (idx > active) {
+    throw new ApiError('TICKET_NOT_RELEASED',
+      'Ticket ' + ticketNumber + ' has not been released yet. This raffle is selling ' +
+      'the first ' + active + ' tickets; release more before selling beyond that.',
+      { active: active, requested: idx });
+  }
+}
+
 function assertCanWriteTicket(user, ticketNumber, opts) {
   opts = opts || {};
   var cfg = getConfig();
@@ -573,6 +593,8 @@ function assertCanWriteTicket(user, ticketNumber, opts) {
   if (!bookNum) {
     throw new ApiError('TICKET_NOT_FOUND', 'Ticket "' + ticketNumber + '" is not a valid number.');
   }
+
+  assertTicketReleased_(ticketNumber, cfg);
 
   var book = getBookOwnerMap()[bookNum.toUpperCase()];
   if (!book) {

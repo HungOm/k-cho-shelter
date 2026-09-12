@@ -57,6 +57,7 @@ function actionRegistry() {
     restock_books:         { fn: handleRestockBooks,      roles: ADMIN_ONLY, kind: 'bulk', lock: true },
     handover_receipt:      { fn: handleHandoverReceipt,   roles: ADMIN_ONLY, kind: 'report' },
     expand_tickets:        { fn: handleExpandTickets,     roles: ADMIN_ONLY, sup: true, kind: 'bulk', lock: true },
+    set_active_tickets:    { fn: handleSetActiveTickets,  roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
 
     // --- agents & users ---
     list_agents:           { fn: handleListAgents,        roles: null, kind: 'read' },
@@ -109,6 +110,7 @@ function actionMeta() {
     restock_books:          { group: 'Books',   label: 'Put unsold tickets back', danger: true },
     handover_receipt:       { group: 'Books',   label: 'Print a handover receipt' },
     expand_tickets:         { group: 'Books',   label: 'Add more tickets to the raffle', danger: true },
+    set_active_tickets:     { group: 'Books',   label: 'Release or hold back tickets', danger: true },
 
     settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },
     report_outstanding:     { group: 'Money',   label: 'Who still owes money' },
@@ -332,7 +334,9 @@ function handleWhoami(payload, user) {
       ticketPrefix: cfg.TICKET_PREFIX,
       ticketDigits: cfgNum(cfg, 'TICKET_DIGITS', 4),
       ticketStart: cfgNum(cfg, 'TICKET_START', 1),
-      totalTickets: cfgNum(cfg, 'TOTAL_TICKETS', 0),
+      totalTickets: activeTickets(cfg),          // what is in play — the number the app works in
+      generatedTickets: cfgNum(cfg, 'TOTAL_TICKETS', 0),
+      heldBackTickets: Math.max(0, cfgNum(cfg, 'TOTAL_TICKETS', 0) - activeTickets(cfg)),
       // The planned final size, so the release screen can show how much is left
       // to come and stop offering steps that would go past it. Zero means no
       // ceiling was set. The server still refuses ABOVE_CEILING regardless.
