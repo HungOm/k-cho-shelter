@@ -21,6 +21,7 @@ import Agents from './components/Agents.vue'
 import Money from './components/Money.vue'
 import Draw from './components/Draw.vue'
 import Admin from './components/Admin.vue'
+import Permissions from './components/Permissions.vue'
 
 import SellTicket from './components/SellTicket.vue'
 import AgentForm from './components/modals/AgentForm.vue'
@@ -46,7 +47,7 @@ const closeModal = () => { modal.value = null }
 
 const SCREENS = {
   home: Home, search: Search, sell: Sell, books: Books,
-  agents: Agents, money: Money, draw: Draw, admin: Admin
+  agents: Agents, money: Money, draw: Draw, admin: Admin, permissions: Permissions
 }
 const current = computed(() => SCREENS[state.screen] || Home)
 

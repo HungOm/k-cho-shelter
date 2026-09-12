@@ -17,10 +17,13 @@ const SCREENS = [
   { id: 'agents', icon: '👥', label: 'Sellers', roles: ['admin', 'recorder'] },
   { id: 'money',  icon: '💰', label: 'Money',   roles: ['admin', 'recorder', 'viewer'] },
   { id: 'draw',   icon: '🏆', label: 'Draw',    roles: ['admin', 'recorder', 'viewer'] },
-  { id: 'admin',  icon: '⚙️', label: 'Setup',   roles: ['admin'] }
+  { id: 'admin',  icon: '⚙️', label: 'Setup',   roles: ['admin'] },
+  // Super admin only, so it is filtered by more than role — see `visible`.
+  { id: 'permissions', icon: '🔑', label: 'Access', roles: ['admin'], sup: true }
 ]
 
-const visible = computed(() => SCREENS.filter(s => s.roles.includes(state.user?.role)))
+const visible = computed(() => SCREENS.filter(s =>
+  s.roles.includes(state.user?.role) && (!s.sup || state.user?.isSuperAdmin)))
 
 /**
  * Eight tabs overflow a phone: on a 390px screen the last two sit off-screen
