@@ -97,6 +97,11 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
           <span class="pill warn">Waiting</span>
           <span class="tiny muted">lapses {{ relative(r.expiresAt) }}</span>
         </div>
+        <!-- The server sends the facts beside the sentence. "40 tickets leave
+             the draw" is the number an approver needs; "4 books" hides it. -->
+        <p v-if="r.detail?.voidsTickets" class="stake">
+          {{ r.detail.tickets }} {{ r.detail.tickets === 1 ? 'ticket leaves' : 'tickets leave' }} the draw
+        </p>
         <p class="what">{{ r.summary }}</p>
         <p class="tiny muted">Asked by {{ r.requestedBy }} · {{ dateTime(r.requestedAt) }}</p>
 
@@ -147,4 +152,5 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 <style scoped>
 .req { border-left: 4px solid var(--warn); }
 .what { font-size: 1.08rem; font-weight: 650; line-height: 1.4; }
+.stake { font-size: 1.25rem; font-weight: 800; color: var(--bad); margin-bottom: 2px; }
 </style>
