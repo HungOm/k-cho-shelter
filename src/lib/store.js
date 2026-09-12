@@ -49,6 +49,8 @@ export const state = reactive({
   query: '',
   filterStatus: '',
   filterAgent: '',
+  filterWhere: '',        // '' | 'office' | 'out'
+
 
   // what failed on the last load, and whether the spreadsheet is set up at all
   problems: [],
@@ -74,10 +76,39 @@ export const isSuper = computed(() => !!state.user?.isSuperAdmin)
 export const canWrite = computed(() => ['admin', 'recorder', 'agent'].includes(state.user?.role))
 export const agentMap = computed(() => Object.fromEntries(state.agents.map(a => [a.id, a])))
 
+/**
+ * Which seller is holding each book, keyed by book number.
+ *
+ * The book is the single source of truth for custody — a ticket only records
+ * who SOLD it, which is blank until it sells. Without this, an unsold ticket in
+ * a book that is out with somebody looks identical to one sitting in the
+ * office, and an organiser reads "not sold yet" as "free to sell".
+ */
+export const bookHolders = computed(() => {
+  const map = {}
+  for (const b of state.books) {
+    map[String(b.book).toUpperCase()] = {
+      status: b.status,
+      agentId: b.agentId || '',
+      agentName: b.agentName || '',
+      out: b.status === 'Out'
+    }
+  }
+  return map
+})
+
+/** Where a ticket physically is, as opposed to whether it has been sold. */
+export function whereIs(ticket) {
+  const b = bookHolders.value[String(ticket?.book || '').toUpperCase()]
+  if (!b) return null
+  return b
+}
+
 export const searchResults = computed(() => {
   if (!index.length) return { total: 0, results: [] }
   return runSearch(index, {
-    query: state.query, status: state.filterStatus, agent: state.filterAgent
+    query: state.query, status: state.filterStatus,
+    agent: state.filterAgent, where: state.filterWhere
   })
 })
 
@@ -256,7 +287,7 @@ export async function loadDelta() {
 
 export function reindex() {
   state.byNumber = Object.fromEntries(state.tickets.map(t => [t.number, t]))
-  index = buildIndex(state.tickets, agentMap.value)
+  index = buildIndex(state.tickets, agentMap.value, bookHolders.value)
 }
 
 /**
