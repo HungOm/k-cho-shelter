@@ -19,7 +19,7 @@ onMounted(async () => {
   try {
     r.value = await api('handover_receipt', { agentId: props.agentId })
     if (!r.value.books.length) { toast('This person has no books out', 'bad'); emit('close') }
-  } catch (err) { toast(err.message, 'bad'); emit('close') }
+  } catch (err) { toast(err.message, 'bad', err.code); emit('close') }
 })
 
 const waLink = computed(() => {

@@ -16,6 +16,7 @@ import { phoneDigits } from '../lib/search.js'
 import { money, STATUS_WORDS } from '../lib/format.js'
 import Sheet from './ui/Sheet.vue'
 import StatusPill from './ui/StatusPill.vue'
+import Bi from './ui/Bi.vue'
 
 const props = defineProps({ ticket: Object })
 const emit = defineEmits(['close', 'saved'])
@@ -71,7 +72,7 @@ async function sell() {
     toast(`${t.value.number} sold`, 'ok')
     setTimeout(() => emit('saved'), 900)
   } catch (err) {
-    toast(err.message, 'bad')
+    toast(err.message, 'bad', err.code)
   } finally {
     busy.value = false
   }
@@ -90,7 +91,7 @@ async function hold() {
     toast(`${t.value.number} is being held`, 'ok')
     emit('saved')
   } catch (err) {
-    toast(err.message, 'bad')
+    toast(err.message, 'bad', err.code)
   } finally { busy.value = false }
 }
 
@@ -105,7 +106,7 @@ async function release() {
     toast(`${t.value.number} is free again`, 'ok')
     emit('saved')
   } catch (err) {
-    toast(err.message, 'bad')
+    toast(err.message, 'bad', err.code)
   } finally { busy.value = false }
 }
 
@@ -123,7 +124,7 @@ async function correct() {
     toast('Fixed', 'ok')
     emit('saved')
   } catch (err) {
-    toast(err.message, 'bad')
+    toast(err.message, 'bad', err.code)
   } finally { busy.value = false }
 }
 </script>
@@ -160,7 +161,7 @@ async function correct() {
         <input id="fp" v-model="phone" type="tel" inputmode="tel" autocomplete="off">
       </div>
       <div class="field">
-        <label for="fr">What are you fixing? <span class="req">*</span></label>
+        <label for="fr"><Bi text="What are you fixing?" /> <span class="req">*</span></label>
         <input id="fr" v-model="reason" placeholder="e.g. phone number was wrong">
         <p class="hint">This is kept in the record so everyone can see what changed.</p>
       </div>
@@ -175,18 +176,18 @@ async function correct() {
 
       <Transition name="slide" mode="out-in">
         <div v-if="step === 1" key="1">
-          <h2 class="q">Who bought it?</h2>
+          <h2 class="q"><Bi text="Who bought it?" /></h2>
           <input ref="nameBox" v-model="name" class="xl" autocomplete="off"
                  placeholder="Their name" @keydown.enter="next">
           <p class="hint">The name on the ticket stub.</p>
         </div>
         <div v-else key="2">
-          <h2 class="q">What is their phone number?</h2>
+          <h2 class="q"><Bi text="What is their phone number?" /></h2>
           <input ref="phoneBox" v-model="phone" class="xl" type="tel" inputmode="tel"
                  autocomplete="off" placeholder="012-345 6789" @keydown.enter="sell">
           <p class="hint">Needed so you can call them if they win.</p>
           <div class="field mt">
-            <label for="z">Which church or area? <span class="opt">— not required</span></label>
+            <label for="z"><Bi text="Church or area" /> <span class="opt">— not required</span></label>
             <input id="z" v-model="zone" autocomplete="off">
           </div>
         </div>
@@ -200,16 +201,16 @@ async function correct() {
         <button class="chip" @click="setSellMode('steps')">One at a time</button>
       </div>
       <div class="field">
-        <label for="qn">Who bought it? <span class="req">*</span></label>
+        <label for="qn"><Bi text="Who bought it?" /> <span class="req">*</span></label>
         <input id="qn" ref="nameBox" v-model="name" autocomplete="off" placeholder="Their name">
       </div>
       <div class="field">
-        <label for="qp">Phone number <span class="req">*</span></label>
+        <label for="qp"><Bi text="Phone number" /> <span class="req">*</span></label>
         <input id="qp" v-model="phone" type="tel" inputmode="tel" autocomplete="off"
                placeholder="012-345 6789" @keydown.enter="sell">
       </div>
       <div class="field">
-        <label for="qz">Church or area <span class="opt">— not required</span></label>
+        <label for="qz"><Bi text="Church or area" /> <span class="opt">— not required</span></label>
         <input id="qz" v-model="zone" autocomplete="off">
       </div>
       <p class="hint">Both the name and the phone number are needed — without them
@@ -220,29 +221,29 @@ async function correct() {
       <template v-if="done"></template>
 
       <template v-else-if="isDone">
-        <button class="btn" @click="emit('close')">Cancel</button>
-        <button class="btn primary" :disabled="busy" @click="correct">Save the fix</button>
+        <button class="btn" @click="emit('close')"><Bi text="Cancel" /></button>
+        <button class="btn primary" :disabled="busy" @click="correct"><Bi text="Save the fix" /></button>
       </template>
 
       <template v-else-if="isReserved">
-        <button class="btn" :disabled="busy" @click="release">Let it go</button>
-        <button class="btn primary" :disabled="busy || !canSell" @click="sell">It is sold</button>
+        <button class="btn" :disabled="busy" @click="release"><Bi text="Let it go" /></button>
+        <button class="btn primary" :disabled="busy || !canSell" @click="sell"><Bi text="It is sold" /></button>
       </template>
 
       <template v-else-if="mode === 'steps' && step === 1">
-        <button class="btn" @click="emit('close')">Cancel</button>
-        <button class="btn primary lg" :disabled="!nameOk" @click="next">Next →</button>
+        <button class="btn" @click="emit('close')"><Bi text="Cancel" /></button>
+        <button class="btn primary lg" :disabled="!nameOk" @click="next"><Bi text="Next" /> →</button>
       </template>
 
       <template v-else-if="mode === 'steps'">
-        <button class="btn" @click="step = 1">← Back</button>
+        <button class="btn" @click="step = 1">← <Bi text="Back" /></button>
         <button class="btn primary lg" :disabled="busy || !canSell" @click="sell">
           {{ busy ? 'Saving…' : 'Sold · ' + money(cfg.ticketPrice, cfg.currency) }}
         </button>
       </template>
 
       <template v-else>
-        <button class="btn" :disabled="busy || !nameOk" @click="hold">Hold it</button>
+        <button class="btn" :disabled="busy || !nameOk" @click="hold"><Bi text="Hold it" /></button>
         <button class="btn primary" :disabled="busy || !canSell" @click="sell">
           {{ busy ? 'Saving…' : 'Sold · ' + money(cfg.ticketPrice, cfg.currency) }}
         </button>

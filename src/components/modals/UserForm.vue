@@ -33,7 +33,7 @@ async function save() {
     })
     toast('Added', 'ok')
     emit('saved')
-  } catch (err) { toast(err.message, 'bad') } finally { busy.value = false }
+  } catch (err) { toast(err.message, 'bad', err.code) } finally { busy.value = false }
 }
 </script>
 

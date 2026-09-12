@@ -50,7 +50,7 @@ async function issue() {
     emit('issued', r.agent.id)
   } catch (err) {
     if (err.code === 'BOOKS_NOT_AVAILABLE' && err.details?.blocked) blocked.value = err.details.blocked
-    else toast(err.message, 'bad')
+    else toast(err.message, 'bad', err.code)
   } finally { busy.value = false }
 }
 </script>

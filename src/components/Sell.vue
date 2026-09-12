@@ -10,6 +10,7 @@ import { ref, computed, nextTick } from 'vue'
 import { state, api, toast, loadDelta, canWrite } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
 import { money } from '../lib/format.js'
+import Bi from './ui/Bi.vue'
 
 const emit = defineEmits(['open'])
 
@@ -100,7 +101,7 @@ async function saveAll() {
     if (err.code === 'BATCH_REJECTED' && err.details?.failures) {
       problems.value = err.details.failures.map(f => `${f.ticketNumber} — ${f.message}`)
     } else {
-      toast(err.message, 'bad')
+      toast(err.message, 'bad', err.code)
     }
   } finally {
     busy.value = false
@@ -110,22 +111,22 @@ async function saveAll() {
 
 <template>
   <div>
-    <h1>Write down sales</h1>
+    <h1><Bi text="Write down sales" /></h1>
 
     <div class="card">
-      <h3>One ticket</h3>
+      <h3><Bi text="One ticket" /></h3>
       <p class="muted small">Type the number and it opens straight away.</p>
       <div class="row">
         <input v-model="lookup" class="grow xl" inputmode="numeric" autocomplete="off"
                placeholder="e.g. 721" @keydown.enter="findOne" aria-label="Ticket number">
-        <button class="btn primary lg" @click="findOne">Open</button>
+        <button class="btn primary lg" @click="findOne"><Bi text="Open" /></button>
       </div>
       <p class="hint">Just the last few numbers is enough.</p>
     </div>
 
     <div class="card">
       <div class="spread" style="margin-bottom:6px">
-        <h3 style="margin:0">A pile of stubs</h3>
+        <h3 style="margin:0"><Bi text="A pile of stubs" /></h3>
         <span class="pill brand" v-if="filled">
           {{ filled }} · {{ money(value, state.cfg?.currency) }}
         </span>

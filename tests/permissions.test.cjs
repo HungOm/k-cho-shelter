@@ -8,7 +8,7 @@
  */
 require('./mock.cjs');
 const fs = require('fs'), path = __dirname + '/../apps_script/';
-for (const f of ['Config.gs', 'Auth.gs', 'Api.gs', 'Tickets.gs', 'Books.gs', 'People.gs', 'Reports.gs'])
+for (const f of ['Config.gs', 'Auth.gs', 'Api.gs', 'Tickets.gs', 'Books.gs', 'People.gs', 'Reports.gs', 'Approvals.gs'])
   eval(fs.readFileSync(path + f, 'utf8'));
 
 let pass = 0, fail = 0;

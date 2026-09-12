@@ -22,14 +22,14 @@ async function load() {
   try {
     ready.value = await api('report_draw_ready', {})
     winners.value = (await api('list_winners', {})).winners
-  } catch (err) { toast(err.message, 'bad') }
+  } catch (err) { toast(err.message, 'bad', err.code) }
 }
 
 async function loadMissing() {
   missing.value = 'loading'
   try {
     missing.value = await api('report_missing_contact', { limit: 200 })
-  } catch (err) { toast(err.message, 'bad'); missing.value = null }
+  } catch (err) { toast(err.message, 'bad', err.code); missing.value = null }
 }
 
 async function exportEntries() {
@@ -40,7 +40,7 @@ async function exportEntries() {
       e.buyerZone, e.agentName, e.contactable ? 'yes' : 'NO'])
     download(`entries-${new Date().toISOString().slice(0, 10)}.csv`, head, rows)
     toast(`${r.count} entries saved`, 'ok')
-  } catch (err) { toast(err.message, 'bad') }
+  } catch (err) { toast(err.message, 'bad', err.code) }
 }
 
 function download(filename, head, rows) {

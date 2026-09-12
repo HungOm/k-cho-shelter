@@ -8,6 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { state, isAdmin, go, attention } from '../lib/store.js'
+import Bi from './ui/Bi.vue'
 
 const SCREENS = [
   { id: 'home',   icon: '🏠', label: 'Home',    roles: ['admin', 'recorder', 'agent', 'viewer'] },
@@ -70,7 +71,7 @@ defineEmits(['signout'])
                 :class="['navitem', { on: state.screen === s.id }]"
                 @click="go(s.id)">
           <span class="ic">{{ s.icon }}</span>
-          <span class="grow">{{ s.label }}</span>
+          <Bi class="grow" :text="s.label" />
           <span v-if="badges[s.id]" class="pill bad">{{ badges[s.id] }}</span>
         </button>
       </nav>
@@ -78,9 +79,9 @@ defineEmits(['signout'])
       <div class="who">
         <div class="grow">
           <b>{{ state.user?.name }}</b>
-          <small>{{ roleWord }}</small>
+          <small><Bi :text="roleWord" /></small>
         </div>
-        <button class="btn sm ghost" @click="$emit('signout')" title="Sign out">Leave</button>
+        <button class="btn sm ghost" @click="$emit('signout')" title="Sign out"><Bi text="Leave" /></button>
       </div>
     </aside>
 
@@ -92,7 +93,7 @@ defineEmits(['signout'])
           <b>{{ state.cfg?.eventName || "K'Cho Shelter" }}</b>
           <small>{{ state.user?.name }} · {{ roleWord }}</small>
         </span>
-        <button class="btn sm ghost" @click="$emit('signout')">Leave</button>
+        <button class="btn sm ghost" @click="$emit('signout')"><Bi text="Leave" /></button>
       </header>
 
       <main class="content">
@@ -108,7 +109,7 @@ defineEmits(['signout'])
             {{ s.icon }}
             <i v-if="badges[s.id]" class="dot"></i>
           </span>
-          {{ s.label }}
+          <Bi :text="s.label" />
         </button>
         <button v-if="moreTabs.length" :class="['tab', { on: moreActive }]"
                 @click="showMore = true" aria-label="More screens">
@@ -116,7 +117,7 @@ defineEmits(['signout'])
             ⋯
             <i v-if="moreBadge" class="dot"></i>
           </span>
-          More
+          <Bi text="More" />
         </button>
       </nav>
 
@@ -124,12 +125,12 @@ defineEmits(['signout'])
       <Transition name="pop">
         <div v-if="showMore" class="moreback noprint" @click.self="showMore = false">
           <div class="moresheet">
-            <h3>More</h3>
+            <h3><Bi text="More" /></h3>
             <button v-for="s in moreTabs" :key="s.id"
                     :class="['morerow', { on: state.screen === s.id }]"
                     @click="pick(s.id)">
               <span class="ic">{{ s.icon }}</span>
-              <span class="grow">{{ s.label }}</span>
+              <Bi class="grow" :text="s.label" />
               <span v-if="badges[s.id]" class="pill bad">{{ badges[s.id] }}</span>
               <span class="chev">›</span>
             </button>
