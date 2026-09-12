@@ -25,7 +25,10 @@ const sub = computed(() => my(props.text))
 </template>
 
 <style scoped>
-.bi { display: inline-flex; flex-direction: column; align-items: inherit; line-height: 1.25; }
+.bi { display: inline-flex; flex-direction: column; line-height: 1.25; align-items: flex-start; }
+/* In a centred parent — a tab, a tile — the two lines centre together.
+   Anywhere else they stay left, or a sidebar row reads as centred text. */
+.bi.mid { align-items: center; }
 .bi.inline { display: inline; }
 .en { display: block; }
 .my {

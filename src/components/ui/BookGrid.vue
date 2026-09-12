@@ -7,6 +7,7 @@
  */
 import { computed } from 'vue'
 import { bookShort, BOOK_WORDS } from '../../lib/format.js'
+import Bi from './Bi.vue'
 
 const props = defineProps({
   books: { type: Array, default: () => [] },
@@ -39,12 +40,12 @@ function label(b) {
       </button>
     </div>
     <div class="keys">
-      <span><i class="s-Unassigned"></i>In the office</span>
-      <span><i class="s-Out"></i>With a seller</span>
-      <span><i class="s-Returned"></i>Brought back</span>
-      <span><i class="s-Settled"></i>Finished</span>
-      <span><i class="s-Lost"></i>Lost</span>
-      <span><i class="late-key"></i>Late</span>
+      <span><i class="s-Unassigned"></i><Bi text="In the office" /></span>
+      <span><i class="s-Out"></i><Bi text="With a seller" /></span>
+      <span><i class="s-Returned"></i><Bi text="Brought back" /></span>
+      <span><i class="s-Settled"></i><Bi text="Finished" /></span>
+      <span><i class="s-Lost"></i><Bi text="Lost" /></span>
+      <span><i class="late-key"></i><Bi text="Late" /></span>
     </div>
   </div>
 </template>
@@ -72,6 +73,7 @@ function label(b) {
 .keys { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px;
   font-size: .85rem; color: var(--muted); }
 .keys span { display: flex; align-items: center; gap: 6px; }
+.keys :deep(.bi) { line-height: 1.2; }
 .keys i { width: 13px; height: 13px; border-radius: 4px; display: inline-block; }
 .keys i.late-key { outline: 2.5px solid var(--bad); outline-offset: -2.5px; background: transparent; }
 </style>

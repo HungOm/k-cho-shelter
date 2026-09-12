@@ -5,7 +5,7 @@
  * Without a signed record of what went out, "I never got those books" is an
  * argument you cannot win.
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api, toast, state } from '../../lib/store.js'
 import { money, date } from '../../lib/format.js'
 import { waNumber } from '../../lib/search.js'
@@ -21,6 +21,39 @@ onMounted(async () => {
     if (!r.value.books.length) { toast('This person has no books out', 'bad'); emit('close') }
   } catch (err) { toast(err.message, 'bad', err.code); emit('close') }
 })
+
+/**
+ * The books listed here are whatever the seller holds *right now*, so this
+ * sheet can be produced again any time — a lost paper is not a lost record.
+ * But a reprint must never pass for the original handover, so it carries the
+ * day the books actually went out, not the day someone hit Print.
+ */
+const givenOn = computed(() => {
+  if (!r.value) return null
+  const days = r.value.books.map(b => b.issued).filter(Boolean).sort()
+  return days[0] || r.value.generatedAt
+})
+
+const isReprint = computed(() => {
+  if (!r.value || !givenOn.value) return false
+  return new Date(givenOn.value).toDateString()
+      !== new Date(r.value.generatedAt).toDateString()
+})
+
+/**
+ * `window` is not in scope inside a template, so the old inline handler threw
+ * and the dialog never opened. Printing also has to hide the screen behind
+ * this sheet, which is what the body class switches on.
+ */
+function done() { document.body.classList.remove('printing') }
+
+function print() {
+  document.body.classList.add('printing')
+  window.addEventListener('afterprint', done, { once: true })
+  window.print()
+}
+
+onUnmounted(done)
 
 const waLink = computed(() => {
   if (!r.value?.agent.phone) return null
@@ -39,6 +72,7 @@ const waLink = computed(() => {
       <div v-for="i in 5" :key="i" class="skel"></div>
     </div>
     <div v-else class="paper">
+      <p v-if="isReprint" class="stamp">Reprint — a copy of the books still out, not a new handover</p>
       <h2 style="margin-bottom:2px">{{ r.org }}</h2>
       <p class="muted small">{{ r.event }}</p>
       <hr class="hr">
@@ -49,7 +83,8 @@ const waLink = computed(() => {
         <div class="f"><span>Tickets</span><b>{{ r.ticketCount }}</b></div>
         <div class="f"><span>Worth if all sold</span><b>{{ money(r.valueIfAllSold, r.currency) }}</b></div>
         <div class="f"><span>Given by</span><b>{{ r.issuedBy }}</b></div>
-        <div class="f"><span>Date</span><b>{{ date(r.generatedAt) }}</b></div>
+        <div class="f"><span>Given on</span><b>{{ date(givenOn) }}</b></div>
+        <div v-if="isReprint" class="f"><span>This copy printed</span><b>{{ date(r.generatedAt) }}</b></div>
       </div>
       <hr class="hr">
       <div class="tablewrap">
@@ -79,12 +114,17 @@ const waLink = computed(() => {
     <template #actions>
       <button class="btn" @click="emit('close')">Close</button>
       <a v-if="waLink" class="btn" :href="waLink" target="_blank" rel="noopener">Send on WhatsApp</a>
-      <button class="btn primary" @click="window.print()">Print</button>
+      <button class="btn primary" @click="print()">Print / Save as PDF</button>
     </template>
   </Sheet>
 </template>
 
 <style scoped>
+.stamp {
+  margin: 0 0 14px; padding: 8px 12px; border: 1.5px dashed var(--warn);
+  border-radius: var(--r-sm); color: var(--warn);
+  font-weight: 600; font-size: .85rem;
+}
 .facts { display: grid; gap: 12px; }
 .f { display: flex; justify-content: space-between; gap: 14px; }
 .f span { color: var(--muted); }

@@ -1,10 +1,18 @@
 <script setup>
-import { ref } from 'vue'
-import { api, toast, refresh } from '../../lib/store.js'
+import { ref, computed } from 'vue'
+import { api, toast, refresh, isAdmin } from '../../lib/store.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ agent: Object })
-const emit = defineEmits(['close', 'saved'])
+const emit = defineEmits(['close', 'saved', 'receipt'])
+
+/**
+ * When a seller loses their handover paper, this is where someone goes looking
+ * for them — by name, not by book number. `booksOut` counts the same books the
+ * receipt lists, so the button is there exactly when the sheet has content.
+ */
+const canPrintReceipt = computed(() =>
+  isAdmin.value && !!props.agent?.id && props.agent.booksOut > 0)
 
 const name = ref(props.agent?.name || '')
 const phone = ref(props.agent?.phone || '')
@@ -20,8 +28,8 @@ async function save() {
       name: name.value.trim(), phone: phone.value.trim(), zone: zone.value.trim()
     })
     toast('Saved', 'ok')
-    await refresh()
     emit('saved')
+    refresh()
   } catch (err) { toast(err.message, 'bad', err.code) } finally { busy.value = false }
 }
 </script>
@@ -44,6 +52,7 @@ async function save() {
     </div>
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
+      <button v-if="canPrintReceipt" class="btn" @click="emit('receipt', agent.id)">Receipt</button>
       <button class="btn primary" :disabled="busy" @click="save">{{ busy ? 'Saving…' : 'Save' }}</button>
     </template>
   </Sheet>

@@ -56,9 +56,8 @@ async function settle() {
     const r = await api('settle_book', payload)
     toast(`${props.book.book} counted — ${r.declaredSold} sold`,
       Math.abs(r.variance) > 0.005 ? 'bad' : 'ok')
-    await loadDelta()
-    await refresh()
     emit('settled')
+    loadDelta().then(refresh)
   } catch (err) { toast(err.message, 'bad', err.code) } finally { busy.value = false }
 }
 </script>
