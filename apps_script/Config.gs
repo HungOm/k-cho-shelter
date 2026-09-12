@@ -89,8 +89,10 @@ var CONFIG_DEFAULTS = [
   ['TICKET_PREFIX', 'KS-', 'Text before the number. May be empty. LOCKED after setup.'],
   ['TICKET_START', '1', 'First ticket number. LOCKED after setup.'],
   ['TICKET_DIGITS', '5', 'Zero padding, e.g. 5 gives KS-00001. LOCKED after setup.'],
-  ['TOTAL_TICKETS', '10000', 'How many tickets exist. Only the super admin can raise it later, '
-    + 'and only upwards — see expandTickets. Never lower it.'],
+  ['TOTAL_TICKETS', '10000', 'How many ticket rows EXIST. Not the same as how many are in '
+    + 'play — see ACTIVE_TICKETS. Only the super admin can raise it, and only upwards, on the '
+    + '"Make more tickets" screen. Never lower it by hand: every ticket above the new number '
+    + 'stops existing, including ones already sold, and nothing reports an error.'],
   ['TICKETS_PER_BOOK', '10', 'Tickets in one physical book. LOCKED after setup.'],
   ['BOOK_PREFIX', 'Book-', 'Text before the book number. LOCKED after setup.'],
   ['BOOK_DIGITS', '4', 'Zero padding, e.g. 4 gives Book-0001. LOCKED after setup.'],
@@ -104,7 +106,7 @@ var CONFIG_DEFAULTS = [
   ['ACTIVE_TICKETS', '', 'How many of the generated tickets are IN PLAY, counting from the '
     + 'first. Blank means all of them. Lower than TOTAL_TICKETS holds the rest back: they '
     + 'are not loaded, not sellable, and their books cannot be given out until released. '
-    + 'Must be a whole number of books. Change it with "Release more tickets", not by hand.'],
+    + 'Must be a whole number of books. Change it on the "Tickets in play" screen, not by hand.'],
   ['TICKET_CEILING', '', 'How many tickets this raffle plans to reach in the end, e.g. 20000. '
     + 'A guard, not a promise: releasing more than this is refused, so a slipped digit '
     + 'cannot generate ten times the tickets you meant. Blank means no ceiling. '
@@ -216,8 +218,7 @@ function assertNumberingUnchanged_() {
       cfgNum(cfg, 'TOTAL_TICKETS', 0) + ' by hand, but no ticket rows were created — ' +
       'so the raffle now claims tickets that do not exist, and every sale is refused ' +
       'until it is put back. Set it to ' + before.TOTAL_TICKETS + ' again in the Config ' +
-      'tab, then release more tickets with "Add more tickets", which writes the rows ' +
-      'and the setting together.',
+      'tab, then use "Make more tickets", which writes the rows and the setting together.',
       { changed: changed, fixBySetting: before.TOTAL_TICKETS, useAction: 'expand_tickets' });
   }
 

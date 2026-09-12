@@ -485,7 +485,7 @@ function verifyIntegrity() {
       problems.push('ACTIVE_TICKETS is ' + live + ', but tickets above that line are already ' +
         'spoken for — ' + stranded.join(', ') + '. They are not being loaded, so their money ' +
         'is missing from every total. Raise ACTIVE_TICKETS back to at least ' + actualTickets +
-        ', or use "Release or hold back tickets", which refuses this.');
+        ', or change it on the "Tickets in play" screen, which refuses this.');
     }
   }
 
@@ -643,7 +643,7 @@ function handleSetActiveTickets(payload, user) {
   if (target > generated) {
     throw new ApiError('NOT_GENERATED',
       'Only ' + generated + ' tickets have been created, so ' + target + ' cannot be put ' +
-      'into play. Create more first with "Add more tickets", which writes the rows.',
+      'into play. Use "Make more tickets" first, which writes the rows.',
       { generated: generated, requested: target, useAction: 'expand_tickets' });
   }
   // A book is one physical object. Half a book in play would mean a seller

@@ -110,8 +110,8 @@ function actionMeta() {
     set_book_status:        { group: 'Books',   label: 'Mark a book lost, or reopen it', danger: true },
     restock_books:          { group: 'Books',   label: 'Put unsold tickets back', danger: true },
     handover_receipt:       { group: 'Books',   label: 'Print a handover receipt' },
-    expand_tickets:         { group: 'Books',   label: 'Add more tickets to the raffle', danger: true },
-    set_active_tickets:     { group: 'Books',   label: 'Release or hold back tickets', danger: true },
+    expand_tickets:         { group: 'Books',   label: 'Make more tickets', danger: true },
+    set_active_tickets:     { group: 'Books',   label: 'Change how many tickets are in play', danger: true },
     set_ticket_ceiling:     { group: 'Books',   label: 'Change the planned size of the raffle' },
 
     settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },
