@@ -27,7 +27,7 @@ async function loadUsers() {
     const r = await api('list_users', {})
     users.value = r.users
     superAdmin.value = r.superAdmin || ''
-  } catch (err) { toast(err.message, 'bad'); users.value = [] }
+  } catch (err) { toast(err.message, 'bad', err.code); users.value = [] }
 }
 
 async function toggle(u) {
@@ -35,13 +35,13 @@ async function toggle(u) {
     await api('set_user_status', { email: u.email, active: !u.active })
     toast(u.active ? 'Turned off — they lose access within a minute' : 'Turned on', 'ok')
     loadUsers()
-  } catch (err) { toast(err.message, 'bad') }
+  } catch (err) { toast(err.message, 'bad', err.code) }
 }
 
 async function loadAudit() {
   audit.value = 'loading'
   try { audit.value = (await api('read_audit', { limit: 100 })).entries }
-  catch (err) { toast(err.message, 'bad'); audit.value = null }
+  catch (err) { toast(err.message, 'bad', err.code); audit.value = null }
 }
 </script>
 

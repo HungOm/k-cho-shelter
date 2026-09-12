@@ -6,6 +6,7 @@
 import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh } from '../lib/store.js'
 import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
+import Bi from './ui/Bi.vue'
 
 const emit = defineEmits(['issue', 'add-agent', 'open-book'])
 
@@ -31,7 +32,7 @@ function doStep(action) {
         Set the ticket numbers in the <b>Config</b> tab first — they are fixed
         once the tickets are made.
       </p>
-      <button class="btn primary" @click="refresh()">Check again</button>
+      <button class="btn primary" @click="refresh()"><Bi text="Check again" /></button>
     </div>
 
     <!-- something did not load, but the rest of the app still works -->
@@ -43,7 +44,7 @@ function doStep(action) {
 
     <!-- first run: what to do, in order -->
     <div v-if="gettingStarted" class="card">
-      <h3>Let's get started</h3>
+      <h3><Bi text="Let's get started" /></h3>
       <p class="muted small">Four things, once.</p>
       <div class="steps">
         <div v-for="(s, i) in gettingStarted" :key="i"
@@ -68,7 +69,7 @@ function doStep(action) {
 
     <!-- what needs doing -->
     <template v-if="attention.length">
-      <h3 class="sect">Needs looking at</h3>
+      <h3 class="sect"><Bi text="Needs looking at" /></h3>
       <TransitionGroup name="pop" tag="div">
         <button v-for="a in attention" :key="a.key" :class="['attn', a.tone]" @click="go(a.go)">
           <span class="em">{{ a.icon }}</span>
@@ -85,27 +86,27 @@ function doStep(action) {
     </div>
 
     <!-- shortcuts -->
-    <h3 class="sect">What do you want to do?</h3>
+    <h3 class="sect"><Bi text="What do you want to do?" /></h3>
     <div class="quick">
       <button v-if="canWrite" @click="go('sell')">
-        <span class="em">🎟️</span><span>Write down a sale</span>
+        <span class="em">🎟️</span><Bi text="Write down a sale" />
       </button>
       <button @click="go('search')">
-        <span class="em">🔍</span><span>Find a ticket</span>
+        <span class="em">🔍</span><Bi text="Find a ticket" />
       </button>
       <button v-if="isAdmin" @click="emit('issue')">
-        <span class="em">📚</span><span>Give out books</span>
+        <span class="em">📚</span><Bi text="Give out books" />
       </button>
       <button v-if="isAdmin" @click="emit('add-agent')">
-        <span class="em">👥</span><span>Add a seller</span>
+        <span class="em">👥</span><Bi text="Add a seller" />
       </button>
     </div>
 
     <!-- the whole raffle at a glance -->
     <div class="card">
       <div class="spread" style="margin-bottom:14px">
-        <h3 style="margin:0">All the books</h3>
-        <button class="btn sm" @click="go('books')">See list</button>
+        <h3 style="margin:0"><Bi text="All the books" /></h3>
+        <button class="btn sm" @click="go('books')"><Bi text="See list" /></button>
       </div>
       <BookGrid :books="state.books" :limit="180"
                 @pick="b => emit('open-book', b)" @more="go('books')" />

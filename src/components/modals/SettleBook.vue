@@ -59,7 +59,7 @@ async function settle() {
     await loadDelta()
     await refresh()
     emit('settled')
-  } catch (err) { toast(err.message, 'bad') } finally { busy.value = false }
+  } catch (err) { toast(err.message, 'bad', err.code) } finally { busy.value = false }
 }
 </script>
 

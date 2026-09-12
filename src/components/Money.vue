@@ -18,7 +18,7 @@ async function load() {
     const r = await api('report_outstanding', {})
     rows.value = r.agents
   } catch (err) {
-    toast(err.message, 'bad')
+    toast(err.message, 'bad', err.code)
     rows.value = []
   }
 }

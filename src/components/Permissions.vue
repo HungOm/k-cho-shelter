@@ -37,7 +37,7 @@ async function load() {
   try {
     data.value = await api('list_permissions', {})
   } catch (err) {
-    toast(err.message, 'bad')
+    toast(err.message, 'bad', err.code)
     data.value = { roles: [], actions: [] }
   }
 }
@@ -74,7 +74,7 @@ async function toggle(a, r) {
     await api('set_permission', { action: a.action, role: r, allowed: !was })
   } catch (err) {
     a.current[r] = was           // put it back — the server said no
-    toast(err.message, 'bad')
+    toast(err.message, 'bad', err.code)
   } finally {
     saving.value = ''
   }

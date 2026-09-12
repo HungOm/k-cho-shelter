@@ -17,6 +17,7 @@ var SHEET = {
   AGENTS: 'Agents',
   USERS: 'Users',
   PERMISSIONS: 'Permissions',
+  PENDING: 'Pending',
   WINNERS: 'Winners',
   CONFIG: 'Config',
   AUDIT: '_AuditLog'
@@ -44,6 +45,10 @@ var COLS = {
   AGENTS: ['Agent_ID', 'Name', 'Phone', 'Zone', 'Active', 'Notes'],
   USERS: ['Email', 'Name', 'Role', 'Active', 'Agent_ID', 'Google_Sub', 'Added_By', 'Added_Date'],
   PERMISSIONS: ['Action', 'admin', 'recorder', 'agent', 'viewer'],
+  PENDING: [
+    'Request_ID', 'Action', 'Payload', 'Summary', 'Requested_By', 'Requested_At',
+    'Expires_At', 'Status', 'Decided_By', 'Decided_At', 'Note'
+  ],
   WINNERS: ['Ticket_Number', 'Prize', 'Drawn_Date', 'Buyer_Name', 'Buyer_Phone',
             'Notified', 'Claimed', 'Claimed_Date', 'Notes', 'Recorded_By'],
   CONFIG: ['Key', 'Value', 'Notes'],

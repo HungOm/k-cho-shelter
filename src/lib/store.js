@@ -9,6 +9,7 @@ import { reactive, computed, ref } from 'vue'
 import { api, ApiError, LS } from './api.js'
 import { buildIndex, runSearch } from './search.js'
 import { saveTickets, loadTickets, clearCache } from './cache.js'
+import { my, myError } from './i18n.js'
 
 export const TICKET_STATUS = {
   AVAILABLE: 'Available', RESERVED: 'Reserved', SOLD: 'Sold',
@@ -355,9 +356,15 @@ export function go(screen) {
 export const toasts = ref([])
 let toastId = 0
 
-export function toast(message, tone = '') {
+/**
+ * @param {string} message  English, always shown
+ * @param {string} tone     '' | 'ok' | 'bad'
+ * @param {string} code     server error code, so the Burmese line can be looked
+ *                          up by code rather than by matching English text
+ */
+export function toast(message, tone = '', code = '') {
   const id = ++toastId
-  toasts.value.push({ id, message, tone })
+  toasts.value.push({ id, message, tone, my: myError(code) || my(message) })
   setTimeout(() => {
     toasts.value = toasts.value.filter(t => t.id !== id)
   }, tone === 'bad' ? 6000 : 3000)

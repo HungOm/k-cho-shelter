@@ -32,6 +32,12 @@ function actionRegistry() {
     list_permissions:      { fn: handleListPermissions,   roles: ADMIN_ONLY, sup: true, kind: 'read' },
     set_permission:        { fn: handleSetPermission,     roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
 
+    // ---- two-person control ----
+    request_approval:      { fn: handleRequestApproval,   roles: ADMIN_ONLY, kind: 'write', lock: true },
+    list_approvals:        { fn: handleListApprovals,     roles: ADMIN_ONLY, kind: 'read' },
+    cancel_approval:       { fn: handleCancelApproval,    roles: ADMIN_ONLY, kind: 'write', lock: true },
+    decide_approval:       { fn: handleDecideApproval,    roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
+
     // --- tickets ---
     sell_ticket:           { fn: handleSellTicket,        roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'write', lock: true },
     reserve_ticket:        { fn: handleReserveTicket,     roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'write', lock: true },
@@ -119,6 +125,10 @@ function actionMeta() {
     list_winners:           { group: 'Reports', label: 'See the winners' },
 
     list_permissions:       { group: 'Access',  label: 'See who can do what' },
+    request_approval:       { group: 'Access',  label: 'Ask the organiser to approve something' },
+    list_approvals:         { group: 'Access',  label: 'See what is waiting for approval' },
+    cancel_approval:        { group: 'Access',  label: 'Withdraw your own request' },
+    decide_approval:        { group: 'Access',  label: 'Approve or refuse a request', danger: true },
     set_permission:         { group: 'Access',  label: 'Change who can do what', danger: true }
   };
 }
@@ -188,6 +198,16 @@ function route_(req) {
 
     var user = requireUser(req.idToken, spec.roles, spec.sup, req.action);
     checkRateLimit(user.email, spec.kind || 'read');
+
+    // Two-person control, checked before the action runs rather than after.
+    // The super admin is exempt: they are the person who would approve it.
+    if (!user.isSuperAdmin) {
+      var needsTwo = approvalSummaryFor_(req.action, req.payload);
+      if (needsTwo) {
+        throw new ApiError('APPROVAL_REQUIRED', needsTwo,
+          { action: req.action, summary: needsTwo });
+      }
+    }
 
     var result = spec.lock
       ? withLock_(function () { return spec.fn(req.payload, user); })

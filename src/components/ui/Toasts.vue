@@ -7,7 +7,10 @@ import { toasts } from '../../lib/store.js'
     <TransitionGroup name="pop">
       <div v-for="t in toasts" :key="t.id" :class="['toast', t.tone]">
         <span class="ic">{{ t.tone === 'bad' ? '⚠️' : t.tone === 'ok' ? '✅' : 'ℹ️' }}</span>
-        <span>{{ t.message }}</span>
+        <span class="grow">
+          {{ t.message }}
+          <span v-if="t.my" class="my" lang="my">{{ t.my }}</span>
+        </span>
       </div>
     </TransitionGroup>
   </div>
@@ -29,5 +32,11 @@ import { toasts } from '../../lib/store.js'
 .toast.bad { background: var(--bad); color: #fff; }
 .toast.ok  { background: var(--ok);  color: #fff; }
 .toast .ic { font-size: 1.1rem; }
+.toast .my {
+  display: block;
+  font-family: 'Padauk', 'Noto Sans Myanmar', 'Myanmar Text', sans-serif;
+  font-size: .82em; font-style: italic; opacity: .8; line-height: 1.45; margin-top: 2px;
+}
+.toast .grow { min-width: 0; }
 @media (min-width: 900px) { .toasts { bottom: 28px; } }
 </style>
