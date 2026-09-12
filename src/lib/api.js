@@ -7,7 +7,12 @@
  * way to make every write fail with an opaque CORS error.
  */
 
-export const LS = { url: 'kcho_api_url', cid: 'kcho_client_id', mode: 'kcho_sell_mode' }
+export const LS = {
+  url: 'kcho_api_url',
+  cid: 'kcho_client_id',
+  mode: 'kcho_sell_mode',
+  tok: 'kcho_id_token'
+}
 
 export class ApiError extends Error {
   constructor(code, message, details) {

@@ -27,7 +27,7 @@ function connect() {
 // The Google button is drawn by Google's script into this element, so it has to
 // exist in the DOM before we ask for it.
 watch(() => props.phase, async p => {
-  if (p === 'signin') {
+  if (p === 'signin' || p === 'waiting') {
     await nextTick()
     window.__renderGoogleButton?.(gsiTarget.value)
   }
@@ -52,6 +52,14 @@ onMounted(async () => {
       <div v-if="phase === 'loading'" class="pad">
         <div class="spinner"></div>
         <p class="muted small mt">Just a moment…</p>
+      </div>
+
+      <!-- Google is being given a chance to sign them back in. Showing a button
+           here would ask for something that is already happening. -->
+      <div v-else-if="phase === 'waiting'" class="pad">
+        <div class="spinner"></div>
+        <p class="muted small mt">Signing you in…</p>
+        <div ref="gsiTarget" class="gsi" style="display:none"></div>
       </div>
 
       <!-- first time on this device -->
