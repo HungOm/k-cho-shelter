@@ -20,7 +20,8 @@ const SCREENS = [
   { id: 'draw',   icon: '🏆', label: 'Draw',    roles: ['admin', 'recorder', 'viewer'] },
   { id: 'admin',  icon: '⚙️', label: 'Setup',   roles: ['admin'] },
   // Super admin only, so it is filtered by more than role — see `visible`.
-  { id: 'permissions', icon: '🔑', label: 'Access', roles: ['admin'], sup: true }
+  { id: 'permissions', icon: '🔑', label: 'Access', roles: ['admin'], sup: true },
+  { id: 'approvals', icon: '🖐️', label: 'Approvals', roles: ['admin', 'recorder', 'agent'] }
 ]
 
 const visible = computed(() => SCREENS.filter(s =>
@@ -37,7 +38,8 @@ const moreTabs = computed(() => visible.value.filter(s => !PRIMARY.includes(s.id
 
 const badges = computed(() => ({
   agents: state.overdue.length,
-  draw: state.totals?.missingContact || 0
+  draw: state.totals?.missingContact || 0,
+  approvals: state.pendingApprovals || 0
 }))
 
 const moreBadge = computed(() =>

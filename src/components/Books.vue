@@ -10,7 +10,7 @@ import BookGrid from './ui/BookGrid.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
 
-const emit = defineEmits(['issue', 'transfer', 'return-books', 'mark', 'open-book'])
+const emit = defineEmits(['issue', 'transfer', 'return-books', 'mark', 'open-book', 'sell-book'])
 
 const status = ref('')
 const agent = ref('')
@@ -27,7 +27,10 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
   <div>
     <div class="spread" style="margin-bottom:14px">
       <h1 style="margin:0">Books</h1>
-      <button v-if="isAdmin" class="btn primary" @click="emit('issue')">Give out books</button>
+      <div class="row">
+        <button class="btn primary" @click="emit('sell-book')">Sell a whole book</button>
+        <button v-if="isAdmin" class="btn" @click="emit('issue')">Give out books</button>
+      </div>
     </div>
 
     <div class="stats" style="margin-bottom:14px">

@@ -22,6 +22,7 @@ import Money from './components/Money.vue'
 import Draw from './components/Draw.vue'
 import Admin from './components/Admin.vue'
 import Permissions from './components/Permissions.vue'
+import Approvals from './components/Approvals.vue'
 
 import SellTicket from './components/SellTicket.vue'
 import AgentForm from './components/modals/AgentForm.vue'
@@ -30,6 +31,9 @@ import IssueBooks from './components/modals/IssueBooks.vue'
 import SettleBook from './components/modals/SettleBook.vue'
 import BookDetail from './components/modals/BookDetail.vue'
 import Receipt from './components/modals/Receipt.vue'
+import SellBook from './components/modals/SellBook.vue'
+import BookAction from './components/modals/BookAction.vue'
+import AskApproval from './components/modals/AskApproval.vue'
 import Toasts from './components/ui/Toasts.vue'
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ||
@@ -47,7 +51,8 @@ const closeModal = () => { modal.value = null }
 
 const SCREENS = {
   home: Home, search: Search, sell: Sell, books: Books,
-  agents: Agents, money: Money, draw: Draw, admin: Admin, permissions: Permissions
+  agents: Agents, money: Money, draw: Draw, admin: Admin,
+  permissions: Permissions, approvals: Approvals
 }
 const current = computed(() => SCREENS[state.screen] || Home)
 
@@ -296,6 +301,10 @@ function seeTickets(book) {
                    @add-agent="openModal('agent', null)"
                    @add-user="openModal('user')"
                    @issue="openModal('issue')"
+                   @sell-book="b => openModal('sellbook', b)"
+                   @transfer="openModal('bookaction', 'transfer')"
+                   @return-books="openModal('bookaction', 'return')"
+                   @mark="openModal('bookaction', 'mark')"
                    @record-winner="openModal('winner')" />
       </KeepAlive>
     </Transition>
@@ -317,6 +326,13 @@ function seeTickets(book) {
                 @see-tickets="seeTickets" />
     <SettleBook v-else-if="modal?.kind === 'settle'" :book="modal.payload"
                 @close="closeModal" @settled="afterBookChange" />
+    <SellBook v-else-if="modal?.kind === 'sellbook'" :book="modal.payload"
+              @close="closeModal" @sold="closeModal" />
+    <BookAction v-else-if="modal?.kind === 'bookaction'" :kind="modal.payload"
+                @close="closeModal" @done="closeModal"
+                @needs-approval="r => openModal('askapproval', r)" />
+    <AskApproval v-else-if="modal?.kind === 'askapproval'" :request="modal.payload"
+                 @close="closeModal" @sent="closeModal" />
   </Teleport>
 
   <Teleport to="body">
