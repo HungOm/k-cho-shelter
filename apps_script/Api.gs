@@ -206,8 +206,8 @@ function route_(req) {
     if (!user.isSuperAdmin) {
       var needsTwo = approvalSummaryFor_(req.action, req.payload);
       if (needsTwo) {
-        throw new ApiError('APPROVAL_REQUIRED', needsTwo,
-          { action: req.action, summary: needsTwo });
+        throw new ApiError('APPROVAL_REQUIRED', needsTwo.text,
+          { action: req.action, summary: needsTwo.text, detail: needsTwo });
       }
     }
 

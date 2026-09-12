@@ -96,9 +96,27 @@ console.log('which actions need approval');
   // The summary says what will actually happen.
   const s = approvalSummaryFor_('set_book_status',
     { status: BOOK_STATUS.LOST, fromBook: 'Book-001', toBook: 'Book-004', dryRun: false });
-  ok(s.indexOf('4 books') !== -1, 'summary counts the books');
-  ok(s.indexOf('Book-001') !== -1 && s.indexOf('Book-004') !== -1, 'summary names the range');
-  ok(s.indexOf('leave the draw') !== -1, 'summary warns that tickets leave the draw');
+  ok(s.text.indexOf('4 books') !== -1, 'summary counts the books');
+  ok(s.text.indexOf('Book-001') !== -1 && s.text.indexOf('Book-004') !== -1, 'summary names the range');
+  ok(s.text.indexOf('leave the draw') !== -1, 'summary warns that tickets leave the draw');
+
+  // The same sentence in pieces, so another language can be composed from it
+  // without parsing English prose.
+  eq(s.kind, 'set_book_status', 'detail names the kind');
+  eq(s.books, 4, 'detail counts the books');
+  eq(s.firstBook, 'Book-001', 'detail carries the first book');
+  eq(s.lastBook, 'Book-004', 'detail carries the last');
+  eq(s.status, BOOK_STATUS.LOST, 'detail carries the status');
+  eq(s.voidsTickets, 'true', 'detail flags that tickets are voided');
+  eq(s.tickets, 40, 'detail counts the tickets at stake');
+
+  const rs = approvalSummaryFor_('restock_books', { fromBook: 'Book-001', toBook: 'Book-002' });
+  eq(rs.kind, 'restock_books', 'restock detail names the kind');
+  eq(rs.books, 2, 'and counts the books');
+
+  const fs2 = approvalSummaryFor_('settle_book', { bookNumber: 'Book-003', force: true });
+  eq(fs2.kind, 'resettle_book', 're-settle detail names the kind');
+  eq(fs2.firstBook, 'Book-003', 'and names the book');
 }
 
 // ============ 2. requesting ============
@@ -124,6 +142,9 @@ console.log('request_approval');
   // The summary is stored, not recomputed later.
   const stored = readPendingRaw_().rows[0];
   eq(stored.Summary, r.summary, 'the summary is on the row');
+  ok(r.detail && r.detail.kind === 'set_book_status', 'the structured detail comes back too');
+  eq(JSON.parse(stored.Detail).books, 4, 'and is stored beside the sentence');
+  eq(handleListApprovals({}, boss).requests[0].detail.books, 4, 'and is handed back on read');
   eq(stored.Status, 'Pending', 'it starts pending');
   eq(stored.Requested_By, 'admin@x.com', 'and records who asked');
   eq(JSON.parse(stored.Payload).toBook, 'Book-004', 'with the exact payload');
