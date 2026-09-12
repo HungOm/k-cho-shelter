@@ -98,6 +98,8 @@ var CONFIG_DEFAULTS = [
   ['DEFAULT_DUE_DAYS', '30', 'Default return period when books are issued.'],
   ['EVENT_NAME', "K'Cho Shelter Fundraising Raffle", 'Shown on receipts.'],
   ['ORG_NAME', "K'Cho Ethnic Association Malaysia", 'Shown on receipts.'],
+  ['PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. '
+    + 'NOT part of ticket numbers, so it is safe to change at any time.'],
   ['DRAW_DATE', '', 'Draw date, e.g. 2026-12-20.']
 ];
 
@@ -105,6 +107,17 @@ var CONFIG_DEFAULTS = [
  * Keys that define ticket numbering. Once tickets exist these are refused,
  * because changing a prefix after tickets are printed silently orphans
  * every record in the Sheet.
+ */
+/**
+ * The numbering settings, which the documentation promises are locked once
+ * tickets exist — because every ticket number in the Tickets tab is a stored
+ * string, while every lookup recomputes the number from these settings. Change
+ * the prefix and the two stop agreeing: searching for a ticket finds nothing,
+ * selling one says it does not exist, and the paper in somebody's hand no
+ * longer refers to anything. Nothing throws, it simply stops matching.
+ *
+ * This list existed but was never referenced. assertNumberingUnchanged_ below
+ * is what actually enforces it.
  */
 var LOCKED_CONFIG_KEYS = [
   'TICKET_PREFIX', 'TICKET_START', 'TICKET_DIGITS', 'TOTAL_TICKETS',
@@ -117,6 +130,54 @@ var TOKEN_CACHE_TTL = 300;    // capped again by the token's own expiry
 var LOCK_TIMEOUT_MS = 20000;
 
 // ============ CONFIG READER ============
+
+/**
+ * Refuses every write if the numbering settings have moved since setup.
+ *
+ * The fingerprint is kept in Script Properties, out of the spreadsheet, so
+ * editing the Config tab by hand cannot quietly rewrite the thing it is being
+ * checked against.
+ *
+ * A deployment from before this existed has no fingerprint. It is recorded on
+ * first sight rather than treated as a failure — otherwise turning this on
+ * would lock out every raffle already running.
+ */
+function assertNumberingUnchanged_() {
+  var props = PropertiesService.getScriptProperties();
+  var cfg = getConfig();
+
+  var current = [];
+  for (var i = 0; i < LOCKED_CONFIG_KEYS.length; i++) {
+    current.push(LOCKED_CONFIG_KEYS[i] + '=' + String(cfg[LOCKED_CONFIG_KEYS[i]] || ''));
+  }
+  var now = current.join('|');
+  var seen = props.getProperty('NUMBERING_FINGERPRINT');
+
+  if (!seen) { props.setProperty('NUMBERING_FINGERPRINT', now); return; }
+  if (seen === now) return;
+
+  var changed = [];
+  var before = {};
+  var parts = seen.split('|');
+  for (var p = 0; p < parts.length; p++) {
+    var kv = parts[p].split('=');
+    before[kv[0]] = kv.slice(1).join('=');
+  }
+  for (var k = 0; k < LOCKED_CONFIG_KEYS.length; k++) {
+    var key = LOCKED_CONFIG_KEYS[k];
+    var nowVal = String(cfg[key] || '');
+    if (before[key] !== undefined && before[key] !== nowVal) {
+      changed.push(key + ': "' + before[key] + '" became "' + nowVal + '"');
+    }
+  }
+
+  throw new ApiError('NUMBERING_CHANGED',
+    'The ticket numbering has been changed since the tickets were made (' +
+    changed.join('; ') + '). Every ticket number already recorded was worked out ' +
+    'with the old setting, so nothing will match until it is put back. Restore it ' +
+    'in the Config tab, or start a new spreadsheet if the tickets have not been printed.',
+    { changed: changed });
+}
 
 function ss_() {
   return SpreadsheetApp.getActiveSpreadsheet();
