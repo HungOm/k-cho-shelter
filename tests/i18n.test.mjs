@@ -75,3 +75,36 @@ console.log('the untranslated-by-design list is honoured')
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
+
+/**
+ * Every error code the server can throw must have a Burmese line.
+ *
+ * This existed as a habit, not a check: the backend session had to remember to
+ * tell the frontend session each time it added a code, and the frontend had to
+ * remember to act on it. That worked until it didn't — four codes shipped
+ * untranslated, and the only reason they were caught is that somebody mentioned
+ * them in passing.
+ *
+ * An untranslated code is not a blank space. myError() falls through to the
+ * server's English sentence, so a Burmese-reading volunteer hits a wall of
+ * English at the exact moment something has gone wrong.
+ */
+{
+  const fs = await import('node:fs')
+  const path = await import('node:path')
+  const dir = new URL('../apps_script/', import.meta.url)
+  const codes = new Set()
+  for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.gs'))) {
+    const src = fs.readFileSync(path.join(dir.pathname, f), 'utf8')
+    for (const m of src.matchAll(/new ApiError\(\s*'([A-Z_]+)'/g)) codes.add(m[1])
+    // Codes built from a variable are listed where they are defined instead.
+    for (const m of src.matchAll(/ERROR_CODES?\s*=\s*\{([\s\S]*?)\}/g)) {
+      for (const k of m[1].matchAll(/([A-Z_]{3,})\s*:/g)) codes.add(k[1])
+    }
+  }
+  ok(codes.size > 20, `found the server's error codes (${codes.size})`)
+  const missing = [...codes].filter(c => !MY_ERRORS[c]).sort()
+  ok(missing.length === 0,
+    missing.length ? `every server code is translated — missing: ${missing.join(', ')}`
+                   : 'every server code is translated')
+}

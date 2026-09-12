@@ -217,5 +217,48 @@ console.log('after a release, work continues');
   eq(ticketIndex('KS-00201', cfg), 0, 'one past the line still does not');
 }
 
+// ============ 7. changing the ceiling from the app ============
+console.log('the ceiling is changeable without editing the sheet');
+{
+  world(100, 200);
+  const r = handleSetTicketCeiling({ ceiling: 500 }, sup);
+  eq(r.to, 500, 'the ceiling moved');
+  eq(r.from, 200, 'and reports what it was');
+  eq(r.stillToRelease, 400, 'and how much headroom that leaves');
+  eq(cfgNum(getConfig(), 'TICKET_CEILING', 0), 500, 'it stuck');
+  eq(codeOf(() => release(400)), 'NO_THROW', 'and releasing up to the new ceiling works');
+
+  // Clearing it.
+  world(100, 200);
+  eq(handleSetTicketCeiling({ ceiling: '' }, sup).to, 0, 'blank clears the ceiling');
+  eq(cfgNum(getConfig(), 'TICKET_CEILING', 0), 0, 'and it reads back as none');
+  eq(codeOf(() => release(900)), 'NO_THROW', 'with no ceiling, larger releases pass');
+
+  // Refusals.
+  world(500, 900);
+  eq(codeOf(() => handleSetTicketCeiling({ ceiling: 300 }, sup)), 'BELOW_GENERATED',
+    'a ceiling below the tickets that exist is refused');
+  const e = errOf(() => handleSetTicketCeiling({ ceiling: 300 }, sup));
+  ok(/500/.test(e.message), 'and says how many exist');
+  eq(codeOf(() => handleSetTicketCeiling({ ceiling: 900 }, sup)), 'NO_CHANGE', 'no change is refused');
+  eq(codeOf(() => handleSetTicketCeiling({ ceiling: -5 }, sup)), 'BAD_REQUEST', 'negative is refused');
+  eq(codeOf(() => handleSetTicketCeiling({ ceiling: MAX_TOTAL_TICKETS + 1 }, sup)), 'TOO_MANY',
+    'above the system limit is refused');
+
+  world(500, 900);
+  const plainAdmin = { email: 'a@x.com', role: 'admin', isAdmin: true, isSuperAdmin: false, active: true, displayName: 'A' };
+  eq(codeOf(() => handleSetTicketCeiling({ ceiling: 1000 }, plainAdmin)), 'SUPER_ADMIN_ONLY',
+    'an ordinary admin cannot change the plan');
+
+  // Exactly at what exists is allowed — that is "this raffle is finished growing".
+  world(500, 900);
+  eq(handleSetTicketCeiling({ ceiling: 500 }, sup).to, 500, 'a ceiling equal to what exists is allowed');
+  eq(codeOf(() => release(510)), 'ABOVE_CEILING', 'and it closes the raffle to further growth');
+
+  const reg = actionRegistry();
+  ok(reg['set_ticket_ceiling'].sup === true, 'it is super-admin only');
+  eq(reg['set_ticket_ceiling'].kind, 'write', 'and a write');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
