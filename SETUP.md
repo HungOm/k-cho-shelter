@@ -293,6 +293,44 @@ out of logs and browser history.
 
 ---
 
+## Two people for the big changes
+
+Small corrections go through straight away. Anything that cancels tickets across a range
+of books is refused and offered to the organiser instead: the person sees what it would
+do, presses **Ask the organiser**, and nothing changes until the super admin approves it
+on the **Approvals** screen. Approving carries it out immediately, in the name of the
+person who asked. Requests lapse after a day.
+
+The sentence the approver reads is written by the server, by the same code that executes
+the change — so what is approved is exactly what happens.
+
+## Turning features on and off
+
+The super admin has an **Access** screen: every feature, every role, on or off. What is
+written in the code is only the starting point.
+
+Two things cannot be changed there, and the server refuses them too even if somebody
+edits the Permissions tab by hand:
+
+- Features marked super-admin-only cannot be given to anyone. Otherwise an organiser
+  could grant themselves the activity log and then erase the record of doing it.
+- Managing people always stays with organisers, because turning it off would lock
+  everybody out with no way back in.
+
+## Before you print tickets
+
+**Get the Burmese read by somebody who speaks it.** Every label in the app carries a
+Burmese line, and it was machine-written — nobody has checked it. The words to check
+first are the ones on buttons that destroy something: *Report books lost*, *Cancel a
+ticket*, *Count a book in*. A wrong verb there means a volunteer agrees to something
+they did not intend, and the mistake lands in the money.
+
+The strings live in one file, `src/lib/i18n.js` — about ninety short phrases, grouped.
+The approval sentences are deliberately left in English until that review is done.
+
+Note also that phones still running **Zawgyi** rather than Unicode will show the Burmese
+as nonsense. There is nothing to fix in code; it is worth knowing before you are asked.
+
 ## When something goes wrong
 
 **"Not on the access list"** — the signed-in Google address is not in the Users tab, or is disabled.

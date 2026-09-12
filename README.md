@@ -59,28 +59,85 @@ server, not merely by a hidden button.
 
 ## What it does
 
-**Search** is the home screen, because every task starts by finding something. It handles partial
-ticket numbers (type `721`, not the whole thing), names with inconsistent spelling (*Thang* finds
-*Thuang*), phone numbers in any format, book ranges, and filters that combine. Results are
-actionable — find a ticket and sell it right there.
+**Search** is where every task starts. Partial ticket numbers (type `721`, not the
+whole thing), names with inconsistent spelling (*Thang* finds *Thuang*), phone numbers
+in any format, book ranges, and filters that combine. Results are actionable — find a
+ticket and sell it there.
 
-**Books** go out by range, transfer between agents, come back, and get settled. Issuing produces a
-printable handover receipt with a signature line, or a WhatsApp message.
+**Recording a sale** works two ways, remembered per device: one question per screen for
+someone doing it the first time, or everything on one card for whoever is keying in a
+stack of counterfoils. Both require a name and a phone number, enforced on the server.
 
-**Settlement** asks for the tickets that *didn't* sell — the ones the agent is physically holding.
-Everything else in the book is marked sold. Typing two numbers takes five seconds and is exact,
-whereas "I sold eight" throws away the ticket-to-buyer link the draw depends on. There is a fallback
-for when the leftovers are lost that records the book total without inventing ticket rows.
+**Selling a whole book** to one buyer — common when a church or a family takes a book
+outright. Every ticket gets the same name and phone, so a winner can still be
+telephoned. Tickets already sold to somebody else are never overwritten, and the result
+says so: "7 tickets sold, 3 were already sold" rather than "book sold".
 
-**Money** shows what each agent still owes, and the Books tab of the Sheet shows declared against
-recorded with the difference already calculated — in red when they disagree, with no report to run.
+**Books** go out by range, transfer between sellers, come back, and get settled. Typing
+a range tells you immediately what is already out and who has it — "Books 1–8 are
+already out with JOHN and MARY. 4 of 12 are free." — and offers the next free run as a
+button. Issuing produces a printable handover receipt, or a WhatsApp message.
 
-**Draw** checks you are ready: unsettled books, cash outstanding, and — the one that matters — how
-many sold tickets have no name or phone. A sold ticket with no contact details is a winner you
-cannot find.
+**Settlement** asks for the tickets that *didn't* sell — the ones the seller is
+physically holding. Everything else in the book counts as sold. Typing two numbers takes
+five seconds and is exact, whereas "I sold eight" throws away the ticket-to-buyer link
+the draw depends on. There is a fallback for lost leftovers that records the book total
+without inventing ticket rows.
 
-Plus: overdue book chase list with one-tap WhatsApp reminders, agent statements, an audit log of
-every change, and a nightly backup of the whole spreadsheet to Drive.
+**Money** shows what each seller still owes, and the Books tab of the Sheet shows
+declared against recorded with the difference already calculated — red when they
+disagree, no report to run.
+
+**The draw** checks you are ready: unsettled books, cash outstanding, and the one that
+matters — how many sold tickets have no name or phone. A sold ticket with no contact
+details is a winner you cannot find.
+
+Plus: overdue chase list with one-tap WhatsApp reminders, seller statements, an audit
+log of every change, and a nightly backup of the whole spreadsheet to Drive.
+
+## Who can do what
+
+Permissions are **set from the interface**, not hardcoded. The super admin opens
+*Access* and turns any feature on or off for any role — one role at a time on a phone,
+the whole matrix on a desktop. The roles in the code are only defaults.
+
+Two kinds of toggle are shown but cannot be moved, and the server refuses them too:
+super-admin-only features, which cannot be given away at all, and user management, which
+always stays with organisers because turning it off would lock everybody out.
+
+**Destructive changes need two people.** Small fixes go through directly. Anything that
+cancels tickets across a range of books is refused, and the person is offered "Ask the
+organiser". The sentence the approver reads is written by the server — by the same code
+that executes it — so what is approved is what happens, and approving carries it out
+immediately in the requester's name. Requests lapse after a day.
+
+## Burmese
+
+Every interface label carries a Burmese line beneath it, small and italic: navigation,
+buttons, questions, form labels, status words and error messages. Ticket numbers, buyer
+names, phone numbers, money and dates are data and are never glossed.
+
+> ⚠️ **The translations have not been checked by a native speaker.** They are
+> machine-authored Unicode Burmese, in `src/lib/i18n.js`. Get them read before the raffle
+> runs — the destructive buttons above all, because a wrong word on "Report books lost"
+> or "Count a book in" turns into a mistake in the money. Approval sentences are
+> deliberately English-only until that review happens.
+
+Padauk and Noto Sans Myanmar are loaded explicitly; without a real Burmese font many
+Android phones draw empty boxes. Phones still running Zawgyi will show correct Unicode
+as nonsense — nothing fixable in code.
+
+## What is kept on the phone
+
+The ticket skeleton — number, status, book, seller — is cached in IndexedDB so the app
+opens instantly instead of downloading six thousand rows first.
+
+**Buyer names, phone numbers, areas and notes are stripped before anything is written**,
+in one place, `saveTickets()`. This app records refugees' contact details; a phone that
+is lost, sold or lent would otherwise carry that list indefinitely. Those columns arrive
+over the network into memory only, so search by name works during the session and
+nothing survives a closed tab. The cache is dropped on sign-out, on changing the
+connection, and on any authentication failure.
 
 ## Setting it up
 
@@ -169,10 +226,46 @@ Plain Node, nothing to install. The Apps Script services are stood up in memory
 
 | Suite | Covers |
 |---|---|
-| `numbering` | ticket↔book arithmetic across different configs, plus an exhaustive round-trip over all 6,000 tickets |
+| `numbering` | ticket↔book arithmetic across configs, plus an exhaustive round-trip over all 6,000 tickets |
 | `settlement` | settlement maths, the one-source reconciliation rule, double-sell and stale-edit refusal, book ownership, reservations released on return, all-or-nothing bulk entry |
-| `superadmin` | the root account: cannot be disabled or demoted from inside the app, only it can create or change an organiser, and it is hidden from ordinary admins |
-| `search` | folding, spelling tolerance, phone formats, book ranges, and match ordering |
+| `superadmin` | the root account: cannot be disabled or demoted from inside the app, only it can create or change an organiser, hidden from ordinary admins |
+| `permissions` | the access table overrides defaults, super-admin-only features stay ungrantable, and the admin lock holds even if somebody edits the sheet by hand |
+| `approvals` | requests execute on approval under the requester's identity, re-checked; lapse after a day; cannot be self-approved |
+| `sellbook` | selling a whole book, and never overwriting a ticket already sold to somebody else |
+| `cache` | the server-side ticket table cache and its version keying |
+| `search` | folding, spelling tolerance, phone formats, book ranges, match ordering |
+| `bookrange` | resolving a typed range locally — what is taken, by whom, what does not exist, where the next free run is |
+| `loadorder` | no `.gs` file reads another file's constants at load time (see below) |
+| `emits` | every button actually does something (see below) |
+
+### Two suites that exist because of specific bugs
+
+**`loadorder`** — Apps Script concatenates `.gs` files in whatever order the project
+holds them, and nothing in the repo controls it. A top-level array built from another
+file's constants can silently become `[undefined, undefined]`: nothing throws, the
+lookup just stops matching, and settled books start counting toward the money total on
+the wrong figures. A wrong cash total with no error message. The rule is now enforced —
+a top-level initialiser may only use names declared above it in its own file.
+
+The same shape bit the browser code too: `store.js` read `localStorage` at module scope,
+so a browser with storage blocked would have failed the import and shown a blank page
+rather than a slow one.
+
+**`emits`**
+
+Three buttons once shipped doing nothing at all. They emitted events the parent never
+listened for, so the click was swallowed in silence — and that is invisible to every
+other test here, because the server never hears from a button that does nothing. Vue
+does not warn either; an unhandled emit is legal.
+
+reads what each component declares it sends, reads what its parents listen for, and
+fails when they disagree. It found a fourth dead button the first time it ran.
+
+Both were written carefully enough not to cry wolf. A test that flags working code gets
+switched off within a week, so each one was checked against the original bug (it fails)
+and against correct code that superficially resembles it (it passes).
+
+**743 assertions across eleven suites.**
 
 ## Two things worth knowing
 
