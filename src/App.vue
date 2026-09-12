@@ -39,7 +39,8 @@ import Toasts from './components/ui/Toasts.vue'
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ||
   '981045980686-ah7579259e9j24l2pgnsbb2v4bn0biud.apps.googleusercontent.com'
 
-const phase = ref('loading')       // loading | setup | signin | error | ready
+const phase = ref('loading')       // loading | waiting | setup | signin | error | ready
+let silentTimer = null
 const errorMsg = ref('')
 const clientId = ref('')
 const savedUrl = ref('')
@@ -86,14 +87,17 @@ function connect({ url, cid }) {
 async function reset() {
   try { localStorage.removeItem(LS.url); localStorage.removeItem(LS.cid) } catch {}
   await forgetCache()
+  dropToken()
   location.reload()
 }
 
 async function signOut() {
   try { window.google?.accounts?.id?.disableAutoSelect() } catch {}
   // Somebody who has signed out must not still have the ticket table on their
-  // phone, even with the names already stripped out of it.
+  // phone, even with the names already stripped out of it — nor the sign-in
+  // that would put them straight back in on the next load.
   await forgetCache()
+  dropToken()
   location.reload()
 }
 
@@ -105,12 +109,47 @@ let renewTimer = null
 const reauth = ref(false)    // the "sign in again" overlay
 
 function onCredential(res) {
+  clearTimeout(silentTimer)
   lastToken = res.credential
   configure({ idToken: res.credential })
+  keepToken(res.credential)
   scheduleRenewal(res.credential)
   reauth.value = false
   if (tokenWaiter) { const w = tokenWaiter; tokenWaiter = null; w(true); return }
   start()
+}
+
+/**
+ * Keeps the sign-in across a page refresh.
+ *
+ * Storing it does NOT make it last any longer: a Google ID token is valid for
+ * its own hour whether or not we write it down, so this widens no window. What
+ * it removes is being asked to sign in again every time somebody reloads the
+ * page or reopens the tab, which is most of a volunteer's day.
+ *
+ * It is dropped on sign-out, on changing the connection, and on any
+ * authentication failure — the same lifecycle as the ticket cache.
+ */
+function keepToken(jwt) {
+  try {
+    const exp = tokenExpiry(jwt)
+    if (exp) localStorage.setItem(LS.tok, JSON.stringify({ jwt, exp }))
+  } catch { /* storage blocked; the app just asks again next time */ }
+}
+
+function storedToken() {
+  try {
+    const raw = localStorage.getItem(LS.tok)
+    if (!raw) return ''
+    const { jwt, exp } = JSON.parse(raw)
+    // A minute of headroom, so a token about to die is not used for a request
+    // that would fail halfway through.
+    return exp && exp > Date.now() + 60_000 ? jwt : ''
+  } catch { return '' }
+}
+
+function dropToken() {
+  try { localStorage.removeItem(LS.tok) } catch { /* nothing to drop */ }
 }
 
 /** The token's own expiry, read from the JWT. Not trusted — only used for timing. */
@@ -227,8 +266,24 @@ onMounted(async () => {
     errorMsg.value = err.message
     return
   }
-  phase.value = 'signin'
   initGoogle()
+
+  // Still signed in from last time: carry straight on, no Google round trip.
+  const saved = storedToken()
+  if (saved) {
+    lastToken = saved
+    configure({ idToken: saved })
+    scheduleRenewal(saved)
+    return start()
+  }
+
+  // Otherwise give Google a moment to sign them back in before showing a
+  // button. Leading with "please sign in" when it was about to happen anyway
+  // is the difference between an app that remembers you and one that does not.
+  phase.value = 'waiting'
+  silentTimer = setTimeout(() => {
+    if (phase.value === 'waiting') phase.value = 'signin'
+  }, 2500)
 })
 
 async function start() {
@@ -251,6 +306,13 @@ async function start() {
     if (String(err.code || '').startsWith('AUTH') ||
         err.code === 'NOT_AUTHORIZED' || err.code === 'ACCOUNT_DISABLED') {
       forgetCache()
+      dropToken()
+    }
+    // A stored token the server would not take is worse than none: it would be
+    // retried on every reload. Throw it away and let them sign in properly.
+    if (String(err.code || '').startsWith('AUTH')) {
+      phase.value = 'signin'
+      return
     }
     phase.value = 'error'
     errorMsg.value = err.code === 'NOT_AUTHORIZED'
