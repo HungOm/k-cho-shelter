@@ -108,14 +108,52 @@ console.log('router bumps on every write');
   const writes = Object.keys(reg).filter(a => reg[a].kind === 'write' || reg[a].kind === 'bulk');
   ok(writes.length >= 12, 'there are write actions to cover (' + writes.length + ')');
 
-  // The router is the single choke point; prove it fires for the kinds that matter.
+  // The router is the single choke point; prove it fires for the kinds that
+  // matter, and only skips the actions explicitly exempted below.
   const src = fs.readFileSync(path + 'Api.gs', 'utf8');
-  ok(/kind === 'write' \|\| spec\.kind === 'bulk'\) bumpTicketCacheVersion\(\)/.test(src.replace(/spec\./g, 'spec.')),
-    'route_ bumps the ticket cache after write and bulk actions');
+  ok(/kind === 'write' \|\| spec\.kind === 'bulk'/.test(src),
+    'route_ keys invalidation off the write and bulk kinds');
+  ok(/NO_TICKET_WRITES\.indexOf\(req\.action\) === -1[\s\S]{0,60}bumpTicketCacheVersion\(\)/.test(src),
+    'and bumps unless the action is on the exemption list');
 
   // A read must NOT bump — otherwise the cache never survives a single boot.
   const reads = Object.keys(reg).filter(a => reg[a].kind === 'read');
   for (const a of reads) ok(reg[a].kind === 'read', a + ' is a read');
+
+  // The exemption list is the dangerous part: an action that quietly starts
+  // writing tickets while still listed would serve a stale table. Re-derive it
+  // from the source rather than trusting the list.
+  const sources = ['Tickets.gs', 'Books.gs', 'People.gs', 'Auth.gs', 'Approvals.gs', 'Reports.gs']
+    .map(f => fs.readFileSync(path + f, 'utf8')).join('\n');
+  const TOUCHES = /SHEET\.TICKETS|settleTicketRows_|releaseReservedInBook_|voidUnsoldInBook_/;
+
+  function bodyOf(name) {
+    const i = sources.indexOf('function ' + name + '(');
+    if (i === -1) return '';
+    let d = 0, j = sources.indexOf('{', i);
+    for (let k = j; k < sources.length; k++) {
+      if (sources[k] === '{') d++;
+      else if (sources[k] === '}') { d--; if (!d) return sources.slice(i, k + 1); }
+    }
+    return '';
+  }
+
+  for (const action of NO_TICKET_WRITES) {
+    ok(reg[action], action + ' is a real action');
+    const body = bodyOf(reg[action].fn.name);
+    ok(body.length > 0, 'found the source of ' + action);
+    ok(!TOUCHES.test(body),
+      action + ' is exempt from invalidation and must not write tickets');
+  }
+
+  // And the converse: anything that DOES write tickets must not be exempt.
+  for (const a of writes) {
+    const body = bodyOf(reg[a].fn.name);
+    if (TOUCHES.test(body)) {
+      ok(NO_TICKET_WRITES.indexOf(a) === -1,
+        a + ' writes tickets, so it must invalidate the cache');
+    }
+  }
 }
 
 // ============ 4. phone masking is applied per request, never cached ============

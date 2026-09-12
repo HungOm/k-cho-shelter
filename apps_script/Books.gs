@@ -55,6 +55,56 @@ function writeBookFields_(sheet, map, rowNum, current, patch, user) {
   sheet.getRange(rowNum, 1, 1, writeUpTo).setValues([values]);
 }
 
+/**
+ * The same write, for many books at once.
+ *
+ * Every caller here used to loop and call writeBookFields_ per book, which is
+ * one Sheets round trip each: handing out twenty-one books meant twenty-one
+ * calls, and the spinner sat there for seconds while an admin wondered whether
+ * to press it again. A range of books lands on consecutive rows, so they
+ * collapse into a single setValues.
+ *
+ * No read is needed — readBooksRaw_ already handed us each row, on `_raw`.
+ * A scattered selection costs one call per island of consecutive rows, which is
+ * still never worse than the per-row version it replaces.
+ */
+function writeBookFieldsBatch_(sheet, map, edits, user) {
+  if (!edits.length) return;
+  var writeUpTo = map.Modified_Date;
+  var now = new Date();
+
+  var prepared = [];
+  for (var e = 0; e < edits.length; e++) {
+    var current = edits[e].current;
+    var patch = edits[e].patch;
+    var values = current._raw.slice(0, writeUpTo);
+
+    for (var field in patch) {
+      if (!map[field]) continue;
+      if (BOOKS_FORMULA_COLS.indexOf(field) !== -1) continue;   // never
+      if (map[field] > writeUpTo) continue;
+      values[map[field] - 1] = patch[field];
+    }
+    values[map.Version - 1] = (parseInt(current.Version, 10) || 0) + 1;
+    values[map.Modified_By - 1] = user.email;
+    values[map.Modified_Date - 1] = now;
+
+    prepared.push({ row: current._row, values: values });
+  }
+
+  prepared.sort(function (a, b) { return a.row - b.row; });
+
+  var i = 0;
+  while (i < prepared.length) {
+    var start = i;
+    while (i + 1 < prepared.length && prepared[i + 1].row === prepared[i].row + 1) i++;
+    var block = [];
+    for (var k = start; k <= i; k++) block.push(prepared[k].values);
+    sheet.getRange(prepared[start].row, 1, block.length, writeUpTo).setValues(block);
+    i++;
+  }
+}
+
 function logBookHistory_(entries) {
   if (!entries.length) return;
   var sheet = sheet_(SHEET.BOOK_HISTORY);
@@ -181,17 +231,19 @@ function handleIssueBooks(payload, user) {
 
   var now = new Date();
   var history = [];
+  var edits = [];
   for (var j = 0; j < numbers.length; j++) {
     var book = index[numbers[j].toUpperCase()];
-    writeBookFields_(sheet, map, book._row, book, {
+    edits.push({ current: book, patch: {
       Status: BOOK_STATUS.OUT,
       Held_By_Agent: agentId,
       Issued_Date: now,
       Due_Date: dueDate,
       Notes: payload.note || book.Notes || ''
-    }, user);
+    } });
     history.push([now, numbers[j], book.Held_By_Agent || '', agentId, 'issue', user.email, payload.note || '']);
   }
+  writeBookFieldsBatch_(sheet, map, edits, user);
   logBookHistory_(history);
   bumpBookCacheVersion();
 
@@ -240,15 +292,17 @@ function handleTransferBooks(payload, user) {
 
   var now = new Date();
   var history = [];
+  var edits = [];
   for (var j = 0; j < numbers.length; j++) {
     var book = index[numbers[j].toUpperCase()];
     var fromAgent = book.Held_By_Agent || '';
-    writeBookFields_(sheet, map, book._row, book, {
+    edits.push({ current: book, patch: {
       Held_By_Agent: toAgentId,
       Issued_Date: now
-    }, user);
+    } });
     history.push([now, numbers[j], fromAgent, toAgentId, 'transfer', user.email, payload.note || '']);
   }
+  writeBookFieldsBatch_(sheet, map, edits, user);
   logBookHistory_(history);
   bumpBookCacheVersion();
 
@@ -268,6 +322,7 @@ function handleReturnBooks(payload, user) {
 
   var now = new Date();
   var history = [];
+  var edits = [];
   var released = 0;
   var returned = [];
 
@@ -279,14 +334,15 @@ function handleReturnBooks(payload, user) {
     // agent who no longer has the book goes back on the shelf.
     released += releaseReservedInBook_(numbers[i], user);
 
-    writeBookFields_(sheet, map, book._row, book, {
+    edits.push({ current: book, patch: {
       Status: BOOK_STATUS.RETURNED,
       Notes: payload.note || book.Notes || ''
-    }, user);
+    } });
     history.push([now, numbers[i], book.Held_By_Agent || '', '', 'return', user.email, payload.note || '']);
     returned.push(numbers[i]);
   }
 
+  writeBookFieldsBatch_(sheet, map, edits, user);
   logBookHistory_(history);
   bumpBookCacheVersion();
   logAudit('RETURN_BOOKS', { count: returned.length, releasedReservations: released }, user.email);
@@ -622,6 +678,7 @@ function handleSetBookStatus(payload, user) {
   var map = headerMap(sheet);
   var now = new Date();
   var history = [];
+  var edits = [];
   var voided = 0;
 
   for (var i = 0; i < numbers.length; i++) {
@@ -634,13 +691,14 @@ function handleSetBookStatus(payload, user) {
       voided += voidUnsoldInBook_(numbers[i], user, reason);
     }
 
-    writeBookFields_(sheet, map, book._row, book, {
+    edits.push({ current: book, patch: {
       Status: status,
       Notes: (book.Notes ? book.Notes + ' | ' : '') + status + ': ' + reason
-    }, user);
+    } });
     history.push([now, numbers[i], book.Held_By_Agent || '', '', status.toLowerCase(), user.email, reason]);
   }
 
+  writeBookFieldsBatch_(sheet, map, edits, user);
   logBookHistory_(history);
   bumpBookCacheVersion();
   logAudit('SET_BOOK_STATUS', { count: numbers.length, status: status, reason: reason, ticketsVoided: voided }, user.email);
@@ -685,6 +743,7 @@ function handleRestockBooks(payload, user) {
 
   var now = new Date();
   var history = [];
+  var edits = [];
   var done = [];
 
   for (var i = 0; i < numbers.length; i++) {
@@ -697,15 +756,16 @@ function handleRestockBooks(payload, user) {
     history.push([now, numbers[i], book.Held_By_Agent || '', '', 'restock', user.email,
       'was sold ' + (book.Declared_Sold || 0) + ', paid ' + (book.Amount_Paid || 0)]);
 
-    writeBookFields_(sheet, map, book._row, book, {
+    edits.push({ current: book, patch: {
       Status: BOOK_STATUS.UNASSIGNED,
       Held_By_Agent: '', Issued_Date: '', Due_Date: '',
       Declared_Sold: '', Amount_Due: '', Amount_Paid: '',
       Settled_Date: '', Settled_By: '', Notes: ''
-    }, user);
+    } });
     done.push(numbers[i]);
   }
 
+  writeBookFieldsBatch_(sheet, map, edits, user);
   logBookHistory_(history);
   bumpBookCacheVersion();
   logAudit('RESTOCK', { count: done.length }, user.email);
