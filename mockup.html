@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K'Cho Shelter — home screen mockup</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; background: #e9edf1; color: #12161c;
+         font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+         -webkit-font-smoothing: antialiased; }
+  .page { max-width: 1180px; margin: 0 auto; padding: 40px 20px 80px; }
+  header h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; margin: 0 0 .3em; }
+  header p { max-width: 62ch; color: #4b5563; margin: 0 0 .7em; }
+  .meta { font-size: .87rem; color: #6b7280; margin-top: 18px; }
+  h2 { font-size: 1.15rem; font-weight: 750; letter-spacing: -.02em; margin: 0 0 4px; }
+  .note { color: #5d6775; font-size: .92rem; max-width: 62ch; margin: 0 0 16px; }
+  section { margin-top: 52px; }
+  .frame { display: inline-block; background: #f4f6f8; border: 1px solid #cfd6df;
+           border-radius: 18px; overflow: hidden; box-shadow: 0 10px 40px rgba(16,24,40,.13); }
+  .wide { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .wide .frame { min-width: 1440px; }
+  hr { border: 0; border-top: 1px solid #cfd6df; margin: 44px 0 0; }
+  @media (max-width: 460px) { .frame { border-radius: 0; border-left: 0; border-right: 0; } }
+.b1 body { margin: 0; }.b1 a { color: #0d7a6f; }.b1 a:hover { color: #0a5f56; }.b1 .ks { font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          -webkit-font-smoothing: antialiased; color: #12161c; }.b1 .ks svg { display: block; }.b1 .ks .lbl { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #5d6775; }.b1 .ks .row { display: flex; align-items: center; gap: 14px; background: #ffffff; border: 1px solid #dce1e8;
+               border-radius: 16px; padding: 14px 16px; min-height: 72px; box-shadow: 0 1px 2px rgba(16,24,40,.05); }.b1 .ks .ico { flex: 0 0 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; }.b1 .ks .t { font-size: 15.5px; font-weight: 700; letter-spacing: -.012em; line-height: 1.28; }.b1 .ks .d { font-size: 13px; color: #5d6775; margin-top: 2px; line-height: 1.35; }.b1 .ks .chev { color: #b6bec9; flex: 0 0 auto; }.b1 .ks .act { display: flex; flex-direction: column; gap: 10px; background: #ffffff; border: 1px solid #dce1e8;
+               border-radius: 16px; padding: 16px 15px; min-height: 96px; box-shadow: 0 1px 2px rgba(16,24,40,.05); }.b1 .ks .act .t2 { font-size: 14.5px; font-weight: 700; letter-spacing: -.012em; line-height: 1.3; }.b1 .ks .tab { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px 0; min-height: 52px; color: #5d6775; }.b1 .ks .tab span { font-size: 11px; font-weight: 600; letter-spacing: -.005em; }.b1 .ks .key { display: flex; align-items: center; gap: 6px; }.b1 .ks .key i { width: 11px; height: 11px; border-radius: 3.5px; display: inline-block; }
+  .b2 body { margin: 0; }.b2 a { color: #0d7a6f; }.b2 a:hover { color: #0a5f56; }.b2 .ks { font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          -webkit-font-smoothing: antialiased; color: #12161c; }.b2 .ks svg { display: block; }.b2 .ks .lbl { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #5d6775; }.b2 .ks .stat { background: #ffffff; border: 1px solid #dce1e8; border-radius: 14px; padding: 13px 14px; }.b2 .ks .stat .n { font-size: 23px; font-weight: 800; letter-spacing: -.03em; line-height: 1.12; font-variant-numeric: tabular-nums; }.b2 .ks .stat .l { font-size: 11.5px; color: #5d6775; font-weight: 650; margin-top: 3px; line-height: 1.25; }.b2 .ks .task { display: flex; align-items: center; gap: 13px; background: #ffffff; border: 1px solid #dce1e8;
+                border-radius: 14px; padding: 13px 15px; min-height: 66px; }.b2 .ks .ico { flex: 0 0 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; }.b2 .ks .t { font-size: 15px; font-weight: 700; letter-spacing: -.012em; line-height: 1.28; }.b2 .ks .d { font-size: 12.5px; color: #5d6775; margin-top: 1px; line-height: 1.35; }.b2 .ks .chev { color: #b6bec9; flex: 0 0 auto; }.b2 .ks .key { display: flex; align-items: center; gap: 6px; }.b2 .ks .key i { width: 11px; height: 11px; border-radius: 3.5px; display: inline-block; }
+  .b3 body { margin: 0; }.b3 a { color: #0d7a6f; }.b3 a:hover { color: #0a5f56; }.b3 .ks { font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          -webkit-font-smoothing: antialiased; color: #12161c; }.b3 .ks svg { display: block; }.b3 .ks .lbl { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #5d6775; }.b3 .ks .nav { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 11px;
+               color: #5d6775; font-size: 15px; font-weight: 650; min-height: 44px; }.b3 .ks .nav.on { background: #e3f4f1; color: #0d7a6f; font-weight: 750; }.b3 .ks .card { background: #ffffff; border: 1px solid #dce1e8; border-radius: 16px;
+                box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 6px 20px rgba(16,24,40,.07); }.b3 .ks .row { display: flex; align-items: center; gap: 14px; background: #ffffff; border: 1px solid #dce1e8;
+               border-radius: 16px; padding: 15px 18px; min-height: 74px; box-shadow: 0 1px 2px rgba(16,24,40,.05); }.b3 .ks .ico { flex: 0 0 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; }.b3 .ks .t { font-size: 15.5px; font-weight: 700; letter-spacing: -.012em; line-height: 1.28; }.b3 .ks .d { font-size: 13px; color: #5d6775; margin-top: 2px; line-height: 1.35; }.b3 .ks .chev { color: #b6bec9; flex: 0 0 auto; }.b3 .ks .act { display: flex; align-items: center; gap: 12px; background: #ffffff; border: 1px solid #dce1e8;
+               border-radius: 14px; padding: 14px 16px; min-height: 60px; font-size: 14.5px; font-weight: 700;
+               letter-spacing: -.012em; color: #12161c; }.b3 .ks .key { display: flex; align-items: center; gap: 6px; }.b3 .ks .key i { width: 11px; height: 11px; border-radius: 3.5px; display: inline-block; }
+  </style>
+</head>
+<body>
+<div class="page">
+<header>
+  <h1>K&#39;Cho Shelter — home screen</h1>
+  <p>A design mockup, not the running app. Three artboards: the recommended phone layout,
+     an alternate that leads with the work instead of the money, and the desktop shape.</p>
+  <p>Built on the app&#39;s own tokens — brand #0d7a6f, 17px base, 52px minimum tap target,
+     16px radii — so it extends the existing system rather than replacing it. The change from
+     the current screen is threefold: no emoji anywhere (one stroke icon set on a 24px grid),
+     one dominant number instead of several equal cards, and the book grid promoted from the
+     footer to a centrepiece.</p>
+  <p class="meta">Figures shown are sample data. Open this file in any browser — it needs
+     nothing installed and works offline.</p>
+</header>
+<hr>
+<section class="b1">
+  <h2>Home — phone</h2>
+  <p class="note">The recommendation. One dominant number, stroke icons, the book grid promoted.</p>
+  <div class="narrow"><div class="frame">
+
+<div class="ks" style="width: 390px; background: #f4f6f8; padding: 0 0 8px;">
+
+  <!-- app bar -->
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px 6px;">
+    <div style="display: flex; flex-direction: column; gap: 1px;">
+      <span style="font-size: 17px; font-weight: 750; letter-spacing: -.015em;">K&#39;Cho Shelter</span>
+      <span style="font-size: 12.5px; color: #5d6775;">Ma Nu &middot; Organiser</span>
+    </div>
+    <div style="width: 38px; height: 38px; border-radius: 50%; background: #e3f4f1; color: #0d7a6f; display: grid; place-items: center; font-size: 14px; font-weight: 750;">MN</div>
+  </div>
+
+  <!-- HERO -->
+  <div style="margin: 12px 20px 0; background: #ffffff; border: 1px solid #dce1e8; border-radius: 16px; padding: 22px 22px 20px; box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 6px 20px rgba(16,24,40,.07);">
+    <div class="lbl">Collected so far</div>
+    <div style="display: flex; align-items: baseline; gap: 7px; margin-top: 7px;">
+      <span style="font-size: 25px; font-weight: 700; color: #5d6775; letter-spacing: -.02em;">RM</span>
+      <span style="font-size: 62px; font-weight: 800; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums;">12,480</span>
+    </div>
+
+    <div style="height: 6px; border-radius: 99px; background: #eef1f5; margin-top: 20px; overflow: hidden;">
+      <div style="height: 100%; width: 62%; border-radius: 99px; background: #0d7a6f;"></div>
+    </div>
+    <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 13.5px; color: #5d6775; font-variant-numeric: tabular-nums;">
+      <span><b style="color: #12161c; font-weight: 700;">62%</b> of RM 20,000</span>
+      <span>1,248 of 2,000 tickets</span>
+    </div>
+
+    <div style="height: 1px; background: #dce1e8; margin: 18px 0 14px;"></div>
+    <div style="display: flex; align-items: center; gap: 9px; font-size: 13.5px; color: #5d6775;">
+      <span style="color: #9a5b06;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.2a3 3 0 0 0-2.6-1.2h-.9a2.4 2.4 0 0 0 0 4.8h1a2.4 2.4 0 0 1 0 4.8h-.9A3 3 0 0 1 9 16.4"/><path d="M12 6.2v11.6"/></svg>
+      </span>
+      <span>RM 1,840 sold but not handed in yet</span>
+    </div>
+  </div>
+
+  <!-- NEEDS LOOKING AT -->
+  <div class="lbl" style="margin: 26px 22px 10px;">Needs looking at</div>
+
+  <div style="display: flex; flex-direction: column; gap: 9px; margin: 0 20px;">
+
+    <div class="row">
+      <div class="ico" style="background: #fde8e6; color: #b3261e;">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div class="t">3 books not returned</div>
+        <div class="d">Past the date they were due back</div>
+      </div>
+      <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+    </div>
+
+    <div class="row">
+      <div class="ico" style="background: #fde8e6; color: #b3261e;">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10.7 5.1A2 2 0 0 1 12.6 4h2.8a2 2 0 0 1 2 1.7l.4 2.5a2 2 0 0 1-.6 1.8l-1.3 1.2"/><path d="M13.3 15.3 12 16.6a14 14 0 0 1-5-5l1.3-1.3"/><path d="M3 3l18 18"/></svg>
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div class="t">18 tickets with no phone number</div>
+        <div class="d">You could not tell these people if they win</div>
+      </div>
+      <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+    </div>
+
+    <div class="row">
+      <div class="ico" style="background: #fdf0d5; color: #9a5b06;">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.2a3 3 0 0 0-2.6-1.2h-.9a2.4 2.4 0 0 0 0 4.8h1a2.4 2.4 0 0 1 0 4.8h-.9A3 3 0 0 1 9 16.4"/><path d="M12 6.2v11.6"/></svg>
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div class="t">RM 1,840 not handed in yet</div>
+        <div class="d">Sold, but the money has not come back</div>
+      </div>
+      <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+    </div>
+
+    <div class="row">
+      <div class="ico" style="background: #eef1f5; color: #5d6775;">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2v13a2 2 0 0 0-2-1.6H5.5A1.5 1.5 0 0 1 4 16z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H14a2 2 0 0 0-2 2v13a2 2 0 0 1 2-1.6h4.5A1.5 1.5 0 0 0 20 16z"/></svg>
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div class="t">41 books still out</div>
+        <div class="d">With sellers, or waiting to be counted</div>
+      </div>
+      <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+    </div>
+
+  </div>
+
+  <!-- BOOK GRID -->
+  <div class="lbl" style="margin: 26px 22px 10px;">All 200 books</div>
+
+  <div style="margin: 0 20px; background: #ffffff; border: 1px solid #dce1e8; border-radius: 16px; padding: 18px 16px 16px; box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 6px 20px rgba(16,24,40,.07);">
+    <div style="display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); gap: 4px;">
+      <div class="bookgrid" data-count="90" data-radius="5"></div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 16px; font-size: 12.5px; color: #5d6775;">
+      <span class="key"><i style="background: #eef1f5; box-shadow: inset 0 0 0 1px #dce1e8;"></i>In the office</span>
+      <span class="key"><i style="background: #2563eb;"></i>With a seller</span>
+      <span class="key"><i style="background: #c2700a;"></i>Brought back</span>
+      <span class="key"><i style="background: #15803d;"></i>Finished</span>
+      <span class="key"><i style="background: transparent; box-shadow: inset 0 0 0 2.5px #b3261e;"></i>Late</span>
+    </div>
+  </div>
+
+  <!-- QUICK ACTIONS -->
+  <div class="lbl" style="margin: 26px 22px 10px;">What do you want to do?</div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 20px;">
+    <div class="act">
+      <div style="color: #0d7a6f;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16.5V20h3.5L18 9.5a2.1 2.1 0 0 0-3-3z"/><path d="M13.5 6.5l4 4"/></svg></div>
+      <div class="t2">Write down a sale</div>
+    </div>
+    <div class="act">
+      <div style="color: #0d7a6f;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></svg></div>
+      <div class="t2">Find a ticket</div>
+    </div>
+    <div class="act">
+      <div style="color: #0d7a6f;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6.5A1.5 1.5 0 0 1 6.5 5H12a2 2 0 0 1 2 2v10a2 2 0 0 0-2-1.6H6.5A1.5 1.5 0 0 1 5 14z"/><path d="M18 8v8"/><path d="M14 12h8"/></svg></div>
+      <div class="t2">Give out books</div>
+    </div>
+    <div class="act">
+      <div style="color: #0d7a6f;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg></div>
+      <div class="t2">Add a seller</div>
+    </div>
+  </div>
+
+  <!-- TAB BAR -->
+  <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin-top: 26px; background: #ffffff; border-top: 1px solid #dce1e8; padding: 8px 6px 14px;">
+    <div class="tab" style="color: #0d7a6f;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/></svg>
+      <span style="font-weight: 750;">Home</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5V7a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 7v2.5a2.5 2.5 0 0 0 0 5V17a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17v-2.5a2.5 2.5 0 0 0 0-5"/><path d="M14 5.5v13"/></svg>
+      <span>Sell</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>
+      <span>Find</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2v13a2 2 0 0 0-2-1.6H5.5A1.5 1.5 0 0 1 4 16z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H14a2 2 0 0 0-2 2v13a2 2 0 0 1 2-1.6h4.5A1.5 1.5 0 0 0 20 16z"/></svg>
+      <span>Books</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M7 20v-6"/><path d="M12 20V6"/><path d="M17 20v-9"/></svg>
+      <span>Money</span>
+    </div>
+  </div>
+
+</div>
+</div></div>
+</section>
+<hr>
+<section class="b2">
+  <h2>Alternate — queue first</h2>
+  <p class="note">Same system, opposite stance: the work leads and the money shrinks to a stat strip. Faster to act on, less striking on opening.</p>
+  <div class="narrow"><div class="frame">
+
+<div class="ks" style="width: 390px; background: #f4f6f8; padding: 0 0 8px;">
+
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px 10px;">
+    <span style="font-size: 17px; font-weight: 750; letter-spacing: -.015em;">K&#39;Cho Shelter</span>
+    <div style="width: 38px; height: 38px; border-radius: 50%; background: #e3f4f1; color: #0d7a6f; display: grid; place-items: center; font-size: 14px; font-weight: 750;">MN</div>
+  </div>
+
+  <!-- compact numbers, no hero -->
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 0 20px;">
+    <div class="stat" style="border-color: #0d7a6f;">
+      <div class="n" style="color: #0d7a6f;">RM 12,480</div>
+      <div class="l">collected &middot; 62% of target</div>
+    </div>
+    <div class="stat">
+      <div class="n">1,248</div>
+      <div class="l">of 2,000 tickets sold</div>
+    </div>
+    <div class="stat">
+      <div class="n">41</div>
+      <div class="l">books still out</div>
+    </div>
+    <div class="stat">
+      <div class="n" style="color: #b3261e;">RM 1,840</div>
+      <div class="l">not handed in yet</div>
+    </div>
+  </div>
+
+  <!-- the queue is the page -->
+  <div class="lbl" style="margin: 24px 22px 10px;">Do next</div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px; margin: 0 20px;">
+
+    <div class="task" style="border-color: #b3261e; border-width: 1.5px;">
+      <div class="ico" style="background: #fde8e6; color: #b3261e;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div class="t">Chase 3 late books</div>
+        <div class="d">Pa Thang, Ma Hlaing, Saw Htoo</div>
+      </div>
+      <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+    </div>
+
+    <div class="task">
+      <div class="ico" style="background: #fde8e6; color: #b3261e;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10.7 5.1A2 2 0 0 1 12.6 4h2.8a2 2 0 0 1 2 1.7l.4 2.5a2 2 0 0 1-.6 1.8l-1.3 1.2"/><path d="M13.3 15.3 12 16.6a14 14 0 0 1-5-5l1.3-1.3"/><path d="M3 3l18 18"/></svg>
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div class="t">Add 18 missing phone numbers</div>
+        <div class="d">You could not tell these people if they win</div>
+      </div>
+      <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+    </div>
+
+    <div class="task">
+      <div class="ico" style="background: #fdf0d5; color: #9a5b06;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.2a3 3 0 0 0-2.6-1.2h-.9a2.4 2.4 0 0 0 0 4.8h1a2.4 2.4 0 0 1 0 4.8h-.9A3 3 0 0 1 9 16.4"/><path d="M12 6.2v11.6"/></svg>
+      </div>
+      <div style="flex: 1; min-width: 0;">
+        <div class="t">Settle 6 returned books</div>
+        <div class="d">Brought back, not counted yet</div>
+      </div>
+      <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+    </div>
+
+  </div>
+
+  <!-- primary action, always in the same place -->
+  <div style="margin: 16px 20px 0; background: #0d7a6f; color: #ffffff; border-radius: 14px; padding: 17px 20px; min-height: 62px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 16.5px; font-weight: 700; letter-spacing: -.015em;">
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16.5V20h3.5L18 9.5a2.1 2.1 0 0 0-3-3z"/><path d="M13.5 6.5l4 4"/></svg>
+    <span>Write down a sale</span>
+  </div>
+
+  <!-- grid -->
+  <div class="lbl" style="margin: 24px 22px 10px;">All 200 books</div>
+
+  <div style="margin: 0 20px; background: #ffffff; border: 1px solid #dce1e8; border-radius: 16px; padding: 16px 15px 14px;">
+    <div style="display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); gap: 4px;">
+      <div class="bookgrid" data-count="90" data-radius="5"></div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 14px; font-size: 12.5px; color: #5d6775;">
+      <span class="key"><i style="background: #eef1f5; box-shadow: inset 0 0 0 1px #dce1e8;"></i>In the office</span>
+      <span class="key"><i style="background: #2563eb;"></i>With a seller</span>
+      <span class="key"><i style="background: #c2700a;"></i>Brought back</span>
+      <span class="key"><i style="background: #15803d;"></i>Finished</span>
+      <span class="key"><i style="background: transparent; box-shadow: inset 0 0 0 2.5px #b3261e;"></i>Late</span>
+    </div>
+  </div>
+
+</div>
+</div></div>
+</section>
+<hr>
+<section class="b3">
+  <h2>Home — desktop</h2>
+  <p class="note">A different shape rather than a stretched column: tabs become a sidebar, the grid sits beside the hero.</p>
+  <div class="wide"><div class="frame">
+
+<div class="ks" style="width: 1440px; height: 900px; background: #f4f6f8; display: flex;">
+
+  <!-- SIDEBAR -->
+  <div style="flex: 0 0 252px; background: #ffffff; border-right: 1px solid #dce1e8; display: flex; flex-direction: column; padding: 22px 16px;">
+    <div style="display: flex; align-items: center; gap: 11px; padding: 0 8px 22px;">
+      <div style="width: 34px; height: 34px; border-radius: 10px; background: #0d7a6f; color: #ffffff; display: grid; place-items: center;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5V7a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 7v2.5a2.5 2.5 0 0 0 0 5V17a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17v-2.5a2.5 2.5 0 0 0 0-5"/><path d="M14 5.5v13"/></svg>
+      </div>
+      <span style="font-size: 16.5px; font-weight: 750; letter-spacing: -.015em;">K&#39;Cho Shelter</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 3px;">
+      <div class="nav on">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/></svg>
+        <span>Home</span>
+      </div>
+      <div class="nav">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16.5V20h3.5L18 9.5a2.1 2.1 0 0 0-3-3z"/><path d="M13.5 6.5l4 4"/></svg>
+        <span>Write down a sale</span>
+      </div>
+      <div class="nav">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>
+        <span>Find a ticket</span>
+      </div>
+      <div class="nav">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2v13a2 2 0 0 0-2-1.6H5.5A1.5 1.5 0 0 1 4 16z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H14a2 2 0 0 0-2 2v13a2 2 0 0 1 2-1.6h4.5A1.5 1.5 0 0 0 20 16z"/></svg>
+        <span>Books</span>
+      </div>
+      <div class="nav">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg>
+        <span>Sellers</span>
+      </div>
+      <div class="nav">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M7 20v-6"/><path d="M12 20V6"/><path d="M17 20v-9"/></svg>
+        <span>Money</span>
+      </div>
+      <div class="nav">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 14.3 8l5.2.8-3.7 3.6.9 5.1-4.7-2.4-4.7 2.4.9-5.1L4.5 8.8 9.7 8z"/></svg>
+        <span>The draw</span>
+      </div>
+    </div>
+
+    <div style="flex: 1;"></div>
+
+    <div style="display: flex; align-items: center; gap: 11px; padding: 12px 10px; border-top: 1px solid #dce1e8;">
+      <div style="width: 36px; height: 36px; border-radius: 50%; background: #e3f4f1; color: #0d7a6f; display: grid; place-items: center; font-size: 13.5px; font-weight: 750;">MN</div>
+      <div style="display: flex; flex-direction: column; gap: 0px; min-width: 0;">
+        <span style="font-size: 14px; font-weight: 700; letter-spacing: -.01em;">Ma Nu</span>
+        <span style="font-size: 12px; color: #5d6775;">Organiser</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div style="flex: 1; min-width: 0; padding: 30px 34px; display: flex; flex-direction: column; gap: 22px;">
+
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 27px; font-weight: 800; letter-spacing: -.028em; line-height: 1.15;">Good evening, Ma Nu</span>
+        <span style="font-size: 14.5px; color: #5d6775;">Draw is on 14 December &middot; 63 days to go</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 9px; background: #ffffff; border: 1.5px solid #dce1e8; border-radius: 11px; padding: 11px 18px; min-height: 44px; font-size: 14.5px; font-weight: 650; color: #5d6775;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5A8 8 0 1 0 18 17"/><path d="M20 5v6h-6"/></svg>
+        <span>Updated 2 minutes ago</span>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 486px; gap: 22px; align-items: start;">
+
+      <!-- LEFT: hero + attention -->
+      <div style="display: flex; flex-direction: column; gap: 22px; min-width: 0;">
+
+        <div class="card" style="padding: 28px 30px 26px;">
+          <div class="lbl">Collected so far</div>
+          <div style="display: flex; align-items: baseline; gap: 9px; margin-top: 8px;">
+            <span style="font-size: 31px; font-weight: 700; color: #5d6775; letter-spacing: -.02em;">RM</span>
+            <span style="font-size: 78px; font-weight: 800; letter-spacing: -.048em; line-height: 1; font-variant-numeric: tabular-nums;">12,480</span>
+          </div>
+
+          <div style="height: 7px; border-radius: 99px; background: #eef1f5; margin-top: 24px; overflow: hidden;">
+            <div style="height: 100%; width: 62%; border-radius: 99px; background: #0d7a6f;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; gap: 12px; margin-top: 11px; font-size: 14px; color: #5d6775; font-variant-numeric: tabular-nums;">
+            <span><b style="color: #12161c; font-weight: 700;">62%</b> of RM 20,000</span>
+            <span>1,248 of 2,000 tickets sold</span>
+            <span>RM 1,840 still to come in</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="lbl" style="margin: 0 2px 11px;">Needs looking at</div>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+
+            <div class="row">
+              <div class="ico" style="background: #fde8e6; color: #b3261e;">
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div class="t">3 books not returned</div>
+                <div class="d">Past the date they were due back</div>
+              </div>
+              <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+            </div>
+
+            <div class="row">
+              <div class="ico" style="background: #fde8e6; color: #b3261e;">
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10.7 5.1A2 2 0 0 1 12.6 4h2.8a2 2 0 0 1 2 1.7l.4 2.5a2 2 0 0 1-.6 1.8l-1.3 1.2"/><path d="M13.3 15.3 12 16.6a14 14 0 0 1-5-5l1.3-1.3"/><path d="M3 3l18 18"/></svg>
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div class="t">18 tickets with no phone number</div>
+                <div class="d">You could not tell these people if they win</div>
+              </div>
+              <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+            </div>
+
+            <div class="row">
+              <div class="ico" style="background: #fdf0d5; color: #9a5b06;">
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.2a3 3 0 0 0-2.6-1.2h-.9a2.4 2.4 0 0 0 0 4.8h1a2.4 2.4 0 0 1 0 4.8h-.9A3 3 0 0 1 9 16.4"/><path d="M12 6.2v11.6"/></svg>
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div class="t">RM 1,840 not handed in yet</div>
+                <div class="d">Sold, but the money has not come back</div>
+              </div>
+              <div class="chev"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: the book grid as the graphic centrepiece -->
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div class="card" style="padding: 22px 22px 20px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px;">
+            <span class="lbl">All 200 books</span>
+            <span style="font-size: 13px; color: #5d6775;">41 out &middot; 3 late</span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 4px;">
+            <div class="bookgrid" data-count="200" data-radius="4"></div>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; gap: 9px 16px; margin-top: 18px; font-size: 12.5px; color: #5d6775;">
+            <span class="key"><i style="background: #eef1f5; box-shadow: inset 0 0 0 1px #dce1e8;"></i>In the office</span>
+            <span class="key"><i style="background: #2563eb;"></i>With a seller</span>
+            <span class="key"><i style="background: #c2700a;"></i>Brought back</span>
+            <span class="key"><i style="background: #15803d;"></i>Finished</span>
+            <span class="key"><i style="background: transparent; box-shadow: inset 0 0 0 2.5px #b3261e;"></i>Late</span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+          <div class="act">
+            <span style="color: #0d7a6f;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6.5A1.5 1.5 0 0 1 6.5 5H12a2 2 0 0 1 2 2v10a2 2 0 0 0-2-1.6H6.5A1.5 1.5 0 0 1 5 14z"/><path d="M18 8v8"/><path d="M14 12h8"/></svg></span>
+            <span>Give out books</span>
+          </div>
+          <div class="act">
+            <span style="color: #0d7a6f;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg></span>
+            <span>Add a seller</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</div></div>
+</section>
+
+<script>
+// The squares stand in for the raffle's books: the same mix of finished, out,
+// brought back, late and on-the-shelf that the real grid draws from live data.
+(function () {
+  var PALETTE = [
+    { bg: '#15803d', ring: 'none',                            w: 42 },  // finished
+    { bg: '#2563eb', ring: 'none',                            w: 29 },  // with a seller
+    { bg: '#c2700a', ring: 'none',                            w: 9  },  // brought back
+    { bg: '#2563eb', ring: 'inset 0 0 0 2.5px #b3261e',       w: 2  },  // late
+    { bg: '#c62828', ring: 'none',                            w: 1  },  // lost
+    { bg: '#eef1f5', ring: 'inset 0 0 0 1px #dce1e8',         w: 17 }   // in the office
+  ];
+  document.querySelectorAll('.bookgrid').forEach(function (host) {
+    var count = parseInt(host.dataset.count, 10);
+    var radius = host.dataset.radius;
+    var cells = [];
+    PALETTE.forEach(function (p) {
+      var n = Math.round(count * p.w / 100);
+      for (var i = 0; i < n; i++) cells.push(p);
+    });
+    while (cells.length < count) cells.push(PALETTE[0]);
+    cells.length = count;
+    // Deterministic shuffle, so it reads as real stock rather than sorted bands
+    // and looks the same every time the file is opened.
+    for (var i = cells.length - 1; i > 0; i--) {
+      var j = (i * 7 + 3) % (i + 1);
+      var t = cells[i]; cells[i] = cells[j]; cells[j] = t;
+    }
+    host.style.display = 'grid';
+    host.style.gridTemplateColumns = 'repeat(' + (count > 120 ? 20 : 15) + ', minmax(0, 1fr))';
+    host.style.gap = '4px';
+    host.innerHTML = cells.map(function (c) {
+      return '<div style="aspect-ratio:1;border-radius:' + radius + 'px;background:' +
+             c.bg + ';box-shadow:' + c.ring + '"></div>';
+    }).join('');
+  });
+})();
+</script>
+</div>
+</body>
+</html>
