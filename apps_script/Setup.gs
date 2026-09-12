@@ -559,6 +559,21 @@ function handleExpandTickets(payload, user) {
   if (target === current) {
     throw new ApiError('NO_CHANGE', 'The raffle already has ' + current + ' tickets.');
   }
+  // The planned size of this particular raffle, checked before the system limit
+  // because it is the more specific answer. It exists because the dangerous
+  // mistake here is not asking for too many on purpose — it is a slipped digit
+  // turning 10,000 into 100,000, which would append ninety thousand rows and
+  // cannot be undone by shrinking afterwards.
+  var ceiling = cfgNum(cfg, 'TICKET_CEILING', 0);
+  if (ceiling > 0 && target > ceiling) {
+    throw new ApiError('ABOVE_CEILING',
+      'This raffle is planned to reach ' + ceiling + ' tickets and you have asked for ' +
+      target + '. If that is really the intention, raise TICKET_CEILING in the Config ' +
+      'tab first. Tickets cannot be taken back once released, so the ceiling is checked ' +
+      'before anything is written.',
+      { ceiling: ceiling, requested: target, current: current });
+  }
+
   if (target > MAX_TOTAL_TICKETS) {
     throw new ApiError('TOO_MANY',
       'The most this system holds is ' + MAX_TOTAL_TICKETS + ' tickets.');
