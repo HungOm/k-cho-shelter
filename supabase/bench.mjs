@@ -34,8 +34,12 @@ const H = {
   'Content-Type': 'application/json'
 };
 
+// Supabase serves PostgREST under /rest/v1/; a bare PostgREST serves at the
+// root. Set SUPABASE_REST_PREFIX='/' to measure against a local container.
+const PREFIX = process.env.SUPABASE_REST_PREFIX || '/rest/v1/';
+
 async function rest(path, opts = {}) {
-  const res = await fetch(URL_BASE + '/rest/v1/' + path, { ...opts, headers: { ...H, ...opts.headers } });
+  const res = await fetch(URL_BASE + PREFIX + path, { ...opts, headers: { ...H, ...opts.headers } });
   const text = await res.text();
   if (!res.ok) throw new Error(res.status + ' ' + text.slice(0, 300));
   return text ? JSON.parse(text) : null;

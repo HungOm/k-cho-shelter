@@ -31,6 +31,72 @@ because a spreadsheet cannot be queried, so search has to happen locally. That
 is the single biggest thing making the app feel slow on a phone, and no amount
 of backend tuning fixes it while the data lives in a Sheet.
 
+## The measurement, run
+
+Against a local Postgres 16 with PostgREST in front of it — the same two pieces
+Supabase runs — seeded with a raffle the size of the real one: 20,000 tickets,
+2,000 books, 1,505 sold.
+
+| What the app asks for | Postgres | Rows |
+|---|---|---|
+| Boot: totals only, no rows | 5ms | — |
+| One ticket by number | 4ms | 1 |
+| Buyer by misspelled name (*Thuang*) | 3ms | 50 |
+| Buyer by phone | 3ms | 5 |
+| One book, every ticket in it | 1ms | 10 |
+| What changed in the last hour | 4ms | 500 |
+| Book ledger, all 2,000 books | 20ms | 2,000 |
+| Money owed, by seller | 2ms | 200 |
+| Draw readiness: sold with no phone | 1ms | 0 |
+| Record one sale (write) | 4ms | — |
+
+Median across every query: **4ms**, against an Apps Script floor of **1,100ms**
+for a call that reads nothing.
+
+**Read that number with two corrections, both of which make it worse:**
+
+1. **This was local.** There is no network hop in it. A hosted Supabase adds a
+   real round trip — from Malaysia to a Singapore region, roughly 20–40ms per
+   call. So expect 25–60ms in practice, not 4ms.
+2. **A serverless function in front adds its own cold start**, typically
+   100–300ms on a first hit, warm after that.
+
+Even taking the worst of both, a request lands in well under half a second
+against 1.1 seconds warm and 9 seconds cold. The margin is not close, and it is
+not close because of the thing that cannot be tuned away: **the browser stops
+downloading 2.2 MB on every boot.** That is the change a volunteer on a phone
+would actually feel.
+
+To reproduce, or to measure against a real Supabase project:
+
+```bash
+export SUPABASE_URL=https://xxxx.supabase.co
+export SUPABASE_SERVICE_KEY=eyJ...        # Settings -> API -> service_role
+node supabase/bench.mjs --seed
+node supabase/bench.mjs
+```
+
+For a local container instead, set `SUPABASE_REST_PREFIX=/` — bare PostgREST
+serves at the root, Supabase serves under `/rest/v1/`.
+
+## The decision that is not about speed
+
+The tickets table holds every buyer's name and phone number, and the README is
+explicit that many of these people are refugees. Today that data sits in a
+Google Sheet the organisation already controls, under an account it already
+administers. Moving it to Supabase moves it to a third party, in a region that
+has to be chosen, under a processing agreement somebody should read.
+
+That is a data-protection decision, and it should be made deliberately rather
+than arrive as a side effect of wanting the app to feel faster. It may well be
+fine — Supabase is a normal commercial processor and the data is modest — but
+"we did it for the latency" is not the reasoning anybody wants to give
+afterwards if it is questioned.
+
+Points worth settling before the data moves: which region, who holds the
+service-role key, how long the data is kept after the draw, and whether the
+organisation needs a written processing agreement.
+
 ## What Postgres changes
 
 1. **Search moves to the server.** The 2.2 MB download disappears entirely. The
