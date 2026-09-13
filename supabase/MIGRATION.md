@@ -53,19 +53,47 @@ Supabase runs — seeded with a raffle the size of the real one: 20,000 tickets,
 Median across every query: **4ms**, against an Apps Script floor of **1,100ms**
 for a call that reads nothing.
 
-**Read that number with two corrections, both of which make it worse:**
+### Then run again on the real thing
 
-1. **This was local.** There is no network hop in it. A hosted Supabase adds a
-   real round trip — from Malaysia to a Singapore region, roughly 20–40ms per
-   call. So expect 25–60ms in practice, not 4ms.
-2. **A serverless function in front adds its own cold start**, typically
-   100–300ms on a first hit, warm after that.
+The numbers above are local, with no network in them. Repeated against the
+actual project — Supabase, `ap-southeast-1` (Singapore), same 20,000 tickets:
 
-Even taking the worst of both, a request lands in well under half a second
-against 1.1 seconds warm and 9 seconds cold. The margin is not close, and it is
-not close because of the thing that cannot be tuned away: **the browser stops
-downloading 2.2 MB on every boot.** That is the change a volunteer on a phone
-would actually feel.
+| What the app asks for | Hosted | Worst of 5 |
+|---|---|---|
+| Boot: totals only, no rows | 45ms | 149ms |
+| One ticket by number | 40ms | 130ms |
+| Buyer by misspelled name (*Thuang*) | 40ms | 56ms |
+| Buyer by phone | 47ms | 122ms |
+| One book, every ticket in it | 34ms | 83ms |
+| What changed in the last hour | 57ms | 143ms |
+| Book ledger, 2,000 books | 85ms | 110ms |
+| Money owed, by seller | 40ms | 74ms |
+| Draw readiness: sold with no phone | 47ms | 131ms |
+| Record one sale (write) | 40ms | 102ms |
+
+**Median 45ms, worst case 149ms, against an Apps Script floor of 1,100ms.**
+About 24x on the cheapest possible comparison, and far more than that on
+anything that actually touches the spreadsheet.
+
+The gap between 4ms local and 45ms hosted is the network — roughly 40ms of
+Singapore round trip, exactly as predicted. It is the price of the data living
+somewhere else, and it is paid once per request rather than per row.
+
+**One thing still to correct for:** a serverless function in front of this adds
+its own cold start, typically 100–300ms on a first hit and warm afterwards.
+Even so, a request lands well under half a second against 1.1 seconds warm and
+9 seconds cold.
+
+And the margin is not the point. **The browser stops downloading 2.2 MB on
+every boot** — search becomes a question with an answer instead of fetching
+everything and sifting it locally. That is the change a volunteer on a phone
+would actually feel, and no amount of backend tuning reaches it while the data
+lives in a Sheet.
+
+**Noted while measuring:** PostgREST caps a response at 1,000 rows by default,
+so the book ledger came back paginated. Fine for the app, which never needs all
+2,000 at once, but the port must page rather than assume one response holds
+everything.
 
 To reproduce, or to measure against a real Supabase project:
 
