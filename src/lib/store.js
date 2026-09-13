@@ -6,7 +6,7 @@
  */
 
 import { reactive, computed, ref } from 'vue'
-import { api, ApiError, LS } from './api.js'
+import { api as rawApi, ApiError, LS } from './api.js'
 import { buildIndex, runSearch } from './search.js'
 import { saveTickets, loadTickets, clearCache } from './cache.js'
 import { my, myError } from './i18n.js'
@@ -418,6 +418,30 @@ export function toast(message, tone = '', code = '') {
   setTimeout(() => {
     toasts.value = toasts.value.filter(t => t.id !== id)
   }, tone === 'bad' ? 6000 : 3000)
+}
+
+/**
+ * The same transport, except that an unconfirmed write reloads before it throws.
+ *
+ * A write that times out may well have landed, so the message the caller shows
+ * says we are checking what actually went through. Nothing was checking: every
+ * dialog just printed the sentence and stopped, which made it a promise the
+ * app did not keep. Reloading here keeps it, for every caller, without each
+ * one having to remember.
+ *
+ * Callers doing something more precise — Sell reconciles row by row and puts
+ * the ones that did not land back in the form — pass { reconcile: true } and
+ * handle it themselves rather than paying for the round trip twice.
+ */
+async function api(action, payload = {}, opts = {}) {
+  try {
+    return await rawApi(action, payload, opts)
+  } catch (err) {
+    if (err.code === 'WRITE_UNCONFIRMED' && !opts.reconcile) {
+      loadDelta().catch(() => {})
+    }
+    throw err
+  }
 }
 
 export { api, ApiError }

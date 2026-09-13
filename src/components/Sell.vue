@@ -18,7 +18,16 @@ const emit = defineEmits(['open'])
 const lookup = ref('')
 const rows = ref([blank()])
 const busy = ref(false)
+const waited = ref(0)          // seconds on the current save
+const checking = ref(false)    // working out what a timed-out save actually did
 const problems = ref([])
+/**
+ * Set only when a reconciliation found that part of the batch landed. It
+ * changes the heading above the list, which otherwise announces that nothing
+ * was saved — true for a validation failure, and the opposite of true here.
+ */
+const partlySaved = ref(false)
+let ticker = null
 const rowEls = ref([])
 
 function blank() { return { id: Math.random().toString(36).slice(2), num: '', name: '', phone: '' } }
@@ -66,8 +75,59 @@ function resolved(r) {
   return { bad: false, text: t.number }
 }
 
+/**
+ * A save that timed out is a question, not a failure.
+ *
+ * The rows may well have been written while the response was still in flight,
+ * so the honest move is to reload and look. Whatever now reads as Sold landed;
+ * whatever did not is put back in the form, so pressing Save again re-sends
+ * only the ones that are genuinely missing. That turns "did any of this
+ * happen?" into an exact list, and makes the obvious next action safe.
+ */
+async function reconcile(sales) {
+  checking.value = true
+  partlySaved.value = false
+  try {
+    await loadDelta()
+    const landed = [], missing = []
+    for (const sale of sales) {
+      const t = state.byNumber[sale.ticketNumber]
+      ;(t && t.status === 'Sold' ? landed : missing).push(sale)
+    }
+
+    if (!missing.length) {
+      rows.value = [blank()]
+      toast(`All ${landed.length} saved after all`, 'ok')
+      return
+    }
+
+    rows.value = missing.map(sale => ({
+      id: Math.random().toString(36).slice(2),
+      num: sale.ticketNumber, name: sale.buyerName, phone: sale.buyerPhone
+    }))
+    partlySaved.value = landed.length > 0
+    problems.value = landed.length
+      ? [`${landed.length} of ${sales.length} did save. The ${missing.length} still ` +
+         `showing below did not — press Save to send just those.`]
+      : [`None of them saved. They are still here — press Save to try again.`]
+    toast(landed.length ? `${landed.length} saved, ${missing.length} still to go`
+                        : 'Nothing saved — try again', landed.length ? 'ok' : 'bad')
+  } catch {
+    // The reload failed too, so we genuinely cannot say. Keep every row.
+    partlySaved.value = true   // we do not know, so do not claim nothing saved
+    problems.value = [
+      'We could not reach the server to check whether that saved. Nothing has ' +
+      'been cleared. Look up one of these ticket numbers before entering them ' +
+      'again, so you do not record the same sale twice.'
+    ]
+  } finally {
+    checking.value = false
+  }
+}
+
 async function saveAll() {
   problems.value = []
+  partlySaved.value = false
   const sales = []
   const local = []
 
@@ -84,18 +144,23 @@ async function saveAll() {
   if (!sales.length) return toast('Nothing to save yet', 'bad')
 
   busy.value = true
+  waited.value = 0
+  ticker = setInterval(() => { waited.value += 1 }, 1000)
   try {
-    const res = await api('bulk_record_sales', { sales })
+    const res = await api('bulk_record_sales', { sales }, { reconcile: true })
     rows.value = [blank()]
     toast(`${res.recorded} sales written down`, 'ok')
-    await loadDelta()
+    loadDelta()
   } catch (err) {
-    if (err.code === 'BATCH_REJECTED' && err.details?.failures) {
+    if (err.code === 'WRITE_UNCONFIRMED') {
+      await reconcile(sales)
+    } else if (err.code === 'BATCH_REJECTED' && err.details?.failures) {
       problems.value = err.details.failures.map(f => `${f.ticketNumber} — ${f.message}`)
     } else {
       toast(err.message, 'bad', err.code)
     }
   } finally {
+    clearInterval(ticker)
     busy.value = false
   }
 }
@@ -145,15 +210,23 @@ async function saveAll() {
         </div>
       </div>
 
-      <div v-if="problems.length" class="note bad mt">
-        <b>Fix these first — nothing was saved:</b>
+      <!-- The heading used to be a flat "nothing was saved", which sat directly
+           above a line saying 1 of 3 did save. After a timeout that claim is
+           not only wrong, it is the exact wrong claim to make. -->
+      <div v-if="problems.length" :class="['note', partlySaved ? '' : 'bad', 'mt']">
+        <b v-if="!partlySaved">Fix these first — nothing was saved:</b>
+        <b v-else>Some of these saved:</b>
         <div v-for="p in problems" :key="p">{{ p }}</div>
       </div>
 
       <div class="row mt">
         <button class="btn grow" @click="addRow(true)">+ Another line</button>
-        <button class="btn primary grow lg" :disabled="busy || !filled" @click="saveAll">
-          {{ busy ? 'Saving…' : `Save ${filled || ''}` }}
+        <button class="btn primary grow lg" :disabled="busy || checking || !filled" @click="saveAll">
+          <template v-if="checking">Checking what saved…</template>
+          <template v-else-if="busy">
+            Saving<template v-if="waited >= 4"> — {{ waited }}s</template>…
+          </template>
+          <template v-else>Save {{ filled || '' }}</template>
         </button>
       </div>
     </div>

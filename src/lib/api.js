@@ -22,6 +22,33 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * How long to wait before giving up.
+ *
+ * Measured against the live endpoint, not guessed: ping is 1.2-2.1s, and
+ * read_version — which touches no spreadsheet at all — is 1.1s warm and 9.1s
+ * on a cold start. A write then adds token verification, the rate limiter, and
+ * a lock that itself waits up to 20s if anyone else holds it. Thirty seconds
+ * for a write is slow but entirely real here, so a short timeout would abort
+ * saves that were about to succeed.
+ */
+const READ_TIMEOUT_MS = 20_000
+const WRITE_TIMEOUT_MS = 45_000
+
+/**
+ * Reads. Everything not listed is treated as a write, which is the safe way
+ * round: an unknown action gets the longer timeout and the careful "we do not
+ * know whether it landed" wording rather than a confident "it failed".
+ */
+const READ_ACTIONS = new Set([
+  'ping', 'whoami', 'read_snapshot', 'read_delta', 'read_version', 'read_audit',
+  'list_agents', 'list_books', 'list_users', 'list_approvals',
+  'report_draw_ready', 'report_overdue', 'report_outstanding',
+  'report_missing_contact', 'agent_statement', 'handover_receipt', 'export_entries'
+])
+
+export function isRead(action) { return READ_ACTIONS.has(action) }
+
 let apiUrl = ''
 let idToken = ''
 let idTokenExpiresAt = 0
@@ -62,7 +89,13 @@ export function tokenIsStale(marginMs = 30_000) {
  */
 async function ensureFresh() {
   if (!onAuthExpired || !tokenIsStale()) return
-  await onAuthExpired()
+  // This runs BEFORE the request is sent, so if renewal never settles the
+  // request hangs without a fetch to abort and without a timeout to catch it.
+  // A stale token that gets rejected is recoverable; a hang is not.
+  await Promise.race([
+    onAuthExpired(),
+    new Promise(resolve => setTimeout(resolve, 8_000))
+  ])
 }
 
 export function hasConnection() {
@@ -75,17 +108,43 @@ export async function api(action, payload = {}, opts = {}) {
   // Skipped on the retry after a renewal, or it would renew about renewing.
   if (!opts.noRetry) await ensureFresh()
 
+  const write = !isRead(action)
+  const limit = opts.timeoutMs || (write ? WRITE_TIMEOUT_MS : READ_TIMEOUT_MS)
+  const stop = new AbortController()
+  const timer = setTimeout(() => stop.abort(), limit)
+
   let res
   try {
     res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action, idToken, payload }),
-      redirect: 'follow'
+      redirect: 'follow',
+      signal: stop.signal
     })
-  } catch {
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      /**
+       * A write that timed out has NOT necessarily failed.
+       *
+       * The lock may have been taken and the rows written while the response
+       * was still in flight. Telling somebody their save failed when it
+       * actually succeeded is how 180 counterfoils get entered twice, and the
+       * second pass looks like a double sale on every one of them. So this is
+       * a separate code from NETWORK, and the wording never says "failed" —
+       * the caller reloads and lets the data answer the question.
+       */
+      throw new ApiError(write ? 'WRITE_UNCONFIRMED' : 'TIMEOUT',
+        write
+          ? 'This is taking longer than expected, so we cannot yet tell whether it saved. ' +
+            'Checking what actually went through — do not enter it again until you have looked.'
+          : 'The server took too long to answer. Try again in a moment.',
+        { action, waitedMs: limit })
+    }
     throw new ApiError('NETWORK',
       'Could not reach the server. Check your internet connection.')
+  } finally {
+    clearTimeout(timer)
   }
 
   const text = await res.text()
