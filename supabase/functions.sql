@@ -27,7 +27,7 @@ begin
   active := coalesce(active, 0);
   if active <= 0 or active > generated then return generated; end if;
   return active;
-end $$ language plpgsql stable;
+end $$ language plpgsql stable security definer set search_path = public;
 
 -- ============ BULK SALE ENTRY ============
 -- For when a seller brings back a book and somebody types the stubs in.

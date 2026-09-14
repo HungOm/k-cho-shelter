@@ -269,16 +269,56 @@ async function readAudit(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
  * more tickets has to take effect promptly, and the cost of being briefly stale
  * is one refused sale that succeeds on retry, not a wrong number anywhere.
  */
-let configCache: { at: number; value: Record<string, string> } | null = null
-const CONFIG_TTL_MS = 30_000
+/**
+ * Three small caches, each with a TTL chosen for what being stale would cost.
+ *
+ * Measured against the live project: a round trip to the database is 57-82ms,
+ * and the gate was making TWO of them — the allowlist and the permissions
+ * table — before the handler had done any work at all. On a read_version that
+ * is the majority of the request.
+ *
+ * The TTLs are not arbitrary. Apps Script cached the same lookups for 60 and
+ * 300 seconds with the reasoning written beside them, and those numbers were
+ * chosen against the same trade-off: how long may a revoked account keep
+ * working. Matching them keeps a promise the documentation already makes, and
+ * inventing longer ones here would quietly break it.
+ */
+function ttlCache<T>(ttlMs: number) {
+  const map = new Map<string, { at: number; value: T }>()
+  return {
+    async get(key: string, load: () => Promise<T>): Promise<T> {
+      const hit = map.get(key)
+      if (hit && Date.now() - hit.at < ttlMs) return hit.value
+      const value = await load()
+      // Bounded, because an instance lives a long time and a key per email
+      // would otherwise grow without limit.
+      if (map.size > 200) map.clear()
+      map.set(key, { at: Date.now(), value })
+      return value
+    },
+  }
+}
+
+// 30s: ACTIVE_TICKETS lives here, and releasing tickets should take effect
+// promptly. Being briefly stale costs one refused sale that succeeds on retry.
+const configCache = ttlCache<Record<string, string>>(30_000)
+
+// 60s, the same as Apps Script's USER_CACHE_TTL and for the same reason:
+// disabling somebody has to take effect fast, and a minute is the promise the
+// docs make.
+const userCache = ttlCache<Record<string, unknown> | null>(60_000)
+
+// 60s as well. The permissions table changes a few times in a raffle, but when
+// it does it is usually because somebody is being locked out of something.
+const permsCache = ttlCache<Record<string, Partial<Record<Role, boolean>>>>(60_000)
 
 async function readConfig(ctx: Ctx): Promise<Record<string, string>> {
-  if (configCache && Date.now() - configCache.at < CONFIG_TTL_MS) return configCache.value
-  const { data } = await ctx.supabaseAdmin.from('config').select('key,value')
-  const out: Record<string, string> = {}
-  for (const r of data ?? []) out[r.key] = r.value
-  configCache = { at: Date.now(), value: out }
-  return out
+  return configCache.get('all', async () => {
+    const { data } = await ctx.supabaseAdmin.from('config').select('key,value')
+    const out: Record<string, string> = {}
+    for (const r of data ?? []) out[r.key] = r.value
+    return out
+  })
 }
 
 async function activeTickets(ctx: Ctx): Promise<number> {
@@ -327,17 +367,20 @@ export default {
       const email = String(ctx.userClaims?.email ?? '').trim().toLowerCase()
       if (!email) throw new ApiError('AUTH_REQUIRED', 'No signed-in user.', null, 401)
 
-      const { data: row } = await ctx.supabaseAdmin
-        .from('app_users').select('name,role,active,agent_id').eq('email', email).maybeSingle()
+      const row = await userCache.get(email, async () => {
+        const { data } = await ctx.supabaseAdmin
+          .from('app_users').select('name,role,active,agent_id').eq('email', email).maybeSingle()
+        return data ?? null
+      })
 
       const user = resolveUser(email, row, Deno.env)
 
-      const { data: perms } = await ctx.supabaseAdmin
-        .from('permissions').select('action,role,allowed')
-      const overrides: Record<string, Partial<Record<Role, boolean>>> = {}
-      for (const p of perms ?? []) {
-        (overrides[p.action] ??= {})[p.role as Role] = p.allowed
-      }
+      const overrides = await permsCache.get('all', async () => {
+        const { data } = await ctx.supabaseAdmin.from('permissions').select('action,role,allowed')
+        const out: Record<string, Partial<Record<Role, boolean>>> = {}
+        for (const p of data ?? []) (out[p.action] ??= {})[p.role as Role] = p.allowed
+        return out
+      })
 
       if (!isActionAllowed(action, spec, user, overrides)) {
         throw new ApiError('INSUFFICIENT_ROLE', `Your role (${user.role}) cannot do this.`, null, 403)
