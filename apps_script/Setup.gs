@@ -404,8 +404,8 @@ function seedBootstrapAdmin_() {
       if (String(existing[i][0]).trim().toLowerCase() === email) return;
     }
   }
-  sheet.appendRow([email, 'Super administrator', ROLES.ADMIN, true, '', '', 'setup', new Date()]);
-  Logger.log('Added ' + email + ' as the super admin.');
+  sheet.appendRow([email, 'Owner', ROLES.ADMIN, true, '', '', 'setup', new Date()]);
+  Logger.log('Added ' + email + ' as the owner.');
 }
 
 // ============ BACKUP ============
@@ -525,7 +525,7 @@ function verifyIntegrity() {
     var declared = parseInt(booksData[j].Declared_Sold, 10) || 0;
     if (declared > cfgNum(cfg, 'TICKETS_PER_BOOK', 10)) overSold++;
   }
-  if (orphans) problems.push(orphans + ' books are held by an agent ID that is not in the Agents tab');
+  if (orphans) problems.push(orphans + ' books name a seller who is not in the Agents tab');
   if (overSold) problems.push(overSold + ' books declare more sales than the book contains');
 
   var sheet = ss_().getSheetByName('_Health') || ss_().insertSheet('_Health');

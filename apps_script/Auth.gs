@@ -667,7 +667,7 @@ function assertCanWriteTicket(user, ticketNumber, opts) {
   }
   if (book.status !== BOOK_STATUS.OUT) {
     throw new ApiError('BOOK_NOT_ASSIGNED',
-      'Book ' + bookNum + ' is not out with anyone. Ask an admin to issue it first.');
+      'Book ' + bookNum + ' is not out with anyone. Ask an organiser to issue it first.');
   }
   if (!user.agentId || book.agentId !== user.agentId) {
     throw new ApiError('NOT_YOUR_BOOK', 'Book ' + bookNum + ' is not assigned to you.');

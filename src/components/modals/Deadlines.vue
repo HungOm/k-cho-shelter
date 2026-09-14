@@ -199,6 +199,17 @@ function explain(err) {
       </template>
 
       <!-- ---------------------------------------------------- the hard one -->
+      <!--
+        An organiser sees the final deadline at the top of this screen and has
+        no control for it. Left unexplained that silence reads as broken, and
+        they go asking what is wrong with the app. Saying who sets it is not the
+        same as the refusal banner: that one reported a working system as
+        failing, this one explains a date they can already see.
+      -->
+      <p v-if="isAdmin && !isSuper" class="muted small owner-note">
+        The final deadline is set by the owner. You can move the check-in date
+        as far as that, and no further.
+      </p>
       <template v-if="isSuper">
         <h4>Final deadline</h4>
         <p class="muted small">
@@ -245,6 +256,7 @@ function explain(err) {
 .d b { font-size: 1.15rem; display: block; margin: 2px 0; }
 .d small { color: var(--muted); font-size: .8rem; }
 .lead { margin: 14px 0 16px; }
+.owner-note { margin: 20px 0 0; }
 .now { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 6px; }
 .now > div { background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 14px; }
 .now > div.bad b { color: var(--bad); }
