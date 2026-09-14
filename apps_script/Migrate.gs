@@ -41,26 +41,64 @@ function migrateConfig_() {
   return { url: url, key: key };
 }
 
-function supaPost_(cfg, table, rows, onConflict) {
+/**
+ * One batch, with retries.
+ *
+ * WHY RETRIES. A 504 from the gateway says nothing about whether the rows
+ * landed — the request may have been fine and the answer lost on the way back.
+ * Upserting is safe to repeat (that is the whole reason this migration upserts
+ * rather than inserts), so the right response to a gateway error is to send it
+ * again rather than to abandon a half-finished migration.
+ *
+ * Only 429 and 5xx are retried. A 400 means the rows themselves are wrong and
+ * sending them again would fail identically, just slower.
+ */
+function supaPost_(cfg, table, rows, onConflict, label) {
   if (!rows.length) return 0;
-  var res = UrlFetchApp.fetch(
-    cfg.url + '/rest/v1/' + table + '?on_conflict=' + onConflict,
-    {
-      method: 'post',
-      contentType: 'application/json',
-      headers: {
-        apikey: cfg.key,
-        Authorization: 'Bearer ' + cfg.key,
-        Prefer: 'resolution=merge-duplicates,return=minimal'
-      },
-      payload: JSON.stringify(rows),
-      muteHttpExceptions: true
-    });
-  var code = res.getResponseCode();
-  if (code >= 300) {
-    throw new Error(table + ': HTTP ' + code + ' — ' + res.getContentText().slice(0, 400));
+
+  // Anything prefixed with _ is ours, for deciding what to send, and is not a
+  // column on the other side. PostgREST refuses the whole batch over one
+  // unknown key, so this is stripped here rather than in each builder.
+  var clean = [];
+  for (var r = 0; r < rows.length; r++) {
+    var src = rows[r], copy = {};
+    for (var k in src) if (k.charAt(0) !== '_') copy[k] = src[k];
+    clean.push(copy);
   }
-  return rows.length;
+  var payload = JSON.stringify(clean);
+  var lastErr = '';
+
+  for (var attempt = 1; attempt <= 4; attempt++) {
+    var res = UrlFetchApp.fetch(
+      cfg.url + '/rest/v1/' + table + '?on_conflict=' + onConflict,
+      {
+        method: 'post',
+        contentType: 'application/json',
+        headers: {
+          apikey: cfg.key,
+          Authorization: 'Bearer ' + cfg.key,
+          Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        payload: payload,
+        muteHttpExceptions: true
+      });
+
+    var code = res.getResponseCode();
+    if (code < 300) return rows.length;
+
+    lastErr = 'HTTP ' + code + ' — ' + res.getContentText().slice(0, 300);
+
+    // A refusal about the data will not improve with time.
+    if (code !== 429 && code < 500) break;
+
+    // 2s, 4s, 8s. Long enough for a cold project to wake up, short enough that
+    // four attempts still fit inside the six minutes Apps Script allows.
+    if (attempt < 4) Utilities.sleep(2000 * Math.pow(2, attempt - 1));
+  }
+
+  throw new Error(table + (label ? ' [' + label + ']' : '') + ': ' + lastErr +
+    '\n\nNothing before this batch was lost — the migration only ever adds and ' +
+    'updates, so running it again continues from where it stopped.');
 }
 
 function supaCount_(cfg, table) {
@@ -92,11 +130,62 @@ function numOrNull_(v) {
 
 // ============ THE MIGRATION ============
 
-function migrateDryRun() { return migrate_(true); }
-function migrateToSupabase() { return migrate_(false); }
+function migrateDryRun() { return migrate_(true, false); }
 
-function migrate_(dryRun) {
+/**
+ * The one to run before cutover.
+ *
+ * Sends only what has changed since the last successful run. The first run has
+ * no watermark and therefore sends everything; after that a re-run is a handful
+ * of rows rather than twenty thousand, which is both faster and the reason a
+ * gateway timeout stops being likely at all.
+ */
+function migrateToSupabase() { return migrate_(false, false); }
+
+/**
+ * Everything, regardless of when it changed.
+ *
+ * For the first run, and for the case where you are not sure the two sides
+ * agree. Slower, and safe to run at any time — it only adds and updates.
+ */
+function migrateEverything() { return migrate_(false, true); }
+
+/** Forget the watermark, so the next ordinary run sends everything again. */
+function migrateResetWatermark() {
+  PropertiesService.getScriptProperties().deleteProperty('MIGRATE_WATERMARK');
+  return 'Watermark cleared. The next migrateToSupabase() will send everything.';
+}
+
+/**
+ * Rows changed since the last successful migration.
+ *
+ * The watermark is the moment the previous run STARTED, not when it finished.
+ * A row edited while that run was in flight has a Modified_Date after the start
+ * and so is picked up by the next one. That re-sends a few rows occasionally,
+ * which costs nothing, and it is the way round that cannot lose an edit.
+ */
+function changedSince_(rows, watermark, dateOf) {
+  if (!watermark) return rows;
+  var cut = watermark.getTime();
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var d = dateOf(rows[i]);
+    // No date at all means untouched since the sheet was generated, and the
+    // first full run already carried it across.
+    if (d && d.getTime() > cut) out.push(rows[i]);
+  }
+  return out;
+}
+
+function migrate_(dryRun, everything) {
   var cfg = migrateConfig_();
+  var props = PropertiesService.getScriptProperties();
+
+  // Taken before a single row is read, for the reason in changedSince_.
+  var startedAt = new Date();
+  var mark = props.getProperty('MIGRATE_WATERMARK');
+  var watermark = (everything || !mark) ? null : new Date(mark);
+  if (watermark && isNaN(watermark.getTime())) watermark = null;
   var sheetCfg = getConfig();
   var per = cfgNum(sheetCfg, 'TICKETS_PER_BOOK', 10);
   var out = [];
@@ -145,7 +234,7 @@ function migrate_(dryRun) {
         active: !(o.Active === false || String(o.Active).toLowerCase() === 'false'),
         agent_id: o.Agent_ID ? String(o.Agent_ID).trim() : null,
         added_by: String(o.Added_By || ''),
-        added_date: iso_(o.Added_Date) || new Date().toISOString()
+        added_at: iso_(o.Added_Date) || new Date().toISOString()
       });
     }
   }
@@ -174,7 +263,8 @@ function migrate_(dryRun) {
       notes: String(b.Notes || ''),
       version: parseInt(b.Version, 10) || 1,
       modified_by: String(b.Modified_By || ''),
-      modified_at: iso_(b.Modified_Date) || new Date().toISOString()
+      modified_at: iso_(b.Modified_Date) || new Date().toISOString(),
+      _srcModified: iso_(b.Modified_Date)
     };
   }).filter(function (r) { return r.idx > 0; });
   out.push('books: ' + bRows.length);
@@ -220,13 +310,24 @@ function migrate_(dryRun) {
       source: source,
       version: parseInt(k.Version, 10) || 1,
       recorded_by: String(k.Recorded_By || ''),
-      modified_at: iso_(k.Modified_Date) || new Date().toISOString()
+      modified_at: iso_(k.Modified_Date) || new Date().toISOString(),
+      _srcModified: iso_(k.Modified_Date)
     });
   }
   out.push('tickets: ' + tRows.length + (skipped ? ' (' + skipped + ' skipped: unreadable number)' : ''));
 
   if (dryRun) {
+    var wouldBooks = changedSince_(bRows, watermark, function (r) {
+      return r._srcModified ? new Date(r._srcModified) : null;
+    }).length;
+    var wouldTickets = changedSince_(tRows, watermark, function (r) {
+      return r._srcModified ? new Date(r._srcModified) : null;
+    }).length;
     var preview = 'DRY RUN — nothing was written.\n\n' + out.join('\n') +
+      '\n\n' + (watermark
+        ? 'Would send ' + wouldTickets + ' tickets and ' + wouldBooks +
+          ' books changed since ' + watermark.toISOString() + '.'
+        : 'No previous run recorded — would send everything.') +
       '\n\nRun migrateToSupabase() to do it.';
     Logger.log(preview);
     try { SpreadsheetApp.getUi().alert(preview); } catch (e) {}
@@ -235,17 +336,46 @@ function migrate_(dryRun) {
 
   // Order matters: agents, then books (which reference agents), then tickets
   // (which reference books). Users last because they reference agents too.
-  supaPost_(cfg, 'config', cRows, 'key');
-  supaPost_(cfg, 'agents', aRows, 'agent_id');
-  for (var bi = 0; bi < bRows.length; bi += MIGRATE_BATCH) {
-    supaPost_(cfg, 'books', bRows.slice(bi, bi + MIGRATE_BATCH), 'idx');
-  }
-  for (var ti = 0; ti < tRows.length; ti += MIGRATE_BATCH) {
-    supaPost_(cfg, 'tickets', tRows.slice(ti, ti + MIGRATE_BATCH), 'idx');
-  }
-  supaPost_(cfg, 'app_users', uRows, 'email');
+  // Dependency order, smallest first. Agents before users and books because
+  // both reference them; books before tickets for the same reason. Users ahead
+  // of the two big tables on purpose: the first run failed on a column name in
+  // app_users AFTER twenty-two thousand rows had already moved, and the whole
+  // point of a retryable migration is that you find that out cheaply.
+  // The small tables go every time: they are a few dozen rows between them, and
+  // config in particular decides how the other side reads everything else.
+  supaPost_(cfg, 'config', cRows, 'key', 'config');
+  supaPost_(cfg, 'agents', aRows, 'agent_id', 'agents');
+  supaPost_(cfg, 'app_users', uRows, 'email', 'users');
 
-  var done = 'Migrated.\n\n' + out.join('\n') +
+  var bSend = changedSince_(bRows, watermark, function (r) {
+    return r._srcModified ? new Date(r._srcModified) : null;
+  });
+  var tSend = changedSince_(tRows, watermark, function (r) {
+    return r._srcModified ? new Date(r._srcModified) : null;
+  });
+
+  for (var bi = 0; bi < bSend.length; bi += MIGRATE_BATCH) {
+    supaPost_(cfg, 'books', bSend.slice(bi, bi + MIGRATE_BATCH), 'idx',
+      'books ' + (bi + 1) + '-' + Math.min(bi + MIGRATE_BATCH, bSend.length) +
+      ' of ' + bSend.length);
+  }
+  for (var ti = 0; ti < tSend.length; ti += MIGRATE_BATCH) {
+    supaPost_(cfg, 'tickets', tSend.slice(ti, ti + MIGRATE_BATCH), 'idx',
+      'tickets ' + (ti + 1) + '-' + Math.min(ti + MIGRATE_BATCH, tSend.length) +
+      ' of ' + tSend.length);
+  }
+
+  // Only after every batch has landed. A watermark written after a partial run
+  // would quietly skip the rows the failed batches were carrying.
+  props.setProperty('MIGRATE_WATERMARK', startedAt.toISOString());
+
+  var scope = watermark
+    ? 'Changed since ' + watermark.toISOString() + ':\n' +
+      '  books sent: ' + bSend.length + ' of ' + bRows.length + '\n' +
+      '  tickets sent: ' + tSend.length + ' of ' + tRows.length
+    : 'Full copy (no previous run recorded).';
+
+  var done = 'Migrated.\n\n' + out.join('\n') + '\n\n' + scope +
     '\n\nNothing in this spreadsheet was changed. Run verifyMigration() to check both sides.';
   Logger.log(done);
   try { SpreadsheetApp.getUi().alert(done); } catch (e) {}
