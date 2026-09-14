@@ -85,5 +85,18 @@ ok(/removeEventListener\('visibilitychange', onVisibility\)/.test(app) &&
    'and it is torn down on unmount')
 ok(/const POLL_MS = 30_000/.test(app), 'thirty seconds — a raffle, not a trading floor')
 
+console.log('and the list under the badge reloads with it')
+{
+  const ap = readFileSync(new URL('../src/components/Approvals.vue', import.meta.url), 'utf8')
+  // Screens live inside <KeepAlive>, so onMounted fires ONCE for the session.
+  // Navigating away and back does not remount. Without these two the badge said
+  // 1 while the page under it said "No one has asked for anything" — two
+  // numbers from the same app disagreeing in front of the person deciding.
+  ok(/onActivated\(load\)/.test(ap), 'coming back to the tab reloads it')
+  ok(/watch\(\(\) => state\.pendingApprovals/.test(ap),
+     'and sitting on it when the count moves reloads it too')
+  ok(/onMounted\(load\)/.test(ap), 'first paint still loads')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

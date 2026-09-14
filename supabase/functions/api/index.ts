@@ -249,7 +249,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
 async function decideApproval(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   return approvals.decideApproval(
     p, user, ctx,
-    (action, payload, asUser) => {
+    async (action, payload, asUser) => {
       const spec = REGISTRY[action]
       if (!spec) throw new ApiError('UNKNOWN_ACTION', `Unknown action: ${action}`, null, 404)
       // Marked as an APPROVED execution. A handler that refuses an organiser
@@ -258,7 +258,12 @@ async function decideApproval(p: Record<string, unknown>, user: AppUser, ctx: Ct
       // moment of approval, which is the worst possible time to discover it.
       ;(ctx as unknown as { _viaApproval?: boolean })._viaApproval = true
       try {
-        return spec.fn(payload, asUser, ctx)
+        // AWAIT, not a bare return. `try { return fn() } finally { … }` runs
+        // the finally the moment the PROMISE is returned, not when it settles —
+        // so the flag was cleared before the handler had awaited its way down to
+        // reading it, and every approved request was refused at the moment of
+        // approval. It read as "Only the owner can let somebody in" to the owner.
+        return await spec.fn(payload, asUser, ctx)
       } finally {
         ;(ctx as unknown as { _viaApproval?: boolean })._viaApproval = false
       }

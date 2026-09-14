@@ -9,7 +9,7 @@
  * approved is what happens — an approval that merely unlocked the action for
  * later would let the payload change in between.
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onActivated, computed, watch } from 'vue'
 import { api, toast, state } from '../lib/store.js'
 import { dateTime, relative } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
@@ -20,6 +20,26 @@ const busy = ref('')
 const note = ref('')
 
 onMounted(load)
+
+/*
+ * Reload when there is something new to show, and when you look at the screen.
+ *
+ * onMounted alone was not enough and the reason is easy to miss: screens live
+ * inside <KeepAlive>, so this component mounts ONCE for the whole session.
+ * Navigating away and back does not remount it. The list a person saw at boot
+ * was the list they kept, however long they sat on it — which is how the badge
+ * could say 1 while the page underneath said "No one has asked for anything".
+ * Two numbers from the same app disagreeing in front of somebody is worse than
+ * either being late.
+ *
+ * onActivated covers coming back to the tab; the watch covers sitting ON it
+ * when a request arrives, since the poll updates the count every thirty
+ * seconds and the count changing is exactly the signal that the list is stale.
+ */
+onActivated(load)
+watch(() => state.pendingApprovals, (now, before) => {
+  if (now !== before) load()
+})
 
 async function load() {
   try {
@@ -134,9 +154,11 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
           <li v-for="r in settled.slice(0, 25)" :key="r.requestId">
             <div class="item" style="cursor:default">
               <span class="grow">
-                <span class="sub" style="white-space:normal">{{ r.summary }}</span>
-                <span class="sub">
-                  {{ r.requestedBy }} · {{ dateTime(r.decidedAt || r.requestedAt) }}
+                <!-- Its own line. Run together, the summary's full stop met the
+                     next word with no gap: "sign in as Helper.hungom.oct19@…" -->
+                <span class="sub" style="white-space:normal;display:block">{{ r.summary }}</span>
+                <span class="sub" style="display:block">
+                  Asked by {{ r.requestedBy }} · {{ dateTime(r.decidedAt || r.requestedAt) }}
                   <template v-if="r.note"> · “{{ r.note }}”</template>
                 </span>
               </span>
