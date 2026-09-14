@@ -192,6 +192,57 @@ console.log('a superadmin row is a super admin on this backend too')
   eq(owner.body.data?.isSuperAdmin, 'true', 'SUPER_ADMIN_EMAIL outranks a row set to viewer and off')
 }
 
+console.log('an organiser may ASK to add a helper, and may not ask to add a peer')
+{
+  const world = () => fakeDb({
+    config: baseConfig(),
+    app_users: [
+      { email: 'boss@x.com', name: 'Boss', role: 'admin', active: true, agent_id: null },
+      { email: 'admin@x.com', name: 'Admin', role: 'admin', active: true, agent_id: null },
+    ],
+    agents: [{ agent_id: 'A001', name: 'Daw Hla', active: true }],
+  })
+
+  // The three that become requestable.
+  for (const [role, word] of [['recorder', 'Helper'], ['viewer', 'view-only']]) {
+    const w = world()
+    const r = await call('upsert_user', { email: 'new@x.com', role }, 'admin@x.com', w)
+    eq(r.body.error?.code, 'APPROVAL_REQUIRED', `${role} becomes a request, not a refusal`)
+    ok(String(r.body.error?.details?.summary).includes('new@x.com'),
+       'the summary names the person')
+    ok(String(r.body.error?.details?.summary).includes(word),
+       `and names the role in words (${word})`)
+    eq(w.table('app_users').length, 2, 'and nobody was added')
+  }
+
+  // The two that stay impossible. Not approvable — refused.
+  for (const role of ['admin', 'superadmin']) {
+    const w = world()
+    const r = await call('upsert_user', { email: 'peer@x.com', role }, 'admin@x.com', w)
+    eq(r.body.error?.code, 'SUPER_ADMIN_ONLY', `${role} is refused outright, never queued`)
+    // An approvable request to create a peer is an escalation with a waiting
+    // period rather than an escalation prevented.
+    ok(!String(r.body.error?.message).includes('approv'), 'and is not offered as a request')
+    eq(w.table('app_users').length, 2, 'nobody was added')
+  }
+
+  // The owner still just does it — no queue for a request they would approve.
+  {
+    const w = world()
+    const r = await call('upsert_user', { email: 'new@x.com', role: 'recorder' }, 'boss@x.com', w)
+    ok(r.body.ok, 'the owner adds a helper directly')
+    eq(w.table('app_users').length, 3, 'and the row exists')
+  }
+
+  // An existing organiser cannot be edited through the requestable door.
+  {
+    const w = world()
+    const r = await call('upsert_user', { email: 'admin@x.com', role: 'viewer' }, 'admin@x.com', w)
+    eq(r.body.error?.code, 'SUPER_ADMIN_ONLY',
+       'pointing a "make a viewer" request at an existing organiser is refused')
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)
