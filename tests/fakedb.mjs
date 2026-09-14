@@ -23,6 +23,36 @@
  * decides, in what order, and what it refuses.
  */
 
+/*
+ * Column defaults the real schema applies on insert.
+ *
+ * Not decoration: handlers branch on these. requestApproval inserts a row
+ * WITHOUT a status and relies on the database to write 'Pending', and
+ * decideApproval then reads that value back and refuses anything that is not
+ * Pending. A fake that silently leaves it undefined turns every approval into
+ * "that request has already been decided" — which is a fake disagreeing with
+ * Postgres, and a test that would fail on correct code.
+ */
+const DEFAULTS = {
+  pending_approvals: { status: 'Pending', note: '', requested_at: () => new Date().toISOString() },
+  app_users: { status: 'active', role: 'viewer', name: '', added_by: '', added_at: () => new Date().toISOString() },
+  tickets: { status: 'Available', version: 1, buyer_name: '', buyer_phone: '', source: '' },
+  books: { status: 'Unassigned', version: 1, notes: '' },
+  agents: { active: true },
+  audit_log: { at: () => new Date().toISOString() },
+  book_history: { at: () => new Date().toISOString(), note: '' },
+}
+
+function withDefaults(table, row) {
+  const d = DEFAULTS[table]
+  if (!d) return row
+  const out = { ...row }
+  for (const [k, v] of Object.entries(d)) {
+    if (out[k] === undefined) out[k] = typeof v === 'function' ? v() : v
+  }
+  return out
+}
+
 /** Deep-ish clone, so a handler mutating a returned row cannot reach the store. */
 const copy = (v) => (v === null || typeof v !== 'object' ? v : JSON.parse(JSON.stringify(v)))
 
@@ -133,7 +163,7 @@ class Query {
           const at = t.findIndex((r) => r[key] === row[key])
           if (at !== -1) { Object.assign(t[at], copy(row)); out.push(t[at]); continue }
         }
-        const fresh = copy(row)
+        const fresh = withDefaults(this.table, copy(row))
         t.push(fresh)
         out.push(fresh)
       }
