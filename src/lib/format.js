@@ -13,26 +13,55 @@ export function moneyShort(n, currency) {
   return currency ? `${currency} ${v}` : v
 }
 
+/**
+ * A date with no time is a calendar day, not an instant.
+ *
+ * books.due_at is a DATE and arrives as 'YYYY-MM-DD'. `new Date('2026-09-20')`
+ * is specified to mean UTC midnight, so every browser west of Greenwich formats
+ * it as the 19th — a handover receipt that tells an agent to bring the money
+ * back a day early, and an overdue list that starts a day early with it. Read
+ * as local parts instead, the day survives the timezone.
+ *
+ * Timestamps keep their own parsing: an instant genuinely has a zone, and
+ * "sold at" should move with the reader.
+ */
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/
+
+function parse(iso) {
+  if (!iso) return null
+  const m = DATE_ONLY.exec(String(iso).trim())
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(iso)
+  return isNaN(d) ? null : d
+}
+
+/** Midnight local, so "how many days" counts days and not hours. */
+function dayStart(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
 export function date(iso) {
   if (!iso) return '—'
-  const d = new Date(iso)
-  return isNaN(d) ? String(iso)
+  const d = parse(iso)
+  return d === null ? String(iso)
     : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export function dateTime(iso) {
   if (!iso) return '—'
-  const d = new Date(iso)
-  return isNaN(d) ? String(iso)
+  const d = parse(iso)
+  return d === null ? String(iso)
     : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 /** "3 days ago", "in 2 weeks" — easier to judge than a date. */
 export function relative(iso) {
   if (!iso) return ''
-  const d = new Date(iso)
-  if (isNaN(d)) return ''
-  const days = Math.round((d - new Date()) / 86400000)
+  const d = parse(iso)
+  if (d === null) return ''
+  // Whole days between calendar days, not hours between instants: an hour of
+  // drift either side of midnight must not turn "tomorrow" into "today", and a
+  // clock change must not make a week 6.96 days long.
+  const days = Math.round((dayStart(d) - dayStart(new Date())) / 86400000)
   if (days === 0) return 'today'
   if (days === 1) return 'tomorrow'
   if (days === -1) return 'yesterday'

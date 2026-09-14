@@ -6,7 +6,11 @@
  */
 
 import { reactive, computed, ref } from 'vue'
-import { api as rawApi, ApiError, LS } from './api.js'
+import { ApiError, LS } from './api.js'
+// Through the switch, not straight at Apps Script: every screen's reads and
+// writes are these calls, so this one import is what actually moves the app
+// from one backend to the other.
+import { api as rawApi } from './backend.js'
 import { buildIndex, runSearch } from './search.js'
 import { saveTickets, loadTickets, clearCache } from './cache.js'
 import { my, myError } from './i18n.js'
@@ -305,9 +309,21 @@ export async function refresh() {
   state.problems = []
   state.needsSetup = false
 
+  // Being refused is not the same as being broken. A seller is not supposed to
+  // see the money totals, so reporting "some things could not be loaded" about
+  // them describes a working system as a failing one, and sends somebody off
+  // asking an organiser what is wrong with the app. The panel simply does not
+  // appear, which is what "you do not have this" should look like.
+  //
+  // Decided here rather than by checking the role before asking, because a
+  // deployment can widen or narrow any action in its Permissions tab: only the
+  // server knows who may see what, and a guess in the client would drift.
+  const notForYou = ['INSUFFICIENT_ROLE', 'SUPER_ADMIN_ONLY']
+
   const step = async (what, fn) => {
     try { await fn() } catch (err) {
       if (err.code === 'SHEET_MISSING' || err.code === 'NOT_CONFIGURED') state.needsSetup = true
+      if (notForYou.includes(err.code)) return
       state.problems.push({ what, code: err.code, message: err.message })
     }
   }
@@ -346,8 +362,9 @@ export async function refresh() {
       state.bookStats = draw.booksByStatus
     })
 
-    // Only roles the server allows — asking anyway would add a guaranteed
-    // failure to the list for every agent and viewer.
+    // Skipped for roles that plainly cannot have it — not to avoid an error,
+    // which `notForYou` now swallows, but to save every seller a round trip on
+    // a phone for an answer that is nearly always no.
     if (isAdmin.value || state.user?.role === 'recorder') {
       await step('overdue books', async () => {
         state.overdue = (await api('report_overdue', {})).overdue
