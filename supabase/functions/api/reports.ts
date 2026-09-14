@@ -26,7 +26,7 @@ async function currency(ctx: Ctx): Promise<string> {
 /** What each seller still owes: what their books are worth, less what came in. */
 export async function reportOutstanding(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
   const { data, error } = await ctx.supabaseAdmin
-    .from('book_ledger')
+    .from('book_ledger_all')
     .select('held_by_agent,agent_name,number,status,counted_sold,counted_expected,counted_collected')
     .not('held_by_agent', 'is', null)
   if (error) throw new ApiError('QUERY_FAILED', error.message)
@@ -65,7 +65,7 @@ export async function reportOutstanding(_p: Record<string, unknown>, _u: AppUser
 /** Books past the date they were due back, oldest first. */
 export async function reportOverdue(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
   const { data, error } = await ctx.supabaseAdmin
-    .from('book_ledger')
+    .from('book_ledger_all')
     .select('number,agent_name,held_by_agent,due_at,days_overdue,counted_sold')
     .eq('status', 'Out').gt('days_overdue', 0)
     .order('days_overdue', { ascending: false })
@@ -144,7 +144,7 @@ export async function reportDrawReady(_p: Record<string, unknown>, _u: AppUser, 
   const reserved = await count((q: any) => q.eq('status', 'Reserved').lte('idx', active))
 
   const { data: books } = await ctx.supabaseAdmin
-    .from('book_ledger').select('status,counted_expected,counted_collected')
+    .from('book_ledger_all').select('status,counted_expected,counted_collected')
   const unsettled = (books ?? []).filter((b: { status: string }) =>
     b.status === 'Out' || b.status === 'Returned').length
   const outstanding = (books ?? []).reduce(
@@ -258,7 +258,7 @@ export async function agentStatement(p: Record<string, unknown>, user: AppUser, 
   if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${agentId}".`, null, 404)
 
   const { data: books } = await ctx.supabaseAdmin
-    .from('book_ledger').select('*').eq('held_by_agent', agentId).order('idx')
+    .from('book_ledger_all').select('*').eq('held_by_agent', agentId).order('idx')
 
   const expected = (books ?? []).reduce((s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0)
   const collected = (books ?? []).reduce((s: number, b: { counted_collected: number }) => s + Number(b.counted_collected ?? 0), 0)

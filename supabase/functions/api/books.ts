@@ -304,7 +304,7 @@ export async function restockBooks(p: Record<string, unknown>, user: AppUser, ct
   // sales on it has to be settled first, because settling is precisely the step
   // that records what was sold and what was handed in.
   const { data: ledger } = await ctx.supabaseAdmin
-    .from('book_ledger')
+    .from('book_ledger_all')
     .select('number,status,agent_name,held_by_agent,counted_expected,counted_collected')
     .in('idx', ids)
 

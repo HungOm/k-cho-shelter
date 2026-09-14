@@ -59,7 +59,7 @@ function world() {
     books,
     agents: [{ agent_id: 'A001', name: 'Daw Hla', phone: '0125551111', zone: 'KL', active: true }],
     app_users: [{ email: 'boss@x.com', name: 'Boss', role: 'admin', active: true, agent_id: null }],
-    book_ledger: books.map((b) => ({
+    book_ledger_all: books.map((b) => ({
       idx: b.idx, number: b.number, status: b.status,
       held_by_agent: b.held_by_agent, agent_name: 'Daw Hla', due_at: null,
       counted_expected: b.idx === 1 ? 100 : 0,

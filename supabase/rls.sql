@@ -228,6 +228,62 @@ where app_role() is not null
 
 grant select on book_ledger to authenticated;
 
+-- ============ THE SAME LEDGER, FOR THE FUNCTION ============
+
+/*
+ * book_ledger carries its own WHERE clause, because it runs with owner rights
+ * and a policy would not apply to it. That is right for a browser reading
+ * directly — and it is why the EDGE FUNCTION saw nothing at all through it.
+ *
+ * The function reads as the service role. It carries no JWT, so auth_email() is
+ * null, so app_role() is null, so the view returned zero rows to it. Every
+ * action built on the ledger quietly reported an empty raffle: no books free to
+ * give out, no money expected or collected, no agent statements — and, worst,
+ * the restock guard that refuses a book with money still owed saw no rows and
+ * so never refused anything.
+ *
+ * So there are two: book_ledger, filtered, for browsers; book_ledger_all,
+ * unfiltered, for the function — which does its own scoping in code, because it
+ * has to, being above the policies. Explicitly revoked from anon and
+ * authenticated so the unfiltered one can never be reached from a browser.
+ */
+drop view if exists book_ledger_all;
+create view book_ledger_all as
+select
+  b.idx, b.number, b.status, b.held_by_agent, a.name as agent_name, b.due_at,
+  b.declared_sold, b.amount_due, b.amount_paid,
+  r.recorded_sold, r.recorded_amount, r.available, r.reserved, r.missing_contact,
+  case when b.status in ('Settled','Lost') then coalesce(b.declared_sold,0) else r.recorded_sold end as counted_sold,
+  case when b.status in ('Settled','Lost') then coalesce(b.amount_due,0) else r.recorded_amount end as counted_expected,
+  coalesce(b.amount_paid,0) as counted_collected,
+  coalesce(b.declared_sold,0) - r.recorded_sold as variance_sold,
+  coalesce(b.amount_due,0) - r.recorded_amount as variance_amount,
+  -- Whole days, from a date. Instant arithmetic made a book due today overdue
+  -- from 8am, which is not something you can defend to the person being chased.
+  case when b.status = 'Out' and b.due_at is not null and b.due_at < current_date
+       then (current_date - b.due_at)::int else 0 end as days_overdue,
+  -- Past the hard deadline: not merely late for a checkpoint, late for the raffle.
+  (b.status = 'Out' and (select nullif(value,'') from config where key = 'FINAL_DEADLINE') is not null
+   and b.due_at is not null
+   and (select nullif(value,'')::date from config where key = 'FINAL_DEADLINE') < current_date)
+    as past_final
+from books b
+left join agents a on a.agent_id = b.held_by_agent
+left join lateral (
+  select
+    count(*) filter (where t.status in ('Sold','Donated')) as recorded_sold,
+    coalesce(sum(t.amount) filter (where t.status in ('Sold','Donated')), 0) as recorded_amount,
+    count(*) filter (where t.status = 'Available') as available,
+    count(*) filter (where t.status = 'Reserved') as reserved,
+    count(*) filter (where t.status in ('Sold','Donated') and t.buyer_phone = '') as missing_contact
+  from tickets t where t.book_idx = b.idx
+) r on true
+where b.idx <= ceil(active_tickets()::numeric /
+        greatest((select coalesce(nullif(value,'')::integer,10) from config where key='TICKETS_PER_BOOK'),1));
+
+revoke all on book_ledger_all from anon, authenticated;
+
+
 -- ============ AGENTS ============
 
 drop policy if exists agents_read on agents;
