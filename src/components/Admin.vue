@@ -7,9 +7,9 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { state, api, toast, isSuper, go } from '../lib/store.js'
-import { money, dateTime } from '../lib/format.js'
+import { money, date, dateTime } from '../lib/format.js'
 
-const emit = defineEmits(['add-user', 'make-tickets', 'tickets-in-play'])
+const emit = defineEmits(['add-user', 'make-tickets', 'tickets-in-play', 'deadlines'])
 
 /**
  * Three numbers, and keeping them apart is the whole point of this card.
@@ -168,10 +168,29 @@ async function loadAudit() {
             <tr><td>In each book</td><td>{{ c.ticketsPerBook }} — that makes {{ c.totalBooks }} books</td></tr>
             <tr><td>Price</td><td>{{ money(c.ticketPrice, c.currency) }} each</td></tr>
             <tr><td>If all sold</td><td>{{ money(live * c.ticketPrice, c.currency) }}<span v-if="waiting" class="muted small"> — of what is in play</span></td></tr>
-            <tr><td>Books due back after</td><td>{{ c.defaultDueDays }} days</td></tr>
+            <tr>
+              <td>Everybody reports by</td>
+              <td>
+                {{ c.checkInDate ? date(c.checkInDate) : 'not set' }}
+                <span class="muted small">— the same date for every seller</span>
+              </td>
+            </tr>
+            <tr>
+              <td>Everything back by</td>
+              <td>
+                <template v-if="c.finalDeadline">{{ date(c.finalDeadline) }}</template>
+                <span v-else class="pill warn">not set</span>
+              </td>
+            </tr>
             <tr><td>Draw date</td><td>{{ c.drawDate || 'not set' }}</td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="sub">
+        <span class="muted small grow">
+          The check-in date moves on a month at a time, up to the final deadline.
+        </span>
+        <button class="btn sm ghost" @click="emit('deadlines')">Deadlines</button>
       </div>
       <p class="hint">
         Ticket numbers are fixed once the tickets are made. Everything else is changed
