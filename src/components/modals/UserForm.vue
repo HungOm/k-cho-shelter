@@ -17,8 +17,19 @@ const ROLES = computed(() => {
     { v: 'agent', t: 'Seller', d: 'Can only touch the books they are holding' },
     { v: 'viewer', t: 'Can only look', d: 'Sees totals, but no phone numbers' }
   ]
-  // Only the super admin can create another organiser.
-  if (isSuper.value) list.unshift({ v: 'admin', t: 'Organiser', d: 'Can do everything' })
+  // Only the super admin can create another organiser — or another owner.
+  //
+  // Owner is offered because the raffle currently has exactly one, and
+  // approving a two-person request is something only an owner may do. One
+  // unreachable person therefore blocks every approval in the raffle, which is
+  // a single point of failure in the control that exists to remove single
+  // points of failure. A second owner is the fix; it is deliberately not
+  // something an organiser can hand out.
+  if (isSuper.value) {
+    list.unshift({ v: 'admin', t: 'Organiser', d: 'Can do everything' })
+    list.unshift({ v: 'superadmin', t: 'Owner',
+                   d: 'Everything an organiser can do, plus deciding who else signs in' })
+  }
   return list
 })
 

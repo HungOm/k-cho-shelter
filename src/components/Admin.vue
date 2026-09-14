@@ -7,7 +7,7 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { state, api, toast, isSuper, go } from '../lib/store.js'
-import { money, date, dateTime } from '../lib/format.js'
+import { money, date, dateTime, ROLE_WORDS } from '../lib/format.js'
 
 const emit = defineEmits(['add-user', 'make-tickets', 'tickets-in-play', 'deadlines'])
 
@@ -39,9 +39,6 @@ const audit = ref(null)
 const superAdmin = ref('')
 const c = computed(() => state.cfg)
 
-const ROLE_WORDS = {
-  admin: 'Organiser', recorder: 'Helper', agent: 'Seller who signs in', viewer: 'Can only look'
-}
 
 onMounted(loadUsers)
 
