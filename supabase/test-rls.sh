@@ -91,14 +91,30 @@ echo "held-back tickets are not readable by anyone"
 ok "$(AS 'admin@x.com' 'select count(*) from tickets_readable')" "30" "an admin sees only what is in play"
 ok "$(AS 'admin@x.com' "select count(*) from tickets_readable where number='KS-00045'")" "0" "a held-back ticket is absent"
 
-echo "an agent sees only the books they carry"
+echo "an agent sees every ticket's status and nobody else's buyer"
 # A001 holds books 1-2, which is tickets 1-20. Books 3-6 are A002's.
-ok "$(AS 'a1@x.com' 'select count(*) from tickets_readable')" "20" "only their own two books"
-ok "$(AS 'a1@x.com' "select count(*) from tickets_readable where book_idx=3")" "0" "not another agent's book"
+#
+# The rows are NOT hidden. Sellers ask each other whether a number is still
+# going, and hiding the row makes an available ticket indistinguishable from one
+# that was never printed. What is hidden is who bought it.
+ok "$(AS 'a1@x.com' 'select count(*) from tickets_readable')" "30" "every ticket in play is visible"
+ok "$(AS 'a1@x.com' "select count(*) from tickets_readable where book_idx=3")" "10" "including another seller's book"
+ok "$(AS 'a1@x.com' "select status from tickets_readable where number='KS-00021'")" "Sold" "with its status, so availability is answerable"
+
+# ...and this is the half that matters.
+ok "$(AS 'a1@x.com' "select buyer_name from tickets_readable where book_idx=3 limit 1")" "" "but not the buyer's name"
+ok "$(AS 'a1@x.com' "select buyer_phone from tickets_readable where book_idx=3 limit 1")" "" "nor their telephone number"
+ok "$(AS 'a1@x.com' "select buyer_zone from tickets_readable where book_idx=3 limit 1")" "" "nor where they live"
+ok "$(AS 'a1@x.com' "select coalesce(notes,'') from tickets_readable where book_idx=3 limit 1")" "" "nor any note about them"
+ok "$(AS 'a1@x.com' "select count(*) from tickets_readable where book_idx<>1 and book_idx<>2 and buyer_phone<>''")" "0" "not one number outside their own books"
+
+# Their own books are untouched — they made those sales and have to ring those
+# buyers when a number comes up.
+ok "$(AS 'a1@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "0125550101" "their own buyer's number is intact"
 ok "$(AS 'a1@x.com' 'select count(*) from book_ledger')" "2" "and only their books in the ledger"
 
 echo "phone numbers are masked for a view-only account"
-ok "$(AS 'view@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "012****01" "a viewer gets a masked number"
+ok "$(AS 'view@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "••••101" "a viewer gets a masked number, in the shape both backends use"
 ok "$(AS 'admin@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "0125550101" "an admin gets the real one"
 ok "$(AS 'view@x.com' "select phone from agents_readable where agent_id='A001'")" "" "a viewer gets no seller phone"
 ok "$(AS 'admin@x.com' "select phone from agents_readable where agent_id='A001'")" "0125551111" "an admin does"

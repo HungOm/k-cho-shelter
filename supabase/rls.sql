@@ -122,21 +122,48 @@ create policy tickets_read on tickets for select using (
  * below are a second layer, so a grant added carelessly later still reads
  * nothing.
  */
+/*
+ * A SELLER SEES EVERY TICKET'S STATUS AND NOBODY ELSE'S BUYER.
+ *
+ * This used to hide the rows outright, which was tighter but wrong for the way
+ * the raffle is actually run: sellers ask each other "is KS-1234 still going?"
+ * and the answer has to exist. Hiding the row makes an available ticket
+ * indistinguishable from one that was never printed.
+ *
+ * It also has to agree with the edge function, because the app reads through
+ * BOTH — writes go through the function, reads come straight here. Two paths
+ * that disagree about what a seller may see is not a stricter system, it is a
+ * system whose behaviour depends on which door you came through, and the looser
+ * door is the one that decides.
+ *
+ * So: every active row, and the buyer's details blanked on books this seller is
+ * not carrying.
+ */
 drop view if exists tickets_readable;
 create view tickets_readable as
 select
   idx, number, book_idx, status,
-  buyer_name,
-  case when app_role() = 'viewer' and buyer_phone <> ''
-       then left(buyer_phone, 3) || '****' || right(buyer_phone, 2)
-       else buyer_phone end as buyer_phone,
-  buyer_zone, sold_by_agent, amount, payment_status, sold_at,
-  notes, source, version, recorded_by, modified_at
-from tickets
-where app_role() is not null
-  and idx <= active_tickets()
-  and (app_role() <> 'agent'
-       or book_idx in (select idx from books where held_by_agent = app_agent_id()));
+  case when mine then buyer_name else '' end as buyer_name,
+  case
+    -- Same shape as both backends' maskers. A phone hidden three different
+    -- ways across three code paths reads as three different applications.
+    when app_role() = 'viewer' and buyer_phone <> ''
+      then '••••' || right(buyer_phone, 3)
+    when mine then buyer_phone
+    else ''
+  end as buyer_phone,
+  case when mine then buyer_zone else '' end as buyer_zone,
+  sold_by_agent, amount, payment_status, sold_at,
+  case when mine then notes else '' end as notes,
+  source, version, recorded_by, modified_at
+from (
+  select t.*,
+         (app_role() <> 'agent'
+          or t.book_idx in (select idx from books where held_by_agent = app_agent_id())) as mine
+  from tickets t
+  where app_role() is not null
+    and t.idx <= active_tickets()
+) v;
 
 grant select on tickets_readable to authenticated;
 

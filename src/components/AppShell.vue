@@ -51,9 +51,16 @@ const moreActive = computed(() => moreTabs.value.some(s => s.id === state.screen
 const showMore = ref(false)
 function pick(id) { showMore.value = false; go(id) }
 
-const roleWord = computed(() => ({
+const roleWord = computed(() => {
+  // The super admin's stored role is only what their ordinary user record says.
+  // Their actual authority comes from SUPER_ADMIN_EMAIL, outside the database,
+  // and outranks every role here — so printing "Organiser" under their name
+  // described a ceiling that does not exist.
+  if (state.user?.isSuperAdmin) return 'Super admin'
+  return ({
   admin: 'Organiser', recorder: 'Helper', agent: 'Seller who signs in', viewer: 'Can only look'
-}[state.user?.role] || state.user?.role))
+})[state.user?.role] || state.user?.role
+})
 
 defineEmits(['signout'])
 </script>

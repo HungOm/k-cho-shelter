@@ -181,6 +181,10 @@ function handleListUsers(payload, user) {
 }
 
 function handleUpsertUser(payload, user) {
+  // Checked before anything is validated: an organiser who may not do this at
+  // all should be told that, not told which field they forgot.
+  requireSuperAdmin_(user, 'Adding or changing who can sign in');
+
   var email = requireField_(payload, 'email').toLowerCase();
   var role = String(payload.role || ROLES.VIEWER).toLowerCase();
 
@@ -205,8 +209,16 @@ function handleUpsertUser(payload, user) {
   // Only the super admin may mint an admin, alter an existing admin, or touch
   // the super admin's own row. Without this any admin could promote a second
   // admin and the tree would have no top.
-  if (role === ROLES.ADMIN) requireSuperAdmin_(user, 'Granting the admin role');
-  if (existing && existing.role === ROLES.ADMIN) requireSuperAdmin_(user, 'Changing an admin account');
+  // WHO MAY SIGN IN, AND AS WHAT, IS THE SUPER ADMIN'S ALONE.
+  //
+  // An organiser who can hand out roles can hand one to themselves, or to a
+  // friendly account they then sign in as — which makes "only the super admin
+  // decides who is an organiser" a rule that lasts exactly as long as nobody
+  // tries. Organisers run the raffle; they do not decide who else runs it.
+  //
+  // Managing SELLERS is a different thing and stays with organisers: adding,
+  // banning and deactivating an agent is the daily work of running the raffle,
+  // and an agent record grants nobody any access to this system.
   if (isSuperAdminEmail_(email)) requireSuperAdmin_(user, 'Changing the super admin account');
 
   if (existing && existing.row) {
@@ -256,7 +268,12 @@ function handleSetUserStatus(payload, user) {
   var existing = lookupUser(email);
   if (!existing || !existing.row) throw new ApiError('USER_NOT_FOUND', email + ' is not on the access list.');
 
-  if (existing.role === ROLES.ADMIN) requireSuperAdmin_(user, 'Enabling or disabling an admin');
+  // An organiser may switch a SELLER's sign-in off — a lost phone at a Sunday
+  // service should not wait for the super admin to wake up. Anything above a
+  // seller is a privilege decision and goes to the super admin.
+  if (existing.role !== ROLES.AGENT) {
+    requireSuperAdmin_(user, 'Enabling or disabling anybody but a seller');
+  }
 
   var sheet = sheet_(SHEET.USERS);
   var map = headerMap(sheet);
