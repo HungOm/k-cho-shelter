@@ -1,0 +1,285 @@
+-- K'Cho Shelter — the operations that must be all-or-nothing.
+--
+-- Apps Script took one script-wide lock for every write, which made two
+-- volunteers in different books queue behind each other, and still only
+-- approximated atomicity: it validated everything before writing anything, but
+-- nothing stopped a failure halfway through the writes themselves.
+--
+-- A plpgsql function is one transaction. It commits or it does not. That is the
+-- promise the docs already made — "if one line has a problem, none are saved" —
+-- actually enforced rather than carefully approximated.
+--
+-- Run this AFTER schema.sql.
+
+-- ============ HOW MANY TICKETS ARE IN PLAY ============
+-- Generated and in-play are two different numbers. Held-back tickets keep their
+-- rows and their numbers; they are simply not sellable yet. Blank or zero means
+-- all of them, which is what an existing raffle has.
+
+create or replace function active_tickets() returns integer as $$
+declare
+  generated integer;
+  active integer;
+begin
+  select coalesce(nullif(value, '')::integer, 0) into generated from config where key = 'TOTAL_TICKETS';
+  select coalesce(nullif(value, '')::integer, 0) into active from config where key = 'ACTIVE_TICKETS';
+  generated := coalesce(generated, 0);
+  active := coalesce(active, 0);
+  if active <= 0 or active > generated then return generated; end if;
+  return active;
+end $$ language plpgsql stable;
+
+-- ============ BULK SALE ENTRY ============
+-- For when a seller brings back a book and somebody types the stubs in.
+--
+-- Returns {recorded} on success, or {failures:[{ticketNumber, code, message}]}
+-- having written nothing. Every reason a row can be refused is collected and
+-- reported together, rather than stopping at the first — retyping 180 stubs one
+-- rejection at a time is how a volunteer gives up on the system.
+
+create or replace function bulk_record_sales(
+  p_sales jsonb,
+  p_user text,
+  p_role text,
+  p_agent_id text,
+  p_force boolean default false
+) returns jsonb as $$
+declare
+  sale jsonb;
+  t record;
+  failures jsonb := '[]'::jsonb;
+  seen text[] := '{}';
+  num text;
+  phone text;
+  buyer text;
+  live integer;
+  price numeric;
+  written integer := 0;
+begin
+  live := active_tickets();
+  select coalesce(nullif(value, '')::numeric, 10) into price from config where key = 'TICKET_PRICE';
+
+  -- Pass one: judge every row, write nothing.
+  for sale in select * from jsonb_array_elements(p_sales) loop
+    num := trim(sale->>'ticketNumber');
+    buyer := trim(coalesce(sale->>'buyerName', ''));
+    phone := regexp_replace(coalesce(sale->>'buyerPhone', ''), '\D', '', 'g');
+
+    if num is null or num = '' then
+      failures := failures || jsonb_build_object('ticketNumber', '',
+        'code', 'MISSING_FIELD', 'message', 'Ticket number is blank.');
+      continue;
+    end if;
+
+    if num = any(seen) then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'DUPLICATE_IN_BATCH', 'message', 'Listed twice in this batch.');
+      continue;
+    end if;
+    seen := seen || num;
+
+    if buyer = '' then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'MISSING_FIELD', 'message', 'Buyer name is required.');
+      continue;
+    end if;
+
+    -- The rule the whole raffle depends on: a sold ticket must resolve to
+    -- somebody who can be telephoned when their number comes up.
+    if length(phone) < 7 then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'BAD_PHONE', 'message', 'Phone number is too short.');
+      continue;
+    end if;
+
+    select tk.idx, tk.status, tk.version, b.status as book_status, b.held_by_agent
+      into t
+      from tickets tk join books b on b.idx = tk.book_idx
+     where tk.number = num;
+
+    if not found then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'TICKET_NOT_FOUND', 'message', 'Not found.');
+      continue;
+    end if;
+
+    if t.idx > live then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'TICKET_NOT_RELEASED', 'message', 'Not released yet.');
+      continue;
+    end if;
+
+    if t.status in ('Sold', 'Donated') then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'ALREADY_SOLD', 'message', 'Already sold.');
+      continue;
+    end if;
+
+    if t.status = 'Void' then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'TICKET_VOID', 'message', 'This ticket was voided.');
+      continue;
+    end if;
+
+    if t.book_status in ('Settled', 'Void') and not (p_force and p_role = 'admin') then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'BOOK_CLOSED', 'message', 'That book is ' || lower(t.book_status) || '.');
+      continue;
+    end if;
+
+    if p_role = 'agent' and (p_agent_id is null or t.held_by_agent is distinct from p_agent_id) then
+      failures := failures || jsonb_build_object('ticketNumber', num,
+        'code', 'NOT_YOUR_BOOK', 'message', 'That book is not issued to you.');
+      continue;
+    end if;
+  end loop;
+
+  if jsonb_array_length(failures) > 0 then
+    return jsonb_build_object('failures', failures);
+  end if;
+
+  -- Pass two: write. Reached only when every row passed, and inside the same
+  -- transaction, so a failure here takes the whole batch with it.
+  for sale in select * from jsonb_array_elements(p_sales) loop
+    update tickets set
+      status = case when coalesce((sale->>'donated')::boolean, false) then 'Donated' else 'Sold' end,
+      buyer_name = trim(sale->>'buyerName'),
+      buyer_phone = regexp_replace(coalesce(sale->>'buyerPhone', ''), '[^\d+]', '', 'g'),
+      buyer_zone = coalesce(sale->>'buyerZone', ''),
+      sold_by_agent = coalesce(sale->>'agentId', p_agent_id),
+      amount = case when coalesce((sale->>'donated')::boolean, false) then 0 else price end,
+      payment_status = coalesce(sale->>'paymentStatus', 'Paid'),
+      sold_at = now(),
+      source = 'bulk',
+      recorded_by = p_user
+    where number = trim(sale->>'ticketNumber');
+    written := written + 1;
+  end loop;
+
+  return jsonb_build_object('recorded', written);
+end $$ language plpgsql;
+
+-- ============ SELLING WHOLE BOOKS ============
+-- Tickets already sold to somebody else are SKIPPED and reported, never
+-- overwritten. That reporting is the interesting half of the answer: selling a
+-- book with three already gone is "7 sold, 3 left alone", and calling that
+-- "book sold" is a lie the organiser would only discover at the draw.
+
+create or replace function sell_books(
+  p_from_book text,
+  p_to_book text,
+  p_book_numbers jsonb,
+  p_buyer_name text,
+  p_buyer_phone text,
+  p_buyer_zone text,
+  p_donated boolean,
+  p_user text,
+  p_role text,
+  p_agent_id text
+) returns jsonb as $$
+declare
+  first_idx integer;
+  last_idx integer;
+  idxs integer[];
+  b record;
+  t record;
+  live integer;
+  price numeric;
+  sold_numbers text[] := '{}';
+  skipped jsonb := '[]'::jsonb;
+  book_numbers text[] := '{}';
+begin
+  live := active_tickets();
+  select coalesce(nullif(value, '')::numeric, 10) into price from config where key = 'TICKET_PRICE';
+
+  if p_book_numbers is not null then
+    select array_agg(bk.idx order by bk.idx) into idxs
+      from books bk where bk.number = any(
+        select jsonb_array_elements_text(p_book_numbers));
+  else
+    select idx into first_idx from books where number = p_from_book;
+    if first_idx is null then
+      return jsonb_build_object('error', jsonb_build_object(
+        'code', 'BOOK_NOT_FOUND', 'message', 'Book ' || coalesce(p_from_book, '?') || ' does not exist.'));
+    end if;
+    if p_to_book is null or p_to_book = '' then
+      last_idx := first_idx;
+    else
+      select idx into last_idx from books where number = p_to_book;
+      if last_idx is null then
+        return jsonb_build_object('error', jsonb_build_object(
+          'code', 'BOOK_NOT_FOUND', 'message', 'Book ' || p_to_book || ' does not exist.'));
+      end if;
+    end if;
+    if last_idx < first_idx then
+      select first_idx, last_idx into last_idx, first_idx;
+    end if;
+    select array_agg(g order by g) into idxs from generate_series(first_idx, last_idx) g;
+  end if;
+
+  if idxs is null or array_length(idxs, 1) is null then
+    return jsonb_build_object('error', jsonb_build_object(
+      'code', 'BAD_REQUEST', 'message', 'No books were named.'));
+  end if;
+  if array_length(idxs, 1) > 20 then
+    return jsonb_build_object('error', jsonb_build_object(
+      'code', 'RANGE_TOO_LARGE', 'message', 'Sell at most 20 books to one buyer at a time.'));
+  end if;
+
+  -- Every book is checked before any ticket is written, so a range that crosses
+  -- into another seller's books leaves nothing half recorded.
+  for b in select * from books where idx = any(idxs) order by idx loop
+    book_numbers := book_numbers || b.number;
+
+    if b.idx * (select coalesce(nullif(value, '')::integer, 10) from config where key = 'TICKETS_PER_BOOK')
+       > live then
+      return jsonb_build_object('error', jsonb_build_object(
+        'code', 'TICKET_NOT_RELEASED',
+        'message', 'Book ' || b.number || ' has not been released yet.'));
+    end if;
+    if b.status in ('Settled', 'Void') then
+      return jsonb_build_object('error', jsonb_build_object(
+        'code', 'BOOK_CLOSED', 'message', 'Book ' || b.number || ' is ' || lower(b.status) || '.'));
+    end if;
+    if p_role = 'agent' and (p_agent_id is null or b.held_by_agent is distinct from p_agent_id) then
+      return jsonb_build_object('error', jsonb_build_object(
+        'code', 'NOT_YOUR_BOOK', 'message', 'Book ' || b.number || ' is not issued to you.'));
+    end if;
+  end loop;
+
+  for t in select * from tickets where book_idx = any(idxs) order by idx loop
+    if t.status in ('Sold', 'Donated') then
+      skipped := skipped || jsonb_build_object('ticketNumber', t.number, 'reason', 'already sold');
+      continue;
+    end if;
+    if t.status = 'Void' then
+      skipped := skipped || jsonb_build_object('ticketNumber', t.number, 'reason', 'voided');
+      continue;
+    end if;
+
+    update tickets set
+      status = case when p_donated then 'Donated' else 'Sold' end,
+      buyer_name = p_buyer_name,
+      buyer_phone = p_buyer_phone,
+      buyer_zone = coalesce(p_buyer_zone, ''),
+      sold_by_agent = coalesce(
+        (select held_by_agent from books where idx = t.book_idx), p_agent_id),
+      amount = case when p_donated then 0 else price end,
+      payment_status = 'Paid',
+      sold_at = now(),
+      source = 'book sale',
+      recorded_by = p_user
+    where idx = t.idx;
+
+    sold_numbers := sold_numbers || t.number;
+  end loop;
+
+  return jsonb_build_object(
+    'books', to_jsonb(book_numbers),
+    'sold', coalesce(array_length(sold_numbers, 1), 0),
+    'tickets', to_jsonb(sold_numbers),
+    'skipped', skipped,
+    'amount', case when p_donated then 0 else coalesce(array_length(sold_numbers, 1), 0) * price end,
+    'buyerName', p_buyer_name
+  );
+end $$ language plpgsql;
