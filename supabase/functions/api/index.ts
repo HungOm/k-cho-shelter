@@ -72,6 +72,12 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   transfer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.transferBooks },
   return_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.returnBooks },
   settle_book: { roles: ADMIN_ONLY, kind: 'write', fn: books.settleBook },
+  set_book_status: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.setBookStatus },
+  restock_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.restockBooks },
+  // Readable by anyone who can see the books at all. A history that only an
+  // admin can open answers nobody's question — the person who needs to know
+  // where a book went is usually the one holding the clipboard.
+  book_history: { roles: null, kind: 'read', fn: books.bookHistory },
 
   // --- agents & users ---
   list_agents: { roles: null, kind: 'read', fn: people.listAgents },

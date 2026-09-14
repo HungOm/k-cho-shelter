@@ -180,6 +180,7 @@ export const MY_ERRORS = {
   BOOK_CLOSED: 'ဤစာအုပ်ကို ပိတ်ထားပြီးဖြစ်သည်',
   BOOKS_NOT_AVAILABLE: 'ဤစာအုပ်များ မရနိုင်ပါ',
   TRANSFER_BLOCKED: 'လွှဲပြောင်း၍ မရပါ',
+  MONEY_STILL_OWED: 'ငွေ ကျန်ရှိနေသေးသည် — အရင် ရှင်းပါ',
   VERSION_CONFLICT: 'အခြားသူတစ်ဦး ပြောင်းလဲထားပါသည်',
   BATCH_REJECTED: 'အမှားပါသဖြင့် တစ်ခုမှ မသိမ်းခဲ့ပါ',
   DUPLICATE_IN_BATCH: 'နှစ်ကြိမ် ထပ်နေသည်',

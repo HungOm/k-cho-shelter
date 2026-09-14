@@ -116,7 +116,10 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   await ctx.supabaseAdmin.from('book_history').insert(
-    idxs.map((idx) => ({ book_idx: idx, to_agent: agentId, action: 'issue', by_user: user.email })))
+    idxs.map((idx) => ({
+      book_idx: idx, to_agent: agentId, action: 'issue',
+      by_user: user.email, note: String(p.note ?? ''),
+    })))
 
   await audit(ctx, 'ISSUE_BOOKS', { count: idxs.length, agent: agentId }, user.email)
   return {
@@ -157,7 +160,7 @@ export async function transferBooks(p: Record<string, unknown>, user: AppUser, c
 
   const history = (books ?? []).map((b: { idx: number; held_by_agent: string | null }) => ({
     book_idx: b.idx, from_agent: b.held_by_agent, to_agent: toAgent,
-    action: 'transfer', by_user: user.email,
+    action: 'transfer', by_user: user.email, note: String(p.note ?? ''),
   }))
 
   const { error } = await ctx.supabaseAdmin
@@ -199,7 +202,8 @@ export async function returnBooks(p: Record<string, unknown>, user: AppUser, ctx
 
   await ctx.supabaseAdmin.from('book_history').insert(
     (books ?? []).map((b: { idx: number; held_by_agent: string | null }) => ({
-      book_idx: b.idx, from_agent: b.held_by_agent, action: 'return', by_user: user.email,
+      book_idx: b.idx, from_agent: b.held_by_agent, action: 'return',
+      by_user: user.email, note: String(p.note ?? ''),
     })))
 
   await audit(ctx, 'RETURN_BOOKS', { count: idxs.length }, user.email)
@@ -238,4 +242,193 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
     book: bookNumber, sold: data.declaredSold, due: data.amountDue, paid: amountPaid,
   }, user.email)
   return data
+}
+
+/**
+ * Puts a book back on the shelf so it can be given out again.
+ *
+ * THIS IS THE ANSWER TO "a book brought back should be available again". It is,
+ * but not in one step, and the step in between is the point: a Returned book
+ * has not been counted yet. Issuing it again before settling would hand a new
+ * seller partly-sold paper and lose any record of what the first seller owed.
+ *
+ * So the path is: Returned -> settle (the money is reconciled) -> restock (the
+ * unsold tickets go back into circulation) -> Unassigned -> issue again.
+ *
+ * Restocking clears the declared figures, because leaving them would describe a
+ * settlement that no longer matches the book. That is destructive, which is why
+ * a range of them needs a second person.
+ */
+export async function restockBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const idxs = await resolveBooks(ctx, p)
+  const { data: books } = await ctx.supabaseAdmin
+    .from('books').select('idx,number,status,held_by_agent,declared_sold').in('idx', idxs).order('idx')
+
+  // Only a book that is finished with can go back on the shelf.
+  const eligible = (books ?? []).filter((b: { status: string }) =>
+    b.status === 'Returned' || b.status === 'Settled')
+  if (!eligible.length) {
+    throw new ApiError(
+      'NOTHING_TO_DO',
+      'None of those books are brought back or settled, so none can go back on the shelf.',
+    )
+  }
+
+  const ids = eligible.map((b: { idx: number }) => b.idx)
+
+  // WHY THIS CHECK EXISTS. Restocking clears held_by_agent, and the outstanding
+  // report finds debts by looking at which agent holds a book. So restocking a
+  // book somebody still owes money on does not just lose the figure — it takes
+  // the debt off the chase list entirely, silently, with nothing left to show
+  // it was ever there. The tickets keep sold_by_agent, but no report reads it.
+  //
+  // A book that came back untouched owes nothing and restocks freely, which is
+  // the ordinary case: hand out twenty, five come back unopened. A book with
+  // sales on it has to be settled first, because settling is precisely the step
+  // that records what was sold and what was handed in.
+  const { data: ledger } = await ctx.supabaseAdmin
+    .from('book_ledger')
+    .select('number,status,agent_name,held_by_agent,counted_expected,counted_collected')
+    .in('idx', ids)
+
+  const owing = (ledger ?? [])
+    .map((r: Record<string, unknown>) => ({
+      book: r.number, status: r.status,
+      agent: r.agent_name ?? r.held_by_agent ?? '',
+      owed: Math.round((Number(r.counted_expected ?? 0) - Number(r.counted_collected ?? 0)) * 100) / 100,
+    }))
+    .filter((r: { owed: number }) => r.owed > 0.005)
+
+  if (owing.length) {
+    throw new ApiError(
+      'MONEY_STILL_OWED',
+      `${owing.length} of these books still have money owed on them. Settle them first, ` +
+      'or the amount owed disappears from the outstanding report. Nothing was changed.',
+      { books: owing },
+    )
+  }
+
+  await ctx.supabaseAdmin.from('books').update({
+    status: 'Unassigned', held_by_agent: null,
+    issued_at: null, due_at: null,
+    declared_sold: null, amount_due: null, amount_paid: null,
+    settled_at: null, settled_by: '', notes: '',
+    modified_by: user.email,
+  }).in('idx', ids)
+
+  // Tickets nobody bought go back into circulation. Sold and donated ones are
+  // left exactly as they are — the sale happened, and the buyer still has to be
+  // findable when their number comes up.
+  await ctx.supabaseAdmin.from('tickets').update({
+    status: 'Available', buyer_name: '', buyer_phone: '', buyer_zone: '',
+    sold_by_agent: null, amount: null, payment_status: '', sold_at: null,
+    source: '', recorded_by: user.email,
+  }).in('book_idx', ids).in('status', ['Available', 'Reserved'])
+
+  await ctx.supabaseAdmin.from('book_history').insert(
+    eligible.map((b: { idx: number; held_by_agent: string | null; declared_sold: number | null }) => ({
+      book_idx: b.idx, from_agent: b.held_by_agent, action: 'restock',
+      by_user: user.email,
+      note: String(p.note ?? '') ||
+        (b.declared_sold != null ? `Settlement of ${b.declared_sold} cleared.` : ''),
+    })))
+
+  await audit(ctx, 'RESTOCK_BOOKS', { count: ids.length, note: p.note }, user.email)
+  return {
+    restocked: ids.length,
+    books: eligible.map((b: { number: string }) => b.number),
+    skipped: (books ?? []).length - ids.length,
+  }
+}
+
+/** Mark books lost, void, or reopen them. Destructive, hence the reason. */
+export async function setBookStatus(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const status = String(p.status ?? '')
+  const reason = String(p.reason ?? '').trim()
+  const valid = ['Lost', 'Void', 'Out', 'Returned', 'Unassigned']
+  if (!valid.includes(status)) {
+    throw new ApiError('BAD_REQUEST', 'Status must be one of: ' + valid.join(', '))
+  }
+  // Required, not optional. A book marked lost without a reason is a question
+  // somebody has to ask three people about in a month's time.
+  if (!reason) throw new ApiError('MISSING_FIELD', 'A reason is required.')
+
+  const idxs = await resolveBooks(ctx, p)
+  const { data: books } = await ctx.supabaseAdmin
+    .from('books').select('idx,number,status,held_by_agent').in('idx', idxs).order('idx')
+
+  // A preview by default, because a mistyped range across hundreds of books
+  // would otherwise be one click.
+  const dryRun = p.dryRun === undefined ? true : !!p.dryRun
+  if (dryRun) {
+    return {
+      dryRun: true, wouldChange: books?.length ?? 0,
+      books: (books ?? []).map((b: { number: string; status: string }) => ({
+        book: b.number, from: b.status, to: status,
+      })),
+      message: 'Nothing was changed. Send the same request with dryRun:false to apply it.',
+    }
+  }
+
+  await ctx.supabaseAdmin.from('books')
+    .update({ status, notes: reason, modified_by: user.email }).in('idx', idxs)
+
+  // Lost or void means the unsold tickets leave the draw — they cannot be sold
+  // and must not be drawn. Sold ones are left alone: somebody paid for those.
+  if (status === 'Lost' || status === 'Void') {
+    await ctx.supabaseAdmin.from('tickets')
+      .update({ status: 'Void', notes: `Book ${status.toLowerCase()}: ${reason}`, recorded_by: user.email })
+      .in('book_idx', idxs).in('status', ['Available', 'Reserved'])
+  }
+
+  await ctx.supabaseAdmin.from('book_history').insert(
+    (books ?? []).map((b: { idx: number; held_by_agent: string | null }) => ({
+      book_idx: b.idx, from_agent: b.held_by_agent, action: status.toLowerCase(),
+      by_user: user.email, note: reason,
+    })))
+
+  await audit(ctx, 'SET_BOOK_STATUS', { count: idxs.length, status, reason }, user.email)
+  return { changed: idxs.length, status, books: (books ?? []).map((b: { number: string }) => b.number) }
+}
+
+/**
+ * Where a book has been, and why.
+ *
+ * This existed as a table from the beginning and was never readable from
+ * anywhere — every movement recorded, none of it ever shown. Which is the worse
+ * half to be missing: the record was being kept for exactly the moment somebody
+ * asks "who had this book in March", and until now the only way to answer was
+ * to open the spreadsheet.
+ */
+export async function bookHistory(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+  const bookNumber = String(p.bookNumber ?? '').trim()
+  if (!bookNumber) throw new ApiError('MISSING_FIELD', 'Which book?')
+
+  const { data: book } = await ctx.supabaseAdmin
+    .from('books').select('idx,number,status,held_by_agent').eq('number', bookNumber).maybeSingle()
+  if (!book) throw new ApiError('BOOK_NOT_FOUND', `Book ${bookNumber} does not exist.`, null, 404)
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from('book_history').select('*').eq('book_idx', book.idx).order('at')
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  // Agent ids are not what anybody wants to read in a history.
+  const ids = [...new Set((data ?? []).flatMap((h: { from_agent: string; to_agent: string }) =>
+    [h.from_agent, h.to_agent].filter(Boolean)))]
+  const { data: agents } = ids.length
+    ? await ctx.supabaseAdmin.from('agents').select('agent_id,name').in('agent_id', ids)
+    : { data: [] }
+  const names = new Map((agents ?? []).map((a: { agent_id: string; name: string }) => [a.agent_id, a.name]))
+
+  return {
+    book: { number: book.number, status: book.status },
+    history: (data ?? []).map((h: Record<string, unknown>) => ({
+      at: h.at,
+      action: h.action,
+      from: h.from_agent ? (names.get(String(h.from_agent)) ?? h.from_agent) : null,
+      to: h.to_agent ? (names.get(String(h.to_agent)) ?? h.to_agent) : null,
+      by: h.by_user,
+      note: h.note || '',
+    })),
+  }
 }
