@@ -268,6 +268,16 @@ function requireUser(idToken, allowedRoles, needSuper, action) {
   // list must deny everyone who is not an admin -- short-circuiting on length
   // would skip the check and let a view-only account reach every admin action.
   if (!isActionAllowed_(action || '', { roles: allowedRoles, sup: needSuper }, user)) {
+    // Two different refusals, because they need two different actions from the
+    // person reading them. "Not switched on" sends an organiser to the Access
+    // screen to turn it on — which is right for an ordinary permission and
+    // actively misleading for a super-admin-only one, where no such switch
+    // exists or ever can. Sending somebody to look for a control that is not
+    // there is worse than telling them plainly that it is not theirs.
+    if (needSuper) {
+      throw new ApiError('SUPER_ADMIN_ONLY',
+        'Only the super admin can do this. It cannot be switched on for anybody else.');
+    }
     throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.');
   }
 
