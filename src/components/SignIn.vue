@@ -14,9 +14,10 @@ const props = defineProps({
   phase: String,          // 'loading' | 'setup' | 'signin' | 'error'
   message: String,
   needsClientId: Boolean,
-  savedUrl: String
+  savedUrl: String,
+  supabase: Boolean       // sign in through Supabase Auth rather than GIS
 })
-const emit = defineEmits(['connect', 'reset', 'retry'])
+const emit = defineEmits(['connect', 'reset', 'retry', 'signin'])
 
 const url = ref(props.savedUrl || '')
 const cid = ref('')
@@ -29,6 +30,7 @@ function connect() {
 // The Google button is drawn by Google's script into this element, so it has to
 // exist in the DOM before we ask for it.
 watch(() => props.phase, async p => {
+  if (props.supabase) return
   if (p === 'signin' || p === 'waiting') {
     await nextTick()
     window.__renderGoogleButton?.(gsiTarget.value)
@@ -36,6 +38,7 @@ watch(() => props.phase, async p => {
 }, { immediate: true })
 
 onMounted(async () => {
+  if (props.supabase) return
   if (props.phase === 'signin') {
     await nextTick()
     window.__renderGoogleButton?.(gsiTarget.value)
@@ -91,8 +94,17 @@ onMounted(async () => {
       <!-- sign in -->
       <div v-else-if="phase === 'signin'" class="pad">
         <p class="muted small">Sign in with the Google account the organiser approved.</p>
-        <div ref="gsiTarget" class="gsi"></div>
-        <button class="btn sm ghost mt" @click="emit('reset')">Use a different link</button>
+        <!-- Supabase Auth runs the Google flow itself, so this is an ordinary
+             button that hands off and comes back, not a widget Google draws. -->
+        <div v-if="supabase" class="gsi">
+          <button class="btn primary block lg" @click="emit('signin')">
+            Continue with Google
+          </button>
+        </div>
+        <div v-else ref="gsiTarget" class="gsi"></div>
+        <button v-if="!supabase" class="btn sm ghost mt" @click="emit('reset')">
+          Use a different link
+        </button>
       </div>
 
       <!-- something went wrong -->

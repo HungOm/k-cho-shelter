@@ -49,6 +49,14 @@ async function load({ url = '', stored = null, buildDefault = undefined, storage
     export function isSignedIn() { return globalThis.__signedIn ?? false }
   `)
 
+  // Reads that bypass the function entirely. Stubbed like the two transports,
+  // so this file keeps testing the CHOICE rather than the query: which of the
+  // three answered is the whole question here.
+  writeFileSync(join(dir, 'lib', 'supabaseReads.js'), `
+    export const DIRECT_READS = new Set(['read_snapshot', 'read_delta', 'list_books', 'list_agents'])
+    export function directRead(action) { globalThis.__calls.push(['direct', action]); return Promise.resolve('PG') }
+  `)
+
   // The real file, transpiled so import.meta.env can be replaced the way Vite
   // does it at build time.
   execFileSync(join(ROOT, 'node_modules/esbuild/bin/esbuild'),

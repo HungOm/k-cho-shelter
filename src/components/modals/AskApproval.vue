@@ -44,10 +44,6 @@ async function ask() {
       </div>
     </template>
 
-<style scoped>
-.stake { font-size: 1.25rem; font-weight: 800; margin-bottom: 4px; }
-</style>
-
     <template v-else>
       <div class="note warn">
         <div v-if="request.detail?.voidsTickets" class="stake">
@@ -74,3 +70,7 @@ async function ask() {
     </template>
   </Sheet>
 </template>
+
+<style scoped>
+.stake { font-size: 1.25rem; font-weight: 800; margin-bottom: 4px; }
+</style>
