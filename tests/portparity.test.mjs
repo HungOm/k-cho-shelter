@@ -56,9 +56,6 @@ const NOT_PORTED = new Map([
   // it, so a pre-flight before sign-in could only ever report a working backend
   // as broken. The Supabase client does not ping.
   ['ping', 'no unauthenticated path through an auth:user function'],
-  ['roll_check_in', 'deadline feature, Apps Script only so far'],
-  ['set_final_deadline', 'deadline feature, Apps Script only so far'],
-  ['deadline_status', 'deadline feature, Apps Script only so far'],
 ])
 
 console.log('every Apps Script action is either ported or listed as not ported')

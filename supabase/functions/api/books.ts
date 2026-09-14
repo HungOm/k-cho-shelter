@@ -13,6 +13,7 @@
  * ticket-to-buyer link the draw depends on.
  */
 import { ApiError, type AppUser } from './gate.ts'
+import { configDate, defaultDueDate } from './deadlines.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -100,10 +101,26 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
     )
   }
 
-  const due = p.dueDate ? new Date(String(p.dueDate)) : null
-  const dueAt = due && !isNaN(due.getTime())
-    ? due.toISOString()
-    : new Date(Date.now() + 30 * 864e5).toISOString()
+  // A due date is a whole day in the raffle's own calendar, never an instant:
+  // the column is a date, and sending a timestamp lets Postgres truncate it in
+  // UTC, landing a day early for anyone west of here.
+  //
+  // The default follows the deadline rules: the shared check-in if it is still
+  // ahead, else the final deadline if that is, else the plain due-days window.
+  // A book handed out today should come back when everything else does, not on
+  // its own private schedule.
+  const dueAt = await defaultDueDate(ctx, p.dueDate)
+
+  const finalDeadline = await configDate(ctx, 'FINAL_DEADLINE')
+  if (finalDeadline && dueAt > finalDeadline) {
+    throw new ApiError(
+      'DUE_AFTER_FINAL',
+      `These books would be due back on ${dueAt}, after the final deadline of ` +
+      `${finalDeadline}. Everything has to be back by then. Give them an earlier date, ` +
+      'or move the final deadline first.',
+      { due: dueAt, finalDeadline },
+    )
+  }
 
   const { error } = await ctx.supabaseAdmin
     .from('books')

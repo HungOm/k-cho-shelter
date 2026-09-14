@@ -201,8 +201,15 @@ select
   coalesce(b.amount_paid,0) as counted_collected,
   coalesce(b.declared_sold,0) - r.recorded_sold as variance_sold,
   coalesce(b.amount_due,0) - r.recorded_amount as variance_amount,
-  case when b.status = 'Out' and b.due_at is not null and b.due_at < now()
-       then extract(day from now() - b.due_at)::int else 0 end as days_overdue
+  -- Whole days, from a date. Instant arithmetic made a book due today overdue
+  -- from 8am, which is not something you can defend to the person being chased.
+  case when b.status = 'Out' and b.due_at is not null and b.due_at < current_date
+       then (current_date - b.due_at)::int else 0 end as days_overdue,
+  -- Past the hard deadline: not merely late for a checkpoint, late for the raffle.
+  (b.status = 'Out' and (select nullif(value,'') from config where key = 'FINAL_DEADLINE') is not null
+   and b.due_at is not null
+   and (select nullif(value,'')::date from config where key = 'FINAL_DEADLINE') < current_date)
+    as past_final
 from books b
 left join agents a on a.agent_id = b.held_by_agent
 left join lateral (
@@ -292,3 +299,20 @@ grant select on config to authenticated;
 -- which is what keeps the masking from being optional.
 revoke all on tickets, books, agents, config from authenticated;
 grant select on tickets_readable, book_ledger, agents_readable, config_readable to authenticated;
+
+
+-- ============ THE SERVER'S CLOCK ============
+
+/*
+ * For a client reading rows directly rather than through the edge function.
+ *
+ * PostgREST hands back no clock of its own, which leaves a direct reader taking
+ * max(modified_at) as its next delta cursor — sound, except when nothing has
+ * changed yet and there is no max to take. This gives it one authoritative
+ * instant, so "nothing since" is answerable on an empty result and two clients
+ * never disagree about what time it is.
+ */
+create or replace function server_now() returns timestamptz
+  language sql stable as $$ select now() $$;
+
+grant execute on function server_now() to authenticated;

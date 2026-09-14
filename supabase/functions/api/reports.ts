@@ -13,6 +13,7 @@
  * report below inherits it rather than re-deciding it.
  */
 import { ApiError, type AppUser } from './gate.ts'
+import { configDate, today } from './deadlines.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -78,11 +79,25 @@ export async function reportOverdue(_p: Record<string, unknown>, _u: AppUser, ct
     : { data: [] }
   const phones = new Map((agents ?? []).map((a: { agent_id: string; phone: string }) => [a.agent_id, a.phone]))
 
+  // Both dates travel with the list. An overdue book means something different
+  // before and after the wall: before it, late for a checkpoint and worth a
+  // telephone call; after it, late for the raffle itself.
+  const checkInDate = await configDate(ctx, 'CHECK_IN_DATE')
+  const finalDeadline = await configDate(ctx, 'FINAL_DEADLINE')
+
+  const books = (data ?? []).map((r: Record<string, unknown>) => ({
+    ...r, phone: phones.get(String(r.held_by_agent)) ?? '',
+  }))
+
   return {
-    books: (data ?? []).map((r: Record<string, unknown>) => ({
-      ...r, phone: phones.get(String(r.held_by_agent)) ?? '',
-    })),
-    count: data?.length ?? 0,
+    books,
+    count: books.length,
+    checkInDate,
+    finalDeadline,
+    // Raffle-wide, not per book: the wall is one date for everybody, so within
+    // any one report this is all of them or none.
+    pastFinal: !!finalDeadline && finalDeadline < today(),
+    pastFinalCount: books.filter((b: Record<string, unknown>) => b.past_final).length,
   }
 }
 
@@ -158,10 +173,25 @@ export async function reportDrawReady(_p: Record<string, unknown>, _u: AppUser, 
       why: 'Neither sold nor available — decide before the draw.' })
   }
 
+  // Drawing before the wall means drawing from books that are still legitimately
+  // out. Those sellers have not done anything wrong — they have until the final
+  // deadline — so the raffle is not ready, however tidy the rest of it looks.
+  const finalDeadline = await configDate(ctx, 'FINAL_DEADLINE')
+  const now = today()
+  if (finalDeadline && finalDeadline >= now) {
+    problems.push({
+      what: 'the final deadline has not passed',
+      count: 0,
+      why: `Books are due back by ${finalDeadline}. Sellers still holding paper are not ` +
+           'late, so drawing now would draw from books nobody has counted.',
+    })
+  }
+
   return {
     ready: problems.length === 0,
     sold, active, reserved, missingContact, unsettledBooks: unsettled,
     outstanding, currency: await currency(ctx),
+    finalDeadline, checkInDate: await configDate(ctx, 'CHECK_IN_DATE'), today: now,
     problems,
   }
 }

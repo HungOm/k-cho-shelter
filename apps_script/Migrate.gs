@@ -114,6 +114,21 @@ function supaCount_(cfg, table) {
   return parseInt(String(range).split('/')[1], 10) || 0;
 }
 
+/**
+ * A whole LOCAL day as 'YYYY-MM-DD', or null.
+ *
+ * Due dates are days, not instants, and the column on the other side is a date.
+ * Sending a full timestamp would let Postgres truncate it in UTC, so a date the
+ * Sheet holds as local midnight would land a day early — one disputed overdue
+ * book, and nobody able to explain it.
+ */
+function day_(v) {
+  if (!v) return null;
+  var d = (v instanceof Date) ? v : new Date(v);
+  if (isNaN(d.getTime())) return null;
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
 /** ISO, or null. Sheets hands back Date objects and blank strings. */
 function iso_(v) {
   if (!v) return null;
@@ -254,7 +269,7 @@ function migrate_(dryRun, everything) {
       status: String(b.Status || 'Unassigned'),
       held_by_agent: b.Held_By_Agent ? String(b.Held_By_Agent).trim() : null,
       issued_at: iso_(b.Issued_Date),
-      due_at: iso_(b.Due_Date),
+      due_at: day_(b.Due_Date),
       declared_sold: numOrNull_(b.Declared_Sold),
       amount_due: numOrNull_(b.Amount_Due),
       amount_paid: numOrNull_(b.Amount_Paid),
