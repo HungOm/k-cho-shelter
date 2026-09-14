@@ -227,3 +227,348 @@ export async function setPermission(p: Record<string, unknown>, user: AppUser, c
   await audit(ctx, 'SET_PERMISSION', { action, role, allowed: !!p.allowed }, user.email)
   return { action, role, allowed: !!p.allowed }
 }
+
+// ============ HOW MANY TICKETS ARE IN PLAY ============
+
+/**
+ * Move the line between tickets that exist and tickets that are in play.
+ *
+ * The raffle prints its ceiling once — twenty thousand numbered stubs — and
+ * releases them in phases. Only what is in play is fetched, sold, or drawn, so
+ * this one number decides how much of the raffle is live.
+ *
+ * PULLING THE LINE BACK IS THE DANGEROUS DIRECTION and most of this function is
+ * about refusing to do it carelessly. A ticket above the line is not deleted,
+ * it is hidden — so holding back a ticket somebody has already paid for does
+ * not undo the sale, it conceals it, and the buyer turns up on draw day holding
+ * a number the system says is not in the raffle.
+ */
+export async function setActiveTickets(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  requireSuperAdmin(user, 'Releasing or holding back tickets')
+
+  const { data: cfgRows } = await ctx.supabaseAdmin.from('config').select('key,value')
+  const cfg: Record<string, string> = {}
+  for (const r of cfgRows ?? []) cfg[String(r.key)] = String(r.value ?? '')
+
+  const n = (k: string, d: number) => parseInt(cfg[k] ?? '', 10) || d
+  const generated = n('TOTAL_TICKETS', 0)
+  const per = n('TICKETS_PER_BOOK', 10)
+  const activeRaw = n('ACTIVE_TICKETS', 0)
+  const current = activeRaw <= 0 || activeRaw > generated ? generated : activeRaw
+
+  const target = parseInt(String(p.activeTickets ?? ''), 10)
+  if (isNaN(target) || target < 1) {
+    throw new ApiError('BAD_REQUEST', 'activeTickets must be a whole number of at least 1.')
+  }
+  if (target === current) {
+    throw new ApiError('NO_CHANGE', `${current} tickets are already in play.`)
+  }
+  if (target > generated) {
+    throw new ApiError(
+      'NOT_GENERATED',
+      `Only ${generated} tickets have been created, so ${target} cannot be put into play.`,
+      { generated, requested: target },
+    )
+  }
+  // A book is one physical object. Half a book in play would mean a seller
+  // holding paper where some stubs record a sale and some refuse.
+  if (target % per !== 0 && target !== generated) {
+    throw new ApiError(
+      'PARTIAL_BOOK',
+      `${target} is not a whole number of books of ${per}. Choose a multiple of ${per} ` +
+      'so no book is half in play.',
+    )
+  }
+
+  if (target < current) {
+    // Anything sold, donated or held above the new line.
+    const { data: spoken } = await ctx.supabaseAdmin
+      .from('tickets').select('number,status')
+      .gt('idx', target).lte('idx', current)
+      .in('status', ['Sold', 'Donated', 'Reserved'])
+      .order('idx').limit(6)
+
+    if (spoken?.length) {
+      const examples = spoken.map((t: { number: string; status: string }) =>
+        `${t.number} (${String(t.status).toLowerCase()})`)
+      throw new ApiError(
+        'TICKETS_IN_USE',
+        `Tickets above ${target} are already spoken for — ${examples.join(', ')}. ` +
+        'Holding them back would hide them rather than undo them, so it is refused.',
+        { examples },
+      )
+    }
+
+    // And any book above the line that has left the office.
+    const { data: books } = await ctx.supabaseAdmin
+      .from('books').select('number,status')
+      .gt('idx', Math.floor(target / per))
+      .lte('idx', Math.ceil(current / per))
+      .neq('status', 'Unassigned')
+      .order('idx').limit(6)
+
+    if (books?.length) {
+      const examples = books.map((b: { number: string; status: string }) =>
+        `${b.number} (${String(b.status).toLowerCase()})`)
+      throw new ApiError(
+        'BOOKS_IN_USE',
+        `Books above ${target} are out or already counted — ${examples.join(', ')}. ` +
+        'Take them back before holding those tickets back.',
+        { examples },
+      )
+    }
+  }
+
+  const { error } = await ctx.supabaseAdmin
+    .from('config').update({ value: String(target) }).eq('key', 'ACTIVE_TICKETS')
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SET_ACTIVE_TICKETS',
+    details: { from: current, to: target, generated }, email: user.email,
+  })
+
+  return {
+    from: current, to: target, generated,
+    heldBack: generated - target,
+    activeBooks: Math.ceil(target / per),
+    released: target > current ? target - current : 0,
+    pulledBack: target < current ? current - target : 0,
+  }
+}
+
+/**
+ * The paper trail for handing books over: what went out, to whom, and by when.
+ * A read, so it needs no guards of its own beyond the registry's.
+ */
+export async function handoverReceipt(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+  const agentId = String(p.agentId ?? '').trim()
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller?')
+
+  const { data: agent } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name,phone,zone').eq('agent_id', agentId).maybeSingle()
+  if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${agentId}".`, null, 404)
+
+  const { data: books } = await ctx.supabaseAdmin
+    .from('books').select('number,first_ticket,last_ticket,status,issued_at,due_at')
+    .eq('held_by_agent', agentId).eq('status', 'Out').order('idx')
+
+  const { data: cfgRows } = await ctx.supabaseAdmin
+    .from('config').select('key,value').in('key', ['TICKET_PRICE', 'CURRENCY', 'EVENT_NAME', 'ORG_NAME'])
+  const cfg: Record<string, string> = {}
+  for (const r of cfgRows ?? []) cfg[String(r.key)] = String(r.value ?? '')
+
+  const price = Number(cfg.TICKET_PRICE ?? 10)
+  const { data: counted } = await ctx.supabaseAdmin
+    .from('book_ledger').select('number,counted_sold').eq('held_by_agent', agentId)
+  const perBook = new Map((counted ?? []).map((b: { number: string; counted_sold: number }) =>
+    [b.number, Number(b.counted_sold ?? 0)]))
+
+  const list = (books ?? []).map((b: Record<string, unknown>) => ({
+    book: b.number,
+    firstTicket: b.first_ticket,
+    lastTicket: b.last_ticket,
+    issued: b.issued_at,
+    due: b.due_at,
+    soldSoFar: perBook.get(String(b.number)) ?? 0,
+  }))
+
+  return {
+    agent: { id: agent.agent_id, name: agent.name, phone: agent.phone, zone: agent.zone },
+    books: list,
+    bookCount: list.length,
+    ticketPrice: price,
+    currency: cfg.CURRENCY ?? 'RM',
+    eventName: cfg.EVENT_NAME ?? '',
+    orgName: cfg.ORG_NAME ?? '',
+    issuedAt: new Date().toISOString(),
+  }
+}
+
+/**
+ * Add more tickets to a running raffle.
+ *
+ * APPEND ONLY, and the refusals are the substance. The arithmetic that makes a
+ * ticket cost zero lookups is that ticket N has idx N — so tickets can be added
+ * past the end and never inserted or renumbered.
+ *
+ * The dangerous mistake here is not asking for too many on purpose. It is a
+ * slipped digit turning 10,000 into 100,000, appending ninety thousand rows
+ * that cannot be taken back, because shrinking would delete tickets that may
+ * already be sold. Hence a planned ceiling checked before anything is written.
+ */
+export async function expandTickets(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  requireSuperAdmin(user, 'Adding more tickets to a running raffle')
+
+  const { data: cfgRows } = await ctx.supabaseAdmin.from('config').select('key,value')
+  const cfg: Record<string, string> = {}
+  for (const r of cfgRows ?? []) cfg[String(r.key)] = String(r.value ?? '')
+  const n = (k: string, d: number) => parseInt(cfg[k] ?? '', 10) || d
+
+  const current = n('TOTAL_TICKETS', 0)
+  const per = n('TICKETS_PER_BOOK', 10)
+  const ceiling = n('TICKET_CEILING', 0)
+  const target = parseInt(String(p.totalTickets ?? ''), 10)
+
+  if (isNaN(target)) throw new ApiError('BAD_REQUEST', 'totalTickets must be a whole number.')
+  if (target < current) {
+    throw new ApiError(
+      'CANNOT_SHRINK',
+      `The raffle has ${current} tickets and cannot be reduced to ${target}. Every ticket ` +
+      `above ${target} would stop existing, including ones already sold, and nothing would ` +
+      'report an error. Tickets can only be added.',
+    )
+  }
+  if (target === current) {
+    throw new ApiError('NO_CHANGE', `The raffle already has ${current} tickets.`)
+  }
+  if (ceiling > 0 && target > ceiling) {
+    throw new ApiError(
+      'ABOVE_CEILING',
+      `This raffle is planned to reach ${ceiling} tickets and you have asked for ${target}. ` +
+      'If that is really the intention, raise the ceiling first. Tickets cannot be taken ' +
+      'back once released, so the ceiling is checked before anything is written.',
+      { ceiling, requested: target, current },
+    )
+  }
+  if (target > 200000) {
+    throw new ApiError('TOO_MANY', 'The most this system holds is 200000 tickets.')
+  }
+  if (current % per !== 0) {
+    throw new ApiError(
+      'PARTIAL_BOOK',
+      `The last book is not full: ${current} tickets does not divide into books of ${per}. ` +
+      'Growing would have to rewrite that book rather than add to the end, so it is refused.',
+    )
+  }
+
+  // The same drift check the Sheet does, asked of the database: if the rows and
+  // the settings disagree, appending puts new tickets on the wrong numbers.
+  const countOf = async (table: string) => {
+    const { count } = await ctx.supabaseAdmin.from(table).select('idx', { count: 'exact', head: true })
+    return count ?? 0
+  }
+  const haveTickets = await countOf('tickets')
+  const haveBooks = await countOf('books')
+  const currentBooks = Math.ceil(current / per)
+  if (haveTickets !== current || haveBooks !== currentBooks) {
+    throw new ApiError(
+      'SCHEMA_DRIFT',
+      `The settings say ${current} tickets in ${currentBooks} books, but the database holds ` +
+      `${haveTickets} tickets and ${haveBooks} books. Adding to the end would put new tickets ` +
+      'on the wrong numbers. Sort this out before growing the raffle.',
+    )
+  }
+
+  const prefix = cfg.TICKET_PREFIX ?? ''
+  const digits = n('TICKET_DIGITS', 5)
+  const start = n('TICKET_START', 1)
+  const bookPrefix = cfg.BOOK_PREFIX ?? 'Book-'
+  const bookDigits = n('BOOK_DIGITS', 3)
+  const pad = (v: number, w: number) => String(v).padStart(w, '0')
+
+  // Numbering has to still fit. Widening the padding later would renumber every
+  // ticket already printed, so this raffle simply cannot grow that far.
+  if (String(start + target - 1).length > digits) {
+    throw new ApiError(
+      'NUMBERING_TOO_SMALL',
+      `Ticket numbers are ${digits} digits, which cannot reach ${start + target - 1}. ` +
+      'The padding cannot be widened now — that would renumber every ticket already ' +
+      'printed — so this raffle cannot grow that far.',
+    )
+  }
+
+  const newBooks = Math.ceil(target / per)
+  const addedTickets = target - current
+  const addedBooks = newBooks - currentBooks
+
+  // A preview by default, like every other wide operation here.
+  const dryRun = p.dryRun === undefined ? true : !!p.dryRun
+  if (dryRun) {
+    return {
+      dryRun: true, from: current, to: target,
+      addedTickets, addedBooks,
+      firstNewTicket: prefix + pad(start + current, digits),
+      lastNewTicket: prefix + pad(start + target - 1, digits),
+      message: 'Nothing was written. Send the same request with dryRun:false to apply it.',
+    }
+  }
+
+  // Books first: a ticket references its book.
+  const books = []
+  for (let b = currentBooks + 1; b <= newBooks; b++) {
+    books.push({
+      idx: b, number: bookPrefix + pad(b, bookDigits),
+      first_ticket: prefix + pad(start + (b - 1) * per, digits),
+      last_ticket: prefix + pad(start + b * per - 1, digits),
+      status: 'Unassigned', modified_by: user.email,
+    })
+  }
+  for (let i = 0; i < books.length; i += 500) {
+    const { error } = await ctx.supabaseAdmin.from('books').insert(books.slice(i, i + 500))
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
+  }
+
+  for (let from = current + 1; from <= target; from += 500) {
+    const batch = []
+    for (let i = from; i < Math.min(from + 500, target + 1); i++) {
+      batch.push({
+        idx: i, number: prefix + pad(start + i - 1, digits),
+        book_idx: Math.ceil(i / per), status: 'Available',
+        version: 1, recorded_by: user.email,
+      })
+    }
+    const { error } = await ctx.supabaseAdmin.from('tickets').insert(batch)
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
+  }
+
+  await ctx.supabaseAdmin.from('config').update({ value: String(target) }).eq('key', 'TOTAL_TICKETS')
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'EXPAND_TICKETS',
+    details: { from: current, to: target, addedBooks }, email: user.email,
+  })
+
+  // Deliberately NOT put into play. Creating tickets and releasing them are two
+  // decisions, and merging them would release ninety thousand tickets on a
+  // slipped digit rather than merely creating them.
+  return {
+    from: current, to: target, addedTickets, addedBooks,
+    firstNewTicket: prefix + pad(start + current, digits),
+    lastNewTicket: prefix + pad(start + target - 1, digits),
+    note: 'Created but not yet in play. Use "tickets in play" to release them.',
+  }
+}
+
+/** The planned size of this raffle — the guard rail expand_tickets checks. */
+export async function setTicketCeiling(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  requireSuperAdmin(user, 'Changing the planned size of the raffle')
+
+  const target = parseInt(String(p.ticketCeiling ?? ''), 10)
+  if (isNaN(target) || target < 1) {
+    throw new ApiError('BAD_REQUEST', 'ticketCeiling must be a whole number of at least 1.')
+  }
+
+  const { data: row } = await ctx.supabaseAdmin
+    .from('config').select('value').eq('key', 'TOTAL_TICKETS').maybeSingle()
+  const generated = parseInt(String(row?.value ?? '0'), 10) || 0
+
+  // A ceiling below what already exists describes a raffle that is over its own
+  // limit, which would make every later refusal read as nonsense.
+  if (target < generated) {
+    throw new ApiError(
+      'BELOW_GENERATED',
+      `${generated} tickets already exist, so the planned size cannot be ${target}.`,
+      { generated, requested: target },
+    )
+  }
+
+  const { error } = await ctx.supabaseAdmin
+    .from('config').upsert({ key: 'TICKET_CEILING', value: String(target) }, { onConflict: 'key' })
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SET_TICKET_CEILING', details: { to: target, generated }, email: user.email,
+  })
+  return { ticketCeiling: target, generated }
+}

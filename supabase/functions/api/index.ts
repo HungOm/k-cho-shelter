@@ -90,6 +90,12 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   list_permissions: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: people.listPermissions },
   set_permission: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setPermission },
 
+  // --- how much of the raffle is live ---
+  set_active_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setActiveTickets },
+  handover_receipt: { roles: ADMIN_ONLY, kind: 'report', fn: people.handoverReceipt },
+  expand_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.expandTickets },
+  set_ticket_ceiling: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setTicketCeiling },
+
   // --- reports ---
   report_outstanding: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportOutstanding },
   report_overdue: { roles: ['recorder'], kind: 'report', fn: reports.reportOverdue },
@@ -214,12 +220,21 @@ async function readSnapshot(p: Record<string, unknown>, user: AppUser, ctx: Ctx)
   // The cursor is the last idx seen. It survives rows being inserted while
   // paging, which offset does not — with offset, a row added behind you shifts
   // everything and you silently see one twice or miss one entirely.
-  const after = int(p.cursor, 0)
+  // The client pages by OFFSET, and that is the contract both backends honour.
+  // Here it costs nothing to honour it as a seek rather than a scan: ticket idx
+  // is the ticket's position, dense from 1, and rows are generated once and
+  // then only ever updated — never inserted between, never deleted. So "skip
+  // the first N" and "the rows after idx N" select the same rows, and the
+  // second is a primary-key lookup instead of walking N rows and discarding
+  // them. Measured on this project: ~62ms at a depth where offset cost ~280ms.
+  //
+  // `cursor` is still accepted, because paged.js speaks it.
+  const after = int(p.cursor, int(p.offset, 0))
   const holds = await agentBooks(user, ctx)
 
   let q = ctx.supabaseAdmin
     .from('tickets')
-    .select('idx,number,status,book_idx,buyer_name,buyer_phone,sold_by_agent,amount,sold_at,version,modified_at')
+    .select(WIRE_SELECT)
     .lte('idx', active)
     .order('idx')
     .limit(limit)
@@ -230,15 +245,20 @@ async function readSnapshot(p: Record<string, unknown>, user: AppUser, ctx: Ctx)
 
   const rows = data ?? []
   const last = rows.length ? Number(rows[rows.length - 1].idx) : after
+  const more = rows.length === limit && last < active
 
   return {
-    rows: rows.map((r: Record<string, unknown>) => mask(r, user, holds)),
+    fields: WIRE_FIELDS,
+    rows: rows.map((r: Record<string, unknown>) => toWire(mask(r, user, holds))),
+    offset: after,
     returned: rows.length,
     total: active,
+    generated: await generatedTickets(ctx),
     // Null rather than absent, so a client can tell "no more pages" from
     // "the server forgot to tell me".
-    nextCursor: rows.length === limit && last < active ? last : null,
-    hasMore: rows.length === limit && last < active,
+    nextCursor: more ? last : null,
+    hasMore: more,
+    version: String(last),
     serverTime: new Date().toISOString(),
   }
 }
@@ -253,15 +273,18 @@ async function readDelta(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const holds = await agentBooks(user, ctx)
   const { data, error } = await ctx.supabaseAdmin
     .from('tickets')
-    .select('number,status,book_idx,buyer_name,buyer_phone,sold_by_agent,amount,sold_at,version,modified_at')
+    .select(WIRE_SELECT)
     .gt('modified_at', since)
     .lte('idx', active)
     .order('modified_at')
     .limit(1000)
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
+  // Same shape as a snapshot page. A delta that spoke a different dialect would
+  // work on first load and quietly break every incremental refresh after it.
   return {
-    rows: (data ?? []).map((r: Record<string, unknown>) => mask(r, user, holds)),
+    fields: WIRE_FIELDS,
+    rows: (data ?? []).map((r: Record<string, unknown>) => toWire(mask(r, user, holds))),
     count: data?.length ?? 0,
     serverTime: new Date().toISOString(),
   }
@@ -407,6 +430,11 @@ async function activeTickets(ctx: Ctx): Promise<number> {
   return active <= 0 || active > total ? total : active
 }
 
+/** Every ticket that exists, including any held back from the raffle. */
+async function generatedTickets(ctx: Ctx): Promise<number> {
+  return num((await readConfig(ctx)).TOTAL_TICKETS, 0)
+}
+
 /**
  * A view-only account never sees a full phone number. Applied on the way out,
  * per request — the same rule as Tickets.gs, and for the same reason: it
@@ -444,6 +472,47 @@ async function agentBooks(user: AppUser, ctx: Ctx): Promise<Set<number> | null> 
  * reads and do nothing whatever for reads that come through this function. Any
  * narrowing the API path needs, the API path has to do itself.
  */
+/**
+ * THE TICKET WIRE CONTRACT, which both backends must satisfy exactly.
+ *
+ * A fields array plus rows as flat arrays, not objects. That is not a quirk of
+ * the Sheet — it is why a snapshot is affordable: twenty thousand ticket
+ * objects repeat all fifteen key names twenty thousand times, and the array
+ * form does not. The client indexes rows against `fields`, so the ORDER here is
+ * load-bearing and the names are the Sheet's, because the client's FIELD_MAP is
+ * keyed on them.
+ *
+ * This function previously returned masked row OBJECTS with Postgres column
+ * names, which the client could not read at all: it does fields.forEach on a
+ * fields array that was not there, and threw on the first page. Every gate and
+ * RLS test passed while the Supabase backend could not load a single ticket,
+ * because those tests check the gate and the database and neither drives the
+ * client. The lesson is the one that keeps recurring here: the thing that was
+ * tested and the thing that runs were not the same thing.
+ */
+const WIRE_FIELDS = [
+  'Ticket_Number', 'Status', 'Book_Number', 'Buyer_Name', 'Buyer_Phone',
+  'Buyer_Zone', 'Sold_By_Agent', 'Amount', 'Payment_Status', 'Sale_Date',
+  'Notes', 'Source', 'Version', 'Recorded_By', 'Modified_Date',
+]
+
+/** The columns to select so a row can be turned into the wire shape. */
+const WIRE_SELECT =
+  'idx,number,status,book_idx,books(number),buyer_name,buyer_phone,buyer_zone,' +
+  'sold_by_agent,amount,payment_status,sold_at,notes,source,version,recorded_by,modified_at'
+
+function toWire(r: Record<string, unknown>): unknown[] {
+  // The book NUMBER, never the index: the client keys the grid, search and
+  // "where is this ticket" by book number, and an integer there would render as
+  // "book 41" in one place and "Book-041" in another.
+  const book = (r.books ?? null) as { number?: string } | null
+  return [
+    r.number, r.status, book?.number ?? '', r.buyer_name, r.buyer_phone,
+    r.buyer_zone, r.sold_by_agent, r.amount, r.payment_status, r.sold_at,
+    r.notes, r.source, r.version, r.recorded_by, r.modified_at,
+  ]
+}
+
 function mask(row: Record<string, unknown>, user: AppUser, holds?: Set<number> | null) {
   if (user.role === 'viewer') {
     // Same shape as the Apps Script masker, deliberately: two backends that
