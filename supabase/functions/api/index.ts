@@ -252,7 +252,16 @@ async function decideApproval(p: Record<string, unknown>, user: AppUser, ctx: Ct
     (action, payload, asUser) => {
       const spec = REGISTRY[action]
       if (!spec) throw new ApiError('UNKNOWN_ACTION', `Unknown action: ${action}`, null, 404)
-      return spec.fn(payload, asUser, ctx)
+      // Marked as an APPROVED execution. A handler that refuses an organiser
+      // outright needs to know the difference between them asking directly and
+      // the owner having said yes — otherwise an approved request fails at the
+      // moment of approval, which is the worst possible time to discover it.
+      ;(ctx as unknown as { _viaApproval?: boolean })._viaApproval = true
+      try {
+        return spec.fn(payload, asUser, ctx)
+      } finally {
+        ;(ctx as unknown as { _viaApproval?: boolean })._viaApproval = false
+      }
     },
     (action) => REGISTRY[action],
     (ctx as unknown as { _overrides?: Record<string, Partial<Record<Role, boolean>>> })._overrides ?? {},

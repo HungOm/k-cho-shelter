@@ -158,13 +158,35 @@ export async function listUsers(_p: Record<string, unknown>, user: AppUser, ctx:
   }
 }
 
-export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
-  // Checked before anything is validated: an organiser who may not do this at
-  // all should be told that, not told which field they forgot.
-  requireSuperAdmin(user, 'Adding or changing who can sign in')
+/** Roles an organiser may ASK for. Organiser and owner are never requestable. */
+export const REQUESTABLE_BY_ADMIN = ['recorder', 'agent', 'viewer']
 
+export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const email = String(p.email ?? '').trim().toLowerCase()
   const role = String(p.role ?? 'viewer').toLowerCase() as Role
+
+  /*
+   * WHO MAY ASK WIDENED; WHO DECIDES DID NOT.
+   *
+   * An organiser may REQUEST a Helper, Seller or view-only account, and the
+   * owner approves it in the Approvals queue. They may not request an Organiser
+   * or an Owner at all — that stays a flat refusal, because an approvable
+   * request to create a peer is an escalation with a waiting period rather than
+   * an escalation prevented.
+   *
+   * The elevated check comes FIRST so it cannot be routed around: the router
+   * only offers the approval path for what approvalNeeded() describes, and that
+   * function is told the same rule. Two places agreeing is not the same as one
+   * place deciding, so this is the one that decides.
+   */
+  const elevated = role === 'admin' || role === 'superadmin'
+  if (elevated) {
+    requireSuperAdmin(user, 'Granting the organiser or owner role')
+  } else if (!(ctx as unknown as { _viaApproval?: boolean })._viaApproval) {
+    // Reached only when nobody approved it. The router turns an organiser's
+    // direct attempt into APPROVAL_REQUIRED before it gets here.
+    requireSuperAdmin(user, 'Adding or changing who can sign in')
+  }
 
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new ApiError('BAD_REQUEST', 'That does not look like an email address.')
@@ -178,6 +200,13 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
 
   const { data: existing } = await ctx.supabaseAdmin
     .from('app_users').select('email,role').eq('email', email).maybeSingle()
+
+  // Changing somebody who is ALREADY an organiser or owner is the owner's
+  // alone, approved or not — otherwise a request to "edit a Helper" could be
+  // pointed at an existing organiser and demote or rename them.
+  if (existing && (existing.role === 'admin' || existing.role === 'superadmin')) {
+    requireSuperAdmin(user, 'Changing an organiser or owner account')
+  }
 
   // The three that keep the top of the tree where it is.
   // WHO MAY SIGN IN, AND AS WHAT, IS THE SUPER ADMIN'S ALONE.

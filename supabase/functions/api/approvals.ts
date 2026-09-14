@@ -17,6 +17,7 @@
  * the person who asked owns it, the person who approved signed for it.
  */
 import { ApiError, isActionAllowed, resolveUser, type ActionSpec, type AppUser, type Role } from './gate.ts'
+import { REQUESTABLE_BY_ADMIN } from './people.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -72,6 +73,41 @@ export async function approvalNeeded(
       firstBook: String(payload.fromBook ?? ''), lastBook: String(payload.toBook ?? ''),
       text: `Put ${n} book${n === 1 ? '' : 's'} back on the shelf. The settlement figures ` +
         `already recorded against ${n === 1 ? 'it' : 'them'} are cleared.`,
+    }
+  }
+
+  if (action === 'upsert_user') {
+    const role = String(payload.role ?? 'viewer').toLowerCase()
+    const email = String(payload.email ?? '').trim().toLowerCase()
+
+    // Organiser and owner are NOT requestable. Returning null here sends the
+    // call on to the handler, which refuses it outright — an approvable request
+    // to create a peer is an escalation with a waiting period, not one
+    // prevented.
+    if (!REQUESTABLE_BY_ADMIN.includes(role)) return null
+    if (!email) return null
+
+    // And not pointed at somebody who is ALREADY an organiser or owner. A
+    // request reading "let them sign in as view-only" that in fact demotes a
+    // peer is the approval screen lying about the deed, and it would fail at
+    // the moment of approval anyway — which is the worst time to find out.
+    const { data: existing } = await ctx.supabaseAdmin
+      .from('app_users').select('role').eq('email', email).maybeSingle()
+    if (existing && (existing.role === 'admin' || existing.role === 'superadmin')) return null
+
+    const WORD: Record<string, string> = {
+      recorder: 'Helper', agent: 'Seller who signs in', viewer: 'view-only',
+    }
+    return {
+      kind: 'upsert_user',
+      email,
+      role,
+      // The sentence the owner reads, written HERE rather than in the browser.
+      // An approver shown a client-written summary is approving the client's
+      // description rather than the change, and the one thing an approval
+      // screen has to get right is that the words match the deed. The role is
+      // named explicitly because it is the part that actually matters.
+      text: `Let ${email} sign in as ${WORD[role] ?? role}.`,
     }
   }
 
