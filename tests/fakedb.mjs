@@ -237,6 +237,32 @@ export function fakeDb(seed = {}) {
         })
       }
       if (fn === 'server_now') return Promise.resolve({ data: new Date().toISOString(), error: null })
+
+      /*
+       * The plpgsql functions, stubbed to a plausible success.
+       *
+       * Their LOGIC is tested against real Postgres in supabase/test-functions.sh,
+       * which is the right place for it — a fake that reimplemented settlement
+       * would be testing the fake. What a stub does test is the TypeScript
+       * wrapper around them: that it passes the parameters, unwraps the result,
+       * and turns an embedded { error } into a thrown ApiError. That wrapper is
+       * real code on the live path and nothing else exercises it.
+       */
+      if (fn === 'settle_book') {
+        return Promise.resolve({
+          data: { book: args?.p_book_number, declaredSold: 0, amountDue: 0,
+                  amountPaid: args?.p_amount_paid ?? 0, variance: 0, unidentified: false },
+          error: null,
+        })
+      }
+      if (fn === 'sell_books') {
+        return Promise.resolve({ data: { sold: 0, amount: 0, skipped: [], books: [] }, error: null })
+      }
+      if (fn === 'bulk_record_sales') {
+        return Promise.resolve({ data: { recorded: 0, failed: [], amount: 0 }, error: null })
+      }
+      if (fn === 'active_books') return Promise.resolve({ data: 0, error: null })
+
       return Promise.resolve({ data: null, error: { message: `unknown function ${fn}` } })
     },
   }
