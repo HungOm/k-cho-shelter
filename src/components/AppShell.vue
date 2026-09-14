@@ -57,7 +57,7 @@ const roleWord = computed(() => {
   // Their actual authority comes from SUPER_ADMIN_EMAIL, outside the database,
   // and outranks every role here — so printing "Organiser" under their name
   // described a ceiling that does not exist.
-  if (state.user?.isSuperAdmin) return 'Super admin'
+  if (state.user?.isSuperAdmin) return 'Owner'
   return ROLE_WORDS[state.user?.role] || state.user?.role
 })
 

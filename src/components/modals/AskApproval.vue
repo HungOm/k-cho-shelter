@@ -31,13 +31,13 @@ async function ask() {
 </script>
 
 <template>
-  <Sheet title="This needs the organiser" @close="emit('close')">
+  <Sheet title="This needs the owner" @close="emit('close')">
     <template v-if="sent">
       <div class="center" style="padding:14px 0">
         <div style="font-size:2.6rem">📨</div>
         <h2>Asked</h2>
         <p class="muted">
-          The organiser has been asked. Nothing has changed yet — it happens only
+          The owner has been asked. Nothing has changed yet — it happens only
           when they say yes.
         </p>
         <p class="tiny muted">The request lapses if nobody answers within a day.</p>
@@ -53,7 +53,7 @@ async function ask() {
         <b>{{ request.summary }}</b>
       </div>
       <p>
-        Changes this big need two people. You can ask the organiser to approve it —
+        Changes this big need two people. You can ask the owner to approve it —
         they will see exactly the sentence above, and it only happens if they agree.
       </p>
       <p class="muted small">Nothing has been changed.</p>
@@ -64,7 +64,7 @@ async function ask() {
       <template v-else>
         <button class="btn" @click="emit('close')">Leave it</button>
         <button class="btn primary" :disabled="busy" @click="ask">
-          {{ busy ? 'Asking…' : 'Ask the organiser' }}
+          {{ busy ? 'Asking…' : 'Ask the owner' }}
         </button>
       </template>
     </template>
