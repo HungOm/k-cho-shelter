@@ -1,0 +1,12 @@
+# Supabase project configuration.
+project_id = "kcho-shelter"
+
+[functions.api]
+# Left at the default (true) deliberately.
+#
+# The function uses auth: 'user', so every caller already presents a valid
+# Supabase session and the platform check is free protection in front of our
+# own. It would only need disabling for auth: 'publishable' / 'secret' / 'none',
+# none of which this API uses — a request without a signed-in person has no
+# business reaching a raffle that holds several thousand people's phone numbers.
+verify_jwt = true
