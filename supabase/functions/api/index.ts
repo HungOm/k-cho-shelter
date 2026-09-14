@@ -66,8 +66,11 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
 
 type Ctx = {
   supabase: { from: (t: string) => any }
-  supabaseAdmin: { from: (t: string) => any }
-  user?: { email?: string } | null
+  supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any }
+  // The verified identity from the JWT. Named userClaims rather than user
+  // because it is what the token asserts, not a row we looked up — the row is
+  // the allowlist check below, and the two are deliberately separate.
+  userClaims?: { id: string; email?: string; role?: string } | null
 }
 type Handler = (payload: Record<string, unknown>, user: AppUser, ctx: Ctx) => Promise<unknown>
 
@@ -234,10 +237,28 @@ async function readAudit(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
 
 // ============ SHARED ============
 
+/**
+ * Config, cached for the life of a warm instance.
+ *
+ * Worth doing because of what the first timings showed: the round trip to the
+ * database is ~40ms, and a handler that reads config and then does its real
+ * query pays that twice for a table of a dozen rows that changes a few times a
+ * raffle. Halving the round trips is the difference between a search that feels
+ * instant and one that does not.
+ *
+ * Thirty seconds, not longer, because ACTIVE_TICKETS is in here — releasing
+ * more tickets has to take effect promptly, and the cost of being briefly stale
+ * is one refused sale that succeeds on retry, not a wrong number anywhere.
+ */
+let configCache: { at: number; value: Record<string, string> } | null = null
+const CONFIG_TTL_MS = 30_000
+
 async function readConfig(ctx: Ctx): Promise<Record<string, string>> {
+  if (configCache && Date.now() - configCache.at < CONFIG_TTL_MS) return configCache.value
   const { data } = await ctx.supabaseAdmin.from('config').select('key,value')
   const out: Record<string, string> = {}
   for (const r of data ?? []) out[r.key] = r.value
+  configCache = { at: Date.now(), value: out }
   return out
 }
 
@@ -284,7 +305,7 @@ export default {
       // The JWT is already verified by the time we get here; what it proves is
       // WHO is calling. Whether they may be here at all is the allowlist, which
       // is read fresh every request so revoking access takes effect at once.
-      const email = String(ctx.user?.email ?? '').trim().toLowerCase()
+      const email = String(ctx.userClaims?.email ?? '').trim().toLowerCase()
       if (!email) throw new ApiError('AUTH_REQUIRED', 'No signed-in user.', null, 401)
 
       const { data: row } = await ctx.supabaseAdmin
