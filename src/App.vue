@@ -47,6 +47,11 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ||
 const phase = ref('loading')       // loading | waiting | setup | signin | error | ready
 let silentTimer = null
 const errorMsg = ref('')
+// Refused is not the same as broken. A refusal needs a way to a DIFFERENT
+// account; a breakage needs another go at the same one. Offering both for both
+// is how somebody ends up pressing "Try again" at a wall.
+const refused = ref(false)
+const signedInAs = ref('')
 const clientId = ref('')
 const savedUrl = ref('')
 
@@ -101,6 +106,10 @@ async function reset() {
   try { localStorage.removeItem(LS.url); localStorage.removeItem(LS.cid) } catch {}
   await forgetCache()
   dropToken()
+  // Without this the Supabase session survives, so somebody refused for being
+  // off the list reloads straight back into the same refusal with no way out.
+  // A door that returns you to the room you were locked in is not a door.
+  if (isSupabase) await sbAuth.signOut()
   location.reload()
 }
 
@@ -293,6 +302,7 @@ async function bootSupabase() {
   if (!session?.access_token) { phase.value = 'signin'; return }
 
   configure({ idToken: session.access_token })
+  signedInAs.value = session.user?.email || ''
   return start()
 }
 
@@ -383,10 +393,15 @@ async function start() {
       return
     }
     phase.value = 'error'
+    refused.value = err.code === 'NOT_AUTHORIZED' || err.code === 'ACCOUNT_DISABLED'
+    // Name the account. Somebody with three Google accounts in one browser is
+    // told which one was refused, rather than being left to guess which of them
+    // Chrome picked — and that is most people who run a raffle from a phone.
+    const who = signedInAs.value ? `${signedInAs.value} ` : 'This Google account '
     errorMsg.value = err.code === 'NOT_AUTHORIZED'
-      ? 'This Google account is not on the list yet. Ask the organiser to add it.'
+      ? `${who}is not on the list yet. Ask the organiser to add it, then sign in again.`
       : err.code === 'ACCOUNT_DISABLED'
-        ? 'This account has been turned off.'
+        ? `${who}has been turned off. Ask the organiser if this is a mistake.`
         : err.message
   }
 }
@@ -419,6 +434,7 @@ function seeTickets(book) {
 <template>
   <SignIn v-if="phase !== 'ready'" :phase="phase" :message="errorMsg"
           :needs-client-id="!CLIENT_ID" :saved-url="savedUrl" :supabase="isSupabase"
+          :refused="refused"
           @connect="connect" @reset="reset" @retry="() => location.reload()"
           @signin="supabaseSignIn" />
 
