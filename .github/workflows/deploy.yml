@@ -33,7 +33,24 @@ jobs:
       - name: Run tests
         run: ./tests/run.sh
 
+      # Baked into the build so an ordinary volunteer opens the site and signs
+      # in — no setup link, no fragment to paste, nothing per device.
+      #
+      # The publishable key belongs here. It is the PUBLIC half of the pair and
+      # ships inside the bundle either way; what protects the data is row-level
+      # security in the database, for the signed-in person. The sb_secret_ key
+      # is the one that must never appear in a build, a repo or a browser.
+      #
+      # Read from repository VARIABLES rather than written here, so the values
+      # live in one place the organisation controls and this file carries none
+      # of them. Unset simply means the old per-device setup link still applies,
+      # so a missing variable degrades rather than breaks.
       - run: npm run build
+        env:
+          VITE_BACKEND: ${{ vars.VITE_BACKEND }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
