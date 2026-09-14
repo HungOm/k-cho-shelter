@@ -148,6 +148,33 @@ console.log('a seller carrying no books');
   eq(rows.length, 30, 'but can still see what is sold and what is free');
 }
 
+// ============ 4b. a seller linked to no seller record ============
+console.log('an agent account with no Agent_ID sees nothing, not everything');
+{
+  world();
+  // This is a real state: an organiser creates the sign-in before deciding
+  // which seller it belongs to. It used to skip the narrowing entirely, so the
+  // account with the LEAST claim to anybody's details got all of them.
+  const unlinked = { ...agentA, agentId: '' };
+  const rows = handleReadSnapshot({}, unlinked).rows;
+
+  eq(rows.length, 30, 'they can still see what is sold and what is free');
+  const leaked = rows.filter(r => col(r, 'Buyer_Phone') !== '');
+  eq(leaked.length, 0, 'and not one telephone number');
+  const named = rows.filter(r => col(r, 'Buyer_Name') !== '');
+  eq(named.length, 0, 'nor one buyer name');
+
+  // Fails closed on the delta path too, or one full load fixes it and every
+  // refresh afterwards leaks.
+  const d = handleReadDelta({ since: new Date(Date.now() - 86400000).toISOString() }, unlinked).rows;
+  eq(d.filter(r => col(r, 'Buyer_Phone') !== '').length, 0, 'the same on a refresh');
+
+  // null agentId, not just empty string — both reach this the same way.
+  const nullish = { ...agentA, agentId: null };
+  eq(handleReadSnapshot({}, nullish).rows.filter(r => col(r, 'Buyer_Phone') !== '').length, 0,
+     'and with a null Agent_ID');
+}
+
 // ============ 5. the book list ============
 console.log('a seller\'s book list is the books in their hands');
 {

@@ -73,7 +73,21 @@ function ticketToWireRaw_(t) {
  * masker that no book-level narrowing applies.
  */
 function agentBookSet_(user) {
-  if (!user || user.role !== ROLES.AGENT || !user.agentId) return null;
+  if (!user || user.role !== ROLES.AGENT) return null;
+
+  // A seller linked to no seller record sees NOTHING, not everything.
+  //
+  // This returned null when agentId was missing, and null is the masker's
+  // signal that no book-level narrowing applies — so an agent-role account with
+  // no Agent_ID got every buyer's name and telephone number, which is the exact
+  // thing the narrowing exists to prevent. The account is real: it is what an
+  // organiser creates before they have decided which seller it belongs to.
+  //
+  // Failing to an empty set is the only safe direction. Somebody who should see
+  // their books and sees none will say so within the hour; somebody who should
+  // see none and sees twenty thousand says nothing at all.
+  if (!user.agentId) return {};
+
   var books = readBooksRaw_();
   var set = {};
   for (var i = 0; i < books.length; i++) {
