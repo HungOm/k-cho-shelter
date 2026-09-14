@@ -483,7 +483,14 @@ async function generatedTickets(ctx: Ctx): Promise<number> {
  * must not cause twenty thousand lookups.
  */
 async function agentBooks(user: AppUser, ctx: Ctx): Promise<Set<number> | null> {
-  if (user.role !== 'agent' || !user.agentId) return null
+  if (user.role !== 'agent') return null
+
+  // A seller linked to no seller record sees NOTHING, not everything. Returning
+  // null here is the masker's signal that no narrowing applies, so an
+  // agent-role account with no agent_id was getting every buyer's name and
+  // phone number — the exact thing the narrowing exists to prevent, reached by
+  // leaving a field blank. Failing to an empty set is the only safe direction.
+  if (!user.agentId) return new Set()
   const { data } = await ctx.supabaseAdmin
     .from('books').select('idx').eq('held_by_agent', user.agentId)
   return new Set((data ?? []).map((b: { idx: number }) => b.idx))
