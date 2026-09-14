@@ -2,7 +2,7 @@
 /** Handing books to a seller, and the receipt that proves it. */
 import { ref, computed } from 'vue'
 import { state, api, toast, refresh } from '../../lib/store.js'
-import { money } from '../../lib/format.js'
+import { money, date } from '../../lib/format.js'
 import { inspectRange, bookNumber } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 import FreeRuns from '../ui/FreeRuns.vue'
@@ -16,11 +16,31 @@ const due = ref(defaultDue())
 const busy = ref(false)
 const blocked = ref(null)
 
+/**
+ * The shared check-in date, not a month from today.
+ *
+ * Somebody collecting books a fortnight after everybody else still reports on
+ * the same day as the rest of the team — that is the whole reason the date is
+ * shared, and counting thirty days from this particular handover would quietly
+ * undo it. The fallbacks match the server's: the final deadline if the check-in
+ * has passed and nobody has moved it yet, and only then the old rolling month.
+ */
 function defaultDue() {
+  const today = new Date().toISOString().slice(0, 10)
+  const checkIn = state.cfg?.checkInDate
+  if (checkIn && checkIn >= today) return checkIn
+
+  const last = state.cfg?.finalDeadline
+  if (last && last >= today) return last
+
   const d = new Date()
   d.setDate(d.getDate() + (state.cfg?.defaultDueDays || 30))
   return d.toISOString().slice(0, 10)
 }
+
+/** Whether the date in the box is still the one everybody else is on. */
+const isShared = computed(() =>
+  !!state.cfg?.checkInDate && due.value === state.cfg.checkInDate)
 
 // Resolved locally against books already loaded, so the answer appears as they
 // type rather than after a save they had to wait for.
@@ -119,7 +139,14 @@ async function issue() {
 
     <div class="field mt">
       <label for="id">Bring back by</label>
-      <input id="id" v-model="due" type="date">
+      <input id="id" v-model="due" type="date" :max="state.cfg?.finalDeadline || null">
+      <p v-if="isShared" class="hint">
+        The check-in date — the same day every seller reports by.
+      </p>
+      <p v-else-if="state.cfg?.checkInDate" class="hint warnish">
+        Everybody else reports by {{ date(state.cfg.checkInDate) }}. Giving these books a
+        different date takes them off that list.
+      </p>
     </div>
 
     <!-- the server refused: it names every blocked book, so show them all -->
@@ -136,3 +163,7 @@ async function issue() {
     </template>
   </Sheet>
 </template>
+
+<style scoped>
+.hint.warnish { color: var(--warn); }
+</style>
