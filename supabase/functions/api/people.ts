@@ -106,6 +106,10 @@ export async function listUsers(_p: Record<string, unknown>, user: AppUser, ctx:
 }
 
 export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  // Checked before anything is validated: an organiser who may not do this at
+  // all should be told that, not told which field they forgot.
+  requireSuperAdmin(user, 'Adding or changing who can sign in')
+
   const email = String(p.email ?? '').trim().toLowerCase()
   const role = String(p.role ?? 'viewer').toLowerCase() as Role
 
@@ -123,8 +127,16 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
     .from('app_users').select('email,role').eq('email', email).maybeSingle()
 
   // The three that keep the top of the tree where it is.
-  if (role === 'admin') requireSuperAdmin(user, 'Granting the admin role')
-  if (existing?.role === 'admin') requireSuperAdmin(user, 'Changing an admin account')
+  // WHO MAY SIGN IN, AND AS WHAT, IS THE SUPER ADMIN'S ALONE.
+  //
+  // An organiser who can hand out roles can hand one to themselves, or to a
+  // friendly account they then sign in as — which makes "only the super admin
+  // decides who is an organiser" a rule that lasts exactly as long as nobody
+  // tries. Organisers run the raffle; they do not decide who else runs it.
+  //
+  // Managing SELLERS is a different thing and stays with organisers: adding,
+  // banning and deactivating an agent is the daily work of running the raffle,
+  // and an agent record grants nobody any access to this system.
   if (isSuperAdminEmail(email, Deno.env)) requireSuperAdmin(user, 'Changing the super admin account')
 
   if (p.agentId) {
@@ -173,7 +185,12 @@ export async function setUserStatus(p: Record<string, unknown>, user: AppUser, c
   if (!existing) {
     throw new ApiError('USER_NOT_FOUND', `${email} is not on the access list.`, null, 404)
   }
-  if (existing.role === 'admin') requireSuperAdmin(user, 'Enabling or disabling an admin')
+  // An organiser may switch a SELLER's sign-in off — a lost phone at a Sunday
+  // service should not wait for the super admin to wake up. Anything above a
+  // seller is a privilege decision and goes to the super admin.
+  if (existing.role !== 'agent') {
+    requireSuperAdmin(user, 'Enabling or disabling anybody but a seller')
+  }
 
   const { error } = await ctx.supabaseAdmin
     .from('app_users').update({ active: !!p.active }).eq('email', email)

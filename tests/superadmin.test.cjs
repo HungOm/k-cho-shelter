@@ -152,13 +152,32 @@ console.log('upsert_user guards');
   eq(codeOf(() => handleUpsertUser({ email: SUPER, role: 'viewer' }, admin())),
     'SUPER_ADMIN_ONLY', 'admin cannot create a row for the super admin either');
 
-  // What an admin *should* still be able to do.
+  // An organiser may no longer hand out ANY role, not just the admin one.
+  //
+  // The old rule let an organiser mint a recorder or a viewer. That is one
+  // account away from a problem: an organiser creates an account, signs into it
+  // themselves, and the rule "only the super admin decides who is an organiser"
+  // has been walked around rather than broken. Running the raffle and deciding
+  // who else runs it are different jobs.
   world();
-  ok(handleUpsertUser({ email: 'new@x.com', role: 'recorder' }, admin()).created,
-    'admin can still add a recorder');
+  eq(codeOf(() => handleUpsertUser({ email: 'new@x.com', role: 'recorder' }, admin())),
+    'SUPER_ADMIN_ONLY', 'an organiser cannot add a recorder');
   world();
-  ok(handleUpsertUser({ email: 'rec@x.com', role: 'viewer' }, admin()).updated,
-    'admin can still change a non-admin');
+  eq(codeOf(() => handleUpsertUser({ email: 'rec@x.com', role: 'viewer' }, admin())),
+    'SUPER_ADMIN_ONLY', 'nor change an existing account');
+  world();
+  eq(codeOf(() => handleUpsertUser({ email: 'new@x.com', role: 'agent' }, admin())),
+    'SUPER_ADMIN_ONLY', 'nor give somebody a sign-in as a seller');
+
+  // But the daily work of running the raffle is untouched: an agent RECORD is
+  // a seller holding paper, and grants nobody any access to this system.
+  world();
+  ok(handleUpsertAgent({ name: 'Daw Mya', phone: '0125557777' }, admin()).agentId,
+    'an organiser still adds a seller');
+  world();
+  const made = handleUpsertAgent({ name: 'Daw Hla', phone: '0125551111' }, admin());
+  ok(handleUpsertAgent({ agentId: made.agentId, name: 'Daw Hla', active: false }, admin()).updated,
+    'and still bans one');
 
   // And what the super admin can do.
   world();
@@ -197,9 +216,17 @@ console.log('set_user_status guards');
   eq(handleSetUserStatus({ email: 'admin2@x.com', active: false }, boss()).active, 'false',
     'super admin can disable an admin');
 
+  // An organiser may cut off a SELLER — a lost phone at a Sunday service should
+  // not wait for the super admin to wake up — and nobody above one.
   world();
-  eq(handleSetUserStatus({ email: 'rec@x.com', active: false }, admin()).active, 'false',
-    'admin can still disable a recorder');
+  eq(codeOf(() => handleSetUserStatus({ email: 'rec@x.com', active: false }, admin())),
+    'SUPER_ADMIN_ONLY', 'an organiser cannot disable a recorder');
+
+  world();
+  const seller = handleUpsertAgent({ name: 'Daw Hla', phone: '0125551111' }, admin());
+  handleUpsertUser({ email: 'seller@x.com', role: 'agent', agentId: seller.agentId }, boss());
+  eq(handleSetUserStatus({ email: 'seller@x.com', active: false }, admin()).active, 'false',
+    'but can disable a seller');
 }
 
 // ============ 6. an admin is not shown the super admin ============

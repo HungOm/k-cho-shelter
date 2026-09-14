@@ -141,6 +141,7 @@ export const MY = {
   // --- who people are ---
   'Organiser': 'စီစဉ်သူ',
   'Everything': 'အားလုံး',
+  'Super admin': 'အဓိက စီမံခန့်ခွဲသူ',
   'Helper': 'ကူညီသူ',
   'Seller': 'ရောင်းသူ',
   'Can only look': 'ကြည့်ရုံသာ',
