@@ -278,9 +278,31 @@ function handleReadDelta(payload, user) {
  * for rows when one of the counters has moved.
  */
 function handleReadVersion(payload, user) {
+  // The waiting-approvals count rides along on the poll that already happens,
+  // so an owner sitting on the Approvals screen learns that a request arrived
+  // without a second round trip. A request nobody is told about is the same as
+  // no request, and the person who asked is left wondering whether the button
+  // worked.
+  var waiting = 0;
+  try {
+    var pending = readPendingRaw_();
+    var now = new Date();
+    for (var i = 0; i < pending.rows.length; i++) {
+      var r = pending.rows[i];
+      if (String(r.Status) !== APPROVAL_STATUS.PENDING) continue;
+      if (isStale_(r, now)) continue;
+      // Anybody but the owner is told only about their own — which is what
+      // they are waiting on: has mine been decided yet.
+      if (!user.isSuperAdmin &&
+          String(r.Requested_By || '').trim().toLowerCase() !== user.email) continue;
+      waiting++;
+    }
+  } catch (e) { waiting = 0; }   // an older deployment has no approvals tab
+
   return {
     tickets: ticketCacheVersion_(),
     books: bookCacheVersion_(),
+    approvalsWaiting: waiting,
     serverTime: new Date().toISOString()
   };
 }

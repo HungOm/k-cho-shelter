@@ -298,7 +298,15 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
     config: {
       ticketPrefix: cfg.TICKET_PREFIX ?? '',
       ticketDigits: num(cfg.TICKET_DIGITS, 5),
+      // Without this the setup screen printed "KS-undefined onwards", which is
+      // the ticket numbering the whole raffle is built on.
+      ticketStart: num(cfg.TICKET_START, 1),
       ticketsPerBook: num(cfg.TICKETS_PER_BOOK, 10),
+      bookPrefix: cfg.BOOK_PREFIX ?? 'Book-',
+      bookDigits: num(cfg.BOOK_DIGITS, 3),
+      // And without this, "10 — that makes books" with the number missing.
+      totalBooks: Math.ceil(generated / Math.max(1, num(cfg.TICKETS_PER_BOOK, 10))),
+      defaultDueDays: num(cfg.DEFAULT_DUE_DAYS, 30),
       totalTickets: active,            // what is in play — the number the app works in
       generatedTickets: generated,
       heldBackTickets: Math.max(0, generated - active),
@@ -309,6 +317,8 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
       orgName: cfg.ORG_NAME ?? '',
       projectCode: cfg.PROJECT_CODE ?? '',
       drawDate: cfg.DRAW_DATE ?? '',
+      checkInDate: cfg.CHECK_IN_DATE ?? '',
+      finalDeadline: cfg.FINAL_DEADLINE ?? '',
     },
   }
 }
@@ -318,7 +328,7 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
  * this read two Script Properties and still took 1.1 seconds. Here it is the
  * newest modified_at, which is an index lookup.
  */
-async function readVersion(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+async function readVersion(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const { data } = await ctx.supabaseAdmin
     .from('tickets')
     .select('modified_at')
@@ -326,8 +336,43 @@ async function readVersion(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
     .limit(1)
     .maybeSingle()
 
+  /*
+   * The waiting-approvals count rides along on the poll that already happens.
+   *
+   * An owner sitting on the Approvals screen had no way to learn that a request
+   * had arrived — the page fetches once and then knows nothing. A request that
+   * nobody is told about is the same as no request, and the person who asked is
+   * left wondering whether the button worked.
+   *
+   * Carried here rather than given its own poll or a live subscription:
+   * head:true costs about the same as asking the time, and the client is
+   * already making this call. A subscription would mean opening
+   * pending_approvals to direct browser reads, and the owner cannot be
+   * identified in the database at all — that is the invariant the whole
+   * permission model rests on, and it is not worth trading for a few seconds.
+   */
+  let waiting = 0
+  if (user.isSuperAdmin) {
+    const { count } = await ctx.supabaseAdmin
+      .from('pending_approvals')
+      .select('request_id', { count: 'exact', head: true })
+      .eq('status', 'Pending')
+      .gt('expires_at', new Date().toISOString())
+    waiting = count ?? 0
+  } else {
+    // Anybody else is told only about their own, which is what they are
+    // waiting on — "has mine been decided yet".
+    const { count } = await ctx.supabaseAdmin
+      .from('pending_approvals')
+      .select('request_id', { count: 'exact', head: true })
+      .eq('requested_by', user.email)
+      .eq('status', 'Pending')
+    waiting = count ?? 0
+  }
+
   return {
     tickets: data?.modified_at ?? null,
+    approvalsWaiting: waiting,
     serverTime: new Date().toISOString(),
   }
 }
@@ -791,7 +836,7 @@ export default {
         // exists or ever can.
         if (spec.sup && !user.isSuperAdmin) {
           throw new ApiError('SUPER_ADMIN_ONLY',
-            'Only the super admin can do this. It cannot be switched on for anybody else.',
+            'Only the owner can do this. It cannot be switched on for anybody else.',
             null, 403)
         }
         throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.', null, 403)
