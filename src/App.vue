@@ -8,7 +8,9 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state, refresh, go, toast, isAdmin, bootFromCache, forgetCache } from './lib/store.js'
-import { api, configure, tokenIsStale, LS } from './lib/api.js'
+import { tokenIsStale, LS } from './lib/api.js'
+import { api, configure, isSupabase } from './lib/backend.js'
+import * as sbAuth from './lib/supabaseAuth.js'
 
 import AppShell from './components/AppShell.vue'
 import SignIn from './components/SignIn.vue'
@@ -35,6 +37,7 @@ import SellBook from './components/modals/SellBook.vue'
 import BookAction from './components/modals/BookAction.vue'
 import MakeTickets from './components/modals/MakeTickets.vue'
 import TicketsInPlay from './components/modals/TicketsInPlay.vue'
+import Deadlines from './components/modals/Deadlines.vue'
 import AskApproval from './components/modals/AskApproval.vue'
 import Toasts from './components/ui/Toasts.vue'
 
@@ -63,15 +66,23 @@ const current = computed(() => SCREENS[state.screen] || Home)
 
 function readFragment() {
   // One link sets a helper up: …/#s=<exec url>&cid=<client id>
+  // …or, on the Supabase backend: …/#sb=<project url>&k=<publishable key>
   // A fragment never reaches any server, so it stays out of logs and history.
   if (!location.hash || location.hash.length < 2) return
   const p = new URLSearchParams(location.hash.slice(1))
+  // Supabase's own OAuth reply also comes back in the fragment. Leave it alone:
+  // the client reads it once, and clearing the hash here would eat the session
+  // before it was ever exchanged.
+  if (p.has('access_token') || p.has('error_description')) return
   const s = p.get('s'), c = p.get('cid')
+  const sb = p.get('sb'), k = p.get('k')
   try {
     if (s) localStorage.setItem(LS.url, s.trim())
     if (c) localStorage.setItem(LS.cid, c.trim())
+    if (sb) localStorage.setItem(sbAuth.LS_SB.url, sb.trim())
+    if (k) localStorage.setItem(sbAuth.LS_SB.key, k.trim())
   } catch { /* private window */ }
-  if (s || c) history.replaceState(null, '', location.pathname + location.search)
+  if (s || c || sb || k) history.replaceState(null, '', location.pathname + location.search)
 }
 
 function connect({ url, cid }) {
@@ -95,6 +106,10 @@ async function reset() {
 
 async function signOut() {
   try { window.google?.accounts?.id?.disableAutoSelect() } catch {}
+  // Supabase keeps its own refresh token in storage. Dropping the cache without
+  // dropping that would sign them straight back in on the next load, which is
+  // the opposite of what the button says.
+  if (isSupabase) await sbAuth.signOut()
   // Somebody who has signed out must not still have the ticket table on their
   // phone, even with the names already stripped out of it — nor the sign-in
   // that would put them straight back in on the next load.
@@ -243,6 +258,54 @@ function initGoogle() {
   }
 }
 
+// ---------- Supabase sign-in ----------
+
+/**
+ * The same door, with Supabase holding the key.
+ *
+ * Shorter than the Google path above and that is the point: there is no expiry
+ * timer, no silent-renew race and no ReAuth overlay, because the library
+ * refreshes the session itself and tells us through onSession. What is left is
+ * "configure the transport with whatever token is current", which is one line
+ * that happens to run again whenever the token changes.
+ */
+let stopSession = null
+
+async function bootSupabase() {
+  if (!sbAuth.isConfigured()) {
+    phase.value = 'error'
+    errorMsg.value = 'This device does not have the Supabase project address yet. ' +
+      'Ask the organiser for the setup link, or switch back with ?backend=appsscript.'
+    return
+  }
+
+  configure({ apiUrl: sbAuth.projectUrl(), onAuthExpired: sbAuth.refreshSession })
+
+  // Every token from here on, including the refreshed ones nobody asked for.
+  stopSession = await sbAuth.onSession(session => {
+    configure({ idToken: session?.access_token || '' })
+  })
+
+  // Deliberately no 'ping' first, unlike the Apps Script path: the function
+  // refuses unauthenticated calls outright, so a pre-flight check before
+  // sign-in would only ever report a working backend as a broken one.
+  const session = await sbAuth.currentSession()
+  if (!session?.access_token) { phase.value = 'signin'; return }
+
+  configure({ idToken: session.access_token })
+  return start()
+}
+
+async function supabaseSignIn() {
+  try {
+    phase.value = 'waiting'
+    await sbAuth.signIn()          // navigates away; the answer is the next load
+  } catch (err) {
+    phase.value = 'error'
+    errorMsg.value = err?.message || 'Could not start the Google sign-in.'
+  }
+}
+
 // ---------- boot ----------
 
 onMounted(async () => {
@@ -250,6 +313,9 @@ onMounted(async () => {
   window.addEventListener('focus', wake)
 
   readFragment()
+
+  if (isSupabase) return bootSupabase()
+
   let url = ''
   try {
     url = (localStorage.getItem(LS.url) || '').trim()
@@ -329,6 +395,7 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', wake)
   window.removeEventListener('focus', wake)
   clearTimeout(renewTimer)
+  stopSession?.()
 })
 
 // ---------- modal plumbing ----------
@@ -351,8 +418,9 @@ function seeTickets(book) {
 
 <template>
   <SignIn v-if="phase !== 'ready'" :phase="phase" :message="errorMsg"
-          :needs-client-id="!CLIENT_ID" :saved-url="savedUrl"
-          @connect="connect" @reset="reset" @retry="() => location.reload()" />
+          :needs-client-id="!CLIENT_ID" :saved-url="savedUrl" :supabase="isSupabase"
+          @connect="connect" @reset="reset" @retry="() => location.reload()"
+          @signin="supabaseSignIn" />
 
   <AppShell v-else @signout="signOut">
     <Transition name="slide" mode="out-in">
@@ -371,7 +439,8 @@ function seeTickets(book) {
                    @mark="openModal('bookaction', 'mark')"
                    @record-winner="openModal('winner')"
                    @make-tickets="openModal('make')"
-                   @tickets-in-play="openModal('inplay')" />
+                   @tickets-in-play="openModal('inplay')"
+                   @deadlines="openModal('deadlines')" />
       </KeepAlive>
     </Transition>
   </AppShell>
@@ -406,6 +475,7 @@ function seeTickets(book) {
     <TicketsInPlay v-else-if="modal?.kind === 'inplay'"
                    @close="closeModal" @done="closeModal"
                    @make-more="openModal('make')" />
+    <Deadlines v-else-if="modal?.kind === 'deadlines'" @close="closeModal" />
   </Teleport>
 
   <Teleport to="body">
