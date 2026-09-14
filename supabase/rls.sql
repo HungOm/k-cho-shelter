@@ -142,7 +142,14 @@ create policy tickets_read on tickets for select using (
 drop view if exists tickets_readable;
 create view tickets_readable as
 select
-  idx, number, book_idx, status,
+  idx, number, book_idx,
+  -- The book's NUMBER, not just its index. The app keys everything by book
+  -- number — the grid, search, "where is this ticket" — and deriving it in the
+  -- client would mean reimplementing the numbering here and there, with
+  -- TICKETS_PER_BOOK able to change under both. A book number computed two ways
+  -- is the same class of bug as a phone number masked two ways.
+  book_number,
+  status,
   case when mine then buyer_name else '' end as buyer_name,
   case
     -- Same shape as both backends' maskers. A phone hidden three different
@@ -158,9 +165,13 @@ select
   source, version, recorded_by, modified_at
 from (
   select t.*,
+         b.number as book_number,
          (app_role() <> 'agent'
           or t.book_idx in (select idx from books where held_by_agent = app_agent_id())) as mine
   from tickets t
+  -- Left, not inner: a ticket whose book row is missing must still be readable.
+  -- Dropping it would hide a sold ticket from the draw over a bookkeeping fault.
+  left join books b on b.idx = t.book_idx
   where app_role() is not null
     and t.idx <= active_tickets()
 ) v;
