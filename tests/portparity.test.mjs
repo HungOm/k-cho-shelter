@@ -157,5 +157,42 @@ console.log('list_books returns what the client actually reads off it')
   }
 }
 
+console.log('the edge function never reads an RLS-filtered view')
+{
+  /*
+   * The filtered views carry their own WHERE clause on app_role(), because they
+   * run with owner rights and a policy would not apply to them. That is right
+   * for a browser reading directly, and fatal for the edge function: it reads as
+   * the service role, carries no JWT, so app_role() is null and those views
+   * return NOTHING to it.
+   *
+   * It happened. Every action built on book_ledger reported an empty raffle —
+   * no books free to give out, no money expected or collected — and worst, the
+   * restock guard that refuses a book with money still owed saw no rows and so
+   * never refused anything. The function must read the base tables or the _all
+   * twin, and do its own scoping, because being above the policies it is the
+   * only thing that can.
+   */
+  const FILTERED = ['book_ledger', 'tickets_readable', 'agents_readable', 'config_readable']
+  const files = ['index.ts', 'books.ts', 'tickets.ts', 'people.ts', 'reports.ts',
+                 'approvals.ts', 'deadlines.ts']
+
+  for (const f of files) {
+    let src
+    try { src = read('../supabase/functions/api/' + f) } catch { continue }
+    for (const view of FILTERED) {
+      // from('book_ledger_all') is the allowed twin, so match the closing quote.
+      const bad = src.includes(`from('${view}')`)
+      ok(!bad, `${f} does not read the filtered view ${view} (it would see nothing)`)
+    }
+  }
+
+  // And the unfiltered twin must exist, or the advice above is unfollowable.
+  const rls = read('../supabase/rls.sql')
+  ok(rls.includes('create view book_ledger_all as'), 'book_ledger_all is defined')
+  ok(/revoke all on book_ledger_all from anon, authenticated/.test(rls),
+     'and is revoked from the browser roles, so the unfiltered one is server-only')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

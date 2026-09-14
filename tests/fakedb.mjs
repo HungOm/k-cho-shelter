@@ -216,7 +216,7 @@ export function fakeDb(seed = {}) {
     tables: {
       config: [], tickets: [], books: [], agents: [], app_users: [],
       book_history: [], audit_log: [], pending_approvals: [], winners: [],
-      permissions: [], book_ledger: [],
+      permissions: [], book_ledger: [], book_ledger_all: [],
       ...copy(seed),
     },
     writes: [],

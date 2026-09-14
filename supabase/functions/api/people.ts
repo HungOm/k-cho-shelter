@@ -360,7 +360,7 @@ export async function handoverReceipt(p: Record<string, unknown>, _u: AppUser, c
 
   const price = Number(cfg.TICKET_PRICE ?? 10)
   const { data: counted } = await ctx.supabaseAdmin
-    .from('book_ledger').select('number,counted_sold').eq('held_by_agent', agentId)
+    .from('book_ledger_all').select('number,counted_sold').eq('held_by_agent', agentId)
   const perBook = new Map((counted ?? []).map((b: { number: string; counted_sold: number }) =>
     [b.number, Number(b.counted_sold ?? 0)]))
 

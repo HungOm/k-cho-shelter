@@ -383,13 +383,13 @@ console.log('restock_books guards the money')
       { idx: 1, number: 'Book-001', status: 'Returned', held_by_agent: 'A001', declared_sold: null, amount_due: null, amount_paid: null, ...bookOver },
       { idx: 2, number: 'Book-002', status: 'Out', held_by_agent: 'A001' },
     ],
-    book_ledger: [],
+    book_ledger_all: [],
     agents: [{ agent_id: 'A001', name: 'Daw Hla' }],
   })
 
   // A book that came back untouched owes nothing and goes straight back.
   const clean = mk()
-  clean.db.tables.book_ledger = [{ idx: 1, number: 'Book-001', status: 'Returned', agent_name: 'Daw Hla', held_by_agent: 'A001', counted_expected: 0, counted_collected: 0 }]
+  clean.db.tables.book_ledger_all = [{ idx: 1, number: 'Book-001', status: 'Returned', agent_name: 'Daw Hla', held_by_agent: 'A001', counted_expected: 0, counted_collected: 0 }]
   const r = await books.restockBooks({ fromBook: 'Book-001', dryRun: false }, users.admin, clean.ctx)
   eq(r.restocked, 1, 'restocked without settling first')
   eq(clean.row('books', (b) => b.idx === 1).status, 'Unassigned', 'and is free to give out')
@@ -397,7 +397,7 @@ console.log('restock_books guards the money')
   // One with money owed is refused: restocking clears held_by_agent, and the
   // outstanding report finds debts by who holds a book.
   const owing = mk()
-  owing.db.tables.book_ledger = [{ idx: 1, number: 'Book-001', status: 'Returned', agent_name: 'Daw Hla', held_by_agent: 'A001', counted_expected: 30, counted_collected: 0 }]
+  owing.db.tables.book_ledger_all = [{ idx: 1, number: 'Book-001', status: 'Returned', agent_name: 'Daw Hla', held_by_agent: 'A001', counted_expected: 30, counted_collected: 0 }]
   eq(await codeOf(() => books.restockBooks({ fromBook: 'Book-001', dryRun: false }, users.admin, owing.ctx)),
     'MONEY_STILL_OWED', 'a book with unpaid sales is refused')
   eq(owing.row('books', (b) => b.idx === 1).status, 'Returned', 'and nothing changed')

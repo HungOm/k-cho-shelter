@@ -460,7 +460,13 @@ async function search(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
 }
 
 async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
-  let query = ctx.supabaseAdmin.from('book_ledger').select('*').order('idx').limit(1000)
+  // book_ledger_all, not book_ledger. The filtered one carries its own WHERE
+  // clause on app_role(), and this function reads as the service role with no
+  // JWT — so app_role() is null and the filtered view returns NOTHING to it.
+  // Every action built on it reported an empty raffle. The scoping this path
+  // needs is done in code below, because it has to be: the service role is
+  // above the policies, so nothing else can do it.
+  let query = ctx.supabaseAdmin.from('book_ledger_all').select('*').order('idx').limit(1000)
   if (p.status) query = query.eq('status', String(p.status))
   if (p.agentId) query = query.eq('held_by_agent', String(p.agentId))
 
