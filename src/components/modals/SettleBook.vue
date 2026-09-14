@@ -102,7 +102,7 @@ async function settle() {
   try {
     const payload = { bookNumber: props.book.book, amountPaid: paidNum.value }
     if (lost.value) { payload.allowUnidentified = true; payload.soldCount = sold.value }
-    else payload.unsoldTickets = unsoldList.value.map(resolve)
+    else payload.unsoldTickets = unsoldList.value.map(resolveTicketNumber)
 
     const r = await api('settle_book', payload)
     toast(`${props.book.book} counted — ${r.declaredSold} sold`,
