@@ -204,8 +204,23 @@ grant select on agents_readable to authenticated;
 -- Read by everybody signed in: ticket numbering, price, currency, what is in
 -- play. None of it is sensitive and the app cannot draw a screen without it.
 
+-- config is granted to authenticated AND policed, rather than reached only
+-- through a definer function.
+--
+-- The first attempt relied on active_tickets() being security definer, and it
+-- was not enough: a view running with owner rights still calls functions as the
+-- CALLER unless the function itself is definer, so every view that asked how
+-- many tickets are in play denied itself — reporting "permission denied for
+-- table config" while the cause was a function two steps away. Depending on
+-- that subtlety was the mistake; the grant removes the dependency.
+--
+-- Safe to grant, because the policy below still limits it to somebody on the
+-- allowlist, and because none of it is sensitive: ticket numbering, price,
+-- currency, how many are in play. Every signed-in user needs most of it to draw
+-- a single screen.
 drop policy if exists config_read on config;
 create policy config_read on config for select using (app_role() is not null);
+grant select on config to authenticated;
 
 drop view if exists config_readable;
 create view config_readable as
@@ -231,6 +246,9 @@ revoke all on app_users, audit_log, permissions, pending_approvals, winners,
 -- these to an unauthenticated caller.
 revoke all on app_users, audit_log, permissions, pending_approvals, winners,
               book_history, tickets, books, agents, config from anon;
+
+-- Re-granted after the revoke above, which would otherwise take it back.
+grant select on config to authenticated;
 
 -- The base tables are not readable directly either — only the views above,
 -- which is what keeps the masking from being optional.
