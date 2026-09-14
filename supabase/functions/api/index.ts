@@ -34,6 +34,8 @@ import {
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
 import * as people from './people.ts'
+import * as reports from './reports.ts'
+import * as approvals from './approvals.ts'
 
 // ============ ACTION REGISTRY ============
 // Same shape as Api.gs. `roles: null` is any signed-in user, `[]` is admins and
@@ -81,6 +83,43 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // --- who may do what ---
   list_permissions: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: people.listPermissions },
   set_permission: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setPermission },
+
+  // --- reports ---
+  report_outstanding: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportOutstanding },
+  report_overdue: { roles: ['recorder'], kind: 'report', fn: reports.reportOverdue },
+  report_missing_contact: { roles: ['recorder'], kind: 'report', fn: reports.reportMissingContact },
+  report_draw_ready: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportDrawReady },
+  agent_statement: { roles: ['agent', 'recorder'], kind: 'report', fn: reports.agentStatement },
+  export_entries: { roles: ADMIN_ONLY, sup: true, kind: 'report', fn: reports.exportEntries },
+
+  // --- winners ---
+  record_winner: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: reports.recordWinner },
+  list_winners: { roles: ['viewer', 'recorder'], kind: 'read', fn: reports.listWinners },
+
+  // --- two-person control ---
+  request_approval: { roles: ADMIN_ONLY, kind: 'write', fn: approvals.requestApproval },
+  list_approvals: { roles: ADMIN_ONLY, kind: 'read', fn: approvals.listApprovals },
+  cancel_approval: { roles: ADMIN_ONLY, kind: 'write', fn: approvals.cancelApproval },
+  decide_approval: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: decideApproval },
+}
+
+/**
+ * Wrapped so the approved action runs through the registry rather than a second
+ * copy of the dispatch. approvals.ts stays free of the registry, which would
+ * otherwise be an import cycle, and an approved restock takes exactly the path
+ * a direct restock takes.
+ */
+async function decideApproval(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  return approvals.decideApproval(
+    p, user, ctx,
+    (action, payload, asUser) => {
+      const spec = REGISTRY[action]
+      if (!spec) throw new ApiError('UNKNOWN_ACTION', `Unknown action: ${action}`, null, 404)
+      return spec.fn(payload, asUser, ctx)
+    },
+    (action) => REGISTRY[action],
+    (ctx as unknown as { _overrides?: Record<string, Partial<Record<Role, boolean>>> })._overrides ?? {},
+  )
 }
 
 type Ctx = {
@@ -385,6 +424,20 @@ export default {
       if (!isActionAllowed(action, spec, user, overrides)) {
         throw new ApiError('INSUFFICIENT_ROLE', `Your role (${user.role}) cannot do this.`, null, 403)
       }
+
+      // Two-person control, checked before the action runs rather than after.
+      // The super admin is exempt: they are the person who would approve it.
+      if (!user.isSuperAdmin) {
+        const needsTwo = await approvals.approvalNeeded(action, body.payload ?? {}, ctx)
+        if (needsTwo) {
+          throw new ApiError('APPROVAL_REQUIRED', needsTwo.text,
+            { action, summary: needsTwo.text, detail: needsTwo }, 403)
+        }
+      }
+
+      // Handed to decideApproval so an approved action is re-checked against
+      // the same overrides this request was.
+      ;(ctx as unknown as { _overrides?: unknown })._overrides = overrides
 
       const data = await spec.fn(body.payload ?? {}, user, ctx)
       return Response.json({ ok: true, data, serverTime: new Date().toISOString() })
