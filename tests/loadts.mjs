@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 
 const API = fileURLToPath(new URL('../supabase/functions/api/', import.meta.url))
 const ESBUILD = fileURLToPath(new URL('../node_modules/esbuild/bin/esbuild', import.meta.url))
+const STUB = fileURLToPath(new URL('./stubs/supabase-server.js', import.meta.url))
 
 let dir = null
 const loaded = new Map()
@@ -54,6 +55,11 @@ export async function loadModule(name) {
     '--bundle',
     '--format=esm',
     '--platform=neutral',
+    // index.ts imports npm:@supabase/server, which Node cannot resolve. Aliased
+    // to a stub rather than left external, so the ROUTER and the REGISTRY can be
+    // loaded and run — they are where several of today's bugs lived, and an
+    // unloadable module is an untestable one.
+    '--alias:npm:@supabase/server=' + STUB,
     '--external:npm:*',
     '--log-level=error',
     '--outfile=' + out,

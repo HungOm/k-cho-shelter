@@ -26,7 +26,9 @@ import { withSupabase } from 'npm:@supabase/server'
 import {
   ApiError,
   isActionAllowed,
+  LOCKED_FOR_ADMIN,
   resolveUser,
+  ROLES,
   type ActionSpec,
   type AppUser,
   type Role,
@@ -43,6 +45,123 @@ import * as approvals from './approvals.ts'
 // nobody else, and `sup` marks the four that cannot be handed to a role at all.
 
 const ADMIN_ONLY: Role[] = []
+
+/**
+ * What each action is CALLED on the Access screen.
+ *
+ * Lifted from actionMeta() in Api.gs rather than reworded, so the same screen
+ * reads identically whichever backend answered. Two vocabularies for one action
+ * is how an organiser ends up unsure whether they just changed the same thing
+ * twice or two different things once.
+ */
+/**
+ * Who can do what, as the Access screen reads it.
+ *
+ * Returns { roles, actions } — the same shape as handleListPermissions in
+ * Auth.gs, because the same Vue component renders both. This previously
+ * returned { roles, overrides }: the raw override rows and no actions list at
+ * all, so the screen did data.actions.length on undefined and rendered nothing
+ * but a blank panel with a console error. A payload that is merely DIFFERENT
+ * rather than wrong is the hardest kind to spot from the server side, because
+ * every test of it passes.
+ */
+function listPermissions(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+  return buildPermissions(ctx)
+}
+
+async function buildPermissions(ctx: Ctx) {
+  const { data } = await ctx.supabaseAdmin.from('permissions').select('action,role,allowed')
+  const table: Record<string, Record<string, boolean>> = {}
+  for (const r of data ?? []) (table[String(r.action)] ??= {})[String(r.role)] = !!r.allowed
+
+  // The same rule as defaultAllows_ in Auth.gs: a super-admin-only action is
+  // never available to a role, an unrestricted one always is, and an admin
+  // passes every registry default.
+  const defaultAllows = (spec: ActionSpec, role: Role) => {
+    if (spec.sup) return false
+    if (!spec.roles) return true
+    if (role === 'admin') return true
+    return spec.roles.includes(role)
+  }
+
+  const actions = Object.entries(REGISTRY).map(([action, spec]) => {
+    const m = ACTION_META[action] ?? {}
+    const defaults: Record<string, boolean> = {}
+    const current: Record<string, boolean> = {}
+    for (const role of ROLES) {
+      const def = defaultAllows(spec, role)
+      defaults[role] = def
+      const override = table[action]?.[role]
+      // A super-admin-only action cannot be handed to a role by an override —
+      // otherwise the screen would offer a switch that grants what the gate
+      // refuses, and the gate is the one that decides.
+      current[role] = spec.sup ? false : (override === undefined ? def : override)
+    }
+    return {
+      action,
+      group: m.group ?? 'Other',
+      label: m.label ?? action,
+      danger: !!m.danger,
+      sup: !!spec.sup,
+      lockedFor: LOCKED_FOR_ADMIN.includes(action) ? ['admin'] : [],
+      defaults,
+      current,
+    }
+  })
+
+  actions.sort((a, b) =>
+    a.group === b.group ? (a.label < b.label ? -1 : 1) : (a.group < b.group ? -1 : 1))
+
+  return { roles: ROLES, actions }
+}
+
+const ACTION_META: Record<string, { group: string; label: string; danger?: boolean }> = {
+  whoami: { group: 'Basics', label: 'Sign in' },
+  read_snapshot: { group: 'Basics', label: 'Load the tickets' },
+  read_delta: { group: 'Basics', label: 'Load what changed' },
+  read_version: { group: 'Basics', label: 'Check for changes' },
+  sell_ticket: { group: 'Tickets', label: 'Record a sale' },
+  reserve_ticket: { group: 'Tickets', label: 'Hold a ticket' },
+  release_ticket: { group: 'Tickets', label: 'Let a held ticket go' },
+  correct_ticket: { group: 'Tickets', label: 'Correct a sale', danger: true },
+  void_ticket: { group: 'Tickets', label: 'Void a ticket', danger: true },
+  bulk_record_sales: { group: 'Tickets', label: 'Record many sales at once' },
+  sell_book: { group: 'Tickets', label: 'Sell a whole book to one buyer' },
+  list_books: { group: 'Books', label: 'See the books' },
+  issue_books: { group: 'Books', label: 'Give books to a seller' },
+  transfer_books: { group: 'Books', label: 'Move books between sellers' },
+  return_books: { group: 'Books', label: 'Take books back' },
+  set_book_status: { group: 'Books', label: 'Mark a book lost, or reopen it', danger: true },
+  restock_books: { group: 'Books', label: 'Put unsold tickets back', danger: true },
+  book_history: { group: 'Books', label: 'See where a book has been' },
+  handover_receipt: { group: 'Books', label: 'Print a handover receipt' },
+  expand_tickets: { group: 'Books', label: 'Make more tickets', danger: true },
+  set_active_tickets: { group: 'Books', label: 'Change how many tickets are in play', danger: true },
+  set_ticket_ceiling: { group: 'Books', label: 'Change the planned size of the raffle' },
+  deadline_status: { group: 'Books', label: 'See the check-in and final dates' },
+  roll_check_in: { group: 'Books', label: 'Move the check-in date on a month', danger: true },
+  set_final_deadline: { group: 'Books', label: 'Change the final deadline', danger: true },
+  settle_book: { group: 'Money', label: 'Settle a book', danger: true },
+  report_outstanding: { group: 'Money', label: 'Who still owes money' },
+  list_agents: { group: 'People', label: 'See the sellers' },
+  upsert_agent: { group: 'People', label: 'Add or change a seller' },
+  list_users: { group: 'People', label: 'See who can sign in' },
+  upsert_user: { group: 'People', label: 'Add or change a user' },
+  set_user_status: { group: 'People', label: 'Turn an account on or off', danger: true },
+  report_overdue: { group: 'Reports', label: 'Books that are late' },
+  report_missing_contact: { group: 'Reports', label: 'Tickets with no phone number' },
+  report_draw_ready: { group: 'Reports', label: 'Is the draw ready' },
+  export_entries: { group: 'Reports', label: 'Download the entry list', danger: true },
+  read_audit: { group: 'Reports', label: 'The activity log' },
+  record_winner: { group: 'Reports', label: 'Record a winner', danger: true },
+  list_winners: { group: 'Reports', label: 'See the winners' },
+  list_permissions: { group: 'Access', label: 'See who can do what' },
+  request_approval: { group: 'Access', label: 'Ask the organiser to approve something' },
+  list_approvals: { group: 'Access', label: 'See what is waiting for approval' },
+  cancel_approval: { group: 'Access', label: 'Withdraw your own request' },
+  decide_approval: { group: 'Access', label: 'Approve or refuse a request', danger: true },
+  set_permission: { group: 'Access', label: 'Change who can do what', danger: true },
+}
 
 const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // --- reading ---
@@ -88,7 +207,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   set_user_status: { roles: ADMIN_ONLY, kind: 'write', fn: people.setUserStatus },
 
   // --- who may do what ---
-  list_permissions: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: people.listPermissions },
+  list_permissions: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: listPermissions },
   set_permission: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setPermission },
 
   // --- how much of the raffle is live ---
@@ -618,6 +737,16 @@ export default {
       })
 
       if (!isActionAllowed(action, spec, user, overrides)) {
+        // Two different refusals, because they need two different actions from
+        // the person reading them. "Not switched on" sends an organiser to the
+        // Access screen to turn it on — right for an ordinary permission, and
+        // actively misleading for a super-admin-only one where no such switch
+        // exists or ever can.
+        if (spec.sup && !user.isSuperAdmin) {
+          throw new ApiError('SUPER_ADMIN_ONLY',
+            'Only the super admin can do this. It cannot be switched on for anybody else.',
+            null, 403)
+        }
         throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.', null, 403)
       }
 
