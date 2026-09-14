@@ -393,15 +393,25 @@ async function start() {
       return
     }
     phase.value = 'error'
-    refused.value = err.code === 'NOT_AUTHORIZED' || err.code === 'ACCOUNT_DISABLED'
+    // Any ACCOUNT_* code, not a list of them. The gate grew ACCOUNT_PENDING,
+    // ACCOUNT_SUSPENDED and ACCOUNT_BANNED while this screen knew only about
+    // ACCOUNT_DISABLED, and a code this did not recognise fell through to the
+    // generic error — which offers "Try again" and no way to a different
+    // account. Matching the family means the next one added is handled the day
+    // it ships rather than the day somebody is stuck behind it.
+    refused.value = err.code === 'NOT_AUTHORIZED' || String(err.code || '').startsWith('ACCOUNT_')
     // Name the account. Somebody with three Google accounts in one browser is
     // told which one was refused, rather than being left to guess which of them
     // Chrome picked — and that is most people who run a raffle from a phone.
     const who = signedInAs.value ? `${signedInAs.value} ` : 'This Google account '
+    // The gate writes a plain sentence for each ACCOUNT_ state — waiting to be
+    // let in, paused, stopped — and it knows which one applies. Naming the
+    // account and then deferring to the server beats a copy of its wording that
+    // drifts, and beats a code the person cannot act on.
     errorMsg.value = err.code === 'NOT_AUTHORIZED'
       ? `${who}is not on the list yet. Ask the organiser to add it, then sign in again.`
-      : err.code === 'ACCOUNT_DISABLED'
-        ? `${who}has been turned off. Ask the organiser if this is a mistake.`
+      : refused.value
+        ? `${who}— ${err.message}`
         : err.message
   }
 }

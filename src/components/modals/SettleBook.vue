@@ -44,6 +44,58 @@ const diff = computed(() => paidNum.value - due.value)
 const unresolved = computed(() =>
   unsoldList.value.filter(r => !resolveTicketNumber(r)))
 
+/**
+ * The numbers this book actually contains.
+ *
+ * Read from the tickets rather than worked out from the book number times the
+ * tickets per book, because the two can disagree: a book at the end of a
+ * part-released run holds fewer, and the arithmetic would confidently name
+ * numbers that are not in play. The tickets know.
+ */
+const inBook = computed(() =>
+  state.tickets
+    .filter(t => t.book === props.book.book)
+    .map(t => t.number)
+    .sort())
+
+/** "KS-00911" reads as 911 to the person holding the ticket. */
+function short(n) {
+  return String(n ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+}
+
+const range = computed(() => {
+  const l = inBook.value
+  return l.length ? { first: short(l[0]), last: short(l[l.length - 1]), count: l.length } : null
+})
+
+/**
+ * Two numbers from THIS book, so the example cannot be copied wrongly.
+ *
+ * The placeholder used to be a fixed "313, 317" whatever book was open. On
+ * Book-092, whose tickets are 911-920, that is an example nobody can follow and
+ * a number that belongs to somebody else's book.
+ */
+const example = computed(() => {
+  const l = inBook.value
+  if (l.length < 2) return '911, 915'
+  return `${short(l[0])}, ${short(l[Math.min(2, l.length - 1)])}`
+})
+
+/**
+ * Typed a real ticket, but one from a different book.
+ *
+ * resolveTicketNumber searches the whole raffle, so a number from another book
+ * resolves perfectly well and would be sent as "came back" for this one. That
+ * is the silent wrong answer: the ticket is real, the form accepts it, and two
+ * books end up describing the same ticket differently.
+ */
+const wrongBook = computed(() =>
+  unsoldList.value
+    .map(raw => ({ raw, num: resolveTicketNumber(raw) }))
+    .filter(x => x.num && state.byNumber[x.num]?.book &&
+                 state.byNumber[x.num].book !== props.book.book)
+    .map(x => `${x.raw} (${state.byNumber[x.num].book})`))
+
 async function settle() {
   if (paid.value === '') return toast('How much money did they hand in?', 'bad')
   busy.value = true
@@ -72,8 +124,14 @@ async function settle() {
     <template v-if="!lost">
       <div class="field">
         <label for="su">Which tickets came back?</label>
-        <textarea id="su" v-model="unsold" class="xl" placeholder="313, 317"></textarea>
-        <p class="hint">Separate with commas or spaces. Leave empty if the whole book sold.</p>
+        <textarea id="su" v-model="unsold" class="xl" :placeholder="example"></textarea>
+        <p class="hint">
+          <template v-if="range">
+            This book holds <b>{{ range.first }}–{{ range.last }}</b>.
+            Only those numbers belong here.<br>
+          </template>
+          Separate with commas or spaces. Leave empty if the whole book sold.
+        </p>
       </div>
     </template>
     <template v-else>
@@ -103,6 +161,17 @@ async function settle() {
       <div class="small">Check the number. Until it is right, these would be counted as sold.</div>
     </div>
 
+    <!-- A real ticket, from somebody else's book. The dangerous one: it
+         resolves, so nothing above catches it, and it would be recorded as
+         having come back from a book it was never in. -->
+    <div v-if="wrongBook.length" class="note bad">
+      <b>Not in {{ book.book }}:</b> {{ wrongBook.join(', ') }}
+      <div class="small">
+        <template v-if="range">This book holds {{ range.first }}–{{ range.last }}. </template>
+        Those tickets belong to another book and cannot come back from this one.
+      </div>
+    </div>
+
     <div :class="['note', paid !== '' && Math.abs(diff) > 0.005 ? 'warn' : 'info']">
       <b>{{ sold }}</b> sold · should be <b>{{ money(due, currency) }}</b>
       <template v-if="paid !== ''"> · handed in <b>{{ money(paidNum, currency) }}</b></template>
@@ -118,7 +187,8 @@ async function settle() {
 
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
-      <button class="btn primary" :disabled="busy || unresolved.length" @click="settle">
+      <button class="btn primary" :disabled="busy || unresolved.length || wrongBook.length"
+              @click="settle">
         {{ busy ? 'Saving…' : 'Finish this book' }}
       </button>
     </template>

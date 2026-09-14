@@ -48,11 +48,12 @@ ok(start.indexOf("phase.value = 'ready'") > start.indexOf("api('whoami'"),
 console.log('the local copy is dropped when access is refused or withdrawn')
 ok(/NOT_AUTHORIZED[\s\S]{0,120}forgetCache\(\)|forgetCache\(\)[\s\S]{0,200}NOT_AUTHORIZED/.test(start),
    'forgetCache runs for a refused account')
-ok(/ACCOUNT_DISABLED/.test(start), 'a disabled account is handled as well as an unknown one')
+ok(/startsWith\('ACCOUNT_'\)/.test(start), 'a disabled, pending, suspended or banned account is handled too')
 
 console.log('a refusal is told apart from a breakage')
-ok(/refused\.value = err\.code === 'NOT_AUTHORIZED' \|\| err\.code === 'ACCOUNT_DISABLED'/.test(start),
-   'both refusal codes set the refused flag')
+ok(/startsWith\('ACCOUNT_'\)/.test(start),
+   'the whole ACCOUNT_ family is treated as a refusal, not a listed few')
+ok(/NOT_AUTHORIZED/.test(start), 'and so is being off the list entirely')
 ok(/:refused="refused"/.test(app), 'and it reaches the screen')
 ok(/refused: Boolean/.test(signin), 'which declares it')
 
