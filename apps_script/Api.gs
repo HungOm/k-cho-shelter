@@ -61,6 +61,15 @@ function actionRegistry() {
     set_active_tickets:    { fn: handleSetActiveTickets,  roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
     set_ticket_ceiling:    { fn: handleSetTicketCeiling,  roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
 
+    // --- deadlines ---
+    // The monthly check-in is an admin's routine job: if it needed the super
+    // admin every month it would stop happening, and a checkpoint nobody
+    // reaches is worse than none. The final deadline is the promise made to
+    // ticket buyers, so that one does not move without the super admin.
+    deadline_status:       { fn: handleDeadlineStatus,    roles: null, kind: 'read' },
+    roll_check_in:         { fn: handleRollCheckIn,       roles: ADMIN_ONLY, kind: 'bulk', lock: true },
+    set_final_deadline:    { fn: handleSetFinalDeadline,  roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
+
     // --- agents & users ---
     list_agents:           { fn: handleListAgents,        roles: null, kind: 'read' },
     upsert_agent:          { fn: handleUpsertAgent,       roles: ADMIN_ONLY, kind: 'write', lock: true },
@@ -115,6 +124,10 @@ function actionMeta() {
     expand_tickets:         { group: 'Books',   label: 'Make more tickets', danger: true },
     set_active_tickets:     { group: 'Books',   label: 'Change how many tickets are in play', danger: true },
     set_ticket_ceiling:     { group: 'Books',   label: 'Change the planned size of the raffle' },
+
+    deadline_status:        { group: 'Books',   label: 'See the check-in and final dates' },
+    roll_check_in:          { group: 'Books',   label: 'Move the check-in date on a month', danger: true },
+    set_final_deadline:     { group: 'Books',   label: 'Change the final deadline', danger: true },
 
     settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },
     report_outstanding:     { group: 'Money',   label: 'Who still owes money' },
@@ -352,6 +365,8 @@ function handleWhoami(payload, user) {
       ticketPrice: cfgFloat(cfg, 'TICKET_PRICE', 10),
       currency: cfg.CURRENCY || 'RM',
       defaultDueDays: cfgNum(cfg, 'DEFAULT_DUE_DAYS', 30),
+      checkInDate: isoDay_(cfgDate_(cfg, 'CHECK_IN_DATE')),
+      finalDeadline: isoDay_(cfgDate_(cfg, 'FINAL_DEADLINE')),
       eventName: cfg.EVENT_NAME || '',
       orgName: cfg.ORG_NAME || '',
       projectCode: cfg.PROJECT_CODE || '',

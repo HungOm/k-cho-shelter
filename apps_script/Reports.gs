@@ -75,6 +75,11 @@ function buildBookLedger_() {
   var books = readBooksRaw_();
   var agents = agentNameMap_();
   var now = new Date();
+  // The wall, read once. A book past this is not late for a checkpoint that
+  // will move again next month — it is late for the raffle itself, and that
+  // difference is what tells an organiser which books to actually chase.
+  var lastDay = cfgDate_(cfg, 'FINAL_DEADLINE');
+  var finalPassed = !!(lastDay && lastDay < dayStart_(now));
 
   var rows = [];
   for (var i = 0; i < books.length; i++) {
@@ -89,8 +94,9 @@ function buildBookLedger_() {
     if (isNaN(amountDue)) amountDue = declaredSold * price;
     if (isNaN(amountPaid)) amountPaid = 0;
 
-    var dueDate = b.Due_Date instanceof Date ? b.Due_Date : null;
-    var daysOverdue = (dueDate && b.Status === BOOK_STATUS.OUT)
+    var dueDate = dayStart_(b.Due_Date);
+    var isOut = b.Status === BOOK_STATUS.OUT;
+    var daysOverdue = (dueDate && isOut)
       ? Math.floor((now - dueDate) / 86400000)
       : 0;
 
@@ -106,6 +112,7 @@ function buildBookLedger_() {
       issued: toIso_(b.Issued_Date),
       due: toIso_(b.Due_Date),
       daysOverdue: daysOverdue > 0 ? daysOverdue : 0,
+      pastFinal: finalPassed && isOut,
 
       recordedSold: recorded.sold + recorded.donated,
       recordedAmount: recorded.amount,
@@ -190,12 +197,23 @@ function handleReportOverdue(payload, user) {
       agentPhone: user.role === ROLES.VIEWER ? maskPhone_(r.agentPhone) : r.agentPhone,
       due: r.due,
       daysOverdue: r.daysOverdue,
+      pastFinal: r.pastFinal,
       recordedSold: r.recordedSold,
       expected: r.countedExpected
     });
   }
   out.sort(function (p, q) { return q.daysOverdue - p.daysOverdue; });
-  return { currency: ledger.currency, overdue: out, count: out.length };
+  var cfg = getConfig();
+  var pastFinal = 0;
+  for (var k = 0; k < out.length; k++) if (out[k].pastFinal) pastFinal++;
+  return {
+    currency: ledger.currency,
+    overdue: out,
+    count: out.length,
+    pastFinalCount: pastFinal,
+    checkInDate: isoDay_(cfgDate_(cfg, 'CHECK_IN_DATE')),
+    finalDeadline: isoDay_(cfgDate_(cfg, 'FINAL_DEADLINE'))
+  };
 }
 
 // ============ MISSING CONTACT ============
@@ -268,6 +286,14 @@ function handleReportDrawReady(payload, user) {
   }
   if (unsettled > 0) blockers.push(unsettled + ' books are still out or unsettled.');
   if (overdue > 0) blockers.push(overdue + ' books are past their due date.');
+  // The draw is what happens AFTER the final deadline. Running it early draws
+  // winners from a pool that sellers are still adding to, which cannot be
+  // undone once a name has been read out.
+  var lastDay = cfgDate_(cfg, 'FINAL_DEADLINE');
+  if (lastDay && lastDay >= today_()) {
+    blockers.push('The final deadline is ' + isoDay_(lastDay) + ', ' +
+      daysBetween_(today_(), lastDay) + ' days away. Sellers still have time to hand tickets in.');
+  }
   if (totals.reserved > 0) blockers.push(totals.reserved + ' tickets are still reserved and unpaid.');
   var shortfall = Math.round((totals.expected - totals.collected) * 100) / 100;
   if (shortfall > 0) blockers.push(ledger.currency + ' ' + shortfall + ' of expected money has not been handed in.');
@@ -275,6 +301,9 @@ function handleReportDrawReady(payload, user) {
   return {
     currency: ledger.currency,
     drawDate: cfg.DRAW_DATE || '',
+    checkInDate: isoDay_(cfgDate_(cfg, 'CHECK_IN_DATE')),
+    finalDeadline: isoDay_(lastDay),
+    finalPassed: !!(lastDay && lastDay < today_()),
     ready: blockers.length === 0,
     blockers: blockers,
     totals: {
