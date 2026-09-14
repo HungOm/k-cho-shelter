@@ -182,6 +182,16 @@ export const MY_ERRORS = {
   BOOKS_NOT_AVAILABLE: 'ဤစာအုပ်များ မရနိုင်ပါ',
   TRANSFER_BLOCKED: 'လွှဲပြောင်း၍ မရပါ',
   MONEY_STILL_OWED: 'ငွေ ကျန်ရှိနေသေးသည် — အရင် ရှင်းပါ',
+  // Dates and deadlines. Short on purpose: the English underneath carries the
+  // detail, and a gloss that runs to three lines stops being a gloss.
+  BAD_DATE: 'ရက်စွဲကို ဖတ်၍ မရပါ',
+  IN_THE_PAST: 'ကုန်လွန်ပြီးသော ရက်စွဲ ဖြစ်သည်',
+  TOO_FAR: 'အလွန်ဝေးသော ရက်စွဲ ဖြစ်သည်',
+  CANNOT_MOVE_BACK: 'နောက်ပြန် ရွှေ့၍ မရပါ — ရှေ့သို့သာ',
+  AFTER_DRAW: 'မဲဖောက်သည့်ရက် နောက်ပိုင်း ဖြစ်နေသည်',
+  DUE_AFTER_FINAL: 'နောက်ဆုံးရက် ကျော်လွန်နေသည်',
+  FINAL_PASSED: 'နောက်ဆုံးရက် ကုန်လွန်ပြီ ဖြစ်သည်',
+  NO_FINAL_DEADLINE: 'နောက်ဆုံးရက် သတ်မှတ်ရသေးပါ',
   VERSION_CONFLICT: 'အခြားသူတစ်ဦး ပြောင်းလဲထားပါသည်',
   BATCH_REJECTED: 'အမှားပါသဖြင့် တစ်ခုမှ မသိမ်းခဲ့ပါ',
   DUPLICATE_IN_BATCH: 'နှစ်ကြိမ် ထပ်နေသည်',
