@@ -451,7 +451,8 @@ function seeTickets(book) {
     <AgentForm v-else-if="modal?.kind === 'agent'" :agent="modal.payload"
                @close="closeModal" @saved="closeModal"
                @receipt="id => openModal('receipt', id)" />
-    <UserForm v-else-if="modal?.kind === 'user'" @close="closeModal" @saved="closeModal" />
+    <UserForm v-else-if="modal?.kind === 'user'" @close="closeModal" @saved="closeModal"
+              @needs-approval="r => openModal('askapproval', r)" />
     <IssueBooks v-else-if="modal?.kind === 'issue'"
                 @close="closeModal" @issued="id => openModal('receipt', id)" />
     <Receipt v-else-if="modal?.kind === 'receipt'" :agent-id="modal.payload" @close="closeModal" />

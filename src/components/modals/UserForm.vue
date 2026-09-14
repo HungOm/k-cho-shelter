@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { state, api, toast, isSuper } from '../../lib/store.js'
 import Sheet from '../ui/Sheet.vue'
 
-const emit = defineEmits(['close', 'saved'])
+const emit = defineEmits(['close', 'saved', 'needs-approval'])
 
 const email = ref('')
 const name = ref('')
@@ -44,7 +44,26 @@ async function save() {
     })
     toast('Added', 'ok')
     emit('saved')
-  } catch (err) { toast(err.message, 'bad', err.code) } finally { busy.value = false }
+  } catch (err) {
+    // An organiser may ask for a Helper, Seller or viewer; the owner decides.
+    // The server wrote the sentence the owner will read, so it is handed back
+    // untouched rather than rebuilt here — an approver who is shown a summary
+    // the server did not write is approving something else.
+    if (err.code === 'APPROVAL_REQUIRED') {
+      emit('needs-approval', {
+        action: 'upsert_user',
+        payload: {
+          email: email.value.trim(), role: role.value,
+          name: name.value.trim() || email.value.trim(),
+          agentId: role.value === 'agent' ? agentId.value : ''
+        },
+        summary: err.details?.summary || err.message,
+        detail: err.details?.detail || null
+      })
+      return
+    }
+    toast(err.message, 'bad', err.code)
+  } finally { busy.value = false }
 }
 </script>
 
