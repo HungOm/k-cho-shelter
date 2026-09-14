@@ -312,7 +312,7 @@ declare
   price numeric;
   unsold_numbers text[];
   declared integer;
-  amount_due numeric;
+  v_amount_due numeric;
   bad text;
 begin
   select * into b from books where number = p_book_number;
@@ -377,24 +377,24 @@ begin
       where book_idx = b.idx and status in ('Sold','Donated');
   end if;
 
-  amount_due := declared * price;
+  v_amount_due := declared * price;
 
   update books set
-    status = 'Settled', declared_sold = declared, amount_due = amount_due,
+    status = 'Settled', declared_sold = declared, amount_due = v_amount_due,
     amount_paid = p_amount_paid, settled_at = now(), settled_by = p_user,
     notes = coalesce(nullif(p_note,''), notes), modified_by = p_user
   where idx = b.idx;
 
   insert into book_history(book_idx, from_agent, action, by_user, note)
   values (b.idx, b.held_by_agent, 'settle', p_user,
-          'sold ' || declared || ', due ' || amount_due || ', paid ' || p_amount_paid);
+          'sold ' || declared || ', due ' || v_amount_due || ', paid ' || p_amount_paid);
 
   return jsonb_build_object(
     'book', p_book_number,
     'declaredSold', declared,
-    'amountDue', amount_due,
+    'amountDue', v_amount_due,
     'amountPaid', p_amount_paid,
-    'variance', p_amount_paid - amount_due,
+    'variance', p_amount_paid - v_amount_due,
     'unidentified', p_allow_unidentified
   );
 end $$ language plpgsql;
