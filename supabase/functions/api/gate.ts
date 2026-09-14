@@ -106,7 +106,23 @@ export function resolveUser(
   } | null,
   env: { get(k: string): string | undefined },
 ): AppUser {
-  const isSuper = isSuperAdminEmail(email, env)
+  /*
+   * A RESOLUTION, NOT A FIFTH TIER.
+ *
+ * 'superadmin' is what a user ROW may say. It resolves to role 'admin' plus the
+ * super-admin flag, and the four permission tiers are untouched. That
+ * distinction is the whole design: if it became a Role the registry compared
+ * against, every action declaring roles: ['admin', 'recorder'] would stop
+ * matching a superadmin, and they would lose the ordinary admin actions while
+ * keeping the exotic ones — able to void a ticket and not list the books.
+ *
+ * SUPER_ADMIN_EMAIL still always wins, and is still the only authority that
+ * cannot be switched off from inside the app. A superadmin BY ROW can be
+ * disabled like any other account, deliberately: making the row as
+ * unremovable as the secret would leave two things nobody can turn off
+ * instead of one.
+   */
+  const isSuper = isSuperAdminEmail(email, env) || row?.role === 'superadmin'
 
   if (!row && !isSuper) {
     throw new ApiError(
@@ -118,7 +134,9 @@ export function resolveUser(
   }
 
   const role = (isSuper ? 'admin' : (row?.role ?? 'viewer')) as Role
-  const active = isSuper ? true : row?.active !== false
+  // Only the one named in the function secret is immune to the active flag. A
+  // superadmin by row is an ordinary row and can be turned off.
+  const active = isSuperAdminEmail(email, env) ? true : row?.active !== false
 
   if (!active) {
     throw new ApiError('ACCOUNT_DISABLED', 'This account has been disabled.', null, 403)

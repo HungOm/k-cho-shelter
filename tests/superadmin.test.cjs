@@ -229,6 +229,53 @@ console.log('set_user_status guards');
     'but can disable a seller');
 }
 
+// ============ 5b. a second super admin, by row ============
+console.log('superadmin is an assignment that resolves, not a fifth tier');
+{
+  const boss = () => signIn(SUPER, [], false);
+
+  world();
+  handleUpsertUser({ email: 'super2@x.com', role: 'superadmin' }, boss());
+  const two = signIn('super2@x.com', [], false);
+
+  eq(two.isSuperAdmin, 'true', 'a superadmin row carries the flag');
+  // THE POINT OF THE WHOLE DESIGN. If this resolved to a fifth role instead of
+  // admin, every action declaring roles: ['admin','recorder'] would stop
+  // matching them — they would be able to void a ticket and not list the books.
+  eq(two.role, 'admin', 'and RESOLVES to admin, so ordinary admin actions still match');
+  eq(two.isAdmin, 'true', 'including the admin flag');
+
+  const reg = actionRegistry();
+  ok(isActionAllowed_('list_books', reg.list_books, two), 'they can do an ordinary admin action');
+  ok(isActionAllowed_('decide_approval', reg.decide_approval, two),
+     'and the super-only one that was blocked on a single person');
+  ok(isActionAllowed_('void_ticket', reg.void_ticket, two), 'and every other super-only action');
+
+  // Only a super admin can mint one — otherwise the tier is self-serve.
+  world();
+  eq(codeOf(() => handleUpsertUser({ email: 'x@x.com', role: 'superadmin' },
+     signIn('admin@x.com', [], false))),
+     'SUPER_ADMIN_ONLY', 'an organiser cannot mint a super admin');
+}
+
+console.log('a superadmin BY ROW can be switched off; the one in Script Properties cannot');
+{
+  const boss = () => signIn(SUPER, [], false);
+
+  world();
+  handleUpsertUser({ email: 'super2@x.com', role: 'superadmin' }, boss());
+  eq(handleSetUserStatus({ email: 'super2@x.com', active: false }, boss()).active, 'false',
+     'the row can be disabled');
+  // Deliberate: making the row as unremovable as the secret would leave two
+  // things nobody can turn off instead of one.
+  eq(codeOf(() => signIn('super2@x.com', [], false)), 'ACCOUNT_DISABLED',
+     'and a disabled superadmin cannot sign in');
+
+  world();
+  eq(codeOf(() => handleSetUserStatus({ email: SUPER, active: false }, boss())),
+     'SUPER_ADMIN_ONLY', 'the one in Script Properties still cannot be switched off');
+}
+
 // ============ 6. an admin is not shown the super admin ============
 console.log('list_users hides the super admin');
 {

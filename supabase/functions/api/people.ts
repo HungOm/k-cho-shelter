@@ -20,6 +20,11 @@ import { ApiError, isSuperAdminEmail, requireSuperAdmin, type AppUser, type Role
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any } }
 
+// What a row may SAY. 'superadmin' is assignable and resolves to admin plus the
+// flag; it is not a permission tier, so ROLES in gate.ts stays at four and no
+// action spec changes. Only a super admin can assign it, because upsertUser
+// requires one before it validates anything.
+const ASSIGNABLE_ROLES = ['admin', 'recorder', 'agent', 'viewer', 'superadmin']
 const VALID_ROLES: Role[] = ['admin', 'recorder', 'agent', 'viewer']
 
 async function audit(ctx: Ctx, action: string, details: unknown, email: string) {
@@ -28,17 +33,65 @@ async function audit(ctx: Ctx, action: string, details: unknown, email: string) 
 
 // ============ AGENTS ============
 
-export async function listAgents(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+export async function listAgents(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  // By NAME, not by id. This is the seller picker — somebody is looking for a
+  // person in it, and A003 sorts before A012 for reasons that mean nothing to
+  // them. The direct path ordered by name and this one by id, so the same list
+  // came back in two different orders depending on which door answered.
   const { data, error } = await ctx.supabaseAdmin
-    .from('agents').select('*').order('agent_id')
+    .from('agents').select('*').order('name')
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
-  // A view-only account never sees a contact number, the same rule the tickets
-  // follow. An agent's phone is how you chase a book that has not come back,
-  // which is exactly why it is worth withholding from somebody who only reads.
-  const rows = (data ?? []).map((a: Record<string, unknown>) =>
-    user.role === 'viewer' ? { ...a, phone: '' } : a)
+  // How many books each is holding right now. The picker shows it because the
+  // question before handing somebody more is always how much they already have.
+  const { data: out } = await ctx.supabaseAdmin
+    .from('books').select('held_by_agent').eq('status', 'Out')
+  const held = new Map<string, number>()
+  for (const b of out ?? []) {
+    const id = String((b as { held_by_agent?: string }).held_by_agent ?? '').trim()
+    if (id) held.set(id, (held.get(id) ?? 0) + 1)
+  }
+
+  const activeOnly = !!p.activeOnly
+
+  /*
+   * MAPPED FIELD BY FIELD, to the shape in handleListAgents.
+   *
+   * This returned the raw rows, so every option in the "Give out books" picker
+   * had value undefined while its label rendered correctly — the form looked
+   * complete, held nothing, and refused itself with "Who are the books for?"
+   * on a field the organiser could see was filled.
+   *
+   * It reached further than that dialog: store.js keys agentMap by a.id, so
+   * every key was undefined and no seller's name resolved anywhere — not in the
+   * book grid, not in search, not in "who is holding this book".
+   *
+   * Third time today a handler echoed the database instead of mapping it. The
+   * cost is never a crash; it is a screen that quietly says nothing.
+   */
+  const rows = (data ?? [])
+    .filter((a: Record<string, unknown>) => !activeOnly || a.active !== false)
+    .map((a: Record<string, unknown>) => ({
+      id: String(a.agent_id ?? '').trim(),
+      name: a.name ?? '',
+      // A view-only account never sees a contact number, the same rule the
+      // tickets follow. An agent's phone is how you chase a book that has not
+      // come back, which is exactly why it is worth withholding from somebody
+      // who only reads.
+      phone: user.role === 'viewer' ? maskPhone(String(a.phone ?? '')) : (a.phone ?? ''),
+      zone: a.zone ?? '',
+      active: a.active !== false,
+      booksOut: held.get(String(a.agent_id ?? '').trim()) ?? 0,
+      notes: a.notes ?? '',
+    }))
+
   return { agents: rows }
+}
+
+/** Same shape as every other masker here: four bullets and the last three. */
+function maskPhone(phone: string): string {
+  if (!phone) return ''
+  return phone.length < 4 ? '\u2022\u2022\u2022\u2022' : '\u2022\u2022\u2022\u2022' + phone.slice(-3)
 }
 
 export async function upsertAgent(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
@@ -116,8 +169,8 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new ApiError('BAD_REQUEST', 'That does not look like an email address.')
   }
-  if (!VALID_ROLES.includes(role)) {
-    throw new ApiError('BAD_REQUEST', 'Role must be one of: ' + VALID_ROLES.join(', '))
+  if (!ASSIGNABLE_ROLES.includes(role)) {
+    throw new ApiError('BAD_REQUEST', 'Role must be one of: ' + ASSIGNABLE_ROLES.join(', '))
   }
   if (role === 'agent' && !p.agentId) {
     throw new ApiError('MISSING_FIELD', 'An agent user must be linked to an Agent_ID.')

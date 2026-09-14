@@ -195,6 +195,36 @@ console.log('list_books carries the counts the home screen reads')
   ok(snake.length === 0, `no raw database columns on the row: ${snake.join(', ')}`)
 }
 
+console.log('list_agents carries the seller picker the organiser uses')
+{
+  const d = await call('list_agents')
+  ok(Array.isArray(d.agents) && d.agents.length > 0, 'agents come back')
+
+  // The keys read out of handleListAgents, not typed here.
+  const gs = readFileSync(new URL('../apps_script/People.gs', import.meta.url), 'utf8')
+  const block = gs.slice(gs.indexOf('function handleListAgents'))
+  const push = block.slice(block.indexOf('out.push({'), block.indexOf('});'))
+  const expected = [...push.matchAll(/^\s{6}(\w+):/gm)].map((m) => m[1])
+  ok(expected.length >= 6, `read ${expected.length} keys off the Apps Script handler`)
+
+  const row = d.agents[0]
+  for (const k of expected) ok(row[k] !== undefined, `each agent row carries ${k}`)
+
+  // THE ONE THAT BROKE. IssueBooks renders <option :value="a.id">, so an
+  // undefined id makes a form that looks filled and holds nothing — it then
+  // refuses itself with "Who are the books for?" on a visibly answered field.
+  ok(String(row.id).startsWith('A'), `id is an agent id, not "${row.id}"`)
+  ok(!('agent_id' in row), 'and the raw column name is gone')
+
+  // booksOut is why the picker is worth reading before handing over more.
+  ok(typeof row.booksOut === 'number', 'booksOut is a number')
+  const holder = d.agents.find((a) => a.id === 'A001')
+  ok(holder && holder.booksOut === 1, `A001 is holding one book (got ${holder?.booksOut})`)
+
+  const snake = Object.keys(row).filter((k) => k.includes('_'))
+  ok(snake.length === 0, `no raw database columns: ${snake.join(', ')}`)
+}
+
 console.log('whoami carries what the app boots on')
 {
   const d = await call('whoami')

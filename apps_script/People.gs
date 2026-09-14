@@ -188,7 +188,9 @@ function handleUpsertUser(payload, user) {
   var email = requireField_(payload, 'email').toLowerCase();
   var role = String(payload.role || ROLES.VIEWER).toLowerCase();
 
-  var validRoles = [ROLES.ADMIN, ROLES.RECORDER, ROLES.AGENT, ROLES.VIEWER];
+  // 'superadmin' is assignable and resolves to admin plus the flag. It is not
+  // a permission tier — ROLES stays at four and no action spec changes.
+  var validRoles = [ROLES.ADMIN, ROLES.RECORDER, ROLES.AGENT, ROLES.VIEWER, 'superadmin'];
   if (validRoles.indexOf(role) === -1) {
     throw new ApiError('BAD_REQUEST', 'Role must be one of: ' + validRoles.join(', '));
   }
