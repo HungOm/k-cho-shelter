@@ -15,7 +15,8 @@ const props = defineProps({
   message: String,
   needsClientId: Boolean,
   savedUrl: String,
-  supabase: Boolean       // sign in through Supabase Auth rather than GIS
+  supabase: Boolean,      // sign in through Supabase Auth rather than GIS
+  refused: Boolean        // the account is not on the list, or was turned off
 })
 const emit = defineEmits(['connect', 'reset', 'retry', 'signin'])
 
@@ -107,12 +108,32 @@ onMounted(async () => {
         </button>
       </div>
 
+      <!-- turned away: on the list, or not -->
+      <!--
+        A refusal and a breakage need opposite things. Somebody who is simply
+        not on the list gains nothing from "Try again" — it reloads into the
+        same wall — and everything from a way to reach a different Google
+        account. Showing both buttons for both cases is how a person ends up
+        pressing the useless one, repeatedly, and concluding the app is broken.
+      -->
+      <div v-else-if="refused" class="pad left">
+        <div class="note bad">{{ message }}</div>
+        <p class="muted small">
+          Nothing is wrong with the app — this account simply has no access yet.
+        </p>
+        <button class="btn primary block" @click="emit('reset')">
+          Sign in with a different account
+        </button>
+      </div>
+
       <!-- something went wrong -->
       <div v-else class="pad left">
         <div class="note bad">{{ message }}</div>
         <div class="row" style="justify-content:center">
           <button class="btn" @click="emit('retry')">Try again</button>
-          <button class="btn ghost" @click="emit('reset')">Different link</button>
+          <button class="btn ghost" @click="emit('reset')">
+            {{ supabase ? 'Different account' : 'Different link' }}
+          </button>
         </div>
       </div>
     </div>
