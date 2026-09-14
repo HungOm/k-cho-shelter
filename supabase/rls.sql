@@ -33,7 +33,21 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then
     create role authenticated nologin;
   end if;
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin;
+  end if;
 end $$;
+
+-- A NOTE ON THE SUPER ADMIN, because this is the one place the two halves
+-- disagree and it is confusing until said plainly.
+--
+-- Super-admin authority comes from the SUPER_ADMIN_EMAIL function secret and
+-- only from there — nothing in this database grants it, which is the whole
+-- point. But Postgres cannot read a function secret, so for DIRECT reads the
+-- super admin needs an ordinary app_users row like everybody else, with role
+-- 'admin'. That row grants normal admin reading; it does not, and cannot, make
+-- anybody super. Apps Script did exactly this, seeding the bootstrap admin into
+-- the Users tab while keeping the authority in a Script Property.
 
 -- ============ WHO IS ASKING ============
 
@@ -210,6 +224,13 @@ grant select on config_readable to authenticated;
 
 revoke all on app_users, audit_log, permissions, pending_approvals, winners,
               book_history from authenticated;
+
+-- And from anon, which is the role a request with no session gets. Row security
+-- already returns nothing to it, so this changes no outcome today — it is here
+-- so that adding a policy later for some other reason cannot accidentally open
+-- these to an unauthenticated caller.
+revoke all on app_users, audit_log, permissions, pending_approvals, winners,
+              book_history, tickets, books, agents, config from anon;
 
 -- The base tables are not readable directly either — only the views above,
 -- which is what keeps the masking from being optional.
