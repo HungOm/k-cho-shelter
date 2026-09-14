@@ -134,7 +134,7 @@ export async function upsertAgent(p: Record<string, unknown>, user: AppUser, ctx
 
 export async function listUsers(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const { data, error } = await ctx.supabaseAdmin
-    .from('app_users').select('email,name,role,active,agent_id,added_by,added_at').order('email')
+    .from('app_users').select('email,name,role,status,active,agent_id,added_by,added_at').order('email')
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   const superEmail = Deno.env.get('SUPER_ADMIN_EMAIL')?.trim().toLowerCase() ?? ''
@@ -144,7 +144,11 @@ export async function listUsers(_p: Record<string, unknown>, user: AppUser, ctx:
     const rowIsSuper = !!superEmail && email === superEmail
     if (rowIsSuper && !user.isSuperAdmin) continue      // not shown at all
     out.push({
-      email, name: r.name, role: r.role, active: r.active,
+      email, name: r.name, role: r.role,
+      // Both: `status` is the truth, `active` kept so nothing reading the old
+      // field breaks while the screens catch up.
+      status: r.status ?? (r.active ? 'active' : 'suspended'),
+      active: r.active,
       agentId: r.agent_id ?? '', addedBy: r.added_by, addedDate: r.added_at,
       isYou: email === user.email,
       isSuperAdmin: rowIsSuper,
@@ -164,6 +168,21 @@ export const REQUESTABLE_BY_ADMIN = ['recorder', 'agent', 'viewer']
 export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const email = String(p.email ?? '').trim().toLowerCase()
   const role = String(p.role ?? 'viewer').toLowerCase() as Role
+  /*
+   * A NEW ROW IS ACTIVE, because both routes to one are already an approval.
+   *
+   * The owner adding somebody IS approving them, and an organiser's request
+   * only becomes a row once the owner has approved it. Starting pending would
+   * mean approving the same person twice — and, worse, it would make
+   * "waiting to be let in" a thing the app says when nothing is actually
+   * queued. That message is a promise; it should only appear when it is true.
+   *
+   * pending stays available explicitly, for staging somebody ahead of time.
+   */
+  const newStatus = ['pending', 'active', 'suspended', 'banned']
+    .includes(String(p.status ?? '').toLowerCase())
+    ? String(p.status).toLowerCase()
+    : 'active'
 
   /*
    * WHO MAY ASK WIDENED; WHO DECIDES DID NOT.
@@ -199,7 +218,7 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
   }
 
   const { data: existing } = await ctx.supabaseAdmin
-    .from('app_users').select('email,role').eq('email', email).maybeSingle()
+    .from('app_users').select('email,role,status').eq('email', email).maybeSingle()
 
   // Changing somebody who is ALREADY an organiser or owner is the owner's
   // alone, approved or not — otherwise a request to "edit a Helper" could be
@@ -227,9 +246,24 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
     if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${p.agentId}".`, null, 404)
   }
 
+  // Only the owner may let somebody straight in. An organiser's approved
+  // request adds a pending row, and admitting it is a second, separate act —
+  // which is what "you approve" meant, rather than "you rubber-stamp a row that
+  // is already working".
+  // Letting somebody in is the owner's act — either directly, or by approving
+  // the request that produced this call. An organiser reaching here any other
+  // way has not been approved by anybody.
+  const approved = user.isSuperAdmin ||
+    !!(ctx as unknown as { _viaApproval?: boolean })._viaApproval
+  if (newStatus === 'active' && !existing && !approved) {
+    throw new ApiError('SUPER_ADMIN_ONLY', 'Only the owner can let somebody in.')
+  }
+
   const row = {
     email, name: String(p.name ?? email), role,
-    active: p.active === undefined ? true : !!p.active,
+    // An existing row keeps the status it has: editing somebody's name must not
+    // quietly readmit a suspended account.
+    status: existing ? existing.status : newStatus,
     agent_id: p.agentId ? String(p.agentId) : null,
     added_by: user.email,
   }
@@ -238,13 +272,15 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
     .from('app_users').upsert(row, { onConflict: 'email' })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
-  await audit(ctx, existing ? 'UPDATE_USER' : 'CREATE_USER', { email, role }, user.email)
-  return existing ? { email, updated: true } : { email, created: true }
+  await audit(ctx, existing ? 'UPDATE_USER' : 'CREATE_USER',
+    { email, role, status: row.status }, user.email)
+  return existing
+    ? { email, updated: true, status: row.status }
+    : { email, created: true, status: row.status }
 }
 
 export async function setUserStatus(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const email = String(p.email ?? '').trim().toLowerCase()
-  if (p.active === undefined) throw new ApiError('MISSING_FIELD', 'active is required.')
 
   // Checked first, and before the row lookup, because the super admin need not
   // have a row at all — and the refusal should read the same whoever asks,
@@ -258,28 +294,52 @@ export async function setUserStatus(p: Record<string, unknown>, user: AppUser, c
   }
 
   // Locking yourself out of your own system is a support call you cannot make.
-  if (email === user.email && !p.active) {
-    throw new ApiError('BAD_REQUEST', 'You cannot disable your own account.')
+  /*
+   * Takes a STATUS, and still understands the old active:true/false.
+   *
+   * The four states are one field so they cannot contradict each other. A
+   * boolean plus a separate "banned" flag is two facts that can disagree, and
+   * the disagreement always surfaces as somebody being let in who should not
+   * be — never the other way round.
+   */
+  const STATUSES = ['pending', 'active', 'suspended', 'banned']
+  const asked = String(p.status ?? '').trim().toLowerCase()
+  const status = asked || (p.active === undefined ? '' : (p.active ? 'active' : 'suspended'))
+
+  if (!status) {
+    throw new ApiError('MISSING_FIELD', 'status is required (' + STATUSES.join(', ') + ').')
+  }
+  if (!STATUSES.includes(status)) {
+    throw new ApiError('BAD_REQUEST', 'status must be one of: ' + STATUSES.join(', '))
+  }
+  // Locking yourself out of your own system is a support call you cannot make.
+  if (email === user.email && status !== 'active') {
+    throw new ApiError('BAD_REQUEST', 'You cannot stop your own account.')
   }
 
   const { data: existing } = await ctx.supabaseAdmin
-    .from('app_users').select('email,role').eq('email', email).maybeSingle()
+    .from('app_users').select('email,role,status').eq('email', email).maybeSingle()
   if (!existing) {
     throw new ApiError('USER_NOT_FOUND', `${email} is not on the access list.`, null, 404)
   }
-  // An organiser may switch a SELLER's sign-in off — a lost phone at a Sunday
-  // service should not wait for the super admin to wake up. Anything above a
-  // seller is a privilege decision and goes to the super admin.
+  // An organiser may pause a SELLER — a lost phone at a Sunday service should
+  // not wait for the super admin to wake up — and may not APPROVE anybody.
+  // Letting somebody in is the decision that matters; stopping them is the one
+  // that is urgent, and only the second is safe to delegate.
   if (existing.role !== 'agent') {
-    requireSuperAdmin(user, 'Enabling or disabling anybody but a seller')
+    requireSuperAdmin(user, 'Changing the status of anybody but a seller')
+  }
+  if (status === 'active' && existing.status !== 'active') {
+    requireSuperAdmin(user, 'Letting somebody in')
   }
 
   const { error } = await ctx.supabaseAdmin
-    .from('app_users').update({ active: !!p.active }).eq('email', email)
+    .from('app_users').update({ status }).eq('email', email)
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
-  await audit(ctx, p.active ? 'ENABLE_USER' : 'DISABLE_USER', { email }, user.email)
-  return { email, active: !!p.active }
+  await audit(ctx, 'SET_USER_STATUS',
+    { email, from: existing.status, to: status }, user.email)
+  return { email, status, active: status === 'active' }
 }
 
 // ============ ACCESS CONTROL ============

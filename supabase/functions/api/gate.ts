@@ -102,6 +102,7 @@ export function resolveUser(
     name?: string | null
     role?: string | null
     active?: boolean | null
+    status?: string | null
     agent_id?: string | null
   } | null,
   env: { get(k: string): string | undefined },
@@ -134,13 +135,38 @@ export function resolveUser(
   }
 
   const role = (isSuper ? 'admin' : (row?.role ?? 'viewer')) as Role
-  // Only the one named in the function secret is immune to the active flag. A
-  // superadmin by row is an ordinary row and can be turned off.
-  const active = isSuperAdminEmail(email, env) ? true : row?.active !== false
 
-  if (!active) {
-    throw new ApiError('ACCOUNT_DISABLED', 'This account has been disabled.', null, 403)
+  /*
+   * ONLY 'active' IS LET IN, AND EACH OTHER STATE SAYS WHICH IT IS.
+   *
+   * All three refuse identically — nothing is read, nothing is written, and the
+   * database agrees independently because app_role() gates on status too. What
+   * differs is only the sentence, and that difference is the point: somebody
+   * waiting to be let in and somebody whose access was stopped need to do
+   * different things next, and telling one they are the other leaves them
+   * either waiting for nothing or believing they are in trouble.
+   *
+   * The status travels in details so the app can show the right screen rather
+   * than parsing the message.
+   */
+  const status = String(row?.status ?? (row?.active === false ? 'suspended' : 'active'))
+  // Only the one named in the function secret is immune. A superadmin by row is
+  // an ordinary row and can be suspended like any other.
+  const immune = isSuperAdminEmail(email, env)
+
+  if (!immune && status !== 'active') {
+    const said: Record<string, [string, string]> = {
+      pending: ['ACCOUNT_PENDING',
+        'This account is waiting to be let in. The organiser has to approve it.'],
+      suspended: ['ACCOUNT_SUSPENDED',
+        'This account has been paused. Ask the organiser to turn it back on.'],
+      banned: ['ACCOUNT_BANNED', 'This account has been stopped.'],
+    }
+    const [code, message] = said[status] ?? ['ACCOUNT_DISABLED', 'This account has been disabled.']
+    throw new ApiError(code, message, { status }, 403)
   }
+
+  const active = immune ? true : status === 'active'
 
   return {
     email,

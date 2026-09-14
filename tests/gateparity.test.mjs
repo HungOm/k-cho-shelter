@@ -139,11 +139,30 @@ console.log('the super admin comes from the environment, never a row')
   try { ported.resolveUser('stranger@x.com', null, env) } catch (e) { threw = e.code }
   ok(threw === 'NOT_AUTHORIZED', 'a stranger with no row is refused')
 
+  // Each account state refuses under its own name. A row with only the old
+  // boolean still refuses — as suspended, which is what active:false meant.
   let off = null
   try {
     ported.resolveUser('rec@x.com', { role: 'recorder', active: false, name: 'R', agent_id: null }, env)
   } catch (e) { off = e.code }
-  ok(off === 'ACCOUNT_DISABLED', 'a disabled ordinary user is refused')
+  ok(off === 'ACCOUNT_SUSPENDED', `an old-style disabled row is refused (${off})`)
+
+  for (const [status, code] of [
+    ['pending', 'ACCOUNT_PENDING'],
+    ['suspended', 'ACCOUNT_SUSPENDED'],
+    ['banned', 'ACCOUNT_BANNED'],
+  ]) {
+    let got = null, details = null
+    try {
+      ported.resolveUser('rec@x.com', { role: 'recorder', status, name: 'R', agent_id: null }, env)
+    } catch (e) { got = e.code; details = e.details }
+    ok(got === code, `${status} refuses as ${code} (${got})`)
+    ok(details?.status === status, `and carries the status for the screen`)
+  }
+
+  // The one named in the secret is immune to all of it.
+  const banned = ported.resolveUser('boss@x.com', { role: 'viewer', status: 'banned', name: 'B', agent_id: null }, env)
+  ok(banned.isSuperAdmin, 'the secret outranks even a banned row')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

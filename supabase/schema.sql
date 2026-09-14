@@ -48,7 +48,24 @@ create table if not exists agents (
   name         text not null,
   phone        text not null default '',
   zone         text not null default '',
-  active       boolean not null default true,
+  /*
+   * A LIFECYCLE, NOT A BOOLEAN.
+   *
+   * pending    added, not yet let in. Sees that, and nothing else.
+   * active     approved and working.
+   * suspended  temporarily stopped — a lost phone, a disputed book.
+   * banned     stopped for good.
+   *
+   * The three that are not 'active' all deny equally. They are separate so the
+   * person is told WHICH applies: "waiting to be let in" and "your access was
+   * stopped" are different sentences to receive, and somebody told the wrong
+   * one either waits for nothing or thinks they are in trouble.
+   */
+  status       text not null default 'active'
+                 check (status in ('pending','active','suspended','banned')),
+  -- Derived, so the two can never disagree. One source of truth for whether
+  -- somebody is let in; anything still reading `active` keeps working.
+  active       boolean generated always as (status = 'active') stored,
   notes        text not null default ''
 );
 

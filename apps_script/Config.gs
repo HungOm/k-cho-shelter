@@ -43,7 +43,10 @@ var COLS = {
   ],
   BOOK_HISTORY: ['Timestamp', 'Book_Number', 'From_Agent', 'To_Agent', 'Action', 'By_User', 'Note'],
   AGENTS: ['Agent_ID', 'Name', 'Phone', 'Zone', 'Active', 'Notes'],
-  USERS: ['Email', 'Name', 'Role', 'Active', 'Agent_ID', 'Google_Sub', 'Added_By', 'Added_Date'],
+  // Status is APPENDED, never inserted. Every existing sheet has these columns
+  // in this order and rows are written positionally, so putting a new one in
+  // the middle shifts every value after it into the wrong column.
+  USERS: ['Email', 'Name', 'Role', 'Active', 'Agent_ID', 'Google_Sub', 'Added_By', 'Added_Date', 'Status'],
   PERMISSIONS: ['Action', 'admin', 'recorder', 'agent', 'viewer'],
   PENDING: [
     'Request_ID', 'Action', 'Payload', 'Summary', 'Detail', 'Requested_By', 'Requested_At',

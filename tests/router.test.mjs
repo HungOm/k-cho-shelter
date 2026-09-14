@@ -181,7 +181,10 @@ console.log('a superadmin row is a super admin on this backend too')
 
   // A row is a row: it can be switched off.
   const dead = await call('whoami', {}, 'off@x.com', world)
-  eq(dead.body.error?.code, 'ACCOUNT_DISABLED', 'a disabled superadmin row cannot sign in')
+  // Named by WHICH state, not a generic refusal — the whole point of the
+  // lifecycle is that the person is told what actually applies to them.
+  eq(dead.body.error?.code, 'ACCOUNT_SUSPENDED', 'a suspended superadmin row cannot sign in')
+  eq(dead.body.error?.details?.status, 'suspended', 'and the status travels with it')
 
   // The secret still wins over everything, including a row that says otherwise.
   const demoted = fakeDb({
@@ -241,6 +244,110 @@ console.log('an organiser may ASK to add a helper, and may not ask to add a peer
     eq(r.body.error?.code, 'SUPER_ADMIN_ONLY',
        'pointing a "make a viewer" request at an existing organiser is refused')
   }
+}
+
+console.log('each account state says which it is, and none of them see anything')
+{
+  const world = () => fakeDb({
+    config: baseConfig(),
+    app_users: [
+      { email: 'boss@x.com', name: 'Boss', role: 'admin', status: 'active', active: true, agent_id: null },
+      { email: 'wait@x.com', name: 'Wait', role: 'recorder', status: 'pending', active: false, agent_id: null },
+      { email: 'paused@x.com', name: 'P', role: 'recorder', status: 'suspended', active: false, agent_id: null },
+      { email: 'gone@x.com', name: 'G', role: 'recorder', status: 'banned', active: false, agent_id: null },
+      { email: 'ok@x.com', name: 'OK', role: 'recorder', status: 'active', active: true, agent_id: null },
+    ],
+  })
+
+  for (const [email, code, status] of [
+    ['wait@x.com', 'ACCOUNT_PENDING', 'pending'],
+    ['paused@x.com', 'ACCOUNT_SUSPENDED', 'suspended'],
+    ['gone@x.com', 'ACCOUNT_BANNED', 'banned'],
+  ]) {
+    const r = await call('whoami', {}, email, world())
+    eq(r.body.error?.code, code, `${status} is named as ${code}`)
+    eq(r.body.error?.details?.status, status, 'with the status in details for the screen')
+    eq(r.status, 403, 'refused')
+
+    // AND SEES NOTHING. The distinct message is a courtesy; the denial is total.
+    for (const action of ['read_snapshot', 'list_books', 'list_agents', 'search']) {
+      const d = await call(action, { q: 'KS' }, email, world())
+      eq(d.body.error?.code, code, `${status} cannot ${action} either`)
+    }
+  }
+
+  const good = await call('whoami', {}, 'ok@x.com', world())
+  ok(good.body.ok, 'and an active account works')
+}
+
+console.log('letting somebody in is the owner\'s act; stopping them is urgent')
+{
+  const world = () => fakeDb({
+    config: baseConfig(),
+    app_users: [
+      { email: 'boss@x.com', name: 'Boss', role: 'admin', status: 'active', active: true, agent_id: null },
+      { email: 'admin@x.com', name: 'Admin', role: 'admin', status: 'active', active: true, agent_id: null },
+      { email: 'wait@x.com', name: 'Wait', role: 'agent', status: 'pending', active: false, agent_id: 'A001' },
+      { email: 'sell@x.com', name: 'Sell', role: 'agent', status: 'active', active: true, agent_id: 'A001' },
+    ],
+    agents: [{ agent_id: 'A001', name: 'Daw Hla', active: true }],
+  })
+
+  // An organiser may PAUSE a seller — the lost-phone case, which is urgent.
+  const w1 = world()
+  const stop = await call('set_user_status', { email: 'sell@x.com', status: 'suspended' }, 'admin@x.com', w1)
+  ok(stop.body.ok, 'an organiser can pause a seller')
+  eq(w1.row('app_users', (u) => u.email === 'sell@x.com').status, 'suspended', 'and it took')
+
+  // ...and may NOT let one in. Admitting is the decision that matters.
+  const w2 = world()
+  const admit = await call('set_user_status', { email: 'wait@x.com', status: 'active' }, 'admin@x.com', w2)
+  eq(admit.body.error?.code, 'SUPER_ADMIN_ONLY', 'an organiser cannot let a pending account in')
+  eq(w2.row('app_users', (u) => u.email === 'wait@x.com').status, 'pending', 'it stays pending')
+
+  const w3 = world()
+  const owner = await call('set_user_status', { email: 'wait@x.com', status: 'active' }, 'boss@x.com', w3)
+  ok(owner.body.ok, 'the owner can')
+  eq(w3.row('app_users', (u) => u.email === 'wait@x.com').status, 'active', 'and it takes')
+
+  // A new row starts pending: added and let in are two acts.
+  const w4 = world()
+  await call('upsert_user', { email: 'fresh@x.com', role: 'recorder' }, 'boss@x.com', w4)
+  // The owner adding somebody IS approving them — approving twice would make
+  // "waiting to be let in" a message the app shows when nothing is queued.
+  eq(w4.row('app_users', (u) => u.email === 'fresh@x.com').status, 'active',
+     'the owner adding somebody lets them in')
+
+  const w4b = world()
+  await call('upsert_user', { email: 'later@x.com', role: 'recorder', status: 'pending' }, 'boss@x.com', w4b)
+  eq(w4b.row('app_users', (u) => u.email === 'later@x.com').status, 'pending',
+     'and they can stage somebody ahead of time if they choose')
+
+  // Editing a suspended account must not quietly readmit it.
+  const w5 = world()
+  await call('set_user_status', { email: 'sell@x.com', status: 'suspended' }, 'boss@x.com', w5)
+  await call('upsert_user', { email: 'sell@x.com', role: 'agent', agentId: 'A001', name: 'New Name' }, 'boss@x.com', w5)
+  eq(w5.row('app_users', (u) => u.email === 'sell@x.com').status, 'suspended',
+     'renaming a suspended account leaves it suspended')
+
+  // The account named in the function secret cannot be stopped at all — a
+  // stronger refusal than the self-check, and it comes first.
+  const w6 = world()
+  const owner2 = await call('set_user_status', { email: 'boss@x.com', status: 'banned' }, 'boss@x.com', w6)
+  eq(owner2.body.error?.code, 'SUPER_ADMIN_ONLY', 'the owner account cannot be stopped from the app')
+
+  // A superadmin BY ROW is an ordinary row, so the self-check is what protects
+  // them — locking yourself out is a support call you cannot make.
+  const w7 = fakeDb({
+    config: baseConfig(),
+    app_users: [
+      { email: 'boss@x.com', name: 'Boss', role: 'admin', status: 'active', active: true, agent_id: null },
+      { email: 'two@x.com', name: 'Two', role: 'superadmin', status: 'active', active: true, agent_id: null },
+    ],
+  })
+  const self = await call('set_user_status', { email: 'two@x.com', status: 'banned' }, 'two@x.com', w7)
+  eq(self.body.error?.code, 'BAD_REQUEST', 'you cannot stop your own account')
+  eq(w7.row('app_users', (u) => u.email === 'two@x.com').status, 'active', 'and it stayed active')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
