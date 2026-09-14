@@ -283,3 +283,118 @@ begin
     'buyerName', p_buyer_name
   );
 end $$ language plpgsql;
+
+-- ============ SETTLEMENT ============
+-- What an agent owes, decided in one transaction.
+--
+-- It asks for the tickets that did NOT sell — the ones the agent is physically
+-- holding — and marks everything else sold. Two numbers typed in five seconds
+-- is exact; "I sold eight" throws away the ticket-to-buyer link the draw
+-- depends on.
+--
+-- Tickets already sold keep their real buyer. The ones nobody wrote down are
+-- marked sold with the buyer fields BLANK and source 'settlement', which is
+-- honest: the money arrived, nobody recorded who from, and the missing-contact
+-- report is what surfaces it. Inventing a buyer would be worse than the gap.
+
+create or replace function settle_book(
+  p_book_number text,
+  p_unsold jsonb,
+  p_amount_paid numeric,
+  p_allow_unidentified boolean,
+  p_sold_count integer,
+  p_force boolean,
+  p_user text,
+  p_note text
+) returns jsonb as $$
+declare
+  b record;
+  price numeric;
+  unsold_numbers text[];
+  declared integer;
+  amount_due numeric;
+  bad text;
+begin
+  select * into b from books where number = p_book_number;
+  if not found then
+    return jsonb_build_object('error', jsonb_build_object(
+      'code','BOOK_NOT_FOUND','message','Book ' || p_book_number || ' does not exist.'));
+  end if;
+
+  if b.status = 'Settled' and not p_force then
+    return jsonb_build_object('error', jsonb_build_object(
+      'code','ALREADY_SETTLED','message','Book ' || p_book_number || ' is already settled.'));
+  end if;
+
+  select coalesce(nullif(value,'')::numeric, 10) into price from config where key = 'TICKET_PRICE';
+
+  if p_allow_unidentified then
+    -- The fallback for when the leftovers are lost: record the book total and
+    -- do NOT invent ticket rows. A fabricated "Sold" against the wrong number
+    -- is a lie the system would then defend.
+    if p_sold_count is null or p_sold_count < 0 then
+      return jsonb_build_object('error', jsonb_build_object(
+        'code','MISSING_FIELD','message','How many tickets were sold? (soldCount)'));
+    end if;
+    if p_sold_count > (select count(*) from tickets where book_idx = b.idx) then
+      return jsonb_build_object('error', jsonb_build_object(
+        'code','BAD_REQUEST','message','That is more tickets than the book contains.'));
+    end if;
+    declared := p_sold_count;
+  else
+    select array_agg(upper(trim(x))) into unsold_numbers
+      from jsonb_array_elements_text(coalesce(p_unsold,'[]'::jsonb)) x;
+    unsold_numbers := coalesce(unsold_numbers, '{}');
+
+    -- Every named ticket must be in this book. A number from the next book is
+    -- a typo, and accepting it would mark the wrong ticket unsold.
+    select t into bad from (
+      select x from unnest(unsold_numbers) x
+      where not exists (select 1 from tickets where upper(number) = x and book_idx = b.idx)
+    ) s(t) limit 1;
+    if bad is not null then
+      return jsonb_build_object('error', jsonb_build_object(
+        'code','NOT_IN_BOOK','message','Ticket ' || bad || ' is not in book ' || p_book_number || '.'));
+    end if;
+
+    -- Handed back: onto the shelf, buyer details cleared.
+    update tickets set
+      status = 'Available', buyer_name = '', buyer_phone = '', buyer_zone = '',
+      sold_by_agent = null, amount = null, payment_status = '', sold_at = null,
+      source = '', recorded_by = p_user
+    where book_idx = b.idx and upper(number) = any(unsold_numbers) and status <> 'Void';
+
+    -- Everything else in the book sold. Anything already Sold or Donated keeps
+    -- the buyer somebody took the trouble to write down.
+    update tickets set
+      status = 'Sold', sold_by_agent = b.held_by_agent, amount = price,
+      payment_status = 'Paid', sold_at = now(), source = 'settlement', recorded_by = p_user
+    where book_idx = b.idx
+      and upper(number) <> all(unsold_numbers)
+      and status not in ('Sold','Donated','Void');
+
+    select count(*) into declared from tickets
+      where book_idx = b.idx and status in ('Sold','Donated');
+  end if;
+
+  amount_due := declared * price;
+
+  update books set
+    status = 'Settled', declared_sold = declared, amount_due = amount_due,
+    amount_paid = p_amount_paid, settled_at = now(), settled_by = p_user,
+    notes = coalesce(nullif(p_note,''), notes), modified_by = p_user
+  where idx = b.idx;
+
+  insert into book_history(book_idx, from_agent, action, by_user, note)
+  values (b.idx, b.held_by_agent, 'settle', p_user,
+          'sold ' || declared || ', due ' || amount_due || ', paid ' || p_amount_paid);
+
+  return jsonb_build_object(
+    'book', p_book_number,
+    'declaredSold', declared,
+    'amountDue', amount_due,
+    'amountPaid', p_amount_paid,
+    'variance', p_amount_paid - amount_due,
+    'unidentified', p_allow_unidentified
+  );
+end $$ language plpgsql;
