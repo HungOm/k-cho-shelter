@@ -136,5 +136,26 @@ console.log('a snapshot page carries what the client pages with')
     'read_delta speaks the same dialect as a snapshot')
 }
 
+console.log('list_books returns what the client actually reads off it')
+{
+  const fn = ts.slice(ts.indexOf('async function listBooks'), ts.indexOf('async function readAudit'))
+  // store.js does `state.bookStats = books.stats`. This returned no stats at
+  // all, and the gap was invisible because report_draw_ready overwrote
+  // bookStats moments later — so it only showed when that report failed, and
+  // then the grid lost its counts for a reason nobody would connect to here.
+  // Shorthand counts: `books,` is the same promise as `books: books`.
+  const returns = (src, key) => new RegExp(`\\b${key}\\s*[,:]`).test(src)
+  for (const key of ['stats', 'books', 'total', 'currency', 'generatedBooks', 'heldBackBooks']) {
+    ok(returns(fn, key), `list_books returns ${key}`)
+  }
+
+  // The Apps Script side is the contract both have to meet.
+  const gsFn = read('../apps_script/Books.gs')
+  const gsRet = gsFn.slice(gsFn.indexOf('function handleListBooks'))
+  for (const key of ['stats', 'currency', 'generatedBooks', 'heldBackBooks']) {
+    ok(returns(gsRet, key), `and Apps Script returns ${key} too`)
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
