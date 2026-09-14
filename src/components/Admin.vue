@@ -50,10 +50,61 @@ async function loadUsers() {
   } catch (err) { toast(err.message, 'bad', err.code); users.value = [] }
 }
 
-async function toggle(u) {
+/**
+ * What an account is, in one word.
+ *
+ * The column said on/off while the gate had four states. "off" covered three
+ * of them — waiting to be let in, paused, and stopped for good — which are not
+ * the same thing to the person refused, and not the same decision to the person
+ * looking at the list.
+ */
+const STATUS_WORDS = {
+  active: 'on', pending: 'waiting', suspended: 'paused', banned: 'stopped',
+}
+const statusOf = u => u.status || (u.active ? 'active' : 'suspended')
+
+/**
+ * Only the changes THIS person may actually make to THIS row.
+ *
+ * Built from the gate's own rules rather than guessed, because offering a
+ * button that comes back SUPER_ADMIN_ONLY is the failure this app keeps
+ * repeating: a control that looks available, refuses, and leaves somebody
+ * pressing it again. The rules, from setUserStatus:
+ *   - the super admin's own row cannot be changed from the app at all
+ *   - you cannot stop your own account
+ *   - anybody who is not a seller is the owner's business only
+ *   - letting somebody IN is the owner's alone; pausing them is not
+ * Pausing is the urgent one — a lost phone on a Sunday should not wait for the
+ * owner to wake up — and it is the only one safe to delegate.
+ */
+function actionsFor(u) {
+  if (u.isSuperAdmin) return []
+  const now = statusOf(u)
+  const mine = []
+  if (isSuper.value) {
+    if (now !== 'active') mine.push({ status: 'active', label: 'Let in', tone: 'primary' })
+    if (now !== 'suspended' && !u.isYou) mine.push({ status: 'suspended', label: 'Pause' })
+    if (now !== 'banned' && !u.isYou) mine.push({ status: 'banned', label: 'Stop' })
+    return mine
+  }
+  // An organiser: sellers only, and never the decision to let somebody in.
+  if (u.role !== 'agent' || u.isYou) return []
+  if (now !== 'suspended') mine.push({ status: 'suspended', label: 'Pause' })
+  if (now !== 'banned') mine.push({ status: 'banned', label: 'Stop' })
+  return mine
+}
+
+const SAID = {
+  active: 'Let in — they can sign in now',
+  suspended: 'Paused — they lose access within a minute',
+  banned: 'Stopped — they lose access within a minute',
+  pending: 'Set to waiting',
+}
+
+async function setStatus(u, status) {
   try {
-    await api('set_user_status', { email: u.email, active: !u.active })
-    toast(u.active ? 'Turned off — they lose access within a minute' : 'Turned on', 'ok')
+    await api('set_user_status', { email: u.email, status })
+    toast(SAID[status] || 'Changed', 'ok')
     loadUsers()
   } catch (err) { toast(err.message, 'bad', err.code) }
 }
@@ -90,12 +141,19 @@ async function loadAudit() {
                    and outranks every role here. Printing "Organiser" against
                    their name read as a ceiling, which it is not. -->
               <td>{{ u.isSuperAdmin ? 'Everything' : (ROLE_WORDS[u.role] || u.role) }}</td>
-              <td><span :class="['pill', u.active ? 'ok' : 'bad']">{{ u.active ? 'on' : 'off' }}</span></td>
               <td>
-                <button v-if="!u.isYou && !(u.role === 'admin' && !isSuper)"
-                        class="btn sm" @click="toggle(u)">
-                  {{ u.active ? 'Turn off' : 'Turn on' }}
-                </button>
+                <span :class="['pill', statusOf(u) === 'active' ? 'ok'
+                                     : statusOf(u) === 'pending' ? 'info' : 'bad']">
+                  {{ STATUS_WORDS[statusOf(u)] || statusOf(u) }}
+                </span>
+              </td>
+              <td>
+                <!-- Only what this person may actually do to this row. An
+                     organiser is not shown "Let in" at all, rather than being
+                     shown it and refused. -->
+                <button v-for="a in actionsFor(u)" :key="a.status"
+                        :class="['btn', 'sm', a.tone || '']" style="margin-right:6px"
+                        @click="setStatus(u, a.status)">{{ a.label }}</button>
               </td>
             </tr>
           </tbody>
