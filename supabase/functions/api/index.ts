@@ -31,6 +31,7 @@ import {
   type AppUser,
   type Role,
 } from './gate.ts'
+import * as tickets from './tickets.ts'
 
 // ============ ACTION REGISTRY ============
 // Same shape as Api.gs. `roles: null` is any signed-in user, `[]` is admins and
@@ -39,6 +40,7 @@ import {
 const ADMIN_ONLY: Role[] = []
 
 const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
+  // --- reading ---
   whoami: { roles: null, kind: 'read', fn: whoami },
   read_version: { roles: null, kind: 'read', fn: readVersion },
   read_snapshot: { roles: null, kind: 'read', fn: readSnapshot },
@@ -46,6 +48,20 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   search: { roles: null, kind: 'read', fn: search },
   list_books: { roles: null, kind: 'read', fn: listBooks },
   read_audit: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: readAudit },
+
+  // --- ticket writes ---
+  // Roles copied from Api.gs exactly. gateparity.test.mjs is what keeps them
+  // honest: it compares both gates over every action and role, so a value
+  // mistyped here shows up as a disagreement rather than as a quiet
+  // permission change nobody notices until somebody does something they
+  // should not have been able to.
+  sell_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.sellTicket },
+  reserve_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.reserveTicket },
+  release_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.releaseTicket },
+  correct_ticket: { roles: ['recorder'], kind: 'write', fn: tickets.correctTicket },
+  void_ticket: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: tickets.voidTicket },
+  bulk_record_sales: { roles: ['recorder'], kind: 'bulk', fn: tickets.bulkRecordSales },
+  sell_book: { roles: ['recorder', 'agent'], kind: 'bulk', fn: tickets.sellBook },
 }
 
 type Ctx = {
