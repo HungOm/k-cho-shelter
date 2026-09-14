@@ -88,7 +88,11 @@ async function loadAudit() {
                 <span v-if="u.isYou" class="pill info">you</span>
                 <span v-if="u.isSuperAdmin" class="pill ok">super admin</span>
               </td>
-              <td>{{ ROLE_WORDS[u.role] || u.role }}</td>
+              <!-- The super admin's row role is only what their ordinary user
+                   record says; their actual authority sits outside the database
+                   and outranks every role here. Printing "Organiser" against
+                   their name read as a ceiling, which it is not. -->
+              <td>{{ u.isSuperAdmin ? 'Everything' : (ROLE_WORDS[u.role] || u.role) }}</td>
               <td><span :class="['pill', u.active ? 'ok' : 'bad']">{{ u.active ? 'on' : 'off' }}</span></td>
               <td>
                 <button v-if="!u.isYou && !(u.role === 'admin' && !isSuper)"

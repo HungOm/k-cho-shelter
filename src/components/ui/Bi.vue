@@ -34,10 +34,14 @@ const sub = computed(() => my(props.text))
 .my {
   display: block;
   font-family: 'Padauk', 'Noto Sans Myanmar', 'Myanmar Text', 'Myanmar Sangam MN', sans-serif;
-  font-size: .76em;
+  /* Smaller than the label on purpose: the gloss is there to help somebody
+     who is unsure of the English, not to be read in its own right. Not smaller
+     than this, though — Burmese stacks its marks above and below the line, and
+     they are the first thing to turn to mush. */
+  font-size: .68em;
   font-style: italic;
   font-weight: 400;
-  opacity: .62;
+  opacity: .58;
   line-height: 1.45;
   margin-top: 1px;
   /* Burmese sits lower than Latin; without this the gloss crowds the label. */

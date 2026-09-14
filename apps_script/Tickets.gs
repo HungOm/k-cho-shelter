@@ -43,6 +43,10 @@ var TICKET_WIRE_FIELDS = [
 
 var WIRE_PHONE = TICKET_WIRE_FIELDS.indexOf('Buyer_Phone');
 var WIRE_MODIFIED = TICKET_WIRE_FIELDS.indexOf('Modified_Date');
+var WIRE_BOOK = TICKET_WIRE_FIELDS.indexOf('Book_Number');
+var WIRE_NAME = TICKET_WIRE_FIELDS.indexOf('Buyer_Name');
+var WIRE_ZONE = TICKET_WIRE_FIELDS.indexOf('Buyer_Zone');
+var WIRE_NOTES = TICKET_WIRE_FIELDS.indexOf('Notes');
 
 /** The row as it is cached: every field, nothing masked, dates already ISO. */
 function ticketToWireRaw_(t) {
@@ -60,15 +64,68 @@ function ticketToWireRaw_(t) {
  * on who is asking, and caching one view-only user's masked copy would serve
  * that copy to everybody.
  */
-function maskWireRow_(row, user) {
-  if (!user || user.role !== ROLES.VIEWER) return row;
-  var copy = row.slice();
-  copy[WIRE_PHONE] = maskPhone_(copy[WIRE_PHONE]);
-  return copy;
+/**
+ * The books one seller is physically carrying, as a lookup.
+ *
+ * Built once per request rather than per row: an agent with 20,000 tickets on
+ * the wire would otherwise re-read the books sheet twenty thousand times.
+ * Returns null for everybody who is not an agent, which is the signal to the
+ * masker that no book-level narrowing applies.
+ */
+function agentBookSet_(user) {
+  if (!user || user.role !== ROLES.AGENT || !user.agentId) return null;
+  var books = readBooksRaw_();
+  var set = {};
+  for (var i = 0; i < books.length; i++) {
+    if (books[i].Held_By_Agent === user.agentId) {
+      set[String(books[i].Book_Number).toUpperCase()] = true;
+    }
+  }
+  return set;
+}
+
+/**
+ * What each kind of user is allowed to see on a ticket row.
+ *
+ * A VIEWER gets the phone partly hidden, as before.
+ *
+ * An AGENT gets everything on the tickets in the books they are carrying —
+ * they made those sales and have to be able to telephone those buyers — and
+ * NOTHING PERSONAL on anybody else's. The number, the status and the book stay
+ * visible so "is KS-1234 still going?" still has an answer, which is a question
+ * sellers genuinely ask each other; the buyer's name, phone, area and any note
+ * do not, because they are none of that seller's business.
+ *
+ * This was the gap worth closing. Until now the wire carried every buyer's name
+ * and telephone number to every signed-in seller — twenty thousand rows of it —
+ * and most of those buyers are refugees. The row was masked for viewers only,
+ * which quietly made a seller more trusted with other people's contact details
+ * than somebody given read-only access on purpose.
+ */
+function maskWireRow_(row, user, holds) {
+  if (!user) return row;
+
+  if (user.role === ROLES.VIEWER) {
+    var v = row.slice();
+    v[WIRE_PHONE] = maskPhone_(v[WIRE_PHONE]);
+    return v;
+  }
+
+  if (holds && user.role === ROLES.AGENT) {
+    if (holds[String(row[WIRE_BOOK]).toUpperCase()]) return row;   // their own book
+    var c = row.slice();
+    c[WIRE_NAME] = '';
+    c[WIRE_PHONE] = '';
+    c[WIRE_ZONE] = '';
+    c[WIRE_NOTES] = '';
+    return c;
+  }
+
+  return row;
 }
 
 function ticketToWire_(t, user) {
-  return maskWireRow_(ticketToWireRaw_(t), user);
+  return maskWireRow_(ticketToWireRaw_(t), user, agentBookSet_(user));
 }
 
 // ============ THE TICKET TABLE CACHE ============
@@ -152,8 +209,9 @@ function handleReadSnapshot(payload, user) {
   var active = Math.min(activeTickets(cfg), all.length);
 
   var slice = all.slice(offset, Math.min(offset + limit, active));
+  var holds = agentBookSet_(user);
   var rows = [];
-  for (var i = 0; i < slice.length; i++) rows.push(maskWireRow_(slice[i], user));
+  for (var i = 0; i < slice.length; i++) rows.push(maskWireRow_(slice[i], user, holds));
 
   return {
     fields: TICKET_WIRE_FIELDS,
@@ -183,12 +241,13 @@ function handleReadDelta(payload, user) {
   var all = cachedTicketRows_();
   var active = Math.min(activeTickets(getConfig()), all.length);
   var cutoff = since.getTime();
+  var holds = agentBookSet_(user);
   var rows = [];
   for (var i = 0; i < active; i++) {          // held-back tickets never appear
     var modified = all[i][WIRE_MODIFIED];
     if (!modified) continue;
     var at = new Date(modified).getTime();
-    if (at > cutoff) rows.push(maskWireRow_(all[i], user));
+    if (at > cutoff) rows.push(maskWireRow_(all[i], user, holds));
   }
   return {
     fields: TICKET_WIRE_FIELDS,

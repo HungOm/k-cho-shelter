@@ -140,6 +140,7 @@ export const MY = {
 
   // --- who people are ---
   'Organiser': 'စီစဉ်သူ',
+  'Everything': 'အားလုံး',
   'Helper': 'ကူညီသူ',
   'Seller': 'ရောင်းသူ',
   'Can only look': 'ကြည့်ရုံသာ',
@@ -168,7 +169,7 @@ export const MY_ERRORS = {
   AUTH_UNAVAILABLE: 'Google သို့ ဆက်သွယ်၍ မရပါ',
   NOT_AUTHORIZED: 'ခွင့်ပြုချက် မရှိပါ',
   ACCOUNT_DISABLED: 'ဤအကောင့်ကို ပိတ်ထားသည်',
-  INSUFFICIENT_ROLE: 'သင့်အဆင့်ဖြင့် ဤအရာကို မလုပ်နိုင်ပါ',
+  INSUFFICIENT_ROLE: 'ဤအရာကို သင့်အကောင့်အတွက် ဖွင့်မထားပါ',
   SUPER_ADMIN_ONLY: 'အဓိက စီမံခန့်ခွဲသူသာ လုပ်နိုင်သည်',
   ALREADY_SOLD: 'ဤလက်မှတ်ကို ရောင်းပြီးဖြစ်သည်',
   ALREADY_SETTLED: 'ဤစာအုပ်ကို ပြီးဆုံးပြီးဖြစ်သည်',

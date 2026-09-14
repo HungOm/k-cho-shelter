@@ -190,7 +190,7 @@ function handleRequestApproval(payload, user) {
   // They must be able to do the action in the first place. Approval is a second
   // check on top of permission, never a way around missing permission.
   if (!isActionAllowed_(action, spec, user)) {
-    throw new ApiError('INSUFFICIENT_ROLE', 'Your role (' + user.role + ') cannot do this.');
+    throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.');
   }
 
   var need = approvalSummaryFor_(action, inner);
