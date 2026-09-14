@@ -350,6 +350,75 @@ console.log('letting somebody in is the owner\'s act; stopping them is urgent')
   eq(w7.row('app_users', (u) => u.email === 'two@x.com').status, 'active', 'and it stayed active')
 }
 
+console.log('an APPROVED request actually runs — driven through decide, not around it')
+{
+  /*
+   * THE GUARD FOR AN ENTIRE CLASS THIS SUITE COULD NOT SEE.
+   *
+   * decideApproval runs the approved action as the REQUESTER, so upsertUser
+   * sees an organiser and depends on a flag to tell "they asked directly" from
+   * "the owner said yes". The flag was set correctly and cleared in a finally —
+   * which runs the moment the PROMISE is returned, not when it settles. So it
+   * was already false by the time the handler awaited its way down to reading
+   * it, and EVERY approved request was refused at the moment of approval, with
+   * "Only the owner can let somebody in" shown to the owner.
+   *
+   * Nothing here caught it, because every other test calls handlers directly.
+   * What was wrong was the wrapper's control flow, so the assertion has to go
+   * through the wrapper: ask, approve, and check the row exists afterwards.
+   */
+  const world = fakeDb({
+    config: baseConfig(),
+    app_users: [
+      { email: 'boss@x.com', name: 'Boss', role: 'admin', status: 'active', active: true, agent_id: null },
+      { email: 'admin@x.com', name: 'Admin', role: 'admin', status: 'active', active: true, agent_id: null },
+    ],
+  })
+
+  // 1. the organiser asks
+  const asked = await call('request_approval',
+    { action: 'upsert_user', payload: { email: 'helper@x.com', role: 'recorder' } },
+    'admin@x.com', world)
+  ok(asked.body.ok, 'the organiser can lodge the request')
+  const id = asked.body.data?.requestId
+  ok(id, 'and gets a request id back')
+  ok(String(asked.body.data?.summary).includes('helper@x.com'), 'with the sentence the owner will read')
+  eq(world.table('app_users').length, 2, 'and nobody has been added yet')
+
+  // 2. the owner approves — and the action must actually HAPPEN
+  const decided = await call('decide_approval', { requestId: id, approve: true }, 'boss@x.com', world)
+  ok(decided.body.ok, `approving succeeds (${decided.body.error?.code ?? ''} ${decided.body.error?.message ?? ''})`)
+  eq(decided.body.data?.executed, 'true', 'and reports that it executed')
+
+  // The whole point: the row exists. An approval that approves and does not act
+  // is worse than a refusal, because the owner believes they have done it.
+  const made = world.row('app_users', (u) => u.email === 'helper@x.com')
+  ok(made, 'the account was actually created')
+  eq(made?.role, 'recorder', 'with the role that was asked for')
+  eq(made?.status, 'active', 'and let in, because approving IS letting them in')
+
+  // 3. the flag must not survive the call — it is what lets an organiser
+  // create a user, and it may exist only for the length of one approval.
+  // Asserted by BEHAVIOUR rather than by reading the flag. Each request gets a
+  // fresh ctx object, so inspecting the stored one would prove nothing about
+  // the one the call actually used — and the flag only matters for what it
+  // permits, which is this:
+  const after = await call('upsert_user', { email: 'sneak@x.com', role: 'recorder' }, 'admin@x.com', world)
+  eq(after.body.error?.code, 'APPROVAL_REQUIRED',
+     'so a direct attempt afterwards still needs approving')
+  ok(!world.row('app_users', (u) => u.email === 'sneak@x.com'), 'and created nobody')
+
+  // 4. refusing does nothing at all
+  const asked2 = await call('request_approval',
+    { action: 'upsert_user', payload: { email: 'no@x.com', role: 'viewer' } },
+    'admin@x.com', world)
+  const no = await call('decide_approval',
+    { requestId: asked2.body.data.requestId, approve: false }, 'boss@x.com', world)
+  ok(no.body.ok, 'refusing succeeds')
+  eq(no.body.data?.executed, 'false', 'and reports that it did not execute')
+  ok(!world.row('app_users', (u) => u.email === 'no@x.com'), 'nobody was added')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)
