@@ -193,7 +193,8 @@ create policy books_read on books for select using (
 drop view if exists book_ledger;
 create view book_ledger as
 select
-  b.idx, b.number, b.status, b.held_by_agent, a.name as agent_name, b.due_at,
+  b.idx, b.number, b.first_ticket, b.last_ticket,
+  b.status, b.held_by_agent, a.name as agent_name, b.due_at,
   b.declared_sold, b.amount_due, b.amount_paid,
   r.recorded_sold, r.recorded_amount, r.available, r.reserved, r.missing_contact,
   case when b.status in ('Settled','Lost') then coalesce(b.declared_sold,0) else r.recorded_sold end as counted_sold,
@@ -250,7 +251,8 @@ grant select on book_ledger to authenticated;
 drop view if exists book_ledger_all;
 create view book_ledger_all as
 select
-  b.idx, b.number, b.status, b.held_by_agent, a.name as agent_name, b.due_at,
+  b.idx, b.number, b.first_ticket, b.last_ticket,
+  b.status, b.held_by_agent, a.name as agent_name, b.due_at,
   b.declared_sold, b.amount_due, b.amount_paid,
   r.recorded_sold, r.recorded_amount, r.available, r.reserved, r.missing_contact,
   case when b.status in ('Settled','Lost') then coalesce(b.declared_sold,0) else r.recorded_sold end as counted_sold,

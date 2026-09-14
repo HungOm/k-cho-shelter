@@ -477,7 +477,39 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const { data, error } = await query
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
-  const books = data ?? []
+  /*
+   * MAPPED FIELD BY FIELD, not echoed.
+   *
+   * These are the view's snake_case columns and the client reads the Apps
+   * Script shape. Returning the rows raw made every book tile in the grid
+   * render "0": BookGrid calls bookShort(b.book), the view has no `book`
+   * column — it is `number` — so it fell through to its '0' fallback, a
+   * thousand times. The colours and the totals were right, which made it look
+   * half-working rather than broken.
+   *
+   * Everything else went the same way silently: agentName, due, daysOverdue,
+   * sold, expected, paid. Nothing threw. The screen just quietly said nothing.
+   *
+   * handleListBooks in Books.gs builds this shape explicitly, which is why the
+   * same screen was correct on Apps Script throughout.
+   */
+  const books = (data ?? []).map((r: Record<string, unknown>) => ({
+    book: r.number,
+    firstTicket: r.first_ticket,
+    lastTicket: r.last_ticket,
+    status: r.status,
+    agentId: r.held_by_agent ?? '',
+    agentName: r.agent_name ?? '',
+    due: r.due_at,
+    daysOverdue: r.days_overdue ?? 0,
+    sold: r.counted_sold ?? 0,
+    available: r.available ?? 0,
+    expected: r.counted_expected ?? 0,
+    paid: r.counted_collected ?? 0,
+    variance: r.variance_amount ?? 0,
+    missingContact: r.missing_contact ?? 0,
+    pastFinal: !!r.past_final,
+  }))
 
   // The counts the home screen reads. Apps Script has always returned these and
   // this did not, which store.js papered over by overwriting bookStats from
