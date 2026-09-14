@@ -145,11 +145,23 @@ function lookupUser(email) {
       if (rowEmail !== target) continue;
 
       var active = row[map.Active - 1];
+      var isActive = !(active === false || String(active).toLowerCase() === 'false' || active === '');
+
+      // A Status column if the sheet has one, otherwise derived from Active.
+      // The four states are pending, active, suspended and banned; a sheet that
+      // predates the column can still only say two of them, and says them
+      // correctly rather than guessing at the other two.
+      var status = map.Status ? String(row[map.Status - 1] || '').trim().toLowerCase() : '';
+      if (['pending', 'active', 'suspended', 'banned'].indexOf(status) === -1) {
+        status = isActive ? 'active' : 'suspended';
+      }
+
       result = {
         email: rowEmail,
         name: String(row[map.Name - 1] || rowEmail).trim(),
         role: String(row[map.Role - 1] || ROLES.VIEWER).trim().toLowerCase(),
-        active: !(active === false || String(active).toLowerCase() === 'false' || active === ''),
+        status: status,
+        active: status === 'active',
         agentId: map.Agent_ID ? String(row[map.Agent_ID - 1] || '').trim() : '',
         row: i + 2
       };
@@ -262,11 +274,26 @@ function requireUser(idToken, allowedRoles, needSuper, action) {
   // typed down to 'viewer' in the sheet) must not lock the owner out.
   user.isSuperAdmin = isSuper;
   if (isSuper) user.role = ROLES.ADMIN;
-  // Only the one named in Script Properties is immune to the active flag.
-  if (fromSecret) user.active = true;
+  // Only the one named in Script Properties is immune, and they are immune to
+  // the whole lifecycle rather than just the old boolean — a row set to banned
+  // must not lock the owner out of their own raffle any more than Active=FALSE
+  // could.
+  if (fromSecret) { user.active = true; user.status = 'active'; }
 
-  if (!user.active) {
-    throw new ApiError('ACCOUNT_DISABLED', 'This account has been disabled.');
+  // Each state says WHICH it is. All three refuse identically; the difference
+  // is only the sentence, and that difference is the point — somebody waiting
+  // to be let in and somebody whose access was stopped need to do different
+  // things next, and telling one they are the other leaves them either waiting
+  // for nothing or believing they are in trouble.
+  if (user.status !== 'active') {
+    var said = {
+      pending: ['ACCOUNT_PENDING',
+        'This account is waiting to be let in. The organiser has to approve it.'],
+      suspended: ['ACCOUNT_SUSPENDED',
+        'This account has been paused. Ask the organiser to turn it back on.'],
+      banned: ['ACCOUNT_BANNED', 'This account has been stopped.']
+    }[user.status] || ['ACCOUNT_DISABLED', 'This account has been disabled.'];
+    throw new ApiError(said[0], said[1], { status: user.status });
   }
 
   user.isAdmin = (user.role === ROLES.ADMIN);

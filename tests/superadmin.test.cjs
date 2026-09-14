@@ -127,7 +127,8 @@ console.log('super admin survives the Users tab');
   // A disabled ordinary admin is still shut out.
   world();
   __sheets[SHEET.USERS]._data[2][3] = false;
-  eq(codeOf(() => signIn('admin@x.com', null, false)), 'ACCOUNT_DISABLED', 'disabled admin refused');
+  // Named by which state applies, not a generic refusal.
+  eq(codeOf(() => signIn('admin@x.com', null, false)), 'ACCOUNT_SUSPENDED', 'a paused admin is refused, and told so');
 }
 
 // ============ 4. only the super admin may make an admin ============
@@ -268,7 +269,7 @@ console.log('a superadmin BY ROW can be switched off; the one in Script Properti
      'the row can be disabled');
   // Deliberate: making the row as unremovable as the secret would leave two
   // things nobody can turn off instead of one.
-  eq(codeOf(() => signIn('super2@x.com', [], false)), 'ACCOUNT_DISABLED',
+  eq(codeOf(() => signIn('super2@x.com', [], false)), 'ACCOUNT_SUSPENDED',
      'and a disabled superadmin cannot sign in');
 
   world();
