@@ -32,6 +32,8 @@ import {
   type Role,
 } from './gate.ts'
 import * as tickets from './tickets.ts'
+import * as books from './books.ts'
+import * as people from './people.ts'
 
 // ============ ACTION REGISTRY ============
 // Same shape as Api.gs. `roles: null` is any signed-in user, `[]` is admins and
@@ -62,6 +64,23 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   void_ticket: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: tickets.voidTicket },
   bulk_record_sales: { roles: ['recorder'], kind: 'bulk', fn: tickets.bulkRecordSales },
   sell_book: { roles: ['recorder', 'agent'], kind: 'bulk', fn: tickets.sellBook },
+
+  // --- books ---
+  issue_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.issueBooks },
+  transfer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.transferBooks },
+  return_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.returnBooks },
+  settle_book: { roles: ADMIN_ONLY, kind: 'write', fn: books.settleBook },
+
+  // --- agents & users ---
+  list_agents: { roles: null, kind: 'read', fn: people.listAgents },
+  upsert_agent: { roles: ADMIN_ONLY, kind: 'write', fn: people.upsertAgent },
+  list_users: { roles: ADMIN_ONLY, kind: 'read', fn: people.listUsers },
+  upsert_user: { roles: ADMIN_ONLY, kind: 'write', fn: people.upsertUser },
+  set_user_status: { roles: ADMIN_ONLY, kind: 'write', fn: people.setUserStatus },
+
+  // --- who may do what ---
+  list_permissions: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: people.listPermissions },
+  set_permission: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setPermission },
 }
 
 type Ctx = {
