@@ -320,6 +320,21 @@ export async function refresh() {
   // server knows who may see what, and a guess in the client would drift.
   const notForYou = ['INSUFFICIENT_ROLE', 'SUPER_ADMIN_ONLY']
 
+  /*
+   * EVERY ASSIGNMENT BELOW KEEPS ITS EMPTY SHAPE.
+   *
+   * A handler that returns successfully and omits a field used to put undefined
+   * straight into the store, and the next render dereferenced it: bookStats
+   * became undefined, attention() read state.bookStats.Out, and the whole app
+   * went white. A volunteer then has nothing to describe except "it stopped".
+   *
+   * This has now happened three times from three different fields, so the fix
+   * belongs at the assignment rather than at each of the dozen places that read
+   * them. A missing count should show an empty grid, a missing list an empty
+   * list. Degrading is not the same as hiding: the failure still reaches
+   * state.problems and is still reported — it just no longer takes the page
+   * down on its way there.
+   */
   const step = async (what, fn) => {
     try { await fn() } catch (err) {
       if (err.code === 'SHEET_MISSING' || err.code === 'NOT_CONFIGURED') state.needsSetup = true
@@ -345,21 +360,21 @@ export async function refresh() {
     })
 
     await step('sellers', async () => {
-      state.agents = (await api('list_agents', {})).agents
+      state.agents = (await api('list_agents', {})).agents ?? []
     })
 
     await step('books', async () => {
       const books = await api('list_books', {})
-      state.books = books.books
-      state.bookStats = books.stats
+      state.books = books.books ?? []
+      state.bookStats = books.stats ?? {}
     })
 
     reindex()
 
     await step('totals', async () => {
       const draw = await api('report_draw_ready', {})
-      state.totals = draw.totals
-      state.bookStats = draw.booksByStatus
+      state.totals = draw.totals ?? null
+      state.bookStats = draw.booksByStatus ?? {}
     })
 
     // Skipped for roles that plainly cannot have it — not to avoid an error,
@@ -367,7 +382,7 @@ export async function refresh() {
     // a phone for an answer that is nearly always no.
     if (isAdmin.value || state.user?.role === 'recorder') {
       await step('overdue books', async () => {
-        state.overdue = (await api('report_overdue', {})).overdue
+        state.overdue = (await api('report_overdue', {})).overdue ?? []
       })
     }
 
