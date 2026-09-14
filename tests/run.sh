@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 fail=0
-for t in numbering.test.cjs settlement.test.cjs superadmin.test.cjs permissions.test.cjs approvals.test.cjs sellbook.test.cjs cache.test.cjs search.test.mjs emits.test.mjs bookrange.test.mjs loadorder.test.cjs numberinglock.test.cjs canonical.test.cjs expand.test.cjs ceiling.test.cjs active.test.cjs holders.test.cjs refusals.test.mjs i18n.test.mjs whereis.test.mjs canonical-client.test.mjs gateparity.test.mjs backendswitch.test.mjs supabaseauth.test.mjs timeout.test.mjs storeload.test.mjs booklife.test.cjs; do
+for t in numbering.test.cjs settlement.test.cjs superadmin.test.cjs permissions.test.cjs approvals.test.cjs sellbook.test.cjs cache.test.cjs search.test.mjs emits.test.mjs bookrange.test.mjs loadorder.test.cjs numberinglock.test.cjs canonical.test.cjs expand.test.cjs ceiling.test.cjs active.test.cjs holders.test.cjs refusals.test.mjs i18n.test.mjs whereis.test.mjs canonical-client.test.mjs gateparity.test.mjs backendswitch.test.mjs supabaseauth.test.mjs timeout.test.mjs storeload.test.mjs booklife.test.cjs agentscope.test.cjs; do
   [ -f "$t" ] || continue
   echo "── ${t%%.*}"
   node "$t" | tail -1

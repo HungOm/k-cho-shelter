@@ -35,7 +35,7 @@ import { toasts } from '../../lib/store.js'
 .toast .my {
   display: block;
   font-family: 'Padauk', 'Noto Sans Myanmar', 'Myanmar Text', sans-serif;
-  font-size: .82em; font-style: italic; opacity: .8; line-height: 1.45; margin-top: 2px;
+  font-size: .74em; font-style: italic; opacity: .72; line-height: 1.45; margin-top: 2px;
 }
 .toast .grow { min-width: 0; }
 @media (min-width: 900px) { .toasts { bottom: 28px; } }

@@ -215,6 +215,7 @@ async function readSnapshot(p: Record<string, unknown>, user: AppUser, ctx: Ctx)
   // paging, which offset does not — with offset, a row added behind you shifts
   // everything and you silently see one twice or miss one entirely.
   const after = int(p.cursor, 0)
+  const holds = await agentBooks(user, ctx)
 
   let q = ctx.supabaseAdmin
     .from('tickets')
@@ -231,7 +232,7 @@ async function readSnapshot(p: Record<string, unknown>, user: AppUser, ctx: Ctx)
   const last = rows.length ? Number(rows[rows.length - 1].idx) : after
 
   return {
-    rows: rows.map((r: Record<string, unknown>) => mask(r, user)),
+    rows: rows.map((r: Record<string, unknown>) => mask(r, user, holds)),
     returned: rows.length,
     total: active,
     // Null rather than absent, so a client can tell "no more pages" from
@@ -249,6 +250,7 @@ async function readDelta(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   }
   const active = await activeTickets(ctx)
 
+  const holds = await agentBooks(user, ctx)
   const { data, error } = await ctx.supabaseAdmin
     .from('tickets')
     .select('number,status,book_idx,buyer_name,buyer_phone,sold_by_agent,amount,sold_at,version,modified_at')
@@ -259,7 +261,7 @@ async function readDelta(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   return {
-    rows: (data ?? []).map((r: Record<string, unknown>) => mask(r, user)),
+    rows: (data ?? []).map((r: Record<string, unknown>) => mask(r, user, holds)),
     count: data?.length ?? 0,
     serverTime: new Date().toISOString(),
   }
@@ -280,6 +282,7 @@ async function search(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const limit = Math.min(int(p.limit, 50), 200)
   const active = await activeTickets(ctx)
 
+  const holds = await agentBooks(user, ctx)
   const digits = q.replace(/\D/g, '')
   const cols = 'number,status,book_idx,buyer_name,buyer_phone,sold_by_agent,amount,sold_at,version,modified_at'
 
@@ -287,22 +290,35 @@ async function search(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
 
   // A run of digits is a ticket number far more often than it is a phone
   // number, so both are tried rather than guessing which was meant.
-  query = digits.length >= 3 && digits.length === q.replace(/[\s-]/g, '').length
-    ? query.or(`number.ilike.%${digits}%,buyer_phone.ilike.%${digits}%`)
-    : query.or(`buyer_name.ilike.%${q}%,number.ilike.%${q}%`)
+  if (holds) {
+    // Blanking the columns afterwards is not enough on its own: a match on a
+    // name or a phone number would still tell the searcher that this person
+    // bought a ticket, which is the very thing being protected. So a seller
+    // searches by TICKET NUMBER only, over every ticket — availability stays
+    // answerable, other people's buyers stay private.
+    query = query.ilike('number', `%${digits || q}%`)
+  } else {
+    query = digits.length >= 3 && digits.length === q.replace(/[\s-]/g, '').length
+      ? query.or(`number.ilike.%${digits}%,buyer_phone.ilike.%${digits}%`)
+      : query.or(`buyer_name.ilike.%${q}%,number.ilike.%${q}%`)
+  }
 
   const { data, error } = await query
   if (error) throw new ApiError('QUERY_FAILED', error.message)
   return {
-    rows: (data ?? []).map((r: Record<string, unknown>) => mask(r, user)),
+    rows: (data ?? []).map((r: Record<string, unknown>) => mask(r, user, holds)),
     count: data?.length ?? 0,
   }
 }
 
-async function listBooks(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   let query = ctx.supabaseAdmin.from('book_ledger').select('*').order('idx').limit(1000)
   if (p.status) query = query.eq('status', String(p.status))
   if (p.agentId) query = query.eq('held_by_agent', String(p.agentId))
+
+  // A seller's book list is the books in their hands. Anything else is a wall
+  // of two thousand squares that tells them nothing and costs them a download.
+  if (user.role === 'agent') query = query.eq('held_by_agent', user.agentId ?? '\u0000')
 
   const { data, error } = await query
   if (error) throw new ApiError('QUERY_FAILED', error.message)
@@ -396,10 +412,54 @@ async function activeTickets(ctx: Ctx): Promise<number> {
  * per request — the same rule as Tickets.gs, and for the same reason: it
  * depends on who is asking, so it can never be computed once and shared.
  */
-function mask(row: Record<string, unknown>, user: AppUser) {
-  if (user.role !== 'viewer') return row
-  const phone = String(row.buyer_phone ?? '')
-  return { ...row, buyer_phone: phone ? phone.slice(0, 3) + '****' + phone.slice(-2) : '' }
+/**
+ * The books one seller is physically carrying, as a set of book indexes.
+ *
+ * Cached for the life of the request: an agent reading twenty thousand tickets
+ * must not cause twenty thousand lookups.
+ */
+async function agentBooks(user: AppUser, ctx: Ctx): Promise<Set<number> | null> {
+  if (user.role !== 'agent' || !user.agentId) return null
+  const { data } = await ctx.supabaseAdmin
+    .from('books').select('idx').eq('held_by_agent', user.agentId)
+  return new Set((data ?? []).map((b: { idx: number }) => b.idx))
+}
+
+/**
+ * What each kind of user is allowed to see on a ticket row.
+ *
+ * A VIEWER gets the phone partly hidden, as before.
+ *
+ * An AGENT gets everything on the tickets in the books they are carrying —
+ * they made those sales and have to be able to telephone those buyers — and
+ * NOTHING PERSONAL on anybody else's. The number, the status and the book stay
+ * visible so "is KS-1234 still going?" still has an answer, which is a question
+ * sellers genuinely ask each other; the buyer's name, phone, area and any note
+ * do not, because they are none of that seller's business.
+ *
+ * WHY THIS HAD TO BE WRITTEN TWICE. rls.sql already says exactly this, and says
+ * it well — but RLS binds the CALLER's role, and every action in this file
+ * reads through supabaseAdmin, which is the service key and outranks every
+ * policy in the database. So the policies protect the client's direct PostgREST
+ * reads and do nothing whatever for reads that come through this function. Any
+ * narrowing the API path needs, the API path has to do itself.
+ */
+function mask(row: Record<string, unknown>, user: AppUser, holds?: Set<number> | null) {
+  if (user.role === 'viewer') {
+    // Same shape as the Apps Script masker, deliberately: two backends that
+    // hide a phone number differently look like two different apps.
+    const phone = String(row.buyer_phone ?? '')
+    return {
+      ...row,
+      buyer_phone: phone ? (phone.length < 4 ? '\u2022\u2022\u2022\u2022' : '\u2022\u2022\u2022\u2022' + phone.slice(-3)) : '',
+    }
+  }
+
+  if (holds && user.role === 'agent' && !holds.has(Number(row.book_idx))) {
+    return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
+  }
+
+  return row
 }
 
 const num = (v: unknown, d: number) => {
@@ -446,7 +506,7 @@ export default {
       })
 
       if (!isActionAllowed(action, spec, user, overrides)) {
-        throw new ApiError('INSUFFICIENT_ROLE', `Your role (${user.role}) cannot do this.`, null, 403)
+        throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.', null, 403)
       }
 
       // Two-person control, checked before the action runs rather than after.

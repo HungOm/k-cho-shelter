@@ -268,8 +268,7 @@ function requireUser(idToken, allowedRoles, needSuper, action) {
   // list must deny everyone who is not an admin -- short-circuiting on length
   // would skip the check and let a view-only account reach every admin action.
   if (!isActionAllowed_(action || '', { roles: allowedRoles, sup: needSuper }, user)) {
-    throw new ApiError('INSUFFICIENT_ROLE',
-      'Your role (' + user.role + ') cannot do this.');
+    throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.');
   }
 
   // Record the Google subject id on first sign-in, so a recycled email address
@@ -613,7 +612,7 @@ function assertCanWriteTicket(user, ticketNumber, opts) {
   if (user.isAdmin || user.role === ROLES.RECORDER) return bookNum;
 
   if (user.role !== ROLES.AGENT) {
-    throw new ApiError('INSUFFICIENT_ROLE', 'Your role cannot record sales.');
+    throw new ApiError('INSUFFICIENT_ROLE', 'Recording sales is not switched on for your account.');
   }
   if (book.status !== BOOK_STATUS.OUT) {
     throw new ApiError('BOOK_NOT_ASSIGNED',
