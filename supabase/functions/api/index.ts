@@ -351,7 +351,37 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
 
   const { data, error } = await query
   if (error) throw new ApiError('QUERY_FAILED', error.message)
-  return { books: data ?? [], total: data?.length ?? 0 }
+
+  const books = data ?? []
+
+  // The counts the home screen reads. Apps Script has always returned these and
+  // this did not, which store.js papered over by overwriting bookStats from
+  // report_draw_ready a moment later — so the gap only showed if that report
+  // failed, and then the grid lost its counts for a reason nobody would connect
+  // back to list_books.
+  //
+  // Counted over exactly the rows this caller may see, so the number above a
+  // list always describes the list underneath it. For a seller that is their
+  // own books; for everybody else, the whole raffle.
+  const stats: Record<string, number> = {}
+  for (const b of books) {
+    const k = String((b as { status?: string }).status ?? '')
+    stats[k] = (stats[k] ?? 0) + 1
+  }
+
+  const cfg = await readConfig(ctx)
+  const per = num(cfg.TICKETS_PER_BOOK, 10)
+  const generatedBooks = Math.ceil(num(cfg.TOTAL_TICKETS, 0) / per)
+  const liveBooks = Math.ceil((await activeTickets(ctx)) / per)
+
+  return {
+    books,
+    stats,
+    total: books.length,
+    currency: cfg.CURRENCY ?? 'RM',
+    generatedBooks,
+    heldBackBooks: Math.max(0, generatedBooks - liveBooks),
+  }
 }
 
 async function readAudit(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
