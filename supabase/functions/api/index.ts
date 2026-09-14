@@ -33,6 +33,7 @@ import {
 } from './gate.ts'
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
+import * as deadlines from './deadlines.ts'
 import * as people from './people.ts'
 import * as reports from './reports.ts'
 import * as approvals from './approvals.ts'
@@ -95,6 +96,11 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   handover_receipt: { roles: ADMIN_ONLY, kind: 'report', fn: people.handoverReceipt },
   expand_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.expandTickets },
   set_ticket_ceiling: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setTicketCeiling },
+
+  // --- the two deadlines ---
+  deadline_status: { roles: null, kind: 'read', fn: deadlines.deadlineStatus },
+  roll_check_in: { roles: ADMIN_ONLY, kind: 'bulk', fn: deadlines.rollCheckIn },
+  set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline },
 
   // --- reports ---
   report_outstanding: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportOutstanding },
