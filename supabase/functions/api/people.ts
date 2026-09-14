@@ -238,7 +238,7 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
   // Managing SELLERS is a different thing and stays with organisers: adding,
   // banning and deactivating an agent is the daily work of running the raffle,
   // and an agent record grants nobody any access to this system.
-  if (isSuperAdminEmail(email, Deno.env)) requireSuperAdmin(user, 'Changing the super admin account')
+  if (isSuperAdminEmail(email, Deno.env)) requireSuperAdmin(user, 'Changing the owner account')
 
   if (p.agentId) {
     const { data: agent } = await ctx.supabaseAdmin
@@ -288,7 +288,7 @@ export async function setUserStatus(p: Record<string, unknown>, user: AppUser, c
   if (isSuperAdminEmail(email, Deno.env)) {
     throw new ApiError(
       'SUPER_ADMIN_ONLY',
-      'The super admin account cannot be enabled or disabled from the app. ' +
+      'The owner account cannot be enabled or disabled from the app. ' +
         'Change SUPER_ADMIN_EMAIL in the function secrets instead.',
     )
   }

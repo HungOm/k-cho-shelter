@@ -128,7 +128,7 @@ export function resolveUser(
   if (!row && !isSuper) {
     throw new ApiError(
       'NOT_AUTHORIZED',
-      `${email} is not on the access list. Ask an admin to add you.`,
+      `${email} is not on the access list. Ask the organiser to add you.`,
       null,
       403,
     )
@@ -183,7 +183,7 @@ export function requireSuperAdmin(user: AppUser, what: string): void {
   if (!user.isSuperAdmin) {
     throw new ApiError(
       'SUPER_ADMIN_ONLY',
-      `${what} can only be done by the super admin.`,
+      `${what} can only be done by the owner.`,
       null,
       403,
     )

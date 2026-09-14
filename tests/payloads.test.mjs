@@ -228,8 +228,25 @@ console.log('list_agents carries the seller picker the organiser uses')
 console.log('whoami carries what the app boots on')
 {
   const d = await call('whoami')
-  carries(d, ['email', 'role', 'isSuperAdmin', 'config.ticketPrefix', 'config.currency',
-              'config.totalTickets', 'config.ticketPrice'], 'whoami')
+  /*
+   * Every config key the Apps Script whoami sends, read off that handler rather
+   * than listed here. Seven were missing, and the screen said so in the only
+   * way it could: "KS-undefined onwards" for the ticket numbering, and
+   * "10 — that makes books" with the count simply absent.
+   */
+  const gs = readFileSync(new URL('../apps_script/Api.gs', import.meta.url), 'utf8')
+  const block = gs.slice(gs.indexOf('function handleWhoami'))
+  const start = block.indexOf('config: {')
+  const cfgBlock = block.slice(start, block.indexOf('\n    }', start))
+  const keys = [...cfgBlock.matchAll(/^ {6}(\w+):/gm)].map((m) => m[1])
+  ok(keys.length >= 15, `read ${keys.length} config keys off the Apps Script handler`)
+
+  carries(d, ['email', 'role', 'isSuperAdmin'], 'whoami')
+  for (const k of keys) ok(d.config[k] !== undefined, `config carries ${k}`)
+
+  // The two that were visibly wrong on screen, asserted on their values.
+  ok(Number(d.config.ticketStart) >= 1, `ticketStart is a number (${d.config.ticketStart})`)
+  ok(Number(d.config.totalBooks) > 0, `totalBooks is counted (${d.config.totalBooks})`)
 }
 
 console.log('the money reports carry their own shape')
