@@ -11,17 +11,9 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { api, toast, isSuper } from '../lib/store.js'
+import { ROLE_WORDS, ROLE_BLURB } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 
-const ROLE_WORDS = {
-  admin: 'Organiser', recorder: 'Helper', agent: 'Seller who signs in', viewer: 'Can only look'
-}
-const ROLE_BLURB = {
-  admin: 'Runs the raffle day to day',
-  recorder: 'Writes down sales and looks after books',
-  agent: 'A seller who also uses the app, for their own books only',
-  viewer: 'Sees totals, never phone numbers'
-}
 
 const data = ref(null)
 const role = ref('recorder')

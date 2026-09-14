@@ -42,7 +42,7 @@ import { getClient } from './supabaseAuth.js'
  * rows that 300ms of function overhead is the least of their costs.
  */
 export const DIRECT_READS = new Set([
-  'read_snapshot', 'read_delta', 'list_agents',
+  'read_snapshot', 'read_delta',
 ])
 
 /** The wire order, identical to WIRE_FIELDS in the Edge Function. */
@@ -197,17 +197,34 @@ async function readDelta(payload = {}) {
  * tickets are where the direct path earns its keep, and those still take it.
  */
 
-async function listAgents() {
-  const sb = await client()
-  const { data, error } = await sb.from('agents_readable').select('*').order('name')
-  if (error) fail(error)
-  return { agents: data ?? [] }
-}
+/*
+ * list_agents IS NOT HERE EITHER, and this one cost a live bug before I worked
+ * out why.
+ *
+ * agents_readable gives agent_id, name, phone, zone, active, notes — the
+ * DATABASE's shape. The client has always been written against Apps Script's
+ * shape, which is `id` rather than `agent_id` and carries booksOut, a count of
+ * the books that agent is holding. Returning the view rows raw meant every
+ * <option :value="a.id"> rendered with an undefined value: the Give out books
+ * dialog showed the seller's name, because that field happens to match, and
+ * held nothing when you pressed the button. "Who are the books for?" with a
+ * name visibly selected. It also broke agentMap, which keys on a.id, so no
+ * agent name resolved anywhere in the app.
+ *
+ * booksOut is the reason this belongs in the function rather than being
+ * remapped here: it is a count over books, and counting it here as well is the
+ * same duplication that sent list_books back. Agents are a few hundred rows in
+ * one query, so the function's overhead costs little.
+ *
+ * The lesson is the one the whole day has been about: the view is the
+ * database's shape and the client has its own, and a read path that skips the
+ * translator has to do the translating. Where the translation is more than a
+ * rename, it belongs on one side only.
+ */
 
 const HANDLERS = {
   read_snapshot: readSnapshot,
   read_delta: readDelta,
-  list_agents: listAgents,
 }
 
 export function directRead(action, payload) {

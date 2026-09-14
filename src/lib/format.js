@@ -100,3 +100,32 @@ export const BOOK_WORDS = {
   Lost: 'Lost',
   Void: 'Cancelled'
 }
+
+/**
+ * What each role is called, in words a volunteer recognises.
+ *
+ * Here rather than in the two screens that show them, because it was in both
+ * and they had to agree. A fifth role arriving is exactly when two copies stop
+ * matching, and a system where the Access screen and the People screen name the
+ * same person differently is one nobody can be talked through on the phone.
+ *
+ * superadmin is an ASSIGNMENT, not a rung above Organiser: the gate resolves it
+ * to admin plus a flag, so the powers are the same everywhere except the few
+ * things only the owner may do. "Owner" says that better than "Super admin",
+ * which sounds like a bigger Organiser rather than a different kind of one.
+ */
+export const ROLE_WORDS = {
+  superadmin: 'Owner',
+  admin: 'Organiser',
+  recorder: 'Helper',
+  agent: 'Seller who signs in',
+  viewer: 'Can only look',
+}
+
+export const ROLE_BLURB = {
+  superadmin: 'Decides who else can sign in, and approves the big changes',
+  admin: 'Runs the raffle day to day',
+  recorder: 'Writes down sales and looks after books',
+  agent: 'A seller who also uses the app, for their own books only',
+  viewer: 'Sees totals, never phone numbers',
+}
