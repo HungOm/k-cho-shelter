@@ -26,14 +26,23 @@ const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
 const { ROLE_WORDS, ROLE_BLURB } = await import('../src/lib/format.js')
 
-// The gate's four permission tiers, read from the gate rather than retyped, so
-// a fifth tier added there fails here instead of rendering as a raw slug.
-const gate = read('../supabase/functions/api/gate.ts')
-const tiers = gate.match(/export const ROLES: Role\[\] = \[([^\]]*)\]/)[1]
+/*
+ * The roles a row may actually SAY, read from the server that validates them.
+ *
+ * Not the gate's ROLES: those are the four permission TIERS the registry
+ * compares against, and 'superadmin' is deliberately not one — it resolves to
+ * admin plus a flag. The list that matters for vocabulary is the one
+ * upsertUser accepts, because that is exactly the set that can come back in a
+ * row and need a word. Reading it rather than retyping it means a sixth role
+ * added there fails here instead of rendering as a raw slug in a picker.
+ */
+const people = read('../supabase/functions/api/people.ts')
+const assignable = people.match(/const ASSIGNABLE_ROLES = \[([^\]]*)\]/)[1]
   .match(/'([a-z]+)'/g).map(s => s.replace(/'/g, ''))
 
 console.log('every role has a word a volunteer would recognise')
-for (const r of [...tiers, 'superadmin']) {
+ok(assignable.length >= 5, `read the assignable roles (${assignable.join(', ')})`)
+for (const r of assignable) {
   ok(typeof ROLE_WORDS[r] === 'string' && ROLE_WORDS[r].length > 0,
      `${r} has a label, got ${ROLE_WORDS[r]}`)
   ok(typeof ROLE_BLURB[r] === 'string' && ROLE_BLURB[r].length > 0,
