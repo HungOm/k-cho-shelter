@@ -98,7 +98,16 @@ var CONFIG_DEFAULTS = [
   ['BOOK_DIGITS', '4', 'Zero padding, e.g. 4 gives Book-0001. LOCKED after setup.'],
   ['TICKET_PRICE', '10', 'Price of one ticket. Can be changed later.'],
   ['CURRENCY', 'RM', 'Shown on reports and receipts.'],
-  ['DEFAULT_DUE_DAYS', '30', 'Default return period when books are issued.'],
+  ['CHECK_IN_DATE', '', 'The one date every seller reports by this round, e.g. 2026-10-14. '
+    + 'The SAME date for everybody — not a month from whenever each person happened to '
+    + 'collect their books — so one reminder fits the whole team and one list says who is '
+    + 'late. It is a checkpoint, not the end: after each check move it on the "Deadlines" '
+    + 'screen, which steps it a month at a time and stops at FINAL_DEADLINE.'],
+  ['FINAL_DEADLINE', '', 'The last day books and money can come back, e.g. 2026-12-06. '
+    + 'This one does not move on its own and only the super admin can change it. The '
+    + 'check-in date can never pass it, and the draw is not ready until it has passed.'],
+  ['DEFAULT_DUE_DAYS', '30', 'Fallback return period, used only for a raffle with no '
+    + 'CHECK_IN_DATE and no FINAL_DEADLINE still ahead.'],
   ['EVENT_NAME', "K'Cho Shelter Fundraising Raffle", 'Shown on receipts.'],
   ['ORG_NAME', "K'Cho Ethnic Association Malaysia", 'Shown on receipts.'],
   ['PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. '
@@ -308,6 +317,96 @@ function cfgNum(cfg, key, fallback) {
 function cfgFloat(cfg, key, fallback) {
   var n = parseFloat(cfg[key]);
   return isNaN(n) ? fallback : n;
+}
+
+// ============ DATES ============
+// A deadline is a day, not a moment. Everything here works in whole local days
+// so that "due on the 14th" means the same thing to a seller in the field as it
+// does to the sheet, whatever time of day either of them is consulted.
+
+/**
+ * A config value or cell turned into local midnight on that day, or null.
+ *
+ * Config values arrive as either a string or a Date depending on how somebody
+ * formatted the cell, and "2026-10-14" handed to `new Date` is parsed as UTC
+ * midnight — which is still the 13th anywhere west of Greenwich. Both cases are
+ * read as the day they were written, not the instant they happen to encode.
+ */
+function dayStart_(value) {
+  if (value === null || value === undefined || value === '') return null;
+  var d;
+  if (value instanceof Date) {
+    d = new Date(value.getTime());
+  } else {
+    var s = String(value).trim();
+    if (!s) return null;
+    // Anchored at both ends on purpose: a full timestamp like
+    // 2026-10-03T16:00:00Z carries a UTC calendar date that is not the local
+    // one, so it has to go through Date rather than be read off the front.
+    var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+    d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s);
+  }
+  if (isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function cfgDate_(cfg, key) {
+  return dayStart_(cfg[key]);
+}
+
+/** 'YYYY-MM-DD' in local time — the form the Config tab and the app both use. */
+function isoDay_(d) {
+  if (!d) return '';
+  return d.getFullYear() + '-' + pad_(d.getMonth() + 1, 2) + '-' + pad_(d.getDate(), 2);
+}
+
+/** Today at midnight. One place, so a test can see the same day every call. */
+function today_() {
+  return dayStart_(new Date());
+}
+
+/**
+ * One month on, keeping the day of the month wherever the calendar allows it.
+ *
+ * Plain setMonth turns 31 January into 3 March, so a check-in date set on the
+ * 31st would walk forward a few days every year and eventually stop meaning
+ * "the end of the month" at all. Short months clamp to their last day instead.
+ */
+function addMonths_(date, n) {
+  var wanted = date.getDate();
+  var d = new Date(date.getFullYear(), date.getMonth() + n, 1);
+  var lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(wanted < lastDay ? wanted : lastDay);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Whole days from `from` to `to`, negative when `to` is already past. */
+function daysBetween_(from, to) {
+  return Math.round((to.getTime() - from.getTime()) / 86400000);
+}
+
+/**
+ * When a book handed over today is due back.
+ *
+ * The shared check-in date is the answer nearly always, and it is what makes
+ * one date fit everybody. The two fallbacks exist so a book is never born
+ * late: if nobody has moved the check-in date since it passed, the final
+ * deadline is the honest next date, and a raffle running without either
+ * setting keeps the old rolling behaviour.
+ */
+function defaultDueDate_(cfg) {
+  var now = today_();
+  var checkIn = cfgDate_(cfg, 'CHECK_IN_DATE');
+  if (checkIn && checkIn >= now) return checkIn;
+
+  var last = cfgDate_(cfg, 'FINAL_DEADLINE');
+  if (last && last >= now) return last;
+
+  var d = new Date(now.getTime());
+  d.setDate(d.getDate() + cfgNum(cfg, 'DEFAULT_DUE_DAYS', 30));
+  return d;
 }
 
 // ============ TICKET <-> BOOK ARITHMETIC ============

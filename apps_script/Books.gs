@@ -261,10 +261,23 @@ function handleIssueBooks(payload, user) {
   var map = headerMap(sheet);
   var index = indexBooks_(readBooksRaw_());
 
-  var dueDate = payload.dueDate ? new Date(payload.dueDate) : null;
-  if (!dueDate || isNaN(dueDate.getTime())) {
-    dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + cfgNum(cfg, 'DEFAULT_DUE_DAYS', 30));
+  // One date for everybody, not a private month per handover. Somebody who
+  // collects books a fortnight late still reports at the same check-in as the
+  // rest of the team, which is what makes a single reminder and a single late
+  // list possible at all.
+  var dueDate = dayStart_(payload.dueDate) || defaultDueDate_(cfg);
+
+  // A per-book date is allowed to land anywhere up to the final deadline and
+  // nowhere past it. Past it the paper in somebody's hand would promise them
+  // time the raffle does not have, and the draw would be waiting on a book
+  // that is not even late yet.
+  var lastDay = cfgDate_(cfg, 'FINAL_DEADLINE');
+  if (lastDay && dueDate > lastDay) {
+    throw new ApiError('DUE_AFTER_FINAL',
+      'These books would be due back on ' + isoDay_(dueDate) + ', after the final deadline of ' +
+      isoDay_(lastDay) + '. Everything has to be back by then. Give them an earlier date, or ' +
+      'move the final deadline first.',
+      { due: isoDay_(dueDate), finalDeadline: isoDay_(lastDay) });
   }
 
   // Validate all before writing any.
@@ -983,4 +996,331 @@ function handleBookHistory(payload, user) {
   }
 
   return { book: { number: bookNumber, status: status }, history: entries };
+}
+
+// ============ DEADLINES ============
+// A raffle has two dates, and confusing them is how money goes missing.
+//
+// The CHECK-IN date is soft. It is one shared day on which everybody reports:
+// what has sold, what is left, what has been collected. Nobody is finished on
+// that day — the point is to find out where things stand while there is still
+// time to do something about it. Once the check is done the date steps forward
+// a month and the next round begins.
+//
+// The FINAL deadline is hard. Every book and every ringgit has to be back by
+// then, because the draw happens after it. It does not step forward on its own
+// and it is the wall the check-in date walks towards: CHECK_IN_DATE can never
+// pass FINAL_DEADLINE, and FINAL_DEADLINE can never pass DRAW_DATE.
+//
+// The dangerous operation is not setting a date, it is moving one. Moving the
+// check-in date forward makes late books stop being late — that is the whole
+// point of a checkpoint, and also exactly how "we will collect it next month"
+// becomes a year of nobody chasing anything. So both actions preview by
+// default, and the preview says in plain numbers what the move erases.
+
+/** How far ahead a single move is allowed to jump, as a typo guard. */
+var MAX_CHECK_IN_MONTHS = 12;
+var MAX_FINAL_YEARS = 5;
+
+/**
+ * Which books a check-in move would re-date, and how many of them are late.
+ *
+ * Only books still OUT and due on or before the old check-in date move. A book
+ * somebody deliberately gave a later date keeps it: pulling a due date
+ * backwards would invent lateness nobody agreed to.
+ */
+function checkInSweep_(books, oldDate, now) {
+  var moving = [], late = 0, out = 0;
+  for (var i = 0; i < books.length; i++) {
+    var b = books[i];
+    if (b.Status !== BOOK_STATUS.OUT) continue;
+    out++;
+    var due = dayStart_(b.Due_Date);
+    if (due && due < now) late++;
+    if (!due || (oldDate && due <= oldDate)) moving.push(b);
+  }
+  return { moving: moving, late: late, out: out };
+}
+
+/**
+ * Steps the shared check-in date forward and brings the outstanding books with
+ * it, which is the monthly ritual: check where everything stands, then re-date
+ * what is still out so the next round has a deadline of its own.
+ */
+function handleRollCheckIn(payload, user) {
+  var cfg = getConfig();
+  var now = today_();
+  var current = cfgDate_(cfg, 'CHECK_IN_DATE');
+  var lastDay = cfgDate_(cfg, 'FINAL_DEADLINE');
+
+  // --- the conditions ---
+
+  // A checkpoint with no wall behind it is not a checkpoint, it is an
+  // extension that can be granted for ever. The final deadline is what makes
+  // the monthly rhythm finite, so it has to exist before the rhythm starts.
+  if (!lastDay) {
+    throw new ApiError('NO_FINAL_DEADLINE',
+      'There is no final deadline yet, so there is nothing for the check-in date to count ' +
+      'down to. The super admin sets that first, on the same screen.');
+  }
+
+  var from = current || now;
+  var target = payload.date ? dayStart_(payload.date) : addMonths_(from, 1);
+  if (!target) {
+    throw new ApiError('BAD_DATE', 'That is not a date this system can read. Use 2026-10-14.');
+  }
+
+  // Once the wall is behind you there is no next round to open. What is still
+  // out is not late for a checkpoint any more, it is late for the raffle.
+  if (lastDay < now) {
+    throw new ApiError('FINAL_PASSED',
+      'The final deadline was ' + isoDay_(lastDay) + ' and it has passed, so there are no ' +
+      'more check-ins. Anything still out is overdue outright — chase it, or move the final ' +
+      'deadline if the whole raffle is running late.',
+      { finalDeadline: isoDay_(lastDay) });
+  }
+  if (target < now) {
+    throw new ApiError('IN_THE_PAST',
+      isoDay_(target) + ' has already passed. A check-in date has to be a day people can ' +
+      'still report by.');
+  }
+
+  if (current && target <= current) {
+    throw new ApiError('CANNOT_MOVE_BACK',
+      'The check-in date is ' + isoDay_(current) + ' and you have asked for ' + isoDay_(target) +
+      '. Pulling it backwards would make books late for a date that had already passed when ' +
+      'they were handed over. It only moves forward.',
+      { current: isoDay_(current), requested: isoDay_(target) });
+  }
+
+  var jumped = daysBetween_(from, target);
+  if (jumped > MAX_CHECK_IN_MONTHS * 31) {
+    throw new ApiError('TOO_FAR',
+      'That is ' + jumped + ' days ahead. A check-in moves at most ' + MAX_CHECK_IN_MONTHS +
+      ' months at a time, so a mistyped year cannot quietly suspend the chasing for a decade.');
+  }
+
+  // The last check-in lands ON the final deadline rather than being refused
+  // for overshooting it. Refusing would leave the date stuck in the past for
+  // the rest of the raffle, which is the one state that stops the check
+  // happening at all.
+  var isLast = target >= lastDay;
+  if (isLast) target = lastDay;
+
+  if (current && target.getTime() === current.getTime()) {
+    throw new ApiError('NO_CHANGE',
+      'The check-in date is already ' + isoDay_(current) + ', which is the final deadline. ' +
+      'This is the last round — there is nowhere further to move it.');
+  }
+
+  var books = readBooksRaw_();
+  var sweep = checkInSweep_(books, current, now);
+
+  // --- preview by default ---
+  var dryRun = payload.dryRun === undefined ? true : !!payload.dryRun;
+  var summary = {
+    from: current ? isoDay_(current) : '',
+    to: isoDay_(target),
+    finalDeadline: isoDay_(lastDay),
+    isLastRound: isLast,
+    booksOut: sweep.out,
+    booksMoving: sweep.moving.length,
+    lateNow: sweep.late,
+    daysGiven: daysBetween_(now, target)
+  };
+
+  if (dryRun) {
+    summary.dryRun = true;
+    summary.effect = sweep.late
+      ? sweep.moving.length + ' books get ' + isoDay_(target) + ' as their new date, and ' +
+        sweep.late + ' that are late today stop counting as late. They are not settled — ' +
+        'they are being given until ' + isoDay_(target) + '.'
+      : sweep.moving.length + ' books get ' + isoDay_(target) + ' as their new date. ' +
+        'None are late today.';
+    summary.message = sweep.late
+      ? 'Nothing was changed. Send dryRun:false and confirm:"' + isoDay_(target) + '" to apply it.'
+      : 'Nothing was changed. Send dryRun:false to apply it.';
+    return summary;
+  }
+
+  // Typing the date back is asked for only when the move erases something:
+  // books that are late today and would not be afterwards.
+  if (sweep.late && String(payload.confirm || '') !== isoDay_(target)) {
+    throw new ApiError('CONFIRM_REQUIRED',
+      sweep.late + ' books are late today and would stop being late. Send confirm:"' +
+      isoDay_(target) + '" to move the check-in date anyway.',
+      { lateNow: sweep.late, to: isoDay_(target) });
+  }
+
+  if (sweep.moving.length) {
+    var sheet = sheet_(SHEET.BOOKS);
+    var map = headerMap(sheet);
+    var edits = [];
+    for (var i = 0; i < sweep.moving.length; i++) {
+      edits.push({ current: sweep.moving[i], patch: { Due_Date: target } });
+    }
+    writeBookFieldsBatch_(sheet, map, edits, user);
+    bumpBookCacheVersion();
+  }
+
+  setConfigValue_('CHECK_IN_DATE', isoDay_(target));
+
+  // One audit line rather than a history row per book: this is not a custody
+  // move, and a thousand identical "due date changed" entries would bury the
+  // handovers that history exists to record.
+  logAudit('ROLL_CHECK_IN', {
+    from: summary.from || 'none', to: summary.to,
+    books: sweep.moving.length, wasLate: sweep.late, last: isLast
+  }, user.email);
+
+  return summary;
+}
+
+/**
+ * Sets the day everything has to be back by.
+ *
+ * Super admin only, because this is the promise the raffle makes to everybody
+ * who bought a ticket: the draw happens after it. Moving it later is how a
+ * fundraiser drifts for a year; moving it earlier shortens the time sellers
+ * were told they had. Neither is a thing to do without meaning it.
+ */
+function handleSetFinalDeadline(payload, user) {
+  requireSuperAdmin_(user, 'Changing the final deadline');
+
+  var cfg = getConfig();
+  var now = today_();
+  var current = cfgDate_(cfg, 'FINAL_DEADLINE');
+  var checkIn = cfgDate_(cfg, 'CHECK_IN_DATE');
+  var draw = cfgDate_(cfg, 'DRAW_DATE');
+
+  var raw = payload.date;
+  var clearing = raw === '' || raw === null || raw === undefined;
+  var target = clearing ? null : dayStart_(raw);
+
+  if (!clearing && !target) {
+    throw new ApiError('BAD_DATE', 'That is not a date this system can read. Use 2026-12-06.');
+  }
+  if (!target && !current) {
+    throw new ApiError('NO_CHANGE', 'There is no final deadline set.');
+  }
+  if (target && current && target.getTime() === current.getTime()) {
+    throw new ApiError('NO_CHANGE', 'The final deadline is already ' + isoDay_(current) + '.');
+  }
+  if (target && target < now) {
+    throw new ApiError('IN_THE_PAST',
+      isoDay_(target) + ' has already passed, so nobody could meet it. ' +
+      'A deadline has to be a day people can still work towards.');
+  }
+  if (target && daysBetween_(now, target) > MAX_FINAL_YEARS * 366) {
+    throw new ApiError('TOO_FAR',
+      isoDay_(target) + ' is more than ' + MAX_FINAL_YEARS + ' years away. ' +
+      'Check the year before sending it again.');
+  }
+  // The draw cannot be run before the money is in, so a final deadline after
+  // the draw date describes a raffle that draws winners from books nobody has
+  // counted yet.
+  if (target && draw && target > draw) {
+    throw new ApiError('AFTER_DRAW',
+      'The draw is set for ' + isoDay_(draw) + ' and a final deadline of ' + isoDay_(target) +
+      ' would fall after it. Everything has to be back before the draw, so move DRAW_DATE ' +
+      'first if the whole raffle is running later.',
+      { drawDate: isoDay_(draw), requested: isoDay_(target) });
+  }
+
+  // Nothing may sit later than the wall, so shortening the raffle pulls the
+  // check-in date in with it rather than leaving a checkpoint stranded past
+  // the end. Said out loud in the preview, not done quietly.
+  var pullsCheckIn = !!(target && checkIn && checkIn > target);
+
+  var summary = {
+    from: current ? isoDay_(current) : '',
+    to: target ? isoDay_(target) : '',
+    cleared: !target,
+    checkInDate: isoDay_(pullsCheckIn ? target : checkIn),
+    pullsCheckInBack: pullsCheckIn,
+    shortens: !!(target && current && target < current),
+    daysFromToday: target ? daysBetween_(now, target) : null
+  };
+
+  var dryRun = payload.dryRun === undefined ? true : !!payload.dryRun;
+  if (dryRun) {
+    summary.dryRun = true;
+    summary.effect = !target
+      ? 'The raffle would have no final deadline, and the check-in date could not be moved ' +
+        'until one is set again.'
+      : (pullsCheckIn
+          ? 'The check-in date of ' + isoDay_(checkIn) + ' is later than that, so it comes ' +
+            'back to ' + isoDay_(target) + ' as well.'
+          : 'The check-in date of ' + (checkIn ? isoDay_(checkIn) : 'none') + ' is unaffected.');
+    summary.message = summary.shortens || !target
+      ? 'Nothing was changed. Send dryRun:false and confirm:"' + (target ? isoDay_(target) : 'clear') +
+        '" to apply it.'
+      : 'Nothing was changed. Send dryRun:false to apply it.';
+    return summary;
+  }
+
+  // Confirmation is asked for in the two directions that take time away:
+  // bringing the deadline forward, and removing it entirely.
+  if (summary.shortens || !target) {
+    var word = target ? isoDay_(target) : 'clear';
+    if (String(payload.confirm || '') !== word) {
+      throw new ApiError('CONFIRM_REQUIRED',
+        (target
+          ? 'That brings the final deadline forward from ' + isoDay_(current) + '. '
+          : 'That removes the final deadline altogether. ') +
+        'Send confirm:"' + word + '" to go ahead.');
+    }
+  }
+
+  setConfigValue_('FINAL_DEADLINE', target ? isoDay_(target) : '');
+  if (pullsCheckIn) setConfigValue_('CHECK_IN_DATE', isoDay_(target));
+
+  logAudit('SET_FINAL_DEADLINE', {
+    from: summary.from || 'none', to: summary.to || 'none', pulledCheckIn: pullsCheckIn
+  }, user.email);
+
+  return summary;
+}
+
+/**
+ * Where the raffle stands against its two dates.
+ *
+ * Read-only and cheap enough for the app to show on every load, because the
+ * question it answers — "is the check-in due, and is anybody late for it" —
+ * is the one that stops being asked the moment it takes effort to ask.
+ */
+function handleDeadlineStatus(payload, user) {
+  var cfg = getConfig();
+  var now = today_();
+  var checkIn = cfgDate_(cfg, 'CHECK_IN_DATE');
+  var lastDay = cfgDate_(cfg, 'FINAL_DEADLINE');
+  // The dates belong to everybody — a seller cannot report by a day nobody
+  // told them about. The counts do not: raffle-wide totals are held back from
+  // sellers everywhere else in this system, so here they are the books in that
+  // person's own hands, which is the number they can actually act on.
+  var books = readBooksRaw_();
+  var mine = user && user.role === ROLES.AGENT;
+  if (mine) {
+    var own = [];
+    for (var i = 0; i < books.length; i++) {
+      if (String(books[i].Held_By_Agent || '').trim() === user.agentId) own.push(books[i]);
+    }
+    books = own;
+  }
+  var sweep = checkInSweep_(books, checkIn, now);
+
+  return {
+    today: isoDay_(now),
+    scope: mine ? 'mine' : 'all',
+    checkInDate: isoDay_(checkIn),
+    finalDeadline: isoDay_(lastDay),
+    drawDate: isoDay_(cfgDate_(cfg, 'DRAW_DATE')),
+    daysToCheckIn: checkIn ? daysBetween_(now, checkIn) : null,
+    daysToFinal: lastDay ? daysBetween_(now, lastDay) : null,
+    checkInDue: !!(checkIn && checkIn <= now),
+    finalPassed: !!(lastDay && lastDay < now),
+    isLastRound: !!(checkIn && lastDay && checkIn.getTime() === lastDay.getTime()),
+    booksOut: sweep.out,
+    lateNow: sweep.late
+  };
 }

@@ -139,7 +139,9 @@ address in it, not a shared mailbox.
    | `BOOK_PREFIX` / `BOOK_DIGITS` | `Book-` / `4` | `Book-0001` |
    | `TICKET_PRICE` | `10` | price of one ticket |
    | `CURRENCY` | `RM` | |
-   | `DEFAULT_DUE_DAYS` | `30` | how long agents keep books |
+   | `CHECK_IN_DATE` | one month out | the day every seller reports by, this round |
+   | `FINAL_DEADLINE` | blank | the day everything has to be back — set this |
+   | `DEFAULT_DUE_DAYS` | `30` | fallback only, if neither date above is set |
    | `EVENT_NAME`, `ORG_NAME`, `DRAW_DATE` | | shown on receipts |
 
 5. If you changed any of the numbering rows, run **`regenerate`** to rebuild the tickets and books.
@@ -152,6 +154,60 @@ address in it, not a shared mailbox.
 `TICKET_DIGITS` and `BOOK_DIGITS` are the two settings that can never be changed afterwards — widening
 them renumbers every ticket already printed. The defaults above leave room to grow to 10,000 tickets
 in 1,000 books. If there is any chance of going further, set them higher now; it costs nothing.
+
+### The two deadlines
+
+A raffle runs on two dates, and confusing them is how money goes missing.
+
+**The check-in date is soft.** It is one shared day on which *everybody* reports: what has sold, what
+is left, what has been collected. The same day for the person who took books in March and the person
+who took them last week — which is what makes one reminder and one late list possible at all. Nobody
+is finished on that day. The point is to find out where things stand while there is still time to do
+something about it.
+
+**The final deadline is hard.** Every book and every ringgit has to be back by then, because the draw
+happens after it. It does not move on its own.
+
+The check-in date walks towards the final deadline a month at a time and stops there. Two rules hold
+always: `CHECK_IN_DATE` can never pass `FINAL_DEADLINE`, and `FINAL_DEADLINE` can never pass
+`DRAW_DATE`.
+
+**The monthly round, in order:**
+
+1. The check-in date arrives. The app says so, and the *Deadlines* screen shows how many books are
+   out and how many are late.
+2. Go through them — settle what has come back, chase what has not.
+3. Press **Next month** on the Deadlines screen. It shows you what the move would do *before* it does
+   it, including how many late books would stop counting as late.
+4. Confirm. The date steps on a month, and every book still out gets the new date.
+
+That third step is the one that matters. Moving the check-in date forward makes late books stop being
+late — that is exactly what a checkpoint is for, and it is also how "we will collect it next month"
+becomes a year of nobody chasing anybody. So the number is put in front of you in words, and when
+there is anything to absolve the date has to be typed back before it will go through.
+
+**What it refuses, and why:**
+
+| It says | Because |
+|---|---|
+| `NO_FINAL_DEADLINE` | A checkpoint with no wall behind it is an extension that can be granted for ever. Set the final deadline first. |
+| `CANNOT_MOVE_BACK` | Pulling the date backwards would make books late for a day that had already passed when they were handed over. |
+| `FINAL_PASSED` | The raffle's own deadline is behind you. There is no next round; what is still out is overdue outright. |
+| `TOO_FAR` | More than twelve months in one step. A mistyped year cannot quietly suspend the chasing for a decade. |
+| `DUE_AFTER_FINAL` | A handover was given a date past the final deadline. The paper in somebody's hand would promise them time the raffle does not have. |
+
+The last check-in lands *on* the final deadline rather than being refused for overshooting it, and
+says so: that is the last round.
+
+**Who may do what.** Moving the check-in date on is an organiser's job — it happens every month, and
+a checkpoint that needs the super admin every time is a checkpoint that stops happening. Changing the
+final deadline is the super admin's alone: it is the promise the raffle made to everybody who bought
+a ticket. Shortening it, or removing it, asks for the date to be typed back. Shortening it also pulls
+the check-in date in with it, because nothing may sit later than the wall.
+
+**The draw is not ready until the final deadline has passed.** *Is the draw ready* says so as a
+blocker, alongside unsettled books and uncollected money. Drawing a winner early pulls from a pool
+sellers are still adding to, and it cannot be undone once a name has been read out.
 
 ### Growing a raffle that is already running
 

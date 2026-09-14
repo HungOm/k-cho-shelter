@@ -130,7 +130,17 @@ function seedConfig_() {
   var toAdd = [];
   for (var j = 0; j < CONFIG_DEFAULTS.length; j++) {
     // Never overwrite a value a human has already set.
-    if (!existing[CONFIG_DEFAULTS[j][0]]) toAdd.push(CONFIG_DEFAULTS[j]);
+    if (!existing[CONFIG_DEFAULTS[j][0]]) {
+      var row = CONFIG_DEFAULTS[j];
+      // The one default that has to be computed rather than written down: a
+      // raffle needs a first check-in date on day one, and a month out is the
+      // answer nobody has to think about. It is a date, not a duration, so
+      // everyone who takes books this month reports on the same day.
+      if (row[0] === 'CHECK_IN_DATE') {
+        row = [row[0], isoDay_(addMonths_(today_(), 1)), row[2]];
+      }
+      toAdd.push(row);
+    }
   }
   if (toAdd.length) {
     sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, 3).setValues(toAdd);
