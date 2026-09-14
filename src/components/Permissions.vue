@@ -81,7 +81,7 @@ async function toggle(a, r) {
     </p>
 
     <div v-if="!isSuper" class="note warn">
-      Only the super admin can change these. You are seeing them as they stand.
+      Only the owner can change these. You are seeing them as they stand.
     </div>
 
     <div v-if="!data" class="card"><div class="skel" style="height:40px"></div></div>
@@ -111,7 +111,7 @@ async function toggle(a, r) {
                 <span v-if="a.danger" class="pill bad">destroys data</span>
                 <span v-if="changed(a, role)" class="pill info">changed</span>
               </span>
-              <span v-if="a.sup" class="d">Super admin only — cannot be given away</span>
+              <span v-if="a.sup" class="d">Owner only — cannot be given away</span>
               <span v-else-if="(a.lockedFor || []).includes(role)" class="d">
                 Always allowed — turning this off would lock everyone out
               </span>
@@ -142,7 +142,7 @@ async function toggle(a, r) {
                   <td>
                     {{ a.label }}
                     <span v-if="a.danger" class="pill bad">destroys data</span>
-                    <span v-if="a.sup" class="pill">super admin only</span>
+                    <span v-if="a.sup" class="pill">owner only</span>
                   </td>
                   <td v-for="r in data.roles" :key="r" class="rolecol">
                     <button :class="['sw', { on: a.current[r], locked: locked(a, r), moved: changed(a, r) }]"

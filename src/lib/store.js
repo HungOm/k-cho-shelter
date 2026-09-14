@@ -60,8 +60,10 @@ export const state = reactive({
   problems: [],
   needsSetup: false,
 
-  // how many requests are waiting on a second person
-  pendingApprovals: 0,
+  // How many requests are waiting on a second person. Null until something has
+  // said — so refresh() can tell "nobody is waiting" from "nothing has told me
+  // yet", and only pay for the extra call in the second case.
+  pendingApprovals: null,
 
   // true while showing the local copy, before the full table has arrived
   fromCache: false,
@@ -289,6 +291,27 @@ export async function loadDelta() {
   reindex()
 }
 
+/**
+ * The cheap check: has anything changed, and is anybody waiting on me?
+ *
+ * One call. It answers both questions because read_version already had to ask
+ * the database the time, and counting pending approvals with head:true costs
+ * about the same again.
+ *
+ * Failures are swallowed deliberately. A poll that cannot reach the server is
+ * not news — the next one will, or the person is already looking at a screen
+ * that told them. Pushing a red banner every thirty seconds because a phone
+ * went through a tunnel is how people learn to ignore banners.
+ */
+export async function poll() {
+  try {
+    const v = await api('read_version', {})
+    if (v.approvalsWaiting !== undefined) state.pendingApprovals = v.approvalsWaiting
+    if (v.tickets !== undefined && v.tickets !== state.ticketVersion) await loadDelta()
+    else if (v.serverTime) state.lastSync = v.serverTime
+  } catch { /* not news */ }
+}
+
 export function reindex() {
   state.byNumber = Object.fromEntries(state.tickets.map(t => [t.number, t]))
   index = buildIndex(state.tickets, agentMap.value, bookHolders.value)
@@ -352,6 +375,9 @@ export async function refresh() {
       // Otherwise ask the cheapest question in the API — two script properties,
       // no spreadsheet — and only fetch rows when something has actually moved.
       const v = await api('read_version', {})
+      // Rides along on a call that already happens, so a waiting request is
+      // known without a second round trip.
+      if (v.approvalsWaiting !== undefined) state.pendingApprovals = v.approvalsWaiting
       if (v.tickets === state.ticketVersion) {
         state.lastSync = v.serverTime || state.lastSync
         return
@@ -387,11 +413,15 @@ export async function refresh() {
     }
 
     // Quiet on purpose: an older deployment has no approvals at all, and a
-    // missing action must not show up as a broken panel.
-    try {
-      const a = await api('list_approvals', { status: 'Pending' })
-      state.pendingApprovals = (a.requests || []).length
-    } catch { state.pendingApprovals = 0 }
+    // missing action must not show up as a broken panel. Skipped entirely when
+    // read_version already carried the count, which is the whole point of
+    // putting it there — this is the fallback for a backend that predates it.
+    if (state.pendingApprovals === null) {
+      try {
+        const a = await api('list_approvals', { status: 'Pending' })
+        state.pendingApprovals = (a.requests || []).length
+      } catch { state.pendingApprovals = 0 }
+    }
 
     // Never the device clock: a phone running fast would set a cursor in the
     // future and silently skip every row written in between.

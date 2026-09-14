@@ -1,0 +1,95 @@
+/*
+ * One word for the person at the top, and it is not "super admin".
+ *
+ * The user was shown "This needs the organiser. Ask the organiser to approve
+ * it" while signed in AS an organiser. The word was doing two jobs: the role
+ * directly below the top, and the person at the top. Somebody reading it could
+ * only conclude the app had not noticed who they were.
+ *
+ * They also asked not to see "Super Admin" at all. It is a database
+ * administrator's word for a thing volunteers experience as ownership, and this
+ * app is read by people counting raffle books on a Sunday.
+ *
+ * So: OWNER everywhere a person can read, on both sides of the wire. The old
+ * words survive only where a machine reads them — identifiers, the isSuperAdmin
+ * flag, SUPER_ADMIN_EMAIL, which is a secret's name rather than a sentence.
+ *
+ * This is a test rather than a careful afternoon because the failure is silent:
+ * nothing breaks when a screen says the wrong word, it just quietly stops
+ * matching what the server says, and the person in front of it is the only one
+ * who finds out.
+ */
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+const here = new URL('.', import.meta.url).pathname
+let pass = 0, fail = 0
+const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
+
+function walk(dir, out = []) {
+  for (const e of readdirSync(dir)) {
+    const p = join(dir, e)
+    if (statSync(p).isDirectory()) walk(p, out)
+    else if (/\.(vue|js)$/.test(e)) out.push(p)
+  }
+  return out
+}
+
+/** Strip comments — JS and HTML — so only what a person could read is judged. */
+function visible(src) {
+  return src
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
+}
+
+/*
+ * i18n.js is exempt, and only i18n.js.
+ *
+ * It keeps the OLD English strings as lookup keys on purpose: a phone running a
+ * cached build still renders "Super admin", and dropping the key would leave
+ * that person with an untranslated word rather than a wrong one. The keys are
+ * what a previous bundle asks for, not what this one displays — and the test
+ * below still requires the new keys to exist.
+ */
+const EXEMPT = ['/src/lib/i18n.js']
+
+const files = walk(join(here, '../src'))
+ok(files.length > 30, `read the source (${files.length} files)`)
+
+console.log('no screen says "super admin" to a volunteer')
+for (const f of files) {
+  const rel = f.slice(f.indexOf('/src/'))
+  if (EXEMPT.includes(rel)) { pass++; continue }
+  const v = visible(readFileSync(f, 'utf8'))
+  const hit = v.match(/[Ss]uper [Aa]dmin/)
+  ok(!hit, `${rel} — says "${hit?.[0]}"`)
+}
+
+console.log('and the word for the top is Owner')
+const fmt = readFileSync(join(here, '../src/lib/format.js'), 'utf8')
+ok(/superadmin: 'Owner'/.test(fmt), 'the role word is Owner')
+const shell = readFileSync(join(here, '../src/components/AppShell.vue'), 'utf8')
+ok(/isSuperAdmin\) return 'Owner'/.test(shell), 'and so is the footer under their name')
+
+console.log('an approval asks the owner, not the organiser')
+const ask = readFileSync(join(here, '../src/components/modals/AskApproval.vue'), 'utf8')
+ok(/This needs the owner/.test(ask), 'the sheet is titled for the owner')
+ok(!/the organiser to approve|Ask the organiser/.test(visible(ask)),
+   'and nothing in it asks the organiser — the reader may BE one')
+
+console.log('Burmese has the new words too')
+const i18n = readFileSync(join(here, '../src/lib/i18n.js'), 'utf8')
+for (const key of ["'Owner'", "'Ask the owner'"]) {
+  ok(i18n.includes(key), `${key} is translated`)
+}
+
+console.log('and the deadline notice names who can really change it')
+// set_final_deadline is sup:true, so an organiser could not change it and was
+// being told they could — wording that was also wrong.
+const dl = readFileSync(join(here, '../src/components/modals/Deadlines.vue'), 'utf8')
+ok(/Only the owner can change the final deadline/.test(dl),
+   'the final deadline is the owner\'s, and says so')
+
+console.log(`\n${pass} passed, ${fail} failed`)
+process.exit(fail ? 1 : 0)

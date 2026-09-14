@@ -7,7 +7,7 @@
  * starting over each time.
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, refresh, go, toast, isAdmin, bootFromCache, forgetCache } from './lib/store.js'
+import { state, refresh, go, toast, isAdmin, bootFromCache, forgetCache, poll } from './lib/store.js'
 import { tokenIsStale, LS } from './lib/api.js'
 import { api, configure, isSupabase } from './lib/backend.js'
 import * as sbAuth from './lib/supabaseAuth.js'
@@ -316,10 +316,51 @@ async function supabaseSignIn() {
   }
 }
 
+// ---------- keeping up ----------
+
+/**
+ * Ask every half minute whether anything moved.
+ *
+ * An owner sitting on the Approvals screen had no way to learn that a request
+ * had arrived: the page loads once and then knows nothing. A request nobody is
+ * told about is the same as no request, and the person who asked is left
+ * wondering whether the button worked.
+ *
+ * ONLY WHILE THE TAB IS VISIBLE, and stopped the moment it is not. This runs on
+ * volunteers' own phones, on their own mobile data, for a whole day. A timer
+ * that keeps asking from a pocket costs them battery and money to answer a
+ * question nobody is currently looking at. Coming back into view polls at once,
+ * so the wait is never the interval — it is however long it takes to look.
+ *
+ * Thirty seconds rather than five: this is a raffle, not a trading floor. The
+ * cost of hearing about an approval half a minute late is nothing; the cost of
+ * a hundred devices asking twelve times a minute all day is somebody's data.
+ */
+const POLL_MS = 30_000
+let pollTimer = null
+
+function startPolling() {
+  stopPolling()
+  if (document.visibilityState !== 'visible') return
+  poll()
+  pollTimer = setInterval(poll, POLL_MS)
+}
+
+function stopPolling() {
+  clearInterval(pollTimer)
+  pollTimer = null
+}
+
+function onVisibility() {
+  if (phase.value !== 'ready') return
+  document.visibilityState === 'visible' ? startPolling() : stopPolling()
+}
+
 // ---------- boot ----------
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', wake)
+  document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('focus', wake)
 
   readFragment()
@@ -378,7 +419,7 @@ async function start() {
     // Deliberately not awaited into the catch below: once whoami has answered,
     // the sign-in worked. A report that fails afterwards is a missing panel,
     // not a failed login, and must not throw the user back to this screen.
-    refresh().finally(() => { state.ready = true })
+    refresh().finally(() => { state.ready = true; startPolling() })
   } catch (err) {
     // Access refused or withdrawn: drop the local copy before showing the door.
     if (String(err.code || '').startsWith('AUTH') ||
@@ -418,8 +459,10 @@ async function start() {
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', wake)
+  document.removeEventListener('visibilitychange', onVisibility)
   window.removeEventListener('focus', wake)
   clearTimeout(renewTimer)
+  stopPolling()
   stopSession?.()
 })
 

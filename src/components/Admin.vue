@@ -134,7 +134,7 @@ async function loadAudit() {
               <td>
                 {{ u.email }}
                 <span v-if="u.isYou" class="pill info">you</span>
-                <span v-if="u.isSuperAdmin" class="pill ok">super admin</span>
+                <span v-if="u.isSuperAdmin" class="pill ok">owner</span>
               </td>
               <!-- The super admin's row role is only what their ordinary user
                    record says; their actual authority sits outside the database
@@ -161,7 +161,7 @@ async function loadAudit() {
       </div>
 
       <p v-if="!isSuper" class="hint">
-        Only the super admin can add or change an organiser.
+        Only the owner can add or change an organiser.
       </p>
     </div>
 

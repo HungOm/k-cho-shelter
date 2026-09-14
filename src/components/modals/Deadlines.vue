@@ -132,7 +132,7 @@ function explain(err) {
       return 'That falls after the draw date. Everything has to be back before the draw, so ' +
              'move the draw first if the whole raffle is running later.'
     case 'SUPER_ADMIN_ONLY':
-      return 'Only the organiser can change the final deadline. The check-in date is yours ' +
+      return 'Only the owner can change the final deadline. The check-in date is yours ' +
              'to move.'
     default:
       return err.message
@@ -177,7 +177,7 @@ function explain(err) {
 
       <div v-if="noFinal" class="note info">
         There is no final deadline yet, so the check-in date cannot be moved.
-        <template v-if="!isSuper">Ask the organiser to set one.</template>
+        <template v-if="!isSuper">Ask the owner to set one.</template>
       </div>
 
       <!-- ---------------------------------------------------- the soft one -->

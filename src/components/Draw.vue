@@ -138,7 +138,7 @@ function download(filename, head, rows) {
       <p class="hint">This file has everyone's phone number in it. Keep it safe and do not put it online.</p>
     </div>
     <div v-else-if="isAdmin" class="note">
-      Only the super admin can download the entry list or add winners.
+      Only the owner can download the entry list or add winners.
     </div>
   </div>
 </template>

@@ -84,7 +84,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
     <p class="muted">
       {{ youDecide
         ? 'Changes big enough to need two people. Nothing has happened yet.'
-        : 'Things you have asked the organiser to approve.' }}
+        : 'Things you have asked the owner to approve.' }}
     </p>
 
     <div v-if="rows === null" class="card">

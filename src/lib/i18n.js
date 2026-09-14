@@ -115,6 +115,8 @@ export const MY = {
   'Getting your raffle': 'အချက်အလက်များ ရယူနေသည်',
   'One moment…': 'ခဏစောင့်ပါ…',
   'Administrator': 'စီမံခန့်ခွဲသူ',
+  'Ask the owner': 'စီစဉ်သူထံ တောင်းခံရန်',
+  // Kept: older strings may still be in a cached build on a phone.
   'Ask the organiser': 'စီစဉ်သူထံ တောင်းခံရန်',
   'Approve and do it': 'ခွင့်ပြုပြီး လုပ်ဆောင်ရန်',
   'Turn down': 'ငြင်းပယ်ရန်',
@@ -141,6 +143,7 @@ export const MY = {
   // --- who people are ---
   'Organiser': 'စီစဉ်သူ',
   'Everything': 'အားလုံး',
+  'Owner': 'အဓိက စီမံခန့်ခွဲသူ',
   'Super admin': 'အဓိက စီမံခန့်ခွဲသူ',
   'Helper': 'ကူညီသူ',
   'Seller': 'ရောင်းသူ',
