@@ -187,12 +187,60 @@ export async function reportDrawReady(_p: Record<string, unknown>, _u: AppUser, 
     })
   }
 
+  // Books by status, which the home screen colours its grid from.
+  const booksByStatus: Record<string, number> = {}
+  for (const b of books ?? []) {
+    const k = String((b as { status?: string }).status ?? '')
+    booksByStatus[k] = (booksByStatus[k] ?? 0) + 1
+  }
+
+  const voided = await count((q: any) => q.eq('status', 'Void').lte('idx', active))
+  const availableCount = await count((q: any) => q.eq('status', 'Available').lte('idx', active))
+  const expected = (books ?? []).reduce(
+    (s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0)
+  const collected = (books ?? []).reduce(
+    (s: number, b: { counted_collected: number }) => s + Number(b.counted_collected ?? 0), 0)
+
+  /*
+   * SHAPED LIKE handleReportDrawReady IN Reports.gs, field for field.
+   *
+   * This is what the home screen builds its whole overview from — the progress
+   * bar, the money raised, the book grid. It previously returned a `problems`
+   * list of objects and no `totals` at all, so state.totals was undefined, the
+   * overview computed to null, and the page sat on "Getting your raffle… One
+   * moment…" forever. On every account, however well everything else worked.
+   *
+   * The tickets had in fact loaded. Nothing was broken except the shape of one
+   * reply, which is the third time today that a payload the server was happy
+   * with was one the browser could not use.
+   */
+  const blockers = problems.map((x) => `${x.what}${x.count ? ` (${x.count})` : ''}`)
+
   return {
+    currency: await currency(ctx),
+    drawDate: await configDate(ctx, 'DRAW_DATE'),
+    checkInDate: await configDate(ctx, 'CHECK_IN_DATE'),
+    finalDeadline,
+    finalPassed: !!finalDeadline && finalDeadline < now,
     ready: problems.length === 0,
-    sold, active, reserved, missingContact, unsettledBooks: unsettled,
-    outstanding, currency: await currency(ctx),
-    finalDeadline, checkInDate: await configDate(ctx, 'CHECK_IN_DATE'), today: now,
+    blockers,
+    totals: {
+      ticketsSold: sold,
+      ticketsAvailable: availableCount,
+      ticketsReserved: reserved,
+      ticketsVoid: voided,
+      eligibleEntries: Math.max(0, sold),
+      expected: Math.round(expected * 100) / 100,
+      collected: Math.round(collected * 100) / 100,
+      outstanding: Math.round((expected - collected) * 100) / 100,
+      missingContact,
+    },
+    booksByStatus,
+    // Kept alongside: the richer form carries the reason, which the blunt
+    // blocker strings cannot, and a later screen may want it.
     problems,
+    active,
+    today: now,
   }
 }
 
