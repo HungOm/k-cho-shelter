@@ -270,7 +270,7 @@ export async function correctTicket(p: Record<string, unknown>, user: AppUser, c
         'A donated ticket is recorded when the sale is recorded, not by correction.')
     }
     if (!user.isAdmin) {
-      throw new ApiError('INSUFFICIENT_ROLE', 'Only an admin can change a ticket status.', null, 403)
+      throw new ApiError('INSUFFICIENT_ROLE', 'Only an organiser can change a ticket status.', null, 403)
     }
   }
 

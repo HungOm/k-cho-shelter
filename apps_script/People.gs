@@ -198,7 +198,7 @@ function handleUpsertUser(payload, user) {
     throw new ApiError('BAD_REQUEST', 'That does not look like an email address.');
   }
   if (role === ROLES.AGENT && !payload.agentId) {
-    throw new ApiError('MISSING_FIELD', 'An agent user must be linked to an Agent_ID.');
+    throw new ApiError('MISSING_FIELD', 'A seller who signs in must be linked to an Agent ID.');
   }
   if (payload.agentId && !findAgent_(payload.agentId)) {
     throw new ApiError('AGENT_NOT_FOUND', 'No agent with ID "' + payload.agentId + '".');
