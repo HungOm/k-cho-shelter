@@ -43,9 +43,16 @@ for (const r of [...tiers, 'superadmin']) {
 }
 
 console.log('and the words live in one place')
-for (const f of ['../src/components/Permissions.vue', '../src/components/Admin.vue']) {
+// AppShell.vue was the third copy and the one I missed: it spelled the mapping
+// inline inside a computed rather than as a `const ROLE_WORDS`, so a search for
+// the name did not find it. It is the copy every volunteer sees on every
+// screen, under their own name in the sidebar.
+for (const f of ['../src/components/Permissions.vue', '../src/components/Admin.vue',
+                 '../src/components/AppShell.vue']) {
   const src = read(f)
   ok(!/const ROLE_WORDS\s*=\s*\{/.test(src), `${f} no longer defines its own copy`)
+  // Catches the inline spelling too, which is how the third copy hid.
+  ok(!/admin:\s*'Organiser'/.test(src), `${f} does not spell the words out inline`)
   ok(/ROLE_WORDS/.test(src) && /from '\.\.\/lib\/format\.js'/.test(src),
      `${f} imports the shared one`)
 }

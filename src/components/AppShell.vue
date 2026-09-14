@@ -8,6 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { state, isAdmin, go, attention } from '../lib/store.js'
+import { ROLE_WORDS } from '../lib/format.js'
 import Logo from './ui/Logo.vue'
 import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
@@ -57,9 +58,7 @@ const roleWord = computed(() => {
   // and outranks every role here — so printing "Organiser" under their name
   // described a ceiling that does not exist.
   if (state.user?.isSuperAdmin) return 'Super admin'
-  return ({
-  admin: 'Organiser', recorder: 'Helper', agent: 'Seller who signs in', viewer: 'Can only look'
-})[state.user?.role] || state.user?.role
+  return ROLE_WORDS[state.user?.role] || state.user?.role
 })
 
 defineEmits(['signout'])
