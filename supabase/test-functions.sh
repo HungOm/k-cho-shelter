@@ -110,6 +110,108 @@ echo "settlement is the one exception, and it is deliberate"
 r=$(P "update tickets set status='Sold', source='settlement', buyer_name='', buyer_phone='' where number='KS-00046'")
 ok "$(P "select status from tickets where number='KS-00046'")" "Sold" "a settled book may record a sale nobody wrote down"
 
+
+# ============ SETTLEMENT ============
+#
+# The action that decides money, and the one with the most ways to be quietly
+# wrong. It asks for the tickets that did NOT sell — the ones the agent is
+# physically holding — and marks everything else sold. Typing two numbers takes
+# five seconds and is exact, where "I sold eight" throws away the
+# ticket-to-buyer link the draw depends on.
+#
+# Book 3 is the settlement fixture: tickets 21-30, held by A001.
+
+echo "settling a book counts what was not handed back"
+P "update tickets set status='Available' where book_idx=3" >/dev/null
+r=$(P "select settle_book('Book-0003','[\"KS-00029\",\"KS-00030\"]'::jsonb,80,false,null,false,'me@x.com','')")
+has "$r" '"declaredSold": 8' "eight of ten sold"
+has "$r" '"amountDue": 80' "at RM 10 each"
+has "$r" '"variance": 0' "and the money balances"
+ok "$(P "select status from tickets where number='KS-00021'")" "Sold" "a ticket not handed back is sold"
+ok "$(P "select status from tickets where number='KS-00029'")" "Available" "one handed back goes on the shelf"
+ok "$(P "select status from books where idx=3")" "Settled" "and the book is settled"
+ok "$(P "select declared_sold||'/'||round(amount_due)||'/'||round(amount_paid) from books where idx=3")" "8/80/80" "the figures are recorded"
+ok "$(P "select sold_by_agent from tickets where number='KS-00021'")" "A001" "the sale is attributed to whoever held the book"
+ok "$(P "select source from tickets where number='KS-00021'")" "settlement" "and marked as coming from a settlement"
+
+echo "a settlement never overwrites a buyer somebody wrote down"
+P "update books set status='Out' where idx=4;
+   update tickets set status='Available', buyer_name='', buyer_phone='', source='' where book_idx=4;
+   update tickets set status='Sold', buyer_name='Daw Hla', buyer_phone='0125550111',
+     amount=10, sold_by_agent='A001', payment_status='Paid'
+     where number='KS-00031'" >/dev/null
+r=$(P "select settle_book('Book-0004','[]'::jsonb,100,false,null,false,'me@x.com','')")
+ok "$(P "select buyer_name from tickets where number='KS-00031'")" "Daw Hla" "the named buyer survives settlement"
+ok "$(P "select buyer_phone from tickets where number='KS-00031'")" "0125550111" "with their phone number"
+# This is the whole reason settlement asks for the UNSOLD list: a winner drawn
+# out of a settled book can still be telephoned if anybody wrote them down.
+ok "$(P "select source from tickets where number='KS-00031'")" "" "and is not restamped as a settlement"
+# The one that would actually cost somebody: the book is held by A002, but this
+# ticket was sold by A001. Restamping it would move the sale — and the money
+# owed for it — onto the wrong seller, and the ledger would agree.
+ok "$(P "select sold_by_agent from tickets where number='KS-00031'")" "A001" "the sale stays with whoever made it, not whoever held the book"
+has "$r" '"declaredSold": 10' "all ten counted, including the one already recorded"
+
+echo "a ticket from another book is a typo, not an instruction"
+P "update books set status='Out', declared_sold=null, amount_due=null, amount_paid=null where idx=5;
+   update tickets set status='Available' where book_idx=5" >/dev/null
+r=$(P "select settle_book('Book-0005','[\"KS-00021\"]'::jsonb,100,false,null,false,'me@x.com','')")
+has "$r" "NOT_IN_BOOK" "a number from a different book is refused"
+ok "$(P "select status from books where idx=5")" "Out" "and nothing was settled"
+# Accepting it would mark the wrong ticket unsold — in a book already closed.
+ok "$(P "select status from tickets where number='KS-00041'")" "Available" "no ticket in the named book was touched"
+
+echo "settling twice needs saying so twice"
+r=$(P "select settle_book('Book-0003','[]'::jsonb,100,false,null,false,'me@x.com','')")
+has "$r" "ALREADY_SETTLED" "a settled book refuses a second settlement"
+ok "$(P "select declared_sold from books where idx=3")" "8" "the first figures stand"
+r=$(P "select settle_book('Book-0003','[]'::jsonb,100,false,null,true,'me@x.com','corrected')")
+has "$r" '"declaredSold": 10' "with force it re-settles"
+ok "$(P "select notes from books where idx=3")" "corrected" "and the reason is kept"
+
+echo "when the leftovers are lost, the count is recorded and nothing is invented"
+P "update books set status='Out', declared_sold=null, amount_due=null, amount_paid=null where idx=5;
+   update tickets set status='Available', source='', buyer_name='', buyer_phone='' where book_idx=5" >/dev/null
+r=$(P "select settle_book('Book-0005','[]'::jsonb,60,true,6,false,'me@x.com','stubs lost')")
+has "$r" '"declaredSold": 6' "the agent's count is taken"
+has "$r" '"unidentified": true' "and flagged as unidentified"
+# THE POINT: no ticket rows were fabricated. A "Sold" against a number nobody
+# chose is a lie the system would then defend at the draw.
+ok "$(P "select count(*) from tickets where book_idx=5 and status='Sold'")" "0" "no ticket was marked sold"
+ok "$(P "select round(amount_due) from books where idx=5")" "60" "but the money owed is recorded"
+
+echo "an unidentified settlement still has to be arithmetically possible"
+P "update books set status='Out' where idx=5" >/dev/null
+r=$(P "select settle_book('Book-0005','[]'::jsonb,60,true,99,false,'me@x.com','')")
+has "$r" "BAD_REQUEST" "more sold than the book holds is refused"
+r=$(P "select settle_book('Book-0005','[]'::jsonb,60,true,null,false,'me@x.com','')")
+has "$r" "MISSING_FIELD" "and a missing count is refused rather than assumed"
+
+echo "a short payment is recorded as a debt, not as a refusal"
+P "update books set status='Out', declared_sold=null, amount_due=null, amount_paid=null where idx=5;
+   update tickets set status='Available' where book_idx=5" >/dev/null
+r=$(P "select settle_book('Book-0005','[]'::jsonb,40,false,null,false,'me@x.com','paid part')")
+has "$r" '"variance": -60' "ten sold, forty paid, sixty still owed"
+ok "$(P "select round(counted_expected-counted_collected) from book_ledger where idx=5")" "60" "and the ledger says so"
+# Refusing a short payment would mean the agent who handed in RM 40 has no
+# record of having handed in anything at all.
+
+echo "a void ticket is not swept into a settlement"
+P "update books set status='Out', declared_sold=null, amount_due=null, amount_paid=null where idx=5;
+   update tickets set status='Available' where book_idx=5;
+   update tickets set status='Void' where number='KS-00050'" >/dev/null
+r=$(P "select settle_book('Book-0005','[]'::jsonb,90,false,null,false,'me@x.com','')")
+has "$r" '"declaredSold": 9' "the void ticket is not counted as sold"
+ok "$(P "select status from tickets where number='KS-00050'")" "Void" "and stays void"
+
+echo "settling writes its own history"
+ok "$(P "select action from book_history where book_idx=3 order by at desc limit 1")" "settle" "the settlement is on the book's record"
+has "$(P "select note from book_history where book_idx=3 order by at desc limit 1")" "sold 10" "with the figures it recorded"
+
+echo "a book that does not exist"
+r=$(P "select settle_book('Book-9999','[]'::jsonb,0,false,null,false,'me@x.com','')")
+has "$r" "BOOK_NOT_FOUND" "is refused by name"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
