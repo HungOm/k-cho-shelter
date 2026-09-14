@@ -819,6 +819,37 @@ function handleRestockBooks(payload, user) {
   var edits = [];
   var done = [];
 
+  // WHY THIS CHECK EXISTS. Restocking clears Held_By_Agent, and the outstanding
+  // report finds debts by looking at which agent holds a book. So restocking a
+  // book somebody still owes money on does not just lose the figure — it takes
+  // the debt off the chase list entirely, silently, with nothing left to show
+  // it was ever there. The tickets keep Sold_By_Agent, but no report reads it.
+  //
+  // A book that came back untouched owes nothing and restocks freely, which is
+  // the ordinary case: hand out twenty, five come back unopened. A book with
+  // sales on it has to be settled first, because settling is precisely the step
+  // that records what was sold and what was handed in.
+  var ledger = {};
+  var led = buildBookLedger_().rows;
+  for (var L = 0; L < led.length; L++) ledger[String(led[L].book).toUpperCase()] = led[L];
+
+  var owing = [];
+  for (var c = 0; c < numbers.length; c++) {
+    var row = ledger[numbers[c].toUpperCase()];
+    if (!row) continue;
+    var owed = row.countedExpected - row.countedCollected;
+    if (owed > 0.005) {
+      owing.push({ book: numbers[c], status: row.status, agent: row.agentName || row.agentId,
+                   owed: Math.round(owed * 100) / 100 });
+    }
+  }
+  if (owing.length) {
+    throw new ApiError('MONEY_STILL_OWED',
+      owing.length + ' of these books still have money owed on them. Settle them first, ' +
+      'or the amount owed disappears from the outstanding report. Nothing was changed.',
+      { books: owing });
+  }
+
   for (var i = 0; i < numbers.length; i++) {
     var book = index[numbers[i].toUpperCase()];
     if (!book) continue;
@@ -888,4 +919,68 @@ function handleHandoverReceipt(payload, user) {
     issuedBy: user.displayName || user.email,
     generatedAt: new Date().toISOString()
   };
+}
+
+// ============ WHERE A BOOK HAS BEEN ============
+
+/**
+ * The history of one book: who held it, when it moved, and why.
+ *
+ * Every movement has been recorded since the first version — and until now
+ * nothing could read it back. The Book_History sheet was a write-only log,
+ * which is the worst shape for a record to be in: the cost of keeping it was
+ * paid and the benefit never collected. The question it answers is an ordinary
+ * one on a Saturday morning ("who had book 41 before Hla?"), and the only way
+ * to answer it was to open the spreadsheet and scroll.
+ *
+ * Readable by anybody who can see books at all, deliberately. This is not
+ * sensitive — it is agent names and dates, no buyer details — and a history
+ * only an admin can open answers nobody's question.
+ */
+function handleBookHistory(payload, user) {
+  var cfg = getConfig();
+  var raw = String(payload.bookNumber || '').trim();
+  if (!raw) throw new ApiError('MISSING_FIELD', 'Which book?');
+
+  // Canonicalised, so Book-7 and Book-0007 both find it — the same tolerance
+  // every other book action has.
+  var idx = bookIndex(raw, cfg);
+  if (!idx) throw new ApiError('BOOK_NOT_FOUND', 'Book "' + raw + '" does not exist.');
+  var bookNumber = bookNumberAt(idx, cfg);
+
+  var sheet = sheet_(SHEET.BOOK_HISTORY);
+  var entries = [];
+  if (sheet.getLastRow() >= 2) {
+    var map = headerMap(sheet);
+    var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var r = rowToObject_(values[i], map);
+      if (String(r.Book_Number).trim() !== bookNumber) continue;
+      entries.push({
+        at: toIso_(r.Timestamp),
+        action: r.Action,
+        from: r.From_Agent || '',
+        to: r.To_Agent || '',
+        by: r.By_User,
+        note: r.Note || ''
+      });
+    }
+  }
+
+  // Agent ids are not what anybody wants to read in a history.
+  var agents = readAgentsRaw_();
+  var names = {};
+  for (var a = 0; a < agents.length; a++) names[agents[a].Agent_ID] = agents[a].Name;
+  for (var e = 0; e < entries.length; e++) {
+    if (entries[e].from) entries[e].from = names[entries[e].from] || entries[e].from;
+    if (entries[e].to) entries[e].to = names[entries[e].to] || entries[e].to;
+  }
+
+  var books = readBooksRaw_();
+  var status = '';
+  for (var b = 0; b < books.length; b++) {
+    if (books[b].Book_Number === bookNumber) { status = books[b].Status; break; }
+  }
+
+  return { book: { number: bookNumber, status: status }, history: entries };
 }
