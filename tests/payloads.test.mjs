@@ -17,6 +17,7 @@
  * These handlers are RUN, not read. A test that greps the source for a key name
  * proves the key is typed somewhere, not that it survives to the caller.
  */
+import { readFileSync } from 'node:fs'
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
 import { fakeDb, baseConfig, users } from './fakedb.mjs'
 
@@ -60,7 +61,10 @@ function world() {
     agents: [{ agent_id: 'A001', name: 'Daw Hla', phone: '0125551111', zone: 'KL', active: true }],
     app_users: [{ email: 'boss@x.com', name: 'Boss', role: 'admin', active: true, agent_id: null }],
     book_ledger_all: books.map((b) => ({
-      idx: b.idx, number: b.number, status: b.status,
+      idx: b.idx, number: b.number,
+      first_ticket: 'KS-' + String((b.idx - 1) * 10 + 1).padStart(5, '0'),
+      last_ticket: 'KS-' + String(b.idx * 10).padStart(5, '0'),
+      status: b.status,
       held_by_agent: b.held_by_agent, agent_name: 'Daw Hla', due_at: null,
       counted_expected: b.idx === 1 ? 100 : 0,
       counted_collected: b.idx === 1 ? 60 : 0,
@@ -152,6 +156,43 @@ console.log('list_books carries the counts the home screen reads')
   const d = await call('list_books')
   carries(d, ['books', 'stats', 'total', 'currency', 'generatedBooks', 'heldBackBooks'], 'list_books')
   ok(d.stats.Out === 1, 'stats counts by status')
+
+  /*
+   * THE ROW SHAPE, not just the envelope.
+   *
+   * This test asserted `books` existed and stopped there, so it passed happily
+   * while every row was the database's snake_case instead of the client's
+   * shape — and every book tile in the grid rendered "0", because BookGrid
+   * reads b.book and the view column is `number`. Presence of the array told
+   * us nothing about what was in it.
+   *
+   * The expected keys are read out of handleListBooks in Books.gs rather than
+   * typed here. Apps Script builds that object explicitly and its screen has
+   * been correct throughout, so it is the definition of the shape — and a key
+   * added there tomorrow is asserted here the same day.
+   */
+  const gs = readFileSync(new URL('../apps_script/Books.gs', import.meta.url), 'utf8')
+  const block = gs.slice(gs.indexOf('function handleListBooks'))
+  const push = block.slice(block.indexOf('books.push({'), block.indexOf('});'))
+  const expected = [...push.matchAll(/^\s{6}(\w+):/gm)].map((m) => m[1])
+
+  ok(expected.length >= 12, `read ${expected.length} keys off the Apps Script handler`)
+  ok(Array.isArray(d.books) && d.books.length > 0, 'and some books came back')
+
+  const row = d.books[0]
+  for (const k of expected) {
+    ok(row[k] !== undefined, `each book row carries ${k}`)
+  }
+
+  // The one that actually broke, asserted on its value: a book NUMBER, not an
+  // index and not undefined, because the grid prints it a thousand times.
+  ok(String(row.book).startsWith('Book-'), `book is a number, not "${row.book}"`)
+  ok(String(row.firstTicket).startsWith('KS-'), `firstTicket is a ticket number, not "${row.firstTicket}"`)
+
+  // And no snake_case leaking through, which is the tell that rows were echoed
+  // from the database rather than mapped.
+  const snake = Object.keys(row).filter((k) => k.includes('_'))
+  ok(snake.length === 0, `no raw database columns on the row: ${snake.join(', ')}`)
 }
 
 console.log('whoami carries what the app boots on')

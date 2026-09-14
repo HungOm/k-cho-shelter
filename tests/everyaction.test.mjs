@@ -59,7 +59,8 @@ function world() {
       { email: 'rec@x.com', name: 'Rec', role: 'recorder', active: true, agent_id: null },
     ],
     book_ledger_all: books.map((b) => ({
-      idx: b.idx, number: b.number, status: b.status, held_by_agent: b.held_by_agent,
+      idx: b.idx, number: b.number, first_ticket: b.first_ticket, last_ticket: b.last_ticket,
+      status: b.status, held_by_agent: b.held_by_agent,
       agent_name: 'Daw Hla', due_at: null, counted_expected: 0, counted_collected: 0,
       counted_sold: 0, days_overdue: 0, past_final: false, available: 10, reserved: 0,
       missing_contact: 0, recorded_sold: 0, recorded_amount: 0,
