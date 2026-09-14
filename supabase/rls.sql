@@ -65,8 +65,18 @@ $$ language sql stable;
  * Users table stops being able to read at their next request — the same promise
  * the Apps Script version made.
  */
+/*
+ * Their tier from the allowlist, or null if they are not on it or switched off.
+ *
+ * 'superadmin' is an ASSIGNMENT and resolves to 'admin' HERE, so every policy
+ * below keeps comparing against the same four tiers it always did. A policy
+ * that had to learn about a fifth value is a policy somebody can forget to
+ * update — and the one they forget will be the one that decides whether a
+ * phone number is masked.
+ */
 create or replace function app_role() returns text as $$
-  select role from app_users where email = auth_email() and active
+  select case when role = 'superadmin' then 'admin' else role end
+  from app_users where email = auth_email() and active
 $$ language sql stable security definer set search_path = public;
 
 /** The agent id they are tied to, for the policies that limit agents. */

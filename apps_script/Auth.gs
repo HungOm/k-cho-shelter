@@ -224,7 +224,22 @@ var ADMIN_ONLY = [];
 function requireUser(idToken, allowedRoles, needSuper, action) {
   var identity = verifyIdToken(idToken);
   var user = lookupUser(identity.email);
-  var isSuper = isSuperAdminEmail_(identity.email);
+  // A RESOLUTION, NOT A FIFTH TIER.
+  //
+  // 'superadmin' is what a user ROW may say. It resolves to role 'admin' plus the
+  // super-admin flag, and the four permission tiers are untouched. That
+  // distinction is the whole design: if it became a Role the registry compared
+  // against, every action declaring roles: ['admin', 'recorder'] would stop
+  // matching a superadmin, and they would lose the ordinary admin actions while
+  // keeping the exotic ones — able to void a ticket and not list the books.
+  //
+  // SUPER_ADMIN_EMAIL still always wins, and is still the only authority that
+  // cannot be switched off from inside the app. A superadmin BY ROW can be
+  // disabled like any other account, deliberately: making the row as
+  // unremovable as the secret would leave two things nobody can turn off
+  // instead of one.
+  var fromSecret = isSuperAdminEmail_(identity.email);
+  var isSuper = fromSecret || (user && user.role === 'superadmin');
 
   if (!user) {
     if (isSuper) {
@@ -246,10 +261,9 @@ function requireUser(idToken, allowedRoles, needSuper, action) {
   // switched off from inside the app, so a Users row set to FALSE (or a role
   // typed down to 'viewer' in the sheet) must not lock the owner out.
   user.isSuperAdmin = isSuper;
-  if (isSuper) {
-    user.role = ROLES.ADMIN;
-    user.active = true;
-  }
+  if (isSuper) user.role = ROLES.ADMIN;
+  // Only the one named in Script Properties is immune to the active flag.
+  if (fromSecret) user.active = true;
 
   if (!user.active) {
     throw new ApiError('ACCOUNT_DISABLED', 'This account has been disabled.');

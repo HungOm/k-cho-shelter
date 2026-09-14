@@ -55,8 +55,12 @@ create table if not exists agents (
 create table if not exists app_users (
   email        text primary key,
   name         text not null default '',
+  -- 'superadmin' is assignable here and RESOLVES to admin plus the flag in the
+  -- gate. It is not a permission tier: the permissions table below stays at
+  -- four, because per-action overrides are granted to tiers, and offering a
+  -- toggle against a resolution would imply a switch that does nothing.
   role         text not null default 'viewer'
-                 check (role in ('admin','recorder','agent','viewer')),
+                 check (role in ('admin','recorder','agent','viewer','superadmin')),
   active       boolean not null default true,
   agent_id     text references agents(agent_id) on delete set null,
   google_sub   text not null default '',
@@ -73,7 +77,12 @@ create table if not exists books (
                    check (status in ('Unassigned','Out','Returned','Settled','Lost','Void')),
   held_by_agent  text references agents(agent_id) on delete set null,
   issued_at      timestamptz,
-  due_at         timestamptz,
+  -- A DATE, not an instant. A due date is a whole local day: stored as a
+  -- timestamp it comes back as the previous calendar day anywhere west of here,
+  -- and days_overdue computed from now() made a book due today overdue from
+  -- 8am. Neither is defensible to a seller being chased for a book that is not
+  -- late. issued_at and settled_at stay timestamptz — those really are instants.
+  due_at         date,
   declared_sold  integer,
   amount_due     numeric(12,2),
   amount_paid    numeric(12,2),
@@ -174,8 +183,9 @@ select
   coalesce(b.amount_paid, 0)                         as counted_collected,
   coalesce(b.declared_sold, 0) - r.recorded_sold     as variance_sold,
   coalesce(b.amount_due, 0) - r.recorded_amount      as variance_amount,
-  case when b.status = 'Out' and b.due_at is not null and b.due_at < now()
-       then extract(day from now() - b.due_at)::int
+  -- Whole days between calendar days, now that due_at is a date.
+  case when b.status = 'Out' and b.due_at is not null and b.due_at < current_date
+       then (current_date - b.due_at)::int
        else 0 end                                    as days_overdue
 from books b
 left join agents a on a.agent_id = b.held_by_agent

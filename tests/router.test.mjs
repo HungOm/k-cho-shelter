@@ -158,6 +158,40 @@ console.log('whoami carries what the interface needs to draw itself')
   }
 }
 
+console.log('a superadmin row is a super admin on this backend too')
+{
+  const world = fakeDb({
+    config: baseConfig(),
+    app_users: [
+      { email: 'boss@x.com', name: 'Boss', role: 'admin', active: true, agent_id: null },
+      { email: 'two@x.com', name: 'Two', role: 'superadmin', active: true, agent_id: null },
+      { email: 'off@x.com', name: 'Off', role: 'superadmin', active: false, agent_id: null },
+    ],
+  })
+
+  const me = await call('whoami', {}, 'two@x.com', world)
+  eq(me.body.data.isSuperAdmin, 'true', 'the flag is set from the row')
+  eq(me.body.data.role, 'admin', 'and the role RESOLVES to admin')
+
+  // Both halves of the resolution, through the real gate.
+  const sup = await call('list_permissions', {}, 'two@x.com', world)
+  ok(sup.body.ok, 'they can reach a super-admin-only action')
+  const ord = await call('list_books', {}, 'two@x.com', world)
+  ok(ord.body.ok, 'and an ordinary admin one, which a fifth tier would have broken')
+
+  // A row is a row: it can be switched off.
+  const dead = await call('whoami', {}, 'off@x.com', world)
+  eq(dead.body.error?.code, 'ACCOUNT_DISABLED', 'a disabled superadmin row cannot sign in')
+
+  // The secret still wins over everything, including a row that says otherwise.
+  const demoted = fakeDb({
+    config: baseConfig(),
+    app_users: [{ email: 'boss@x.com', name: 'Boss', role: 'viewer', active: false, agent_id: null }],
+  })
+  const owner = await call('whoami', {}, 'boss@x.com', demoted)
+  eq(owner.body.data?.isSuperAdmin, 'true', 'SUPER_ADMIN_EMAIL outranks a row set to viewer and off')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)

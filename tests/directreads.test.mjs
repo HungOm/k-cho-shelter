@@ -92,6 +92,8 @@ console.log('direct reads are on by default for Supabase')
 ok(directReads, 'the switch defaulted to the fast path')
 ok(reads.DIRECT_READS.has('read_snapshot') && reads.DIRECT_READS.has('read_delta'),
    'the ticket reads are claimed by the direct path')
+ok(reads.DIRECT_READS.size === 2,
+   `only the ticket reads go direct, got ${[...reads.DIRECT_READS].join(',')}`)
 for (const write of ['sell_ticket', 'settle_book', 'decide_approval', 'record_winner']) {
   ok(!reads.DIRECT_READS.has(write), `${write} still goes through the function`)
 }
@@ -99,7 +101,12 @@ for (const write of ['sell_ticket', 'settle_book', 'decide_approval', 'record_wi
 // well as rows. Computing those here too would put the same number in two
 // places, and books are few enough that the function's overhead costs least
 // exactly here.
-for (const agg of ['list_books', 'search', 'report_draw_ready', 'list_approvals', 'report_overdue']) {
+// list_agents joined list_books here: both return a computed field the client
+// needs (booksOut, stats) and both key on the client's shape rather than the
+// database's. A direct read that skips the function has to translate, and where
+// the translation is more than a rename it belongs on one side only.
+for (const agg of ['list_books', 'list_agents', 'search', 'report_draw_ready',
+                   'list_approvals', 'report_overdue']) {
   ok(!reads.DIRECT_READS.has(agg), `${agg} stays server-side`)
 }
 
@@ -144,9 +151,6 @@ ok(after[rows].searchParams.get('modified_at')?.startsWith('gte.'),
 eq(store.state.byNumber['KS-00004'].status, 'Sold', 'the changed row merged in')
 eq(store.state.tickets.length, TOTAL, 'and did not duplicate')
 
-console.log('agents come from their view')
-const agents = await store.api('list_agents', {})
-eq(agents.agents.length, 1, 'agents answered from agents_readable')
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

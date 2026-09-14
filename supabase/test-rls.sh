@@ -139,6 +139,20 @@ denied() {
   esac
 }
 
+echo "a superadmin row is an admin to every policy"
+# 'superadmin' is an ASSIGNMENT that app_role() resolves to 'admin'. If it ever
+# leaked through as a fifth value, every policy comparing against the four tiers
+# would take a branch nobody wrote — and the one that decides whether a phone
+# number is masked is among them.
+docker exec "$NAME" psql -U postgres -d kcho -tAc \
+  "insert into app_users(email,name,role,active) values ('super2@x.com','Second','superadmin',true)" >/dev/null
+ok "$(AS 'super2@x.com' 'select app_role()')" "admin" "app_role resolves superadmin to admin"
+ok "$(AS 'super2@x.com' 'select count(*) from tickets_readable')" "30" "and they see every ticket in play"
+ok "$(AS 'super2@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "0125550101" "with phone numbers unmasked, as an admin"
+ok "$(AS 'super2@x.com' 'select count(*) from book_ledger')" "3" "and every book in play"
+docker exec "$NAME" psql -U postgres -d kcho -tAc \
+  "delete from app_users where email='super2@x.com'" >/dev/null
+
 echo "the base tables are not reachable at all"
 # The masking only means something if the unmasked table is out of reach.
 denied 'view@x.com'  'select buyer_phone from tickets limit 1' "a viewer could read the tickets table directly"
