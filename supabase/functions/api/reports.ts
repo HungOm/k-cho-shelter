@@ -24,45 +24,91 @@ async function currency(ctx: Ctx): Promise<string> {
 }
 
 /** What each seller still owes: what their books are worth, less what came in. */
-export async function reportOutstanding(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+/*
+ * Who owes money, and how much.
+ *
+ * PORTED WRONG, and the screen it feeds was broken on the deployed default
+ * until today. It returned agentName / books / sold where the client reads
+ * name / booksOut / ticketsSold, so the seller, books and sold columns were
+ * blank — a table of amounts owed by nobody, which is the one question it
+ * exists to answer. The money columns matched, so it looked populated and
+ * authoritative while failing entirely.
+ *
+ * Three things beyond the spelling were also wrong, and none of them would have
+ * shown as a blank column:
+ *
+ *   booksOut counted every book the seller holds, not the ones that are OUT.
+ *   A returned-but-unsettled book still has held_by_agent set, so a seller who
+ *   had handed everything back still read as carrying them.
+ *
+ *   overdueBooks, booksSettled, phone and zone were absent outright. The "N
+ *   late" badge has therefore never rendered on this backend — not wrong, just
+ *   permanently invisible, which is harder to notice than wrong.
+ *
+ *   The agent scoping was dropped. Apps Script narrows this to the caller's own
+ *   row when they are a seller; this returned every seller's debts to anybody
+ *   who asked. A seller could read what every other seller owed.
+ */
+export async function reportOutstanding(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const { data, error } = await ctx.supabaseAdmin
     .from('book_ledger_all')
-    .select('held_by_agent,agent_name,number,status,counted_sold,counted_expected,counted_collected')
+    .select('held_by_agent,agent_name,number,status,days_overdue,' +
+            'counted_sold,counted_expected,counted_collected')
     .not('held_by_agent', 'is', null)
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
-  const byAgent = new Map<string, {
-    agentId: string; agentName: string; books: string[]
-    sold: number; expected: number; collected: number
-  }>()
+  // Sellers are read separately: the ledger view carries the name but not the
+  // telephone number, and the chase button on the Money screen is the whole
+  // point of the report.
+  const { data: agents } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name,phone,zone')
+  const byId = new Map((agents ?? []).map((a) => [String(a.agent_id), a]))
+
+  type Row = {
+    agentId: string; name: string; phone: string; zone: string
+    booksOut: number; booksSettled: number; overdueBooks: number
+    ticketsSold: number; expected: number; collected: number; outstanding: number
+  }
+  const byAgent = new Map<string, Row>()
 
   for (const r of data ?? []) {
     const key = String(r.held_by_agent)
+    // A seller sees their own line and nobody else's. Dropped in the port; what
+    // one seller owes is not another seller's business.
+    if (user.role === 'agent' && key !== user.agentId) continue
+
+    const who = byId.get(key)
     const a = byAgent.get(key) ?? {
-      agentId: key, agentName: r.agent_name ?? key, books: [],
-      sold: 0, expected: 0, collected: 0,
+      agentId: key,
+      name: (who?.name ?? r.agent_name ?? '') || key,
+      phone: who?.phone ?? '', zone: who?.zone ?? '',
+      booksOut: 0, booksSettled: 0, overdueBooks: 0,
+      ticketsSold: 0, expected: 0, collected: 0, outstanding: 0,
     }
-    a.books.push(r.number)
-    a.sold += Number(r.counted_sold ?? 0)
+    if (r.status === 'Out') a.booksOut++
+    if (r.status === 'Settled') a.booksSettled++
+    if (Number(r.days_overdue ?? 0) > 0) a.overdueBooks++
+    a.ticketsSold += Number(r.counted_sold ?? 0)
     a.expected += Number(r.counted_expected ?? 0)
     a.collected += Number(r.counted_collected ?? 0)
     byAgent.set(key, a)
   }
 
   const rows = [...byAgent.values()]
-    .map((a) => ({ ...a, outstanding: a.expected - a.collected }))
+    // Rounded like the Sheet: floating point turns 30 - 10.1 into a figure with
+    // fifteen decimal places, and this one is read aloud to the person who owes it.
+    .map((a) => ({ ...a, outstanding: Math.round((a.expected - a.collected) * 100) / 100 }))
     // Biggest debt first: this list exists to decide who to telephone, and
     // alphabetical order would answer a question nobody asked.
     .sort((x, y) => y.outstanding - x.outstanding)
 
   return {
     agents: rows,
-    totalOutstanding: rows.reduce((s, a) => s + a.outstanding, 0),
+    totalOutstanding: Math.round(rows.reduce((s, a) => s + a.outstanding, 0) * 100) / 100,
     currency: await currency(ctx),
   }
 }
 
-/** Books past the date they were due back, oldest first. */
 export async function reportOverdue(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
   const { data, error } = await ctx.supabaseAdmin
     .from('book_ledger_all')
