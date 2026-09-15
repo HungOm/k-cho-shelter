@@ -165,7 +165,7 @@ export async function rollCheckIn(p: Record<string, unknown>, user: AppUser, ctx
     throw new ApiError(
       'NO_FINAL_DEADLINE',
       'There is no final deadline yet, so there is nothing for the check-in date to ' +
-      'count down to. The owner sets that first.',
+      'count down to. The system admin sets that first.',
     )
   }
 

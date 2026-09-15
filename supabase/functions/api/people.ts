@@ -200,7 +200,7 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
    */
   const elevated = role === 'admin' || role === 'superadmin'
   if (elevated) {
-    requireSuperAdmin(user, 'Granting the organiser or owner role')
+    requireSuperAdmin(user, 'Granting the organiser or system admin role')
   } else if (!(ctx as unknown as { _viaApproval?: boolean })._viaApproval) {
     // Reached only when nobody approved it. The router turns an organiser's
     // direct attempt into APPROVAL_REQUIRED before it gets here.
@@ -224,7 +224,7 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
   // alone, approved or not — otherwise a request to "edit a Helper" could be
   // pointed at an existing organiser and demote or rename them.
   if (existing && (existing.role === 'admin' || existing.role === 'superadmin')) {
-    requireSuperAdmin(user, 'Changing an organiser or owner account')
+    requireSuperAdmin(user, 'Changing an organiser or system admin account')
   }
 
   // The three that keep the top of the tree where it is.
@@ -238,7 +238,7 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
   // Managing SELLERS is a different thing and stays with organisers: adding,
   // banning and deactivating an agent is the daily work of running the raffle,
   // and an agent record grants nobody any access to this system.
-  if (isSuperAdminEmail(email, Deno.env)) requireSuperAdmin(user, 'Changing the owner account')
+  if (isSuperAdminEmail(email, Deno.env)) requireSuperAdmin(user, 'Changing the system admin account')
 
   if (p.agentId) {
     const { data: agent } = await ctx.supabaseAdmin
@@ -256,7 +256,7 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
   const approved = user.isSuperAdmin ||
     !!(ctx as unknown as { _viaApproval?: boolean })._viaApproval
   if (newStatus === 'active' && !existing && !approved) {
-    throw new ApiError('SUPER_ADMIN_ONLY', 'Only the owner can let somebody in.')
+    throw new ApiError('SUPER_ADMIN_ONLY', 'Only the system admin can let somebody in.')
   }
 
   const row = {
@@ -288,7 +288,7 @@ export async function setUserStatus(p: Record<string, unknown>, user: AppUser, c
   if (isSuperAdminEmail(email, Deno.env)) {
     throw new ApiError(
       'SUPER_ADMIN_ONLY',
-      'The owner account cannot be enabled or disabled from the app. ' +
+      'The system admin account cannot be enabled or disabled from the app. ' +
         'Change SUPER_ADMIN_EMAIL in the function secrets instead.',
     )
   }

@@ -200,7 +200,7 @@ export function requireSuperAdmin(user: AppUser, what: string): void {
   if (!user.isSuperAdmin) {
     throw new ApiError(
       'SUPER_ADMIN_ONLY',
-      `${what} can only be done by the owner.`,
+      `${what} can only be done by the system admin.`,
       null,
       403,
     )

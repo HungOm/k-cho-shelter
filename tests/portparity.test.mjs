@@ -194,5 +194,53 @@ console.log('the edge function never reads an RLS-filtered view')
      'and is revoked from the browser roles, so the unfiltered one is server-only')
 }
 
+console.log('the server calls the person at the top by the CURRENT word')
+{
+  /*
+   * HOLDS THE CURRENT WORD, not the absence of the old one.
+   *
+   * This is the third name in a day — super admin, then owner, now system
+   * admin — and each was the user's call. A test that merely forbade "super
+   * admin" would pass happily while a message said "owner", because both read
+   * as correct to somebody who was not here for the reversals. The one that
+   * creeps back is always the middle one.
+   *
+   * Comments are stripped before looking. "the super admin is an environment
+   * variable" is a note to us about where authority lives, and rewording it
+   * every time the volunteers' word changes would lose the history for nothing.
+   */
+  const files = ['index.ts', 'gate.ts', 'people.ts', 'books.ts', 'tickets.ts',
+                 'reports.ts', 'approvals.ts', 'deadlines.ts']
+  const STALE = ['super admin', 'superadmin', 'the owner', 'owner account', 'owner role']
+
+  let checked = 0
+  for (const f of files) {
+    let src
+    try { src = read('../supabase/functions/api/' + f) } catch { continue }
+    checked++
+
+    // Strings only: drop block comments and line comments first.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const strings = [...code.matchAll(/'([^'\\]*(?:\\.[^'\\]*)*)'|`([^`]*)`/g)]
+      .map((m) => m[1] ?? m[2] ?? '')
+
+    for (const s of strings) {
+      const low = s.toLowerCase()
+      // Only sentences a person reads — an identifier or a column name is not.
+      if (!/[a-z] [a-z]/.test(low)) continue
+      for (const stale of STALE) {
+        ok(!low.includes(stale),
+          `${f} says "${stale}" to a person: "${s.slice(0, 64)}"`)
+      }
+    }
+  }
+  ok(checked >= 7, `checked ${checked} handler files`)
+
+  // And the current word is actually in use, so this cannot pass by saying
+  // nothing at all.
+  const all = files.map((f) => { try { return read('../supabase/functions/api/' + f) } catch { return '' } }).join('\n')
+  ok(/system admin/i.test(all), 'the current word appears in the messages')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
