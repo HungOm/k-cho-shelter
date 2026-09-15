@@ -67,9 +67,35 @@ export function moneyScope(user: AppUser): 'all' | 'mine' | 'totals' {
 export async function collectedByAgent(ctx: Ctx, agentIds?: string[] | null) {
   const by = new Map<string, number>()
 
+  /*
+   * AN EMPTY LIST MEANS NOTHING, NOT EVERYTHING.
+   *
+   * visibleAgents returns null for an organiser — no narrowing — and [] for a
+   * helper who holds no books: they are not carrying anybody's money, so the
+   * true answer is none. Both were reaching the queries below as
+   * `agentIds && agentIds.length`, which is FALSE for [] and therefore applied
+   * no filter at all. The same [] was read as "nothing" by the book filter in
+   * report_draw_ready and as "everything" here, in the same function call.
+   *
+   * What a helper actually saw: Should have RM 0, because the books were
+   * correctly scoped to none — and Handed in RM 120, the whole raffle's cash,
+   * because this was not. Still owed came out at RM -120, which is how it was
+   * noticed. The nonsense arithmetic and the leak were one bug.
+   *
+   * The fix is ONE character of guard: `if (agentIds)` rather than
+   * `if (agentIds && agentIds.length)`. An empty list then reaches .in() and
+   * matches nothing, which is what it means.
+   *
+   * I first added an early return for [] as well, and mutation testing showed
+   * it was dead: with `if (agentIds)` in place, removing the early return
+   * changed no behaviour, because .in([]) already returns nothing. It was a
+   * guard in shape only — and worse, it MASKED the mutants that restore the
+   * real bug, so the test passed with the defect back in. One load-bearing
+   * guard beats two where only one carries.
+   */
   let lq = ctx.supabaseAdmin.from('book_ledger_all')
     .select('held_by_agent,counted_collected').not('held_by_agent', 'is', null)
-  if (agentIds && agentIds.length) lq = lq.in('held_by_agent', agentIds)
+  if (agentIds) lq = lq.in('held_by_agent', agentIds)
   const { data: ledger } = await lq
   for (const b of (ledger ?? []) as Array<Record<string, unknown>>) {
     const id = String(b.held_by_agent ?? '')
@@ -78,7 +104,7 @@ export async function collectedByAgent(ctx: Ctx, agentIds?: string[] | null) {
 
   let pq = ctx.supabaseAdmin.from('payments')
     .select('agent_id,amount,source').neq('source', 'settlement')
-  if (agentIds && agentIds.length) pq = pq.in('agent_id', agentIds)
+  if (agentIds) pq = pq.in('agent_id', agentIds)
   const { data: paid, error } = await pq
   if (error) throw new ApiError('QUERY_FAILED', error.message)
   for (const r of (paid ?? []) as Array<Record<string, unknown>>) {
