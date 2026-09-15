@@ -1,7 +1,15 @@
 # Moving off Google Sheets
 
-Nothing in this directory is live. It is a proposal with a measurement attached,
-so the decision can be made on numbers rather than on how things feel.
+**This happened.** The raffle runs on Supabase now; what follows is the case that
+was made for it, kept because the measurements are still the reason and because
+anybody asking "why not just keep the Sheet" deserves the numbers rather than an
+opinion. Read it as a record, not a proposal — the sentence that used to stand
+here said nothing in this directory was live, and it stopped being true the day
+the function was deployed.
+
+For what the migrated system does to keep its own figures honest, and what was
+still wrong with it afterwards, see [AUDIT.md](AUDIT.md). For setting a project
+up from nothing, see [SETUP.md](../SETUP.md).
 
 ## The problem, measured
 

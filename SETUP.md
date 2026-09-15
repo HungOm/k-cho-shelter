@@ -6,7 +6,54 @@ You need: a Google account, and the ability to create a GitHub repository.
 
 ---
 
-## Step 1 — Create the spreadsheet
+## First: which backend?
+
+There are two, and the app talks to either. **Set up Supabase** unless you have a reason not to.
+
+| | Supabase | Apps Script + Sheet |
+|---|---|---|
+| Where the data lives | Postgres | a Google Sheet |
+| Readable and editable by hand | through the dashboard | yes, it is a spreadsheet |
+| Row-level security | yes | no — the Sheet is the permission boundary |
+| Ticket record that cannot be edited or erased | yes, append-only | no |
+| What a closed check-in round said | frozen per round | not kept |
+| Payments ledger, reversals | yes | book totals only |
+| Settlement takes a row lock | yes | no |
+| Two people for destructive changes | yes | yes |
+| Scheduled backup | weekly, encrypted, in GitHub Actions | nightly, to Drive |
+| Speed of a cold start | 57–82ms for reads | 1.1s floor, 9s cold |
+
+The second column is not a worse version of the first — it is a spreadsheet, and the guarantees in
+the rows above are constraints, triggers and policies that a spreadsheet has nowhere to put. What
+each one is and why it exists is in [supabase/AUDIT.md](supabase/AUDIT.md).
+
+**Setting up Supabase.** Steps 3 and 7 below are shared — the Google sign-in and putting the app
+online are the same either way — and the rest of the Supabase side is:
+
+1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough) and
+   `supabase link --project-ref <ref>`.
+2. `cp supabase/.env.local.example supabase/.env.local` and fill in the URL and the **secret** key
+   from Settings → API. `./supabase/connect.sh` checks it and refuses the publishable key, which
+   otherwise appears to work for reads and fails on every write.
+3. Apply the database: `./supabase/connect.sh --schema`, then `supabase db push` for the
+   migrations, then `supabase/functions.sql` and `supabase/rls.sql`. **`rls.sql` is not optional** —
+   it is what makes the database default-deny, and without it the browser's key can read every
+   table directly.
+4. `supabase functions deploy api`, and set its secrets — including `SUPER_ADMIN_EMAIL`, which is
+   the one thing that must live outside the database.
+5. Enable Google under Authentication → Providers and paste in the client ID from step 3 below.
+6. Set the repository variables `VITE_BACKEND=supabase`, `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_PUBLISHABLE_KEY`, then push. **If `VITE_BACKEND` is unset the build falls back to
+   Apps Script**, which is the one way to end up quietly running the other backend.
+7. Add the backup secrets from [`.github/workflows/backup.yml`](.github/workflows/backup.yml).
+8. Check it: `./tests/run.sh`, and `./supabase/test-rls.sh` against a throwaway database.
+
+Everything from Step 1 to Step 9 below is the **Apps Script** path, and Step 3 (Google sign-in) and
+Step 7 (putting the app online) are needed for both.
+
+---
+
+## Step 1 — Create the spreadsheet *(Apps Script path)*
 
 1. Go to [sheets.new](https://sheets.new) to make a new blank spreadsheet.
 2. Name it after your raffle — **Raffled Tickets** will do.
@@ -413,7 +460,11 @@ You are in, as admin.
 
 ---
 
-## Step 9 — Turn on backups
+## Step 9 — Turn on backups *(Apps Script path)*
+
+On Supabase this is [`.github/workflows/backup.yml`](.github/workflows/backup.yml) instead — it
+runs weekly and seals the dump with gpg before it is uploaded, because an artifact on a public
+repository is readable by anybody. Add the four secrets named at the top of that file.
 
 In the Apps Script editor, run **`installBackupTrigger`** once.
 

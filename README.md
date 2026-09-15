@@ -9,11 +9,41 @@ books, handed to agents, sold for cash, and reconciled when the books come back.
 handed back — so you know who holds which books, who still owes what, and who to call when a number
 is drawn.
 
-Built to run for free: a static page on GitHub Pages, a Google Apps Script web app, and a Google
-Sheet as the database. Nothing to pay for, nothing to host, and the Sheet stays readable and
-editable by hand.
+Built to run for free: a static page on GitHub Pages in front of a Supabase project. Nothing to
+pay for and nothing to host.
 
 ## How it works
+
+The raffle runs on **Supabase** — Postgres, with one Edge Function in front of it. An older
+**Apps Script and Google Sheet** backend is still in the repository and still works; the app can
+talk to either, and which one it uses is a setting rather than a deploy.
+
+**If you are setting this up today, use Supabase.** Everything the system does to keep its own
+figures honest lives there and only there: row-level security, the append-only ticket record and
+round snapshots, the payments ledger, the settlement lock, and the two-person approval on
+destructive changes. A spreadsheet cannot enforce any of it — every one of those guarantees is a
+constraint, a trigger or a policy in Postgres. See [supabase/AUDIT.md](supabase/AUDIT.md) for what
+each one is and why it is there.
+
+```
+Browser (GitHub Pages)                    Edge Function `api` (Deno)            Postgres
+   │                                              │                                │
+   ├─ Sign in with Google ──► Supabase session      │                                │
+   ├─ POST {action, payload} ────────────────────►├─ resolve email → role          │
+   │                                              ├─ check the action's roles ────►│
+   │◄──────────── {ok, data} ─────────────────────┤     (service role; RLS in code)│
+   │                                              │                                │
+   └─ reads go straight to PostgREST ───────────────────────────────────────────►│
+        through four filtered, masked views          (row-level security, as the signed-in person)
+```
+
+Reads bypass the function and go directly to PostgREST through four views that row-level security
+filters and masks. That is the whole performance difference — 57–82ms direct against 340–1000ms
+through the function — and it is safe because the database, not the function, decides what a given
+person may see. Writes always go through the function, where the roles live.
+
+<details>
+<summary>The Apps Script backend, which is still here</summary>
 
 ```
 Browser (GitHub Pages)          Apps Script web app                Google Sheet
@@ -25,8 +55,23 @@ Browser (GitHub Pages)          Apps Script web app                Google Sheet
    │◄─────────── JSON ──────────────────┤                                │
 ```
 
-There are no passwords anywhere. Access is a Google sign-in checked against an allowlist in the
-Sheet — add a row to grant access, disable a row to revoke it, and it takes effect within a minute.
+It answers the same `{action, payload}` calls and returns the same envelope, which is what makes
+the choice a setting instead of a rewrite. What it does not have is the integrity work above: the
+Sheet stays readable and editable by hand, and that is exactly why a constraint cannot be enforced
+in it. `tests/portparity.test.mjs` compares the two gates over every action and role, so the pair
+cannot quietly drift apart.
+
+</details>
+
+**Choosing one.** `VITE_BACKEND=supabase | appsscript` at build time sets the default for
+everybody. `?backend=supabase` in the URL overrides it for one device and is remembered — which is
+how you try a backend on your own phone while every volunteer stays on the other one, with no
+deploy either way. With neither set the app falls back to `appsscript`, so a build that forgets the
+variable is pointed at the older system: set it.
+
+There are no passwords anywhere. Access is a Google sign-in checked against an allowlist — a row in
+`app_users` on Supabase, or the Users tab in the Sheet — and revoking a row takes effect within a
+minute.
 
 ## Who's who
 
@@ -43,10 +88,10 @@ Most agents never open the app at all: they take paper books and hand back money
 | Agent | Record sales only on books issued to them |
 | View only | Totals and reports, no phone numbers |
 
-There is exactly **one super admin**, and it is not a row in the sheet. It is an email address in a
-Script Property (`SUPER_ADMIN_EMAIL`), which only the owner of the Apps Script project can change —
-so no admin can promote themselves, and neither can anyone editing the spreadsheet by hand. Six
-things are reserved to it:
+There is exactly **one super admin**, and it is not a row in the database. It is an email address
+in `SUPER_ADMIN_EMAIL` — a function secret on Supabase, a Script Property on Apps Script — so it
+lives outside the store the app can write to. No admin can promote themselves, and neither can
+anyone editing rows by hand. Six things are reserved to it:
 
 - granting or removing the **admin** role
 - disabling or re-enabling an **admin**
@@ -86,8 +131,8 @@ five seconds and is exact, whereas "I sold eight" throws away the ticket-to-buye
 the draw depends on. There is a fallback for lost leftovers that records the book total
 without inventing ticket rows.
 
-**Money** shows what each seller still owes, and the Books tab of the Sheet shows
-declared against recorded with the difference already calculated — red when they
+**Money** shows what each seller still owes, and the book list shows declared
+against recorded with the difference already calculated — red when they
 disagree, no report to run.
 
 **The draw** checks you are ready: unsettled books, cash outstanding, and the one that
@@ -95,7 +140,8 @@ matters — how many sold tickets have no name or phone. A sold ticket with no c
 details is a winner you cannot find.
 
 Plus: overdue chase list with one-tap WhatsApp reminders, seller statements, an audit
-log of every change, and a nightly backup of the whole spreadsheet to Drive.
+log of every change, and a weekly backup — encrypted, on Supabase
+([`.github/workflows/backup.yml`](.github/workflows/backup.yml)); to Drive on Apps Script.
 
 ## Who can do what
 
@@ -144,14 +190,15 @@ connection, and on any authentication failure.
 
 ## Setting it up
 
-See **[SETUP.md](SETUP.md)**. About 30 minutes, mostly clicking through Google's console.
+See **[SETUP.md](SETUP.md)**, which starts by asking which backend you are setting up. About 30
+minutes either way, mostly clicking through Google's console for the sign-in.
 
 It runs on a free `github.io` address, or on your own subdomain (step 7b) — one DNS record plus the
 new address added to the OAuth origins. Buyers trust `shtrtickets.ceamalaysia.org` rather more than a
 `github.io` link.
 
-Ticket numbering — prefix, padding, how many, how many per book, price, currency — is all set in a
-**Config** tab in the Sheet before you print. It locks once tickets exist, because renumbering after
+Ticket numbering — prefix, padding, how many, how many per book, price, currency — is all set
+before you print: in the `config` table on Supabase, or the **Config** tab in the Sheet. It locks once tickets exist, because renumbering after
 printing disconnects every record from the tickets in people's hands.
 
 ## Layout
@@ -199,9 +246,9 @@ Nothing secret is in this repository. The Google client ID in `index.html` is pu
 this sign-in flow has no client secret, and the protection is the Authorized JavaScript origins list
 on Google's side, which stops a token being issued to any other site.
 
-Everything sensitive stays in the Sheet: the allowlist, agent details, and every buyer's name and
-phone number. **Never commit a spreadsheet export** — `.gitignore` blocks `.csv` and `.xlsx` for
-exactly this reason.
+Everything sensitive stays in the database: the allowlist, agent details, and every buyer's name
+and phone number. **Never commit an export** — `.gitignore` blocks `.csv`, `.xlsx` and `backup/`
+for exactly this reason, and the scheduled backup is encrypted before it leaves the runner.
 
 This ends up being a list of thousands of names and phone numbers, many belonging to refugees.
 Collect only what you need, say on the ticket what it is for, keep access to a few people, and
@@ -278,7 +325,8 @@ than eight tabs that overflow, and plain words throughout — "With a seller", n
 "Assigned". Recording a sale asks one question per screen by default, with a quick
 mode for whoever is keying in a stack of stubs.
 
-**On the super admin.** One email, held in a Script Property outside the
-spreadsheet. Nothing in the app can grant it, and no admin can disable or demote
-it — that takes opening the Apps Script project, which only its owner can do. It
-is also the way back in before the Users tab has any rows.
+**On the super admin.** One email, held outside the database the app writes to —
+a function secret on Supabase, a Script Property on Apps Script. Nothing in the
+app can grant it, and no admin can disable or demote it; that takes the Supabase
+dashboard or the Apps Script project, which only their owners can open. It is
+also the way back in before the allowlist has any rows.
