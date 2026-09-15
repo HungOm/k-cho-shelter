@@ -7,6 +7,7 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { state, api, toast, isSuper, go } from '../lib/store.js'
+import { isSupabase } from '../lib/backend.js'
 import { money, date, dateTime, ROLE_WORDS } from '../lib/format.js'
 
 const emit = defineEmits(['add-user', 'make-tickets', 'tickets-in-play', 'deadlines'])
@@ -247,9 +248,21 @@ async function loadAudit() {
         </span>
         <button class="btn sm ghost" @click="emit('deadlines')">Deadlines</button>
       </div>
+      <!-- Backend-aware, because it names WHERE the settings live and the two
+           backends keep them in different places. On Supabase the spreadsheet
+           is not read by anything, so sending somebody to its Config tab sends
+           them somewhere that cannot work — and they would see the change stick
+           in the sheet and nothing happen in the app. -->
       <p class="hint">
-        Ticket numbers are fixed once the tickets are made. Everything else is changed
-        in the <b>Config</b> tab of the spreadsheet.
+        Ticket numbers are fixed once the tickets are made.
+        <template v-if="isSupabase">
+          The dates and the number of tickets are changed here. Anything else —
+          the price, the prefix, how many to a book — has to be changed in the
+          database by whoever set it up.
+        </template>
+        <template v-else>
+          Everything else is changed in the <b>Config</b> tab of the spreadsheet.
+        </template>
       </p>
     </div>
 

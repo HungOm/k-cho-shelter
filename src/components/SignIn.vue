@@ -54,7 +54,8 @@ onMounted(async () => {
       <h1>K'Cho Shelter</h1>
       <p class="muted">Raffle ticket record</p>
       <!-- The config has not loaded before sign-in, so this falls back to the
-           registered name. Once signed in it follows the Config tab. -->
+           registered name. Once signed in it follows the raffle's settings,
+           wherever the chosen backend keeps them. -->
       <p class="tiny muted credit">
         {{ state.cfg?.orgName || "K'Cho Ethnic Association Malaysia" }}
       </p>

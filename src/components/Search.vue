@@ -147,7 +147,7 @@ function place(t) {
       <!-- nothing -->
       <Empty v-else-if="!state.tickets.length" art="🎟️" title="No tickets yet">
         The tickets have not been made. The organiser needs to set the numbers
-        in the spreadsheet and run setup.
+        and run setup.
       </Empty>
       <Empty v-else art="🔍" :title="state.query ? `Nothing matches “${state.query}”` : 'Nothing here'"
              :action="hasFilters ? 'Clear and start again' : ''" @action="clear">
