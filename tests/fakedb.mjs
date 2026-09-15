@@ -295,7 +295,35 @@ export function fakeDb(seed = {}) {
     writes: [],
   }
 
+  /*
+   * A stand-in for the branding bucket, with the same three methods the handler
+   * uses and no others — upload, remove, getPublicUrl.
+   *
+   * Every call is recorded, so a test can ask what was PUT rather than only
+   * whether the action returned. It deliberately does NOT enforce the size or
+   * type caps: those live in the bucket policy and in the handler's own byte
+   * sniff, and a fake that re-implements them would be a third copy of a rule
+   * that already exists twice on purpose.
+   */
+  db.storage = { objects: new Map(), calls: [] }
+  const bucketApi = (bucket) => ({
+    async upload(name, bytes, opts = {}) {
+      db.storage.calls.push({ op: 'upload', bucket, name, size: bytes?.length ?? 0, opts })
+      db.storage.objects.set(`${bucket}/${name}`, bytes)
+      return { data: { path: name }, error: null }
+    },
+    async remove(paths) {
+      db.storage.calls.push({ op: 'remove', bucket, paths })
+      for (const n of paths) db.storage.objects.delete(`${bucket}/${n}`)
+      return { data: paths.map((n) => ({ name: n })), error: null }
+    },
+    getPublicUrl(name) {
+      return { data: { publicUrl: `https://p.supabase.co/storage/v1/object/public/${bucket}/${name}` } }
+    },
+  })
+
   const client = {
+    storage: { from: (b) => bucketApi(b) },
     from: (t) => new Query(db, t),
     rpc: (fn, args) => {
       if (fn === 'active_tickets') {
