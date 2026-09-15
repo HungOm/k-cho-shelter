@@ -20,6 +20,7 @@ var SHEET = {
   PENDING: 'Pending',
   WINNERS: 'Winners',
   CHECK_INS: 'Check_Ins',
+  PAYMENTS: 'Payments',
   CONFIG: 'Config',
   AUDIT: '_AuditLog'
 };
@@ -58,6 +59,10 @@ var COLS = {
   // One row per seller per round. Created on first use, like the Pending tab.
   CHECK_INS: ['Agent_ID', 'Round', 'Due_Date', 'Reported_At', 'Books_Back',
               'Tickets_Sold', 'Amount_Paid', 'Note', 'Recorded_By'],
+  // One row per cash handover, created on first use like the Pending tab.
+  // Negative rows are reversals; nothing is ever deleted.
+  PAYMENTS: ['Payment_ID', 'Agent_ID', 'Amount', 'Received_At', 'Received_By',
+             'Method', 'Note', 'Book_Number', 'Reverses', 'Source'],
   CONFIG: ['Key', 'Value', 'Notes'],
   AUDIT: ['Timestamp', 'Action', 'Details', 'Email']
 };

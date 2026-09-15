@@ -14,6 +14,7 @@
  */
 import { ApiError, mask, agentBooks, type AppUser } from './gate.ts'
 import { configDate, today } from './deadlines.ts'
+import { collectedByAgent, moneyScope, round2, visibleAgents } from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -50,6 +51,18 @@ async function currency(ctx: Ctx): Promise<string> {
  *   who asked. A seller could read what every other seller owed.
  */
 export async function reportOutstanding(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  /*
+   * WHO MAY BE TOLD ABOUT WHOM, decided once, here.
+   *
+   * An organiser sees every seller. Anybody else sees their own line and no
+   * other — a seller's debt is not another seller's business, and a helper at a
+   * desk has no reason to hold the whole raffle's ledger on their phone. A
+   * viewer is trusted with the totals and not with who owes them, so they get
+   * no rows at all rather than a filtered list that hints at what is missing.
+   */
+  const only = visibleAgents(user)
+  const scope = moneyScope(user)
+
   const { data, error } = await ctx.supabaseAdmin
     .from('book_ledger_all')
     .select('held_by_agent,agent_name,number,status,days_overdue,' +
@@ -73,9 +86,7 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
 
   for (const r of data ?? []) {
     const key = String(r.held_by_agent)
-    // A seller sees their own line and nobody else's. Dropped in the port; what
-    // one seller owes is not another seller's business.
-    if (user.role === 'agent' && key !== user.agentId) continue
+    if (only && !only.includes(key)) continue
 
     const who = byId.get(key)
     const a = byAgent.get(key) ?? {
@@ -90,9 +101,20 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
     if (Number(r.days_overdue ?? 0) > 0) a.overdueBooks++
     a.ticketsSold += Number(r.counted_sold ?? 0)
     a.expected += Number(r.counted_expected ?? 0)
-    a.collected += Number(r.counted_collected ?? 0)
     byAgent.set(key, a)
   }
+
+  /*
+   * HANDED IN COMES FROM THE LEDGER, not from the books.
+   *
+   * books.amount_paid only ever moves when a book is CLOSED, so a seller who
+   * brings half the money and keeps the book to sell the rest showed as having
+   * handed in nothing. Summing the payments answers what actually came back,
+   * and settlement writes a payment row of its own, so a settled book counts
+   * exactly once and no existing total moves.
+   */
+  const paid = await collectedByAgent(ctx, only)
+  for (const [id, a] of byAgent) a.collected = paid.get(id) ?? 0
 
   const rows = [...byAgent.values()]
     // Rounded like the Sheet: floating point turns 30 - 10.1 into a figure with
@@ -102,9 +124,17 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
     // alphabetical order would answer a question nobody asked.
     .sort((x, y) => y.outstanding - x.outstanding)
 
+  // A viewer gets the shape without the names: enough to see the raffle is
+  // healthy, nothing about who is behind on what.
+  const totalExpected = round2(rows.reduce((s, a) => s + a.expected, 0))
+  const totalCollected = round2(rows.reduce((s, a) => s + a.collected, 0))
+
   return {
-    agents: rows,
-    totalOutstanding: Math.round(rows.reduce((s, a) => s + a.outstanding, 0) * 100) / 100,
+    agents: scope === 'totals' ? [] : rows,
+    scope,
+    totalExpected,
+    totalCollected,
+    totalOutstanding: round2(rows.reduce((s, a) => s + a.outstanding, 0)),
     currency: await currency(ctx),
   }
 }
@@ -188,7 +218,17 @@ export async function reportMissingContact(p: Record<string, unknown>, user: App
  * Deliberately blunt: it reports what is wrong rather than a score, because the
  * only useful version of this answers "what do I still have to chase".
  */
-export async function reportDrawReady(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  /*
+   * TICKET COUNTS ARE THE RAFFLE'S; THE MONEY IS WHOSE IT IS.
+   *
+   * Everyone may see how the raffle is doing — how many sold, how many books
+   * are out, whether the draw is ready. Those are the shared facts a volunteer
+   * needs to feel part of it. What narrows is the money: a helper holding no
+   * books has no business carrying the whole raffle's outstanding balance on
+   * their phone, and a seller's figure should be their own.
+   */
+  const only = visibleAgents(user)
   const active = Number((await ctx.supabaseAdmin.rpc('active_tickets', {})).data ?? 0)
 
   const count = async (build: (q: any) => any) => {
@@ -204,12 +244,18 @@ export async function reportDrawReady(_p: Record<string, unknown>, _u: AppUser, 
   const reserved = await count((q: any) => q.eq('status', 'Reserved').lte('idx', active))
 
   const { data: books } = await ctx.supabaseAdmin
-    .from('book_ledger_all').select('status,counted_expected,counted_collected')
+    .from('book_ledger_all').select('status,held_by_agent,counted_expected,counted_collected')
   const unsettled = (books ?? []).filter((b: { status: string }) =>
     b.status === 'Out' || b.status === 'Returned').length
-  const outstanding = (books ?? []).reduce(
-    (s: number, b: { counted_expected: number; counted_collected: number }) =>
-      s + (Number(b.counted_expected ?? 0) - Number(b.counted_collected ?? 0)), 0)
+
+  // The books whose money this person may be told about.
+  const mineBooks = (books ?? []).filter((b: { held_by_agent?: string | null }) =>
+    !only || only.includes(String(b.held_by_agent ?? '')))
+  const paidBy = await collectedByAgent(ctx, only)
+  const collectedScoped = round2([...paidBy.values()].reduce((s, n) => s + n, 0))
+  const expectedScoped = round2(mineBooks.reduce(
+    (s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0))
+  const outstanding = round2(expectedScoped - collectedScoped)
 
   const problems = []
   if (missingContact) {
@@ -256,10 +302,8 @@ export async function reportDrawReady(_p: Record<string, unknown>, _u: AppUser, 
 
   const voided = await count((q: any) => q.eq('status', 'Void').lte('idx', active))
   const availableCount = await count((q: any) => q.eq('status', 'Available').lte('idx', active))
-  const expected = (books ?? []).reduce(
-    (s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0)
-  const collected = (books ?? []).reduce(
-    (s: number, b: { counted_collected: number }) => s + Number(b.counted_collected ?? 0), 0)
+  const expected = expectedScoped
+  const collected = collectedScoped
 
   /*
    * SHAPED LIKE handleReportDrawReady IN Reports.gs, field for field.

@@ -71,10 +71,27 @@ console.log('every key the screen reads is a key both backends build')
 }
 
 console.log('the per-seller scoping the port dropped')
-ok(/role === ROLES\.AGENT && r\.agentId !== user\.agentId/.test(gs),
-   'Apps Script shows a seller their own line only')
-ok(/role === 'agent' && key !== user\.agentId/.test(ts),
+/*
+ * WIDENED, and moved somewhere it is RUN.
+ *
+ * This used to grep for one spelling — `role === 'agent' && key !== agentId` —
+ * which pinned the implementation rather than the rule, and went red when the
+ * rule was made stronger rather than when it was broken. The scope is now
+ * decided in one helper per backend, because it covers more than agents: a
+ * helper sees their own line, a viewer gets totals and no names at all.
+ *
+ * So this asserts the decision is made in ONE place on each side, and
+ * money.test.mjs asserts what that decision actually DOES, by calling both
+ * handlers as each role. A grep cannot tell you a rule holds; it can only tell
+ * you a string is present.
+ */
+ok(/visibleAgents_\(user\)/.test(gs),
+   'Apps Script decides who may be told about whom in one place')
+ok(/visibleAgents\(user\)/.test(ts),
    'and so does Supabase — what one seller owes is not another seller\'s business')
+ok(/only && only\.indexOf\(r\.agentId\) === -1/.test(gs) &&
+   /only && !only\.includes\(key\)/.test(ts),
+   'and both actually filter the rows by it')
 
 console.log('the stopgap is gone, not merely unused')
 ok(!/normalise/.test(src), 'no second spelling of the wire shape in the client')
@@ -115,8 +132,21 @@ console.log('which tickets, read from what the device already has')
 {
   const body = src.slice(src.indexOf('const isPaid'), src.indexOf('/*\n * The number comes'))
   const isPaid = new Function(`${body}; return isPaid`)()
-  ok(isPaid({ payment: 'Paid' }) && isPaid({ payment: 'received' }), 'money in reads as in')
-  ok(!isPaid({ payment: '' }) && !isPaid({}), 'and blank reads as not in, never as paid')
+  /*
+   * TIGHTENED, because the loose version was the bug.
+   *
+   * This asserted that 'received' reads as paid, which it did — under
+   * `/paid|received|in/i`. So did "Unpaid", because it contains "paid", and so
+   * did anything containing "in". The only two values this system ever writes
+   * are 'Paid' and 'Unpaid', so every sold ticket in the raffle rendered the
+   * green chip and the column had no reachable state that said otherwise. A
+   * screen about money that cannot say "no" is not reporting, it is decorating.
+   */
+  ok(isPaid({ payment: 'Paid' }) && isPaid({ payment: 'paid' }),
+     'paid reads as paid, whatever the case')
+  ok(!isPaid({ payment: 'Unpaid' }),
+     'and UNPAID does not — it contains "paid", which is how this went wrong')
+  ok(!isPaid({ payment: '' }) && !isPaid({}), 'blank reads as not paid, never as paid')
 }
 ok(/t\.agent === agentId/.test(src), 'the breakdown is the seller\'s own tickets')
 ok(/\['Sold', 'Donated'\]\.includes\(t\.status\)/.test(src), 'sold and donated only')

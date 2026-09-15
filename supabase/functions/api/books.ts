@@ -14,6 +14,7 @@
  */
 import { ApiError, type AppUser } from './gate.ts'
 import { configDate, defaultDueDate, noteReportFromSettle } from './deadlines.ts'
+import { noteSettlementPayment } from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -245,7 +246,7 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
   // Read before the settle: the function answers about the BOOK, and the report
   // this settlement stands for belongs to the person who was holding it.
   const { data: held } = await ctx.supabaseAdmin
-    .from('books').select('held_by_agent').eq('number', bookNumber).maybeSingle()
+    .from('books').select('idx,held_by_agent').eq('number', bookNumber).maybeSingle()
 
   const { data, error } = await ctx.supabaseAdmin.rpc('settle_book', {
     p_book_number: bookNumber,
@@ -264,11 +265,18 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
     book: bookNumber, sold: data.declaredSold, due: data.amountDue, paid: amountPaid,
   }, user.email)
 
+  const holder = String((held as { held_by_agent?: string } | null)?.held_by_agent ?? '')
+
   // Somebody who has just settled a book has reported, and should not also have
   // to be ticked off a list by the person who counted it.
-  await noteReportFromSettle(
-    ctx, String((held as { held_by_agent?: string } | null)?.held_by_agent ?? ''),
-    bookNumber, user)
+  await noteReportFromSettle(ctx, holder, bookNumber, user)
+
+  // And the cash counted in at settlement IS a handover, so it goes in the same
+  // ledger as every other one. Without this the book's declared figure and the
+  // seller's running total would be two separate truths.
+  await noteSettlementPayment(
+    ctx, holder, Number((held as { idx?: number } | null)?.idx ?? 0),
+    amountPaid, bookNumber, user)
 
   return data
 }

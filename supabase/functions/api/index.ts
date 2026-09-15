@@ -41,6 +41,7 @@ import {
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
 import * as deadlines from './deadlines.ts'
+import * as money from './money.ts'
 import { dayStart, today } from './deadlines.ts'
 import * as people from './people.ts'
 import * as reports from './reports.ts'
@@ -149,6 +150,9 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   record_check_in: { group: 'Books', label: 'Record that a seller has reported' },
   set_final_deadline: { group: 'Books', label: 'Change the final deadline', danger: true },
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
+  record_payment: { group: 'Money', label: 'Record money handed in' },
+  reverse_payment: { group: 'Money', label: 'Undo a recorded payment', danger: true },
+  list_payments: { group: 'Money', label: 'See what has been handed in' },
   report_outstanding: { group: 'Money', label: 'Who still owes money' },
   list_agents: { group: 'People', label: 'See the sellers' },
   upsert_agent: { group: 'People', label: 'Add or change a seller' },
@@ -199,6 +203,13 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   transfer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.transferBooks },
   return_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.returnBooks },
   settle_book: { roles: ADMIN_ONLY, kind: 'write', fn: books.settleBook },
+  // A helper takes cash at the table and must be able to write it down there
+  // and then. What they cannot do is record it against somebody else, or close
+  // a book — both of those change what another person is shown as owing.
+  record_payment: { roles: ['recorder', 'agent'], kind: 'write', fn: money.recordPayment },
+  // Undoing is an organiser's: it moves a figure somebody has already been told.
+  reverse_payment: { roles: ADMIN_ONLY, kind: 'write', fn: money.reversePayment },
+  list_payments: { roles: ['viewer', 'recorder', 'agent'], kind: 'read', fn: money.listPayments },
   set_book_status: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.setBookStatus },
   restock_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.restockBooks },
   // Readable by anyone who can see the books at all. A history that only an
@@ -234,7 +245,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline },
 
   // --- reports ---
-  report_outstanding: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportOutstanding },
+  report_outstanding: { roles: ['viewer', 'recorder', 'agent'], kind: 'report', fn: reports.reportOutstanding },
   report_overdue: { roles: ['recorder'], kind: 'report', fn: reports.reportOverdue },
   report_missing_contact: { roles: ['recorder'], kind: 'report', fn: reports.reportMissingContact },
   report_draw_ready: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportDrawReady },

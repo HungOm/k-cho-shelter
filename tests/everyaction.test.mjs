@@ -119,6 +119,9 @@ const CALLS = {
   set_ticket_ceiling: { ticketCeiling: 200 },
   roll_check_in: {}, set_final_deadline: { date: '2027-01-01' },
   record_check_in: { agentId: 'A001', booksBack: 1, ticketsSold: 4, amountPaid: 40 },
+  record_payment: { agentId: 'A001', amount: 40, note: 'at the hall' },
+  reverse_payment: { paymentId: 999, reason: 'recorded twice' },
+  list_payments: { agentId: 'A001' },
 }
 
 /*

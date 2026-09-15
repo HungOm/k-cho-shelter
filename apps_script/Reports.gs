@@ -139,7 +139,309 @@ function buildBookLedger_() {
 // ============ OUTSTANDING PER AGENT ============
 // The number you actually chase.
 
+
+// ============ CASH HANDED IN ============
+/*
+ * TWO DIFFERENT MONEY EVENTS were being shown as one:
+ *
+ *   the BUYER paid the SELLER      Payment_Status on the ticket, out in the field
+ *   the SELLER handed cash to us   a row here, at a table, in person
+ *
+ * Only the second one is a debt being cleared, and until now the only way to
+ * record it was settling a whole book — so a seller who brought half the money,
+ * or who kept the book to sell the rest, could not be recorded at all.
+ *
+ * MONEY FOLLOWS CUSTODY, NOT WHOEVER TYPED IT IN. A helper records sales that
+ * are credited to the book's holder, so a helper never owes anything. Keying on
+ * Agent_ID is what makes "what I owe" answerable for a seller and correctly
+ * empty for a helper carrying no books — rather than a rule about roles, which
+ * would disagree with itself the first time somebody was both.
+ */
+
+/** Which sellers this person may be told about; null means everybody. */
+function visibleAgents_(user) {
+  if (user && user.isAdmin) return null;
+  var own = String((user && user.agentId) || '').trim();
+  return own ? [own] : [];
+}
+
+/** 'all' for an organiser, 'mine' for somebody with books, 'totals' otherwise. */
+function moneyScope_(user) {
+  if (user && user.isAdmin) return 'all';
+  return String((user && user.agentId) || '').trim() ? 'mine' : 'totals';
+}
+
+function ensurePaymentsSheet_() {
+  var ss = ss_();
+  var sheet = ss.getSheetByName(SHEET.PAYMENTS);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(SHEET.PAYMENTS);
+  sheet.appendRow(COLS.PAYMENTS);
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
+/**
+ * Every payment row. Tolerant of the sheet not existing: a raffle that has
+ * never recorded one should read as "nothing handed in", not as an error on a
+ * screen that worked yesterday.
+ */
+function readPaymentsRaw_() {
+  var sheet = null;
+  try { sheet = ss_().getSheetByName(SHEET.PAYMENTS); } catch (e) { sheet = null; }
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var map = headerMap(sheet);
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  var rows = [];
+  for (var i = 0; i < values.length; i++) {
+    var o = rowToObject_(values[i], map);
+    if (!o.Agent_ID) continue;
+    o._row = i + 2;
+    o._agent = String(o.Agent_ID).trim();
+    o._amount = parseFloat(o.Amount) || 0;
+    rows.push(o);
+  }
+  return rows;
+}
+
+/**
+ * What each seller has handed in: the books' own figure, plus every handover
+ * the books do not know about.
+ *
+ * WHY IT IS A SUM OF TWO THINGS. Amount_Paid has held every settlement since
+ * before the Payments tab existed and is still written when a book is closed,
+ * so it stays the authority for money counted in WITH a book. What it could
+ * never express is cash arriving on its own — a seller bringing half of it, or
+ * keeping the book to sell the rest — and that is what the ledger adds.
+ *
+ * Settlement rows are EXCLUDED here: settling writes both, and counting each
+ * would charge the raffle twice for the same cash. They stay in the tab so a
+ * seller's history reads as one list.
+ *
+ * So this is the old number plus the payments that had nowhere to go before.
+ * No existing total moves.
+ */
+function collectedByAgent_(only, ledger) {
+  var by = {};
+  var rowsL = (ledger || buildBookLedger_()).rows;
+  for (var i = 0; i < rowsL.length; i++) {
+    var holder = rowsL[i].agentId;
+    if (!holder) continue;
+    if (only && only.indexOf(holder) === -1) continue;
+    by[holder] = Math.round(((by[holder] || 0) + rowsL[i].countedCollected) * 100) / 100;
+  }
+
+  var pays = readPaymentsRaw_();
+  for (var j = 0; j < pays.length; j++) {
+    if (String(pays[j].Source || '') === 'settlement') continue;
+    var id = pays[j]._agent;
+    if (only && only.indexOf(id) === -1) continue;
+    by[id] = Math.round(((by[id] || 0) + pays[j]._amount) * 100) / 100;
+  }
+  return by;
+}
+
+function nextPaymentId_() {
+  return 'P' + Date.now().toString(36).toUpperCase() +
+    '-' + Math.floor(Math.random() * 1679616).toString(36).toUpperCase();
+}
+
+/** What one seller still owes: expected, minus everything handed in. */
+function owedBy_(agentId) {
+  var ledger = buildBookLedger_();
+  var expected = 0;
+  for (var i = 0; i < ledger.rows.length; i++) {
+    if (ledger.rows[i].agentId === agentId) expected += ledger.rows[i].countedExpected;
+  }
+  var paid = collectedByAgent_([agentId])[agentId] || 0;
+  return Math.round((expected - paid) * 100) / 100;
+}
+
+function handleRecordPayment(payload, user) {
+  var agentId = String(payload.agentId || '').trim();
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Who handed the money in?');
+
+  var amount = Math.round(parseFloat(payload.amount) * 100) / 100;
+  if (isNaN(amount) || amount <= 0) {
+    throw new ApiError('MISSING_FIELD', 'How much was handed in?');
+  }
+
+  var agent = findAgent_(agentId);
+  if (!agent) {
+    throw new ApiError('AGENT_NOT_FOUND', 'There is no seller with the ID "' + agentId + '".');
+  }
+
+  // A helper may record what they were handed, but only for a seller — never
+  // reassign it. Same scoping the reports use.
+  var allowed = visibleAgents_(user);
+  if (allowed && allowed.indexOf(agentId) === -1) {
+    throw new ApiError('NOT_AUTHORIZED',
+      'You can record money for yourself. Recording it for another seller is the ' +
+      "organiser's to do, because it changes what that person is shown as owing.");
+  }
+
+  var bookNumber = String(payload.bookNumber || '').trim();
+  if (bookNumber && !bookIndex(bookNumber, getConfig())) {
+    throw new ApiError('BOOK_NOT_FOUND', 'Book ' + bookNumber + ' does not exist.');
+  }
+
+  var id = nextPaymentId_();
+  ensurePaymentsSheet_().appendRow([
+    id, agentId, amount, new Date(), user.email,
+    String(payload.method || 'cash').trim() || 'cash',
+    String(payload.note || '').trim(), bookNumber, '', 'hand'
+  ]);
+
+  logAudit('RECORD_PAYMENT',
+    { agent: agentId, amount: amount, book: bookNumber || null }, user.email);
+
+  return {
+    paymentId: id,
+    agentId: agentId,
+    agentName: String(agent.Name || agentId),
+    amount: amount,
+    bookNumber: bookNumber,
+    stillOwed: owedBy_(agentId)
+  };
+}
+
+/**
+ * Undoing is a NEW ROW, never a delete.
+ *
+ * Cash recorded against the wrong seller happens at a table with a queue in
+ * front of it. Deleting would leave the trail saying the mistake never
+ * occurred, which is exactly what somebody checking the books later needs to
+ * see. So the reversal is its own entry and both survive.
+ */
+function handleReversePayment(payload, user) {
+  var id = String(payload.paymentId || '').trim();
+  if (!id) throw new ApiError('MISSING_FIELD', 'Which payment?');
+
+  var rows = readPaymentsRaw_();
+  var orig = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].Payment_ID).trim() === id) { orig = rows[i]; break; }
+  }
+  if (!orig) throw new ApiError('NOT_FOUND', 'There is no payment with that number.');
+  if (String(orig.Reverses || '').trim()) {
+    throw new ApiError('NOTHING_TO_DO', 'That entry is itself a reversal.');
+  }
+  for (var j = 0; j < rows.length; j++) {
+    if (String(rows[j].Reverses || '').trim() === id) {
+      throw new ApiError('NOTHING_TO_DO', 'That payment has already been reversed.');
+    }
+  }
+
+  var reason = String(payload.reason || '').trim();
+  if (!reason) {
+    throw new ApiError('MISSING_FIELD',
+      'Say why it is being reversed. The entry stays on the record either way, and ' +
+      'a reversal nobody can explain is worse than the mistake.');
+  }
+
+  ensurePaymentsSheet_().appendRow([
+    nextPaymentId_(), orig._agent, -orig._amount, new Date(), user.email,
+    String(orig.Method || 'cash'), reason, String(orig.Book_Number || ''), id, 'hand'
+  ]);
+
+  logAudit('REVERSE_PAYMENT',
+    { payment: id, agent: orig._agent, amount: orig._amount, reason: reason }, user.email);
+
+  return {
+    reversed: id, agentId: orig._agent, amount: orig._amount,
+    stillOwed: owedBy_(orig._agent)
+  };
+}
+
+function handleListPayments(payload, user) {
+  var allowed = visibleAgents_(user);
+  // Asking for somebody else's is turned back into your own rather than
+  // refused: a refusal would only confirm the other seller exists.
+  var agentId = allowed ? (allowed[0] || '') : String(payload.agentId || '').trim();
+  if (!agentId) return { payments: [], agentId: '', scope: moneyScope_(user) };
+
+  var rows = readPaymentsRaw_();
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i]._agent !== agentId) continue;
+    var r = rows[i];
+    out.push({
+      id: String(r.Payment_ID).trim(),
+      amount: r._amount,
+      receivedAt: r.Received_At instanceof Date ? r.Received_At.toISOString() : String(r.Received_At || ''),
+      receivedBy: r.Received_By || '',
+      method: r.Method || 'cash',
+      note: r.Note || '',
+      bookNumber: r.Book_Number || '',
+      reverses: String(r.Reverses || '') || null,
+      source: r.Source || 'hand'
+    });
+  }
+  out.sort(function (a, b) { return String(b.receivedAt).localeCompare(String(a.receivedAt)); });
+  return { agentId: agentId, scope: moneyScope_(user), payments: out.slice(0, 200) };
+}
+
+/**
+ * A settlement is also a handover, so it writes one too.
+ *
+ * Without this the book's declared figure and the seller's ledger would be two
+ * separate truths, which is the disagreement this section exists to end. One
+ * settlement row per book, replaced rather than added, so a forced re-settle
+ * cannot count the same cash twice.
+ *
+ * Never throws — a settlement broken by its own bookkeeping echo would be a
+ * money operation undone by a side note — but never silent either.
+ */
+function noteSettlementPayment_(agentId, bookNumber, amount, user) {
+  try {
+    var id = String(agentId || '').trim();
+    if (!id || isNaN(amount)) return;
+    var sheet = ensurePaymentsSheet_();
+    var map = headerMap(sheet);
+    var rows = readPaymentsRaw_();
+    var existing = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i].Source || '') === 'settlement' &&
+          String(rows[i].Book_Number || '').trim() === bookNumber) { existing = rows[i]; break; }
+    }
+
+    if (!amount) {
+      if (existing) sheet.deleteRows(existing._row, 1);
+      return;
+    }
+    var rounded = Math.round(amount * 100) / 100;
+    if (existing) {
+      sheet.getRange(existing._row, map.Amount).setValue(rounded);
+      sheet.getRange(existing._row, map.Received_At).setValue(new Date());
+      sheet.getRange(existing._row, map.Received_By).setValue(user.email);
+    } else {
+      ensurePaymentsSheet_().appendRow([
+        nextPaymentId_(), id, rounded, new Date(), user.email, 'cash',
+        'Counted in with ' + bookNumber, bookNumber, '', 'settlement'
+      ]);
+    }
+  } catch (e) {
+    Logger.log('PAYMENT_NOT_RECORDED: ' + agentId + ' settling ' + bookNumber + ': ' + e);
+    logAudit('PAYMENT_NOT_RECORDED',
+      { agent: agentId, book: bookNumber, amount: amount,
+        why: String(e && e.message ? e.message : e) },
+      user && user.email);
+  }
+}
+
 function handleReportOutstanding(payload, user) {
+  /*
+   * WHO MAY BE TOLD ABOUT WHOM, decided once, here.
+   *
+   * An organiser sees every seller. Anybody else sees their own line and no
+   * other — a seller's debt is not another seller's business, and a helper at a
+   * desk has no reason to carry the whole raffle's ledger. A viewer is trusted
+   * with the totals and not with who owes them, so they get no rows at all
+   * rather than a filtered list that hints at what is missing.
+   */
+  var only = visibleAgents_(user);
+  var scope = moneyScope_(user);
+
   var ledger = buildBookLedger_();
   var agents = agentNameMap_();
   var byAgent = {};
@@ -147,7 +449,7 @@ function handleReportOutstanding(payload, user) {
   for (var i = 0; i < ledger.rows.length; i++) {
     var r = ledger.rows[i];
     if (!r.agentId) continue;
-    if (user.role === ROLES.AGENT && r.agentId !== user.agentId) continue;
+    if (only && only.indexOf(r.agentId) === -1) continue;
 
     if (!byAgent[r.agentId]) {
       byAgent[r.agentId] = {
@@ -165,18 +467,42 @@ function handleReportOutstanding(payload, user) {
     if (r.daysOverdue > 0) a.overdueBooks++;
     a.ticketsSold += r.countedSold;
     a.expected += r.countedExpected;
-    a.collected += r.countedCollected;
   }
 
-  var list = [];
+  /*
+   * HANDED IN COMES FROM THE LEDGER, not from the books.
+   *
+   * Amount_Paid only ever moves when a book is CLOSED, so a seller who brought
+   * half the money and kept the book showed as having handed in nothing.
+   * Settlement writes a payment row of its own, so a settled book still counts
+   * exactly once and no existing total moves.
+   */
+  var paid = collectedByAgent_(only, ledger);
+
+  var list = [], totalExpected = 0, totalCollected = 0;
   for (var id in byAgent) {
     var x = byAgent[id];
+    x.collected = paid[id] || 0;
     x.outstanding = Math.round((x.expected - x.collected) * 100) / 100;
+    totalExpected += x.expected;
+    totalCollected += x.collected;
     list.push(x);
   }
   list.sort(function (p, q) { return q.outstanding - p.outstanding; });
 
-  return { currency: ledger.currency, agents: list };
+  var totalOutstanding = 0;
+  for (var k = 0; k < list.length; k++) totalOutstanding += list[k].outstanding;
+
+  // A viewer gets the shape without the names: enough to see the raffle is
+  // healthy, nothing about who is behind on what.
+  return {
+    currency: ledger.currency,
+    agents: scope === 'totals' ? [] : list,
+    scope: scope,
+    totalExpected: Math.round(totalExpected * 100) / 100,
+    totalCollected: Math.round(totalCollected * 100) / 100,
+    totalOutstanding: Math.round(totalOutstanding * 100) / 100
+  };
 }
 
 // ============ OVERDUE BOOKS ============
@@ -251,6 +577,17 @@ function handleReportMissingContact(payload, user) {
 // ============ DRAW READINESS ============
 
 function handleReportDrawReady(payload, user) {
+  /*
+   * TICKET COUNTS ARE THE RAFFLE'S; THE MONEY IS WHOSE IT IS.
+   *
+   * Everyone may see how the raffle is doing — how many sold, how many books
+   * are out, whether the draw is ready. Those are the shared facts a volunteer
+   * needs to feel part of it. What narrows is the money: a helper holding no
+   * books has no business carrying the whole raffle's outstanding balance, and
+   * a seller's figure should be their own.
+   */
+  var onlyMoney = visibleAgents_(user);
+
   var ledger = buildBookLedger_();
   var cfg = getConfig();
 
@@ -265,8 +602,9 @@ function handleReportDrawReady(payload, user) {
     var r = ledger.rows[i];
     booksByStatus[r.status] = (booksByStatus[r.status] || 0) + 1;
     totals.sold += r.countedSold;
-    totals.expected += r.countedExpected;
-    totals.collected += r.countedCollected;
+    if (!onlyMoney || onlyMoney.indexOf(r.agentId) !== -1) {
+      totals.expected += r.countedExpected;
+    }
     totals.available += r.available;
     totals.reserved += r.reserved;
     totals.missingContact += r.missingContact;
@@ -295,6 +633,11 @@ function handleReportDrawReady(payload, user) {
       daysBetween_(today_(), lastDay) + ' days away. Sellers still have time to hand tickets in.');
   }
   if (totals.reserved > 0) blockers.push(totals.reserved + ' tickets are still reserved and unpaid.');
+  // Handed in comes from the payments ledger, so a part payment counts even
+  // though its book is still open.
+  var paidMap = collectedByAgent_(onlyMoney);
+  for (var pid in paidMap) totals.collected += paidMap[pid];
+
   var shortfall = Math.round((totals.expected - totals.collected) * 100) / 100;
   if (shortfall > 0) blockers.push(ledger.currency + ' ' + shortfall + ' of expected money has not been handed in.');
 

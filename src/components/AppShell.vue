@@ -20,7 +20,10 @@ const SCREENS = [
   { id: 'sell',   icon: 'ticket', label: 'Sell',    roles: ['admin', 'recorder', 'agent'] },
   { id: 'books',  icon: 'books', label: 'Books',   roles: ['admin', 'recorder'] },
   { id: 'agents', icon: 'people', label: 'Sellers', roles: ['admin', 'recorder'] },
-  { id: 'money',  icon: 'money', label: 'Money',   roles: ['admin', 'recorder', 'viewer'] },
+  // A seller can now open this and see THEIR OWN line — what they have handed
+  // in and what is still owed. The report scopes it; before, a seller had
+  // nowhere in the app to find out what they owed.
+  { id: 'money',  icon: 'money', label: 'Money',   roles: ['admin', 'recorder', 'viewer', 'agent'] },
   { id: 'draw',   icon: 'trophy', label: 'Draw',    roles: ['admin', 'recorder', 'viewer'] },
   { id: 'admin',  icon: 'gear', label: 'Setup',   roles: ['admin'] },
   // Super admin only, so it is filtered by more than role — see `visible`.
