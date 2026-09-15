@@ -6,7 +6,17 @@
  * for the person who took books in March and the person who took them last
  * week, which is what makes a single reminder and a single late list possible.
  * Nobody is finished on that day; the point is to find out where things stand
- * while there is still time to do something about it. Then it steps on a month.
+ * while there is still time to do something about it. Then it steps on a month
+ * — or whatever cadence this raffle is set to, which the screen says rather
+ * than assumes, because a quarterly raffle told "next month" is being promised
+ * a rhythm nobody is keeping.
+ *
+ * THE ROUNDS ARE SHOWN AS A PLAN, not one date at a time. They are worked out
+ * from the current date, the cadence and the wall — nobody types them — so a
+ * seller can be told every one of their dates on the day they take their books.
+ * Shown only: the roll steps the current date and clamps at the wall exactly as
+ * it always did, because whether somebody is late must not depend on a
+ * derivation.
  *
  * The FINAL deadline is hard. Everything has to be back, because the draw
  * happens after it.
@@ -54,6 +64,21 @@ const checkInLine = computed(() => {
   if (n === 0) return 'Today.'
   return `${plural(n, 'day', 'days')} to go.`
 })
+
+/** "a month", "3 months" — never a hardcoded rhythm the raffle is not keeping. */
+const cadence = computed(() => {
+  const n = s.value?.everyMonths || 1
+  return n === 1 ? 'a month' : `${n} months`
+})
+
+/**
+ * How the rounds read as words: the one that has gone, the one being answered
+ * now, the ones still ahead, and the wall on the end.
+ */
+const rounds = computed(() => (s.value?.schedule || []).map(r => ({
+  ...r,
+  state: r.date === s.value.checkInDate ? 'now' : (r.done ? 'done' : 'ahead'),
+})))
 
 const finalLine = computed(() => {
   const d = s.value
@@ -166,9 +191,38 @@ function explain(err) {
 
       <p class="muted small lead">
         The check-in is a checkpoint, not the end — everybody reports on the same day,
-        then it moves on a month. The final deadline is the one that does not move on
-        its own: the draw happens after it.
+        then it moves on {{ cadence }}. The final deadline is the one that does not move
+        on its own: the draw happens after it.
       </p>
+
+      <!--
+        The whole plan, worked out rather than typed. An organiser can read the
+        last round off it before deciding anything, and a seller can be told
+        every date they are expected to answer on the day they take their books.
+      -->
+      <template v-if="rounds.length">
+        <h4>Everybody reports on</h4>
+        <ol class="rounds">
+          <li v-for="r in rounds" :key="r.date" :class="r.state">
+            <span class="n">{{ r.last ? 'Last' : r.round }}</span>
+            <span class="grow">
+              <b>{{ date(r.date) }}</b>
+              <span class="tiny muted">
+                <template v-if="r.last">Everything back by this day</template>
+                <template v-else-if="r.state === 'now'">This round — reporting now</template>
+                <template v-else-if="r.state === 'done'">Gone</template>
+                <template v-else>Still ahead</template>
+              </span>
+            </span>
+          </li>
+        </ol>
+        <p v-if="s.checkInDate && s.sellersHolding" class="muted small">
+          {{ s.sellersReported }} of {{ s.sellersHolding }}
+          {{ s.sellersHolding === 1 ? 'seller holding books has' : 'sellers holding books have' }}
+          reported this round<template v-if="s.reportBy">, and anybody who has not is
+          shown as late from {{ date(s.reportBy) }}</template>.
+        </p>
+      </template>
 
       <div class="now">
         <div><span>Books out</span><b>{{ s.booksOut }}</b></div>
@@ -190,7 +244,7 @@ function explain(err) {
         <div class="row">
           <input v-model="newCheckIn" type="date" :min="s.today" :max="s.finalDeadline">
           <button class="btn" :disabled="busy" @click="look('roll')">
-            {{ newCheckIn ? 'Check that date' : 'Next month' }}
+            {{ newCheckIn ? 'Check that date' : `Next round — ${cadence} on` }}
           </button>
         </div>
         <p v-if="s.isLastRound" class="hint">
@@ -248,6 +302,16 @@ function explain(err) {
 </template>
 
 <style scoped>
+.rounds { list-style: none; margin: 4px 0 16px; padding: 0; }
+.rounds li { display: flex; align-items: center; gap: 12px; padding: 8px 0;
+  border-bottom: 1px solid var(--border); }
+.rounds li:last-child { border-bottom: 0; }
+.rounds .n { flex: 0 0 44px; height: 28px; border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--muted);
+  display: grid; place-items: center; font-weight: 700; font-size: .8rem; }
+.rounds li.now .n { background: var(--brand-soft); color: var(--brand); }
+.rounds li.done { opacity: .55; }
+.rounds b { display: block; }
 .dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .d { background: var(--surface-2); border-radius: var(--r-sm); padding: 12px 14px; }
 .d.hard { background: var(--brand-soft); }

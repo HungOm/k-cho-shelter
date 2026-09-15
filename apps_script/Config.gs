@@ -19,6 +19,7 @@ var SHEET = {
   PERMISSIONS: 'Permissions',
   PENDING: 'Pending',
   WINNERS: 'Winners',
+  CHECK_INS: 'Check_Ins',
   CONFIG: 'Config',
   AUDIT: '_AuditLog'
 };
@@ -54,6 +55,9 @@ var COLS = {
   ],
   WINNERS: ['Ticket_Number', 'Prize', 'Drawn_Date', 'Buyer_Name', 'Buyer_Phone',
             'Notified', 'Claimed', 'Claimed_Date', 'Notes', 'Recorded_By'],
+  // One row per seller per round. Created on first use, like the Pending tab.
+  CHECK_INS: ['Agent_ID', 'Round', 'Due_Date', 'Reported_At', 'Books_Back',
+              'Tickets_Sold', 'Amount_Paid', 'Note', 'Recorded_By'],
   CONFIG: ['Key', 'Value', 'Notes'],
   AUDIT: ['Timestamp', 'Action', 'Details', 'Email']
 };
@@ -109,6 +113,19 @@ var CONFIG_DEFAULTS = [
   ['FINAL_DEADLINE', '', 'The last day books and money can come back, e.g. 2026-12-06. '
     + 'This one does not move on its own and only the System Admin can change it. The '
     + 'check-in date can never pass it, and the draw is not ready until it has passed.'],
+  ['CHECK_IN_EVERY_MONTHS', '1', 'How far apart the reporting rounds are, in months. '
+    + 'The dates in between are WORKED OUT from this and FINAL_DEADLINE — nobody types them, '
+    + 'so a seller can be told every one of their dates the day they take their books. '
+    + '0 is not "never": it asks the check-in to stand still, which is refused, as is a '
+    + 'negative number and anything over a year. Set it to 3 for quarterly; the screens say '
+    + 'whatever it is rather than assuming monthly.'],
+  ['REPORT_GRACE_DAYS', '3', 'Days after the check-in date before a seller who has not '
+    + 'reported is shown as late. Somebody who says they will come on Saturday should not be '
+    + 'marked red on Friday: a badge that fires on people doing the right thing is one the '
+    + 'organiser learns to scroll past.'],
+  ['CHECK_IN_ROUND', '1', 'Which reporting round is live. Moved on by the "Deadlines" screen '
+    + 'when the check-in date rolls. Do NOT edit by hand — every report already recorded is '
+    + 'filed against a round number, and changing this by hand re-opens or hides them.'],
   ['DEFAULT_DUE_DAYS', '30', 'Fallback return period, used only for a raffle with no '
     + 'CHECK_IN_DATE and no FINAL_DEADLINE still ahead.'],
   ['EVENT_NAME', "K'Cho Shelter Fundraising Raffle", 'Shown on receipts.'],
@@ -388,6 +405,13 @@ function addMonths_(date, n) {
 /** Whole days from `from` to `to`, negative when `to` is already past. */
 function daysBetween_(from, to) {
   return Math.round((to.getTime() - from.getTime()) / 86400000);
+}
+
+/** A whole number of days on from a day. Still a day, never an instant. */
+function addDays_(date, n) {
+  var d = new Date(date.getFullYear(), date.getMonth(), date.getDate() + n);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
 /**

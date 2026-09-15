@@ -39,6 +39,8 @@ const DEFAULTS = {
   tickets: { status: 'Available', version: 1, buyer_name: '', buyer_phone: '', source: '' },
   books: { status: 'Unassigned', version: 1, notes: '' },
   agents: { active: true },
+  check_in_reports: { books_back: 0, tickets_sold: 0, amount_paid: 0, note: '',
+                      recorded_by: '', reported_at: () => new Date().toISOString() },
   audit_log: { at: () => new Date().toISOString() },
   book_history: { at: () => new Date().toISOString(), note: '' },
 }
@@ -259,7 +261,7 @@ export function fakeDb(seed = {}) {
     tables: {
       config: [], tickets: [], books: [], agents: [], app_users: [],
       book_history: [], audit_log: [], pending_approvals: [], winners: [],
-      permissions: [], book_ledger: [], book_ledger_all: [],
+      permissions: [], book_ledger: [], book_ledger_all: [], check_in_reports: [],
       ...copy(seed),
     },
     writes: [],
@@ -330,6 +332,7 @@ export function baseConfig(over = {}) {
     BOOK_PREFIX: 'Book-', BOOK_DIGITS: '3', TICKET_PRICE: '10',
     CURRENCY: 'RM', DEFAULT_DUE_DAYS: '30',
     CHECK_IN_DATE: '', FINAL_DEADLINE: '', DRAW_DATE: '',
+    CHECK_IN_EVERY_MONTHS: '1', REPORT_GRACE_DAYS: '3', CHECK_IN_ROUND: '1',
     ...over,
   }
   return Object.entries(base).map(([key, value]) => ({ key, value: String(value) }))

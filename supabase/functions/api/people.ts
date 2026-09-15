@@ -17,6 +17,10 @@
  * you is the one worth attacking.
  */
 import { ApiError, isSuperAdminEmail, requireSuperAdmin, type AppUser, type Role } from './gate.ts'
+import {
+  addDays, checkInRound, configDate, daysBetween, graceDays, reportState, reportedIn,
+  reportsBefore, today,
+} from './deadlines.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any } }
 
@@ -52,6 +56,30 @@ export async function listAgents(p: Record<string, unknown>, user: AppUser, ctx:
     if (id) held.set(id, (held.get(id) ?? 0) + 1)
   }
 
+  /*
+   * WHERE EACH SELLER STANDS THIS ROUND, on the list the organiser already
+   * opens to chase people.
+   *
+   * On this list rather than a screen of its own, because a screen of its own
+   * is a screen nobody opens. The question "who has not reported" is asked
+   * while looking at the sellers, or it is not asked at all.
+   *
+   * Every field here is DERIVED — from the round, the check-in date and the
+   * rows that say who answered. There is no stored badge and nothing to reset:
+   * the roll changes the round number and the whole list turns over by itself.
+   */
+  const now = today()
+  const checkIn = await configDate(ctx, 'CHECK_IN_DATE')
+  const grace = await graceDays(ctx)
+  const round = await checkInRound(ctx)
+  const answered = await reportedIn(ctx, round)
+  const earlier = await reportsBefore(ctx, round)
+
+  // Rounds that have been and gone. The live one counts only once the grace
+  // after its date has run out — before that nobody has missed anything.
+  const thisRoundClosed = !!checkIn && daysBetween(checkIn, now) > grace
+  const roundsClosed = round - 1 + (thisRoundClosed ? 1 : 0)
+
   const activeOnly = !!p.activeOnly
 
   /*
@@ -69,6 +97,26 @@ export async function listAgents(p: Record<string, unknown>, user: AppUser, ctx:
    * Third time today a handler echoed the database instead of mapping it. The
    * cost is never a crash; it is a screen that quietly says nothing.
    */
+  const reportFields = (id: string) => {
+    const booksOut = held.get(id) ?? 0
+    const reportedAt = answered.get(id) ?? ''
+    // The report for the LIVE round only cancels a miss once that round has
+    // closed. Counting it earlier would let somebody who answered this month
+    // look as though they had also answered the three they sat out.
+    const missed = Math.max(0,
+      roundsClosed - (earlier.get(id) ?? 0) - (thisRoundClosed && reportedAt ? 1 : 0))
+    return {
+      reportState: reportState({ booksOut, reported: !!reportedAt, checkIn, grace, now }),
+      reportedAt,
+      reportRound: round,
+      // Counted, not stored. A seller who answered rounds 1 and 3 of four has
+      // missed two, and no amount of rolling the date forward changes that.
+      missedRounds: missed,
+      daysLate: checkIn && !reportedAt && booksOut > 0
+        ? Math.max(0, daysBetween(checkIn, now) - grace) : 0,
+    }
+  }
+
   const rows = (data ?? [])
     .filter((a: Record<string, unknown>) => !activeOnly || a.active !== false)
     .map((a: Record<string, unknown>) => ({
@@ -83,9 +131,21 @@ export async function listAgents(p: Record<string, unknown>, user: AppUser, ctx:
       active: a.active !== false,
       booksOut: held.get(String(a.agent_id ?? '').trim()) ?? 0,
       notes: a.notes ?? '',
+      ...reportFields(String(a.agent_id ?? '').trim()),
     }))
 
-  return { agents: rows }
+  return {
+    agents: rows,
+    /*
+     * The round itself, once, beside the list it applies to.
+     *
+     * Per row it would be the same four values repeated behind every name, and
+     * the alternative — a second call to deadline_status every time a screen
+     * wants to say which day people are reporting by — is a round trip on a
+     * phone for something this reply already knows.
+     */
+    checkIn: { date: checkIn, round, reportBy: checkIn ? addDays(checkIn, grace) : '', graceDays: grace },
+  }
 }
 
 /** Same shape as every other masker here: four bullets and the last three. */

@@ -12,7 +12,61 @@ import { waNumber } from '../lib/search.js'
 import { money, date } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 
-const emit = defineEmits(['add-agent', 'open-agent'])
+const emit = defineEmits(['add-agent', 'open-agent', 'record-check-in'])
+
+/*
+ * WHO HAS NOT REPORTED, which is a different question from which book is late.
+ *
+ * A seller can honestly report — sold six, here is the money, keeping the book
+ * for the rest — and still be holding it afterwards, so the overdue list above
+ * cannot answer this and never could. The server works it out from the round,
+ * the check-in date and the rows saying who has answered; nothing here decides
+ * it, because two screens deciding the same thing is two screens disagreeing.
+ *
+ * It clears when a report is RECORDED, not when anybody ticks it away. That is
+ * why the button beside each name writes something down rather than hiding a
+ * row: the mark and the record are the same act.
+ */
+const notReported = computed(() =>
+  state.agents.filter(a => a.reportState === 'late' || a.reportState === 'due')
+    .sort((x, y) => (y.daysLate || 0) - (x.daysLate || 0)))
+
+const lateReporting = computed(() =>
+  notReported.value.filter(a => a.reportState === 'late').length)
+
+/** The pill beside a name, in the words somebody would use out loud. */
+function standing(a) {
+  if (a.reportState === 'reported') return { tone: 'ok', text: 'Reported' }
+  if (a.reportState === 'late') {
+    return { tone: 'bad', text: a.daysLate > 0 ? `${a.daysLate} days late` : 'Not reported' }
+  }
+  if (a.reportState === 'due') return { tone: 'warn', text: 'To report' }
+  return null
+}
+
+function chaseLine(a) {
+  const missed = a.missedRounds > 1 ? ` · missed ${a.missedRounds} check-ins` : ''
+  if (a.reportState === 'late') {
+    return `${a.daysLate > 0 ? a.daysLate + ' days past the check-in' : 'Has not reported'}` +
+      ` · ${a.booksOut} ${a.booksOut === 1 ? 'book' : 'books'} out${missed}`
+  }
+  return `${a.booksOut} ${a.booksOut === 1 ? 'book' : 'books'} out${missed}`
+}
+
+function reportReminder(a) {
+  // The check-in DATE, not the end of the grace: the grace is how long before
+  // somebody is chased, and telling a seller about it would move the date they
+  // think they were given.
+  const by = state.checkIn.date || ''
+  return `Hello ${a.name}, a reminder about ${state.cfg?.eventName || 'our fundraiser'}. ` +
+    `Everybody reports by ${by ? date(by) : 'the check-in date'} — how many tickets have ` +
+    `sold, what is left, and anything collected. You do not need to bring the books back ` +
+    `yet. Thank you!`
+}
+
+function reportWaLink(a) {
+  return `https://wa.me/${waNumber(a.phone)}?text=${encodeURIComponent(reportReminder(a))}`
+}
 
 const currency = computed(() => state.cfg?.currency || '')
 
@@ -36,6 +90,29 @@ function waLink(o) {
       People who carry books and sell tickets. Most never open the app —
       a name and a phone number is all that is needed.
     </p>
+
+    <div v-if="notReported.length" class="card report">
+      <div class="spread" style="margin-bottom:8px">
+        <h3 style="margin:0">Still to report</h3>
+        <span :class="['pill', lateReporting ? 'bad' : 'warn']">{{ notReported.length }}</span>
+      </div>
+      <p class="tiny muted" style="margin:0 0 10px">
+        Everybody reports on the same day, whether or not the books come back.
+        Recording a report clears the mark until the next round.
+      </p>
+      <div v-for="a in notReported.slice(0, 25)" :key="a.id" class="chase">
+        <div class="grow">
+          <b>{{ a.name || a.id }}</b>
+          <div class="tiny muted">{{ chaseLine(a) }}</div>
+        </div>
+        <a v-if="a.phone" class="btn sm" :href="reportWaLink(a)" target="_blank" rel="noopener">
+          Remind
+        </a>
+        <button v-if="isAdmin" class="btn sm primary" @click="emit('record-check-in', a)">
+          Reported
+        </button>
+      </div>
+    </div>
 
     <div v-if="state.overdue.length" class="card late">
       <div class="spread" style="margin-bottom:8px">
@@ -66,6 +143,9 @@ function waLink(o) {
                 {{ a.zone || a.id }}<template v-if="a.phone"> · {{ a.phone }}</template>
               </span>
             </span>
+            <span v-if="standing(a)" :class="['pill', standing(a).tone]">
+              {{ standing(a).text }}
+            </span>
             <span :class="['pill', a.booksOut ? 'info' : '']">
               {{ a.booksOut }} {{ a.booksOut === 1 ? 'book' : 'books' }}
             </span>
@@ -84,6 +164,7 @@ function waLink(o) {
 
 <style scoped>
 .late { border-left: 4px solid var(--warn); }
+.report { border-left: 4px solid var(--brand); }
 .chase { display: flex; align-items: center; gap: 12px; padding: 12px 0;
   border-bottom: 1px solid var(--border); }
 .chase:last-child { border-bottom: 0; }

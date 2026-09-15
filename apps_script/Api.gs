@@ -68,6 +68,10 @@ function actionRegistry() {
     // ticket buyers, so that one does not move without the super admin.
     deadline_status:       { fn: handleDeadlineStatus,    roles: null, kind: 'read' },
     roll_check_in:         { fn: handleRollCheckIn,       roles: ADMIN_ONLY, kind: 'bulk', lock: true },
+    // A recorder too: this is whoever is at the table when a seller walks up
+    // with a bag of counterfoils, and a report that has to wait for an
+    // organiser to be free is a report written on the back of an envelope.
+    record_check_in:       { fn: handleRecordCheckIn,     roles: [ROLES.RECORDER], kind: 'write', lock: true },
     set_final_deadline:    { fn: handleSetFinalDeadline,  roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
 
     // --- agents & users ---
@@ -127,6 +131,7 @@ function actionMeta() {
 
     deadline_status:        { group: 'Books',   label: 'See the check-in and final dates' },
     roll_check_in:          { group: 'Books',   label: 'Move the check-in date on a month', danger: true },
+    record_check_in:        { group: 'Books',   label: 'Record that a seller has reported' },
     set_final_deadline:     { group: 'Books',   label: 'Change the final deadline', danger: true },
 
     settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },

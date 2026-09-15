@@ -141,6 +141,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   set_ticket_ceiling: { group: 'Books', label: 'Change the planned size of the raffle' },
   deadline_status: { group: 'Books', label: 'See the check-in and final dates' },
   roll_check_in: { group: 'Books', label: 'Move the check-in date on a month', danger: true },
+  record_check_in: { group: 'Books', label: 'Record that a seller has reported' },
   set_final_deadline: { group: 'Books', label: 'Change the final deadline', danger: true },
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
   report_outstanding: { group: 'Money', label: 'Who still owes money' },
@@ -220,6 +221,11 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // --- the two deadlines ---
   deadline_status: { roles: null, kind: 'read', fn: deadlines.deadlineStatus },
   roll_check_in: { roles: ADMIN_ONLY, kind: 'bulk', fn: deadlines.rollCheckIn },
+  // A recorder too: this is the person standing at the table when the seller
+  // walks up with a bag of counterfoils, and a report that has to wait for an
+  // organiser to be free is a report that gets written on the back of an
+  // envelope instead.
+  record_check_in: { roles: ['recorder'], kind: 'write', fn: deadlines.recordCheckIn },
   set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline },
 
   // --- reports ---

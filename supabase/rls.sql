@@ -95,6 +95,7 @@ alter table audit_log     enable row level security;
 alter table book_history  enable row level security;
 alter table permissions   enable row level security;
 alter table pending_approvals enable row level security;
+alter table check_in_reports enable row level security;
 alter table winners       enable row level security;
 
 -- Nothing below grants INSERT, UPDATE or DELETE to anybody. Writes go through
@@ -342,8 +343,9 @@ grant select on config_readable to authenticated;
 
 -- ============ EVERYTHING ELSE STAYS SHUT ============
 --
--- app_users, audit_log, permissions, pending_approvals, winners and
--- book_history get NO select policy, so row security denies every browser read.
+-- app_users, audit_log, permissions, pending_approvals, winners, book_history
+-- and check_in_reports get NO select policy, so row security denies every
+-- browser read.
 -- They are reachable only through the Edge Function, which applies the
 -- super-admin rules the interface depends on — who may see the audit log, who
 -- may see the allowlist, and the fact that an ordinary admin is never shown the
@@ -351,14 +353,14 @@ grant select on config_readable to authenticated;
 -- is not attempted here.
 
 revoke all on app_users, audit_log, permissions, pending_approvals, winners,
-              book_history from authenticated;
+              book_history, check_in_reports from authenticated;
 
 -- And from anon, which is the role a request with no session gets. Row security
 -- already returns nothing to it, so this changes no outcome today — it is here
 -- so that adding a policy later for some other reason cannot accidentally open
 -- these to an unauthenticated caller.
 revoke all on app_users, audit_log, permissions, pending_approvals, winners,
-              book_history, tickets, books, agents, config from anon;
+              book_history, check_in_reports, tickets, books, agents, config from anon;
 
 -- Re-granted after the revoke above, which would otherwise take it back.
 grant select on config to authenticated;
