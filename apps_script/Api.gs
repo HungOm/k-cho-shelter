@@ -374,6 +374,10 @@ function handleWhoami(payload, user) {
       finalDeadline: isoDay_(cfgDate_(cfg, 'FINAL_DEADLINE')),
       eventName: cfg.EVENT_NAME || '',
       orgName: cfg.ORG_NAME || '',
+      // The organiser's mark, by URL. Blank means no mark rather than somebody
+      // else's — see Logo.vue. Small is optional and only ever a size choice.
+      orgLogo: cfg.ORG_LOGO || '',
+      orgLogoSmall: cfg.ORG_LOGO_SMALL || '',
       projectCode: cfg.PROJECT_CODE || '',
       drawDate: cfg.DRAW_DATE || ''
     }

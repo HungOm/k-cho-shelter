@@ -327,6 +327,10 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
       currency: cfg.CURRENCY ?? 'RM',
       eventName: cfg.EVENT_NAME ?? '',
       orgName: cfg.ORG_NAME ?? '',
+      // The organiser's mark, by URL. Blank means no mark rather than somebody
+      // else's — see Logo.vue. Small is optional and only ever a size choice.
+      orgLogo: cfg.ORG_LOGO ?? '',
+      orgLogoSmall: cfg.ORG_LOGO_SMALL ?? '',
       projectCode: cfg.PROJECT_CODE ?? '',
       // Through dayStart, never raw. A value that arrived from a date-shaped
       // spreadsheet cell is a full timestamp string, and the client compares
