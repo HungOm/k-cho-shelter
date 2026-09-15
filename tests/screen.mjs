@@ -10,6 +10,13 @@
  * The template half and the driving idea are shelter-ticket-inventory-tracker's;
  * this file is its work with the script-only path folded back in.
  *
+ * WHAT THE CHILD STUBS DROP, because it is a property of this harness and not
+ * of any test using it: child components render their SLOTS and not their
+ * PROPS. `<Empty>no books yet</Empty>` shows its sentence; `<Empty title="No
+ * books yet">` and `<Bi text="Cancel">` render nothing at all. An assertion
+ * aimed at a prop therefore fails looking exactly like a broken screen. Aim at
+ * slot content, or stub that child specifically.
+ *
  * WHY EITHER EXISTS: a helper can be correct, thoroughly tested, and never
  * called. That has happened four times here in two days — a byte-sniff never
  * invoked, a sell guard no screen consulted, applyBrand never applied, and a
@@ -126,4 +133,28 @@ export async function renderScreen(componentPath, storeStub, { props = {}, drive
   const html = await renderToString(createSSRApp(driven))
   cleanup()
   return html
+}
+
+/**
+ * What a PERSON reads — tags and attributes removed.
+ *
+ * shelter-ticket-inventory-tracker's, and it closes a real hole in both our
+ * files. Asserting /JOHN/ on raw HTML was satisfied by a WhatsApp href; deleting
+ * the seller's name from the visible table left the test green. The same was
+ * true here: removing the seller from the refusal sentence passed, because the
+ * name also sits in the sheet's subtitle attribute.
+ *
+ * Rendering gets you what the browser builds. Stripping gets you what somebody
+ * actually sees, and that is what an assertion about a screen is nearly always
+ * about.
+ */
+export function visibleText(html) {
+  return String(html)
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
