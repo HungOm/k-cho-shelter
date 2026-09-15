@@ -8,7 +8,7 @@
  * those blank, so the two look very different in the missing-contact report.
  */
 import { ref, computed } from 'vue'
-import { state, api, toast, loadDelta, refresh, isAdmin } from '../../lib/store.js'
+import { state, api, toast, loadDelta, refresh, isAdmin, bookBlock } from '../../lib/store.js'
 import { phoneDigits } from '../../lib/search.js'
 import { money } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
@@ -34,8 +34,36 @@ const count = computed(() => {
 const tickets = computed(() => count.value * (cfg.value?.ticketsPerBook || 0))
 const amount = computed(() => tickets.value * (cfg.value?.ticketPrice || 0))
 const tooMany = computed(() => count.value > 20)
+
+/**
+ * Books in this range that this person cannot sell from.
+ *
+ * The same rule the database enforces, asked before the form is submitted
+ * rather than after. Without it a helper types a range, fills in the buyer,
+ * presses the button and is refused — having already done all the work and
+ * committed to the sale in front of whoever is paying.
+ *
+ * Named, not counted. "3 books are out with a seller" sends somebody back to
+ * the grid to work out which; naming them is the difference between a refusal
+ * and an instruction.
+ */
+const blocked = computed(() => {
+  const a = parseInt(from.value, 10)
+  if (isNaN(a) || !count.value || tooMany.value) return []
+  const b = parseInt(to.value || from.value, 10)
+  const lo = Math.min(a, isNaN(b) ? a : b)
+  const out = []
+  for (let n = lo; n < lo + count.value; n++) {
+    const num = bookNum(String(n))
+    const book = state.books.find(x => x.book === num)
+    const why = bookBlock(book)
+    if (why) out.push(`${num} — ${why}`)
+  }
+  return out
+})
 const ok = computed(() =>
-  count.value > 0 && !tooMany.value && name.value.trim() && phoneDigits(phone.value).length >= 7)
+  count.value > 0 && !tooMany.value && !blocked.value.length &&
+  name.value.trim() && phoneDigits(phone.value).length >= 7)
 
 function bookNum(raw) {
   const d = String(raw).replace(/\D/g, '')
@@ -133,6 +161,12 @@ async function sell() {
       <button v-if="result" class="btn primary block" @click="emit('sold')">Done</button>
       <template v-else>
         <button class="btn" @click="emit('close')">Cancel</button>
+    <div v-if="blocked.length" class="note bad">
+      <b>Not here to sell:</b>
+      <div v-for="b in blocked" :key="b" class="small">{{ b }}</div>
+      <div class="small">A book out with a seller has to be marked back first.</div>
+    </div>
+
         <button class="btn primary" :disabled="busy || !ok" @click="sell">
           {{ busy ? 'Saving…' : `Sell · ${money(amount, cfg.currency)}` }}
         </button>

@@ -140,7 +140,23 @@ export function whereIs(ticket) {
  * stale book list must never be what decides a sale.
  */
 export function sellBlock(ticket) {
-  const b = whereIs(ticket)
+  return bookBlock(whereIs(ticket))
+}
+
+/**
+ * Why this BOOK cannot be sold from right now, in a few words, or null.
+ *
+ * The same rule as sellBlock and deliberately the same function, because a
+ * ticket's answer and its book's answer must never differ — that is the shape
+ * of bug this repo has produced five times, two halves of one fact drifting.
+ * sellBlock is now this with a ticket's book looked up first.
+ *
+ * Mirrors what the database refuses in sell_books and sell_book_whole: out with
+ * a seller, and you are neither that seller nor an organiser transcribing what
+ * they reported. A courtesy only — the backend refuses regardless — so that
+ * somebody finds out before pressing rather than after.
+ */
+export function bookBlock(b) {
   if (!b) return null
   if (['Settled', 'Lost', 'Void'].includes(b.status)) return `book is ${b.status.toLowerCase()}`
   if (b.status !== 'Out') return null
