@@ -36,7 +36,7 @@ import {
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
 import * as deadlines from './deadlines.ts'
-import { today } from './deadlines.ts'
+import { dayStart, today } from './deadlines.ts'
 import * as people from './people.ts'
 import * as reports from './reports.ts'
 import * as approvals from './approvals.ts'
@@ -322,9 +322,13 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
       eventName: cfg.EVENT_NAME ?? '',
       orgName: cfg.ORG_NAME ?? '',
       projectCode: cfg.PROJECT_CODE ?? '',
-      drawDate: cfg.DRAW_DATE ?? '',
-      checkInDate: cfg.CHECK_IN_DATE ?? '',
-      finalDeadline: cfg.FINAL_DEADLINE ?? '',
+      // Through dayStart, never raw. A value that arrived from a date-shaped
+      // spreadsheet cell is a full timestamp string, and the client compares
+      // these against today as plain text — where that string sorts ABOVE a
+      // real day, so a date months past reads as still ahead.
+      checkInDate: dayStart(cfg.CHECK_IN_DATE ?? ''),
+      finalDeadline: dayStart(cfg.FINAL_DEADLINE ?? ''),
+      drawDate: dayStart(cfg.DRAW_DATE ?? ''),
     },
   }
 }
