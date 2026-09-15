@@ -19,7 +19,8 @@
  * raffle. Contain rather than cover, because a logo cropped to fill a square
  * loses the part that was doing the identifying.
  */
-import { reject, bare, drawSquare, ACCEPTED, SIZES, MAX_SOURCE } from '../src/lib/logofile.js'
+import { reject, rejectBytes, sniffType, bare, drawSquare, toPayload,
+         ACCEPTED, SIZES, MAX_SOURCE } from '../src/lib/logofile.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -51,6 +52,38 @@ ok(reject(file('image/png', 'l.png', MAX_SOURCE + 1)) !== null, 'over the limit 
 ok(/\d+ MB/.test(reject(file('image/png', 'l.png', 9 * 1024 * 1024))),
    'and told how big it actually was, in a unit somebody recognises')
 ok(reject(file('image/png', 'l.png', MAX_SOURCE)) === null, 'exactly the limit is allowed')
+
+console.log('and the bytes, which are the only part that is not a claim')
+{
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]
+  const JPEG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]
+  const WEBP = [0x52, 0x49, 0x46, 0x46, 9, 9, 9, 9, 0x57, 0x45, 0x42, 0x50]
+  const SVG = [...'<svg xmlns="ht'].map(ch => ch.charCodeAt(0))
+  const XML = [...'<?xml version'].map(ch => ch.charCodeAt(0))
+
+  ok(sniffType(PNG) === 'image/png', 'a PNG is recognised by its signature')
+  ok(sniffType(JPEG) === 'image/jpeg', 'and a JPEG')
+  ok(sniffType(WEBP) === 'image/webp', 'and a WebP, whose marker is at byte 8')
+  ok(sniffType(SVG) === null && sniffType(XML) === null, 'an SVG is not any of them')
+  ok(sniffType([]) === null && sniffType(null) === null, 'and nothing is nothing')
+
+  // RIFF alone is not WebP — it is also WAV and AVI. Checking only the first
+  // four bytes would accept an audio file as a logo.
+  ok(sniffType([0x52, 0x49, 0x46, 0x46, 9, 9, 9, 9, 0x57, 0x41, 0x56, 0x45]) === null,
+     'RIFF alone is not enough — WAVE is not WebP')
+  // A truncated PNG signature must not pass on its first few bytes.
+  ok(sniffType([0x89, 0x50, 0x4e]) === null, 'half a PNG signature is not a PNG')
+
+  ok(rejectBytes('image/png', PNG) === null, 'a PNG called a PNG is fine')
+  const renamed = rejectBytes('image/png', SVG)
+  ok(/not a PNG, JPEG or WebP inside/.test(renamed || ''),
+     'an SVG renamed .png is caught on content, not on what it claims')
+  ok(/save it as a PNG/i.test(renamed || ''), 'and told what to do')
+  const wrong = rejectBytes('image/png', JPEG)
+  ok(/named as image\/png but is really image\/jpeg/.test(wrong || ''),
+     'a genuine picture under the wrong name says exactly that, not "unreadable"')
+  ok(rejectBytes('IMAGE/PNG', PNG) === null, 'the declared type is compared case-insensitively')
+}
 
 console.log('the base64 arrives bare')
 ok(bare('data:image/png;base64,AAAB') === 'AAAB', 'the data: prefix is stripped')
@@ -89,6 +122,49 @@ ok(SIZES.big === 192 && SIZES.small === 96, 'two sizes, and the small one is gen
 ok(SIZES.small < SIZES.big, 'so the small file is not the big one under a second name')
 ok(!ACCEPTED.includes('image/svg+xml'), 'SVG is not on the accepted list either')
 ok(ACCEPTED.length === 3, 'and the list has not quietly grown')
+
+console.log('and toPayload actually uses all of it')
+{
+  // Testing the parts and not the assembly is how a check gets built, passes,
+  // and never runs: removing the sniff call from toPayload left every
+  // assertion above green.
+  const PNGSIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4, 5, 6, 7, 8]
+  const SVGSIG = [...'<svg xmlns="http'].map(ch => ch.charCodeAt(0))
+  const fake = (bytes, type = 'image/png', name = 'logo.png') => ({
+    type, name, size: 4096,
+    slice: () => ({ arrayBuffer: async () => new Uint8Array(bytes).buffer })
+  })
+
+  let decoded = 0
+  globalThis.URL.createObjectURL = () => 'blob:x'
+  globalThis.URL.revokeObjectURL = () => {}
+  globalThis.Image = class {
+    set src(_v) { decoded++; setTimeout(() => this.onload?.(), 0) }
+    get naturalWidth() { return 300 } get naturalHeight() { return 300 }
+  }
+  globalThis.document = { createElement: () => ({
+    width: 0, height: 0,
+    getContext: () => ({ drawImage: () => {} }),
+    toDataURL: () => 'data:image/png;base64,QQQQ'
+  }) }
+
+  const good = await toPayload(fake(PNGSIG))
+  ok(good.contentType === 'image/png', 'a real PNG comes back as PNG')
+  ok(good.data === 'QQQQ' && good.dataSmall === 'QQQQ', 'with both sizes, bare')
+
+  let caught = ''
+  try { await toPayload(fake(SVGSIG, 'image/png', 'logo.png')) } catch (e) { caught = e.message }
+  ok(/not a PNG, JPEG or WebP inside/.test(caught),
+     'an SVG renamed .png with a png type is stopped BY toPayload, not just by the helper')
+
+  const before = decoded
+  try { await toPayload(fake(SVGSIG)) } catch { /* expected */ }
+  ok(decoded === before, 'and stopped before the browser is asked to decode it')
+
+  let byName = ''
+  try { await toPayload(fake(PNGSIG, 'image/png', 'x.svg')) } catch (e) { byName = e.message }
+  ok(/SVG/.test(byName), 'the label checks still run first, so a .svg name never reaches the bytes')
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
