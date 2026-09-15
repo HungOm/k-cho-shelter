@@ -93,7 +93,7 @@ var CONFIG_DEFAULTS = [
   ['TICKET_START', '1', 'First ticket number. LOCKED after setup.'],
   ['TICKET_DIGITS', '5', 'Zero padding, e.g. 5 gives KS-00001. LOCKED after setup.'],
   ['TOTAL_TICKETS', '10000', 'How many ticket rows EXIST. Not the same as how many are in '
-    + 'play — see ACTIVE_TICKETS. Only the owner can raise it, and only upwards, on the '
+    + 'play — see ACTIVE_TICKETS. Only the System Admin can raise it, and only upwards, on the '
     + '"Make more tickets" screen. Never lower it by hand: every ticket above the new number '
     + 'stops existing, including ones already sold, and nothing reports an error.'],
   ['TICKETS_PER_BOOK', '10', 'Tickets in one physical book. LOCKED after setup.'],
@@ -107,7 +107,7 @@ var CONFIG_DEFAULTS = [
     + 'late. It is a checkpoint, not the end: after each check move it on the "Deadlines" '
     + 'screen, which steps it a month at a time and stops at FINAL_DEADLINE.'],
   ['FINAL_DEADLINE', '', 'The last day books and money can come back, e.g. 2026-12-06. '
-    + 'This one does not move on its own and only the owner can change it. The '
+    + 'This one does not move on its own and only the System Admin can change it. The '
     + 'check-in date can never pass it, and the draw is not ready until it has passed.'],
   ['DEFAULT_DUE_DAYS', '30', 'Fallback return period, used only for a raffle with no '
     + 'CHECK_IN_DATE and no FINAL_DEADLINE still ahead.'],

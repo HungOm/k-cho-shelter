@@ -404,8 +404,8 @@ function seedBootstrapAdmin_() {
       if (String(existing[i][0]).trim().toLowerCase() === email) return;
     }
   }
-  sheet.appendRow([email, 'Owner', ROLES.ADMIN, true, '', '', 'setup', new Date()]);
-  Logger.log('Added ' + email + ' as the owner.');
+  sheet.appendRow([email, 'System Admin', ROLES.ADMIN, true, '', '', 'setup', new Date()]);
+  Logger.log('Added ' + email + ' as the System Admin.');
 }
 
 // ============ BACKUP ============
