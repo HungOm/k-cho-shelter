@@ -19,33 +19,57 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# TWO WAYS IN, because this runs in two places now.
+#
+# On a laptop it is linked: the project ref sits in supabase/.temp and the keys
+# in supabase/.env.local, and nothing about that changes. On a scheduled runner
+# there is no link and no .env.local, so the database is named outright by
+# SUPABASE_DB_URL and the REST credentials come from the environment. The
+# difference is confined to these few lines; everything below is the same
+# backup either way, including the refusal at the end.
+DB_URL="${SUPABASE_DB_URL:-}"
 REF="${SUPABASE_PROJECT_REF:-$(cat supabase/.temp/project-ref 2>/dev/null || true)}"
-if [ -z "$REF" ]; then
-  echo "No project ref. Run: supabase link --project-ref <ref>" >&2
+if [ -z "$DB_URL" ] && [ -z "$REF" ]; then
+  echo "No database. Either run: supabase link --project-ref <ref>" >&2
+  echo "or set SUPABASE_DB_URL to the connection string." >&2
   exit 1
+fi
+
+if [ -n "$DB_URL" ]; then
+  DUMP=(supabase db dump --db-url "$DB_URL")
+  WHERE="$REF${REF:+ }via SUPABASE_DB_URL"
+else
+  DUMP=(supabase db dump --linked)
+  WHERE="$REF"
 fi
 
 STAMP="$(date +%Y-%m-%d-%H%M)"
 OUT="backup/$STAMP"
 mkdir -p "$OUT"
 
-echo "Backing up $REF"
+echo "Backing up ${WHERE:-the linked project}"
 echo
 
 # Schema and data separately. The schema is worth keeping beside the data
 # because a restore into an empty project needs both, and a schema that has
 # drifted from the dump is the thing that turns a restore into an afternoon.
 echo "  schema..."
-supabase db dump --linked -f "$OUT/schema.sql"
+"${DUMP[@]}" -f "$OUT/schema.sql"
 
 echo "  data..."
-supabase db dump --linked --data-only -f "$OUT/data.sql"
+"${DUMP[@]}" --data-only -f "$OUT/data.sql"
 
 # A plain CSV of the one thing that matters most, readable without Postgres.
 # If everything else fails, this is the file that still lets somebody telephone
 # the winner — openable in Excel on any machine, by anybody.
 echo "  entries (csv)..."
-set -a; . supabase/.env.local; set +a
+# Local keys if they are there, otherwise whatever the runner was given. A
+# missing .env.local is not an error here — on a runner it is the normal case.
+if [ -f supabase/.env.local ]; then set -a; . supabase/.env.local; set +a; fi
+if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SECRET_KEY:-}" ]; then
+  echo "No SUPABASE_URL / SUPABASE_SECRET_KEY — cannot write the CSV." >&2
+  exit 1
+fi
 curl -s "$SUPABASE_URL/rest/v1/tickets?select=number,status,buyer_name,buyer_phone,buyer_zone,sold_by_agent,amount,sold_at&status=in.(Sold,Donated)&order=idx" \
   -H "apikey: $SUPABASE_SECRET_KEY" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
   -H "Accept: text/csv" -o "$OUT/sold-tickets.csv"
@@ -70,6 +94,10 @@ echo
 echo "This folder holds people's names and telephone numbers. Keep it off the"
 echo "repository and off shared drives."
 echo
+# Named on stdout in a form a workflow can read, so whatever runs this next
+# does not have to guess which timestamp it chose.
+if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "dir=$OUT" >> "$GITHUB_OUTPUT"; fi
+
 echo "To restore into an empty project:"
 echo "  psql \"\$DB_URL\" -f $OUT/schema.sql"
 echo "  psql \"\$DB_URL\" -f $OUT/data.sql"

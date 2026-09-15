@@ -1,0 +1,143 @@
+# Takes a backup of the raffle every week, without anybody remembering to.
+#
+# WHY THIS EXISTS. The free Supabase plan takes no automatic backups at all.
+# Everything about this raffle that cannot be reconstructed lives in one
+# Postgres database: who bought which ticket, and how to telephone them. Lose
+# it and the draw cannot be run — not "is inconvenient to run", cannot be run,
+# because there is no way left to tell a winner they have won. Until now the
+# only defence was somebody remembering to run supabase/backup.sh, which is a
+# defence right up to the week nobody does.
+#
+# AND WHY IT IS NOT A PLAIN ARTIFACT UPLOAD, which is what the audit's backlog
+# line asked for. A dump of this database is every buyer's name and telephone
+# number, most of them refugees. A workflow artifact is readable by anybody
+# with read access to the repository — and this repository publishes a GitHub
+# Pages site, which on a free account means it is public, which means read
+# access is everybody. "Retained privately" is not a property an artifact has
+# here; it is a property the file has to carry itself.
+#
+# So the dump is encrypted to the organiser's public key before it is ever
+# handed to the artifact store, and the plaintext never leaves the runner. The
+# runner holds only a PUBLIC key: it can seal a backup and cannot open one, so
+# whoever gets hold of the artifact — or the runner, or this repository — still
+# cannot read a single telephone number.
+#
+# AND IF THAT KEY IS NOT SET UP, THIS FAILS RATHER THAN FALLING BACK. A plain
+# upload is exactly the accident this is written to prevent, so the job refuses
+# before it takes the dump, not after. The same instinct as backup.sh refusing
+# to call a near-empty file a backup: a backup that leaks is worse than no
+# backup, because it also costs somebody their safety.
+#
+# WHAT TO SET UP, once, by somebody with repository admin:
+#
+#   1. Make a key pair on a machine that is NOT this one and keep the private
+#      half off the internet:
+#        gpg --quick-generate-key "K'Cho raffle backups" default default never
+#        gpg --armor --export "K'Cho raffle backups" > backup-key.pub
+#   2. Repository secrets (Settings → Secrets and variables → Actions):
+#        BACKUP_GPG_PUBLIC_KEY   the contents of backup-key.pub
+#        SUPABASE_DB_URL         the Postgres connection string
+#        SUPABASE_URL            the project URL, for the CSV
+#        SUPABASE_SECRET_KEY     the sb_secret_ key, for the CSV
+#   3. To read a backup later:
+#        gpg --decrypt raffle-backup-<date>.tar.gz.gpg > raffle-backup.tar.gz
+#
+# Without step 2 the job fails loudly every week, which is the correct
+# behaviour for a backup nobody has finished setting up.
+
+name: Weekly backup
+
+on:
+  schedule:
+    # 19:00 UTC Sunday — 03:00 Monday in Asia/Singapore, the raffle's own
+    # calendar. Quiet hours there, and a failure is waiting to be read on a
+    # Monday morning rather than lost in a weekend nobody looks at.
+    - cron: '0 19 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # BEFORE THE DUMP, NOT AFTER. Checking afterwards would mean the
+      # plaintext already exists on the runner when we discover we cannot seal
+      # it, and the only safe thing left to do would be to throw it away — so
+      # the check that decides whether this is allowed to happen runs first.
+      - name: Refuse to take a backup that cannot be sealed
+        env:
+          KEY: ${{ secrets.BACKUP_GPG_PUBLIC_KEY }}
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          missing=
+          [ -z "$KEY" ] && missing="$missing BACKUP_GPG_PUBLIC_KEY"
+          [ -z "$DB" ] && missing="$missing SUPABASE_DB_URL"
+          if [ -n "$missing" ]; then
+            echo "REFUSING TO TAKE A BACKUP. Missing secrets:$missing" >&2
+            echo >&2
+            echo "This job will not dump the database until it can encrypt the" >&2
+            echo "result. The dump is every buyer's name and telephone number," >&2
+            echo "and a workflow artifact is readable by anybody who can read" >&2
+            echo "this repository. See the comment at the top of this file for" >&2
+            echo "the one-time setup." >&2
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Take the backup
+        id: take
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: bash supabase/backup.sh
+
+      # Sealed to a key this runner does not hold the other half of, then the
+      # plaintext is removed in the same step — so there is no window in which
+      # a later step, or a failure that uploads the workspace, could publish it.
+      - name: Seal it
+        id: seal
+        env:
+          KEY: ${{ secrets.BACKUP_GPG_PUBLIC_KEY }}
+          DIR: ${{ steps.take.outputs.dir }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEY" | gpg --batch --import
+          RECIPIENT=$(gpg --list-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+          [ -n "$RECIPIENT" ] || { echo "No usable key in BACKUP_GPG_PUBLIC_KEY" >&2; exit 1; }
+
+          OUT="raffle-backup-$(basename "$DIR").tar.gz.gpg"
+          tar -czf - -C "$(dirname "$DIR")" "$(basename "$DIR")" \
+            | gpg --batch --yes --trust-model always --encrypt --recipient "$RECIPIENT" \
+                  --output "$OUT"
+
+          # The plaintext goes now, while we are still the only thing running.
+          rm -rf "$DIR"
+
+          # A sealed file that is somehow tiny is the same lie backup.sh
+          # refuses to tell, wearing an encrypted coat.
+          SIZE=$(wc -c < "$OUT")
+          [ "$SIZE" -gt 1000 ] || { echo "REFUSING: the sealed backup is $SIZE bytes." >&2; exit 1; }
+          echo "file=$OUT" >> "$GITHUB_OUTPUT"
+          echo "Sealed $OUT ($SIZE bytes) to $RECIPIENT"
+
+      # ONLY THE SEALED FILE. The path is a single named file rather than a
+      # directory, so nothing unencrypted can be swept in by a glob that
+      # matched more than whoever wrote it expected.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raffle-backup
+          path: ${{ steps.seal.outputs.file }}
+          retention-days: 90
+          if-no-files-found: error
