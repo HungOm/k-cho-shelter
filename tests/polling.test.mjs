@@ -24,6 +24,7 @@ globalThis.localStorage = {
 globalThis.indexedDB = undefined
 
 import { readFileSync } from 'node:fs'
+import { pollInterval, POLL_LIVE, POLL_ALONE } from '../src/lib/nudge.js'
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
@@ -83,7 +84,25 @@ ok(/function startPolling[\s\S]{0,200}poll\(\)\n\s+pollTimer = setInterval/.test
 ok(/removeEventListener\('visibilitychange', onVisibility\)/.test(app) &&
    /stopPolling\(\)/.test(app.slice(app.indexOf('onUnmounted(() =>'))),
    'and it is torn down on unmount')
-ok(/const POLL_MS = 30_000/.test(app), 'thirty seconds — a raffle, not a trading floor')
+/*
+ * The interval is no longer a constant, and the reason strengthens the original
+ * point rather than replacing it.
+ *
+ * Thirty seconds was chosen because this is a raffle, not a trading floor, and
+ * a hundred phones asking twelve times a minute all day is somebody's mobile
+ * data. A live nudge makes the timer a safety net for what a socket cannot
+ * cover — Realtime unavailable, a captive portal, a phone asleep through six
+ * sales — so five minutes is right. With no channel it is the only way anything
+ * is learnt, so thirty stands.
+ *
+ * Asserted through the module rather than by grepping for a number, so the rule
+ * is tested where it is decided.
+ */
+ok(/pollInterval\(nudgeStatus\)/.test(app), 'the interval follows what the socket is doing')
+ok(pollInterval('live') === POLL_LIVE && POLL_LIVE === 5 * 60 * 1000,
+   'five minutes with a live channel — a raffle, not a trading floor')
+ok(pollInterval('failed') === POLL_ALONE && POLL_ALONE === 30_000,
+   'and thirty seconds when the timer is the only mechanism there is')
 
 console.log('and the list under the badge reloads with it')
 {

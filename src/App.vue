@@ -11,6 +11,7 @@ import { state, setConfig, refresh, go, toast, isAdmin, bootFromCache, forgetCac
 import { tokenIsStale, LS } from './lib/api.js'
 import { api, configure, isSupabase } from './lib/backend.js'
 import * as sbAuth from './lib/supabaseAuth.js'
+import { attach as attachNudge, pollInterval } from './lib/nudge.js'
 
 import AppShell from './components/AppShell.vue'
 import SignIn from './components/SignIn.vue'
@@ -121,6 +122,7 @@ async function reset() {
 }
 
 async function signOut() {
+  if (stopNudge) { stopNudge(); stopNudge = null }
   try { window.google?.accounts?.id?.disableAutoSelect() } catch {}
   // Supabase keeps its own refresh token in storage. Dropping the cache without
   // dropping that would sign them straight back in on the next load, which is
@@ -308,6 +310,10 @@ async function bootSupabase() {
   // Every token from here on, including the refreshed ones nobody asked for.
   stopSession = await sbAuth.onSession(session => {
     configure({ idToken: session?.access_token || '' })
+    // Re-authorise the socket on every token, including the refreshed ones
+    // nobody asked for: a private channel is authorised from the socket's own
+    // token, and a stale one goes quiet rather than erroring.
+    if (session?.access_token) listenForChanges(session.access_token)
   })
 
   // Deliberately no 'ping' first, unlike the Apps Script path: the function
@@ -360,6 +366,26 @@ async function exchangeForSupabaseSession(res) {
   }
 }
 
+/**
+ * Subscribe to "something changed", and re-time the poll around it.
+ *
+ * Torn down and rebuilt on each token rather than patched, because a channel
+ * authorised with a token that has since expired is the silent case — it stays
+ * connected and hears nothing, which looks exactly like a quiet raffle.
+ */
+async function listenForChanges(token) {
+  if (stopNudge) { stopNudge(); stopNudge = null }
+  const sb = await sbAuth.getClient()
+  if (!sb) return
+  stopNudge = attachNudge(sb, token, () => { poll() }, s => {
+    if (s === nudgeStatus) return
+    nudgeStatus = s
+    // The interval depends on the status, so it has to be re-timed when the
+    // status moves — otherwise a failed channel keeps the five-minute gap.
+    if (phase.value === 'ready') startPolling()
+  })
+}
+
 async function supabaseSignIn() {
   try {
     phase.value = 'waiting'
@@ -390,14 +416,24 @@ async function supabaseSignIn() {
  * cost of hearing about an approval half a minute late is nothing; the cost of
  * a hundred devices asking twelve times a minute all day is somebody's data.
  */
-const POLL_MS = 30_000
+/*
+ * The interval is what the nudge changes, not the polling itself.
+ *
+ * A live channel makes this a safety net for the cases a socket cannot cover —
+ * Realtime unavailable, a captive portal, a phone asleep through six sales — so
+ * five minutes is right. Without one it is the only way the app learns anything,
+ * so it stays at thirty seconds. Removing it either way would mean a dropped
+ * socket is indistinguishable from a quiet raffle.
+ */
+let nudgeStatus = 'off'
+let stopNudge = null
 let pollTimer = null
 
 function startPolling() {
   stopPolling()
   if (document.visibilityState !== 'visible') return
   poll()
-  pollTimer = setInterval(poll, POLL_MS)
+  pollTimer = setInterval(poll, pollInterval(nudgeStatus))
 }
 
 function stopPolling() {
