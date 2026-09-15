@@ -7,10 +7,54 @@ import { inspectRange, bookNumber } from '../../lib/books.js'
 import { asDay, todayDay, dayFromNow } from '../../lib/days.js'
 import Sheet from '../ui/Sheet.vue'
 import FreeRuns from '../ui/FreeRuns.vue'
+import AgentForm from './AgentForm.vue'
 
 const emit = defineEmits(['close', 'issued'])
 
 const agentId = ref(state.agents[0]?.id || '')
+
+/**
+ * Adding a seller without losing the handover you were in the middle of.
+ *
+ * Books get given out at a table, and the person in front of you is often
+ * somebody who is not on the list yet. Sending them to the Sellers screen means
+ * closing this, typing the name, coming back, and re-entering the book range
+ * and the date — so in practice the range gets retyped from memory, or the
+ * books are handed over and recorded later, which is how a book ends up with
+ * nobody's name against it.
+ *
+ * The form opens ON TOP of this one rather than replacing it, so every field
+ * here survives, and the seller it creates is selected on the way back.
+ */
+const NEW_SELLER = '__new__'
+const adding = ref(false)
+
+/**
+ * The sentinel never reaches the model, and that is deliberate.
+ *
+ * With v-model, letting it in and setting it back leaves the BOX still reading
+ * "+ Add a new seller" while the value underneath says JOHN: the model went
+ * A1 -> sentinel -> A1, so it matches what Vue last rendered and no patch is
+ * scheduled. The state was right and the screen was wrong, which a test that
+ * reads the state cannot see — a browser found it.
+ *
+ * So the element is driven by hand. The DOM is put back in the same turn as the
+ * choice, and agentId only ever holds a real seller.
+ */
+function pickSeller(el) {
+  if (el.value !== NEW_SELLER) { agentId.value = el.value; return }
+  el.value = agentId.value      // same turn, so the box never shows the sentinel
+  adding.value = true
+}
+
+async function sellerAdded(e) {
+  adding.value = false
+  // The list has to contain them before the box can point at them, and
+  // AgentForm's own refresh is not awaited — so wait for one here rather than
+  // setting an id that momentarily matches no option.
+  await refresh()
+  if (e?.agentId) agentId.value = e.agentId
+}
 const from = ref('')
 const to = ref('')
 const due = ref(defaultDue())
@@ -97,11 +141,15 @@ async function issue() {
   <Sheet title="Give out books" subtitle="Hand a run of books to one seller" @close="emit('close')">
     <div class="field">
       <label for="ia">Who is taking them? <span class="req">*</span></label>
-      <select id="ia" v-model="agentId">
+      <select id="ia" :value="agentId" @change="pickSeller($event.target)">
         <option v-for="a in state.agents.filter(x => x.active)" :key="a.id" :value="a.id">
           {{ a.name }}<template v-if="a.booksOut"> — holding {{ a.booksOut }}
             {{ a.booksOut === 1 ? 'book' : 'books' }}</template>
         </option>
+        <!-- Last, and in the raffle's own colour: it is a different KIND of
+             choice from the names above it, and a list of people with an action
+             hidden among them is how somebody hands books to the wrong person. -->
+        <option :value="NEW_SELLER" class="newopt">+ Add a new seller…</option>
       </select>
     </div>
 
@@ -161,9 +209,16 @@ async function issue() {
         {{ busy ? 'Saving…' : `Give out ${count || ''}` }}
       </button>
     </template>
+    <!-- On top of this sheet, not instead of it: Sheet is fixed at z-index 60
+         and this one comes later in the DOM, so it paints over. Nothing here
+         unmounts, which is the whole point — the range and the date survive. -->
+    <AgentForm v-if="adding" @close="adding = false" @saved="sellerAdded" />
   </Sheet>
 </template>
 
 <style scoped>
+/* Native option styling is limited, but colour and weight carry. */
+.newopt { color: var(--brand); font-weight: 700; }
+
 .hint.warnish { color: var(--warn); }
 </style>
