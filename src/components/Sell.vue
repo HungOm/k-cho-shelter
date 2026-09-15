@@ -7,6 +7,7 @@
  * the keyboard: type, tab, type, tab, and a new row appears on its own.
  */
 import { ref, computed, nextTick } from 'vue'
+import { patchTickets } from '../lib/optimistic.js'
 import { state, api, toast, loadDelta, canWrite, sellBlock, isSold } from '../lib/store.js'
 import { phoneDigits, isDialable } from '../lib/search.js'
 import { money } from '../lib/format.js'
@@ -152,12 +153,34 @@ async function saveAll() {
   busy.value = true
   waited.value = 0
   ticker = setInterval(() => { waited.value += 1 }, 1000)
+
+  /*
+   * Shown before the server answers, and ONLY here.
+   *
+   * This screen is transcription after the fact — the buyer left an hour ago
+   * and these are stubs being typed up — so a row that has to go back is an
+   * annoyance rather than a lie told to somebody standing at the desk. Selling
+   * a ticket at a table is the opposite case and is deliberately excluded; see
+   * NEVER_OPTIMISTIC.
+   *
+   * The rows keep the values until the delta below replaces them with the
+   * server's, which is the reconciliation: the truth overwrites the guess.
+   */
+  const shown = patchTickets(state, sales.map(s2 => ({
+    number: s2.ticketNumber, status: 'Sold', name: s2.buyerName, phone: s2.buyerPhone
+  })))
+
   try {
     const res = await api('bulk_record_sales', { sales }, { reconcile: true })
+    shown.commit()
     rows.value = [blank()]
     toast(`${res.recorded} sales written down`, 'ok')
     loadDelta()
   } catch (err) {
+    // Every path out of here either commits or rolls back. A write that does
+    // neither leaves rows marked "saving" for ever, and a permanent pending
+    // state is a worse lie than a slow screen.
+    shown.rollback()
     if (err.code === 'WRITE_UNCONFIRMED') {
       await reconcile(sales)
     } else if (err.code === 'BATCH_REJECTED' && err.details?.failures) {
