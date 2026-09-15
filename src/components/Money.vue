@@ -126,7 +126,12 @@ function waLink(a) {
     <h1>Money</h1>
     <p class="muted">The system records money — it never touches it. Cash is handled in person.</p>
 
-    <div v-if="o" class="stats" style="margin-bottom:16px">
+    <!-- Not shown to somebody with no money of their own and no oversight role.
+         The figures were the whole raffle's takings, from transactions that were
+         not theirs; showing them zeroed instead would be honest and still
+         pointless. This screen is reachable at all only for a helper who also
+         carries books, and then it is their own line. -->
+    <div v-if="o && scope !== 'totals'" class="stats" style="margin-bottom:16px">
       <div class="stat"><div class="n">{{ moneyShort(o.expected, currency) }}</div><div class="l">Should have</div></div>
       <div class="stat"><div class="n">{{ moneyShort(o.collected, currency) }}</div><div class="l">Handed in</div></div>
       <div class="stat" :class="{ accent: o.outstanding > 0 }">
@@ -147,8 +152,9 @@ function waLink(a) {
       </div>
 
       <div v-else-if="scope === 'totals'" class="note info" style="margin-top:12px">
-        The totals above are the whole raffle. Who owes what is shown to the
-        organiser — it is the one part of this that names people.
+        Money is kept by the organiser. You are not holding any, so there is
+        nothing here for you — what you record as sold shows up on the Sell
+        screen and on the book it came from.
       </div>
 
       <div v-else-if="rows.length" class="tablewrap" style="margin-top:8px">

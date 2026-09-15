@@ -23,7 +23,23 @@ const SCREENS = [
   // A seller can now open this and see THEIR OWN line — what they have handed
   // in and what is still owed. The report scopes it; before, a seller had
   // nowhere in the app to find out what they owed.
-  { id: 'money',  icon: 'money', label: 'Money',   roles: ['admin', 'recorder', 'viewer', 'agent'] },
+  /*
+   * MONEY IS FOR WHOEVER IS CARRYING SOME.
+   *
+   * A helper records sales; they do not hold a seller's cash and do not settle
+   * a book. The screen was showing them the whole raffle's takings — money from
+   * transactions that were not theirs and that they can do nothing about — and
+   * `moneyScope` already had a name for that case, 'totals', which nobody had
+   * asked whether it should exist.
+   *
+   * An agent keeps it: they see their own line, which is what they owe.
+   * A viewer keeps it: read-only oversight is the whole point of the role.
+   * A helper without a seller record has neither a line of their own nor any
+   * business with everybody else's.
+   */
+  { id: 'money',  icon: 'money', label: 'Money',   roles: ['admin', 'viewer', 'agent'],
+    // A helper who ALSO carries books has a line of their own and keeps it.
+    alsoIf: (u) => u?.role === 'recorder' && !!u?.agentId },
   { id: 'draw',   icon: 'trophy', label: 'Draw',    roles: ['admin', 'recorder', 'viewer'] },
   { id: 'admin',  icon: 'gear', label: 'Setup',   roles: ['admin'] },
   // Super admin only, so it is filtered by more than role — see `visible`.
@@ -32,7 +48,8 @@ const SCREENS = [
 ]
 
 const visible = computed(() => SCREENS.filter(s =>
-  s.roles.includes(state.user?.role) && (!s.sup || state.user?.isSuperAdmin)))
+  (s.roles.includes(state.user?.role) || s.alsoIf?.(state.user)) &&
+  (!s.sup || state.user?.isSuperAdmin)))
 
 /**
  * Eight tabs overflow a phone: on a 390px screen the last two sit off-screen
