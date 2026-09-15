@@ -152,8 +152,28 @@ create policy tickets_read on tickets for select using (
  * So: every active row, and the buyer's details blanked on books this seller is
  * not carrying.
  */
+/*
+ * security_invoker = false is DECLARED, not inherited, and it is deliberate.
+ *
+ * Supabase's linter reports this view as SECURITY DEFINER. It is right, and the
+ * finding must not be actioned. RLS filters ROWS; it cannot mask COLUMNS, and
+ * everything below is column-level — the buyer's name, area and notes blanked
+ * on books this seller is not carrying, the telephone number reduced to its
+ * last three digits for a viewer. No policy can express any of that.
+ *
+ * Converting it to an invoker view means granting select on tickets, and
+ * tickets_read masks nothing: it restricts an AGENT to their own books and lets
+ * every recorder and viewer read every row. A viewer would then read real
+ * telephone numbers for the whole raffle straight off the base table. That is
+ * the hole 0974416 closed, and most of those numbers belong to refugees.
+ *
+ * So it is written down rather than left to the default, so that the next
+ * person to meet the lint finds a decision instead of an accident, and so that
+ * a change to the Postgres default cannot convert it silently. config_readable
+ * below is the contrasting case: it masks nothing, so it IS an invoker view.
+ */
 drop view if exists tickets_readable;
-create view tickets_readable as
+create view tickets_readable with (security_invoker = false) as
 select
   idx, number, book_idx,
   -- The book's NUMBER, not just its index. The app keys everything by book
@@ -364,26 +384,44 @@ grant select on agents_readable to authenticated;
 -- Read by everybody signed in: ticket numbering, price, currency, what is in
 -- play. None of it is sensitive and the app cannot draw a screen without it.
 
--- config is granted to authenticated AND policed, rather than reached only
--- through a definer function.
+-- config is policed by config_read, and read through config_readable.
 --
--- The first attempt relied on active_tickets() being security definer, and it
--- was not enough: a view running with owner rights still calls functions as the
--- CALLER unless the function itself is definer, so every view that asked how
--- many tickets are in play denied itself — reporting "permission denied for
--- table config" while the cause was a function two steps away. Depending on
--- that subtlety was the mistake; the grant removes the dependency.
+-- THE GRANT THAT USED TO SIT HERE WAS DEAD, and its comment argued for
+-- something that had not been true for a while. It said the grant removed the
+-- schema's dependency on active_tickets() being security definer — a real
+-- hazard, since a view running with owner rights still calls functions as the
+-- CALLER unless the function itself is definer, and every view asking how many
+-- tickets are in play once denied itself over exactly that. But the grant was
+-- revoked again by the blanket `revoke all on ... config from authenticated`
+-- further down this file, so the dependency was live regardless. It works
+-- because functions.sql DOES declare active_tickets() security definer.
 --
--- Safe to grant, because the policy below still limits it to somebody on the
--- allowlist, and because none of it is sensitive: ticket numbering, price,
--- currency, how many are in play. Every signed-in user needs most of it to draw
--- a single screen.
+-- Two dead grants are removed rather than moved: one here and one below whose
+-- comment claimed to be re-granting after a revoke that was `from anon`. The
+-- single live grant is at the bottom of this file, AFTER the revoke, where it
+-- cannot be taken back four lines later. Order is load-bearing in this file and
+-- the dead grants were the proof.
 drop policy if exists config_read on config;
 create policy config_read on config for select using (app_role() is not null);
-grant select on config to authenticated;
 
+/*
+ * AN INVOKER VIEW, unlike tickets_readable above, and the difference is the
+ * whole reason both are worth reading.
+ *
+ * Supabase's linter flags a view that runs with its owner's rights — which is
+ * every plain `create view`, since security_invoker is opt-in. On
+ * tickets_readable that property is load-bearing and cannot be removed; see the
+ * note there. Here it is not, because this view masks NOTHING. It is the config
+ * rows with the same condition the config_read policy already carries, so
+ * running as the caller and letting the policy decide gives the identical
+ * result — and the lint goes away honestly rather than being suppressed.
+ *
+ * It still drops the `notes` column, so the grant at the bottom of this file is
+ * column-level. A table-wide grant would hand every signed-in user a column
+ * this view exists to leave out.
+ */
 drop view if exists config_readable;
-create view config_readable as
+create view config_readable with (security_invoker = true) as
 select key, value from config where app_role() is not null;
 grant select on config_readable to authenticated;
 
@@ -409,13 +447,28 @@ revoke all on app_users, audit_log, permissions, pending_approvals, winners,
               book_history, check_in_reports, payments, ticket_history,
               tickets, books, agents, config from anon;
 
--- Re-granted after the revoke above, which would otherwise take it back.
-grant select on config to authenticated;
-
 -- The base tables are not readable directly either — only the views above,
 -- which is what keeps the masking from being optional.
 revoke all on tickets, books, agents, config from authenticated;
 grant select on tickets_readable, book_ledger, agents_readable, config_readable to authenticated;
+
+/*
+ * AFTER the revoke, and column-level. Both halves matter.
+ *
+ * AFTER, because a `grant select on config to authenticated` used to sit twenty
+ * lines above this and was silently undone by the revoke on the line before —
+ * the second of the two dead grants this file carried. A grant that runs before
+ * a blanket revoke of the same table is not a grant, and the comment beside it
+ * spent a paragraph reasoning from a privilege nobody had.
+ *
+ * COLUMN-LEVEL, because config_readable is an invoker view: the caller now
+ * needs select on what it reads, and what it reads is key and value. `notes` is
+ * the third column and the view drops it, so granting the table would widen
+ * what a browser can read while looking like plumbing. Row security is
+ * unaffected by a column grant — config_read still decides WHICH rows, this
+ * only decides which columns.
+ */
+grant select (key, value) on config to authenticated;
 
 
 -- ============ THE SERVER'S CLOCK ============

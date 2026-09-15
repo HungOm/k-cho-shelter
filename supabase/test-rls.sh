@@ -180,5 +180,42 @@ docker exec "$NAME" psql -U postgres -d kcho -q -c "update config set value='60'
 ok "$(AS 'admin@x.com' 'select count(*) from tickets_readable')" "60" "the whole raffle once released"
 
 echo
+echo "each view keeps the security property it was given"
+# Supabase's linter reports BOTH of these as SECURITY DEFINER views. One of the
+# two findings may be actioned and the other must not be, so the difference is
+# pinned here rather than left to whoever meets the lint next.
+#
+# config_readable masks nothing — it is the config rows under the same condition
+# config_read already carries — so it runs as the caller and the lint is
+# genuinely resolved. tickets_readable masks COLUMNS, which no policy can
+# express; converting it means granting select on tickets, and tickets_read does
+# not mask anything, so a viewer would read every buyer's real telephone number
+# off the base table. That is the hole 0974416 closed, and most of those numbers
+# belong to refugees. If somebody "fixes" that lint, this file says so.
+viewopt() {
+  docker exec "$NAME" psql -U postgres -d kcho -tAc \
+    "select coalesce(reloptions::text, '{}') from pg_class where relname='$1'"
+}
+ok "$(viewopt tickets_readable)" "{security_invoker=false}" \
+   "tickets_readable is still a definer view, deliberately"
+ok "$(viewopt config_readable)" "{security_invoker=true}" \
+   "config_readable runs as the caller, which is why its lint could be resolved"
+
+# The properties those settings exist to protect, asserted as behaviour and not
+# only as a flag — a reloption is a proxy, and the point is what a person reads.
+ok "$(AS 'view@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "••••101" \
+   "a viewer's number is still masked through the view"
+denied 'view@x.com' 'select buyer_phone from tickets' \
+   "and still unreachable off the base table"
+ok "$(AS 'admin@x.com' "select value from config_readable where key='TICKET_PRICE'")" "10" \
+   "config_readable still answers, now through the policy rather than its owner"
+ok "$(AS 'off@x.com' "select count(*) from config_readable")" "0" \
+   "and still refuses a switched-off account"
+# The grant behind the invoker view is column-level: config has a third column
+# the view drops, and a table-wide grant would have handed it over.
+denied 'admin@x.com' 'select notes from config' \
+   "config.notes stays out of reach — the grant names key and value only"
+
+echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
