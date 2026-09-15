@@ -27,7 +27,7 @@ const ROLES = computed(() => {
   // something an organiser can hand out.
   if (isSuper.value) {
     list.unshift({ v: 'admin', t: 'Organiser', d: 'Can do everything' })
-    list.unshift({ v: 'superadmin', t: 'Owner',
+    list.unshift({ v: 'superadmin', t: 'System Admin',
                    d: 'Everything an organiser can do, plus deciding who else signs in' })
   }
   return list

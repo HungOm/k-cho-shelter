@@ -66,21 +66,34 @@ for (const f of files) {
   ok(!hit, `${rel} — says "${hit?.[0]}"`)
 }
 
-console.log('and the word for the top is Owner')
-const fmt = readFileSync(join(here, '../src/lib/format.js'), 'utf8')
-ok(/superadmin: 'Owner'/.test(fmt), 'the role word is Owner')
-const shell = readFileSync(join(here, '../src/components/AppShell.vue'), 'utf8')
-ok(/isSuperAdmin\) return 'Owner'/.test(shell), 'and so is the footer under their name')
+console.log('and no screen still says the words it replaced')
+for (const f of files) {
+  const rel = f.slice(f.indexOf('/src/'))
+  if (EXEMPT.includes(rel)) { pass++; continue }
+  const v = visible(readFileSync(f, 'utf8'))
+  // "Owner" was the previous answer and "organiser" the one before that. Both
+  // read as correct to somebody who was not here for the two reversals, so the
+  // suite has to hold the current word rather than the last person's memory.
+  const hit = v.match(/\b[Oo]wner\b/)
+  ok(!hit, `${rel} still says "${hit?.[0]}"`)
+}
 
-console.log('an approval asks the owner, not the organiser')
+console.log('and the word for the top is System Admin')
+const fmt = readFileSync(join(here, '../src/lib/format.js'), 'utf8')
+ok(/superadmin: 'System Admin'/.test(fmt), 'the role word is System Admin')
+const shell = readFileSync(join(here, '../src/components/AppShell.vue'), 'utf8')
+ok(/isSuperAdmin\) return 'System Admin'/.test(shell),
+   'and so is the footer under their name')
+
+console.log('an approval asks the System Admin, not the organiser')
 const ask = readFileSync(join(here, '../src/components/modals/AskApproval.vue'), 'utf8')
-ok(/This needs the owner/.test(ask), 'the sheet is titled for the owner')
+ok(/This needs the System Admin/.test(ask), 'the sheet names who it needs')
 ok(!/the organiser to approve|Ask the organiser/.test(visible(ask)),
    'and nothing in it asks the organiser — the reader may BE one')
 
 console.log('Burmese has the new words too')
 const i18n = readFileSync(join(here, '../src/lib/i18n.js'), 'utf8')
-for (const key of ["'Owner'", "'Ask the owner'"]) {
+for (const key of ["'System Admin'", "'Ask the System Admin'"]) {
   ok(i18n.includes(key), `${key} is translated`)
 }
 
@@ -88,8 +101,8 @@ console.log('and the deadline notice names who can really change it')
 // set_final_deadline is sup:true, so an organiser could not change it and was
 // being told they could — wording that was also wrong.
 const dl = readFileSync(join(here, '../src/components/modals/Deadlines.vue'), 'utf8')
-ok(/Only the owner can change the final deadline/.test(dl),
-   'the final deadline is the owner\'s, and says so')
+ok(/Only the System Admin can change the final deadline/.test(dl),
+   'the final deadline is not an organiser\'s to move, and says so')
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

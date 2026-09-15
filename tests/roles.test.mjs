@@ -85,7 +85,8 @@ console.log('only an owner is offered the two roles that hand out access')
     const at = computed.indexOf(`v: ${open}`)
     ok(at > 0 && at < guard, `${open} stays available to any organiser`)
   }
-  ok(/t: 'Owner'/.test(computed), 'the owner option is called Owner, not superadmin')
+  ok(/t: 'System Admin'/.test(computed),
+     'the top option is called System Admin, not the wire word superadmin')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -132,7 +132,7 @@ function explain(err) {
       return 'That falls after the draw date. Everything has to be back before the draw, so ' +
              'move the draw first if the whole raffle is running later.'
     case 'SUPER_ADMIN_ONLY':
-      return 'Only the owner can change the final deadline. The check-in date is yours ' +
+      return 'Only the System Admin can change the final deadline. The check-in date is yours ' +
              'to move.'
     default:
       return err.message
@@ -177,7 +177,7 @@ function explain(err) {
 
       <div v-if="noFinal" class="note info">
         There is no final deadline yet, so the check-in date cannot be moved.
-        <template v-if="!isSuper">Ask the owner to set one.</template>
+        <template v-if="!isSuper">Ask the System Admin to set one.</template>
       </div>
 
       <!-- ---------------------------------------------------- the soft one -->
@@ -206,8 +206,8 @@ function explain(err) {
         same as the refusal banner: that one reported a working system as
         failing, this one explains a date they can already see.
       -->
-      <p v-if="isAdmin && !isSuper" class="muted small owner-note">
-        The final deadline is set by the owner. You can move the check-in date
+      <p v-if="isAdmin && !isSuper" class="muted small whosets-note">
+        The final deadline is set by the System Admin. You can move the check-in date
         as far as that, and no further.
       </p>
       <template v-if="isSuper">
@@ -256,7 +256,7 @@ function explain(err) {
 .d b { font-size: 1.15rem; display: block; margin: 2px 0; }
 .d small { color: var(--muted); font-size: .8rem; }
 .lead { margin: 14px 0 16px; }
-.owner-note { margin: 20px 0 0; }
+.whosets-note { margin: 20px 0 0; }
 .now { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 6px; }
 .now > div { background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 14px; }
 .now > div.bad b { color: var(--bad); }
