@@ -21,9 +21,7 @@
  * and nobody able to explain why.
  */
 import { ApiError, requireSuperAdmin, type AppUser } from './gate.ts'
-import {
-  collectedByAgent, moneyScope, round2, showsSellerNames, totalsAgents,
-} from './money.ts'
+import { collectedByAgent, moneyScope, round2, visibleAgents } from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -796,16 +794,22 @@ export async function snapshotRound(ctx: Ctx, round: number, takenBy: string) {
  * WITH NO ROUND ASKED FOR, the rounds that have snapshots — which is how a
  * screen offers them without knowing in advance which rolls happened.
  *
- * SCOPED EXACTLY AS THE MONEY SCREEN IS, through the same two helpers rather
- * than a fourth rule of its own: an organiser sees every seller by name, a
- * seller sees their own line and nobody else's, a viewer sees the totals those
- * lines add to and no names, and a helper carrying no books gets neither —
- * a closed round has nothing to say about somebody who never owed anything.
+ * SCOPED THROUGH money.ts RATHER THAN BY A RULE OF ITS OWN: an organiser sees
+ * every seller by name, a seller sees their own line and nobody else's, and
+ * anybody carrying no books sees neither — a closed round has nothing to say
+ * about somebody who never owed anything.
+ *
+ * A VIEWER CURRENTLY SEES NOTHING HERE, which is the conservative half of a
+ * split money.ts has not finished making. `visibleAgents` answers "whose names
+ * may I see" and is being separated from "whose money is in my totals"; until
+ * the second one exists, this uses the first for both, so a viewer gets no
+ * lines and empty totals rather than somebody else's figures. Wrong in the
+ * harmless direction, and one line to widen once the split lands.
  */
 export async function readRoundSnapshot(
   p: Record<string, unknown>, user: AppUser, ctx: Ctx,
 ) {
-  const only = totalsAgents(user)
+  const only = visibleAgents(user)
   const scope = moneyScope(user)
 
   const { data: taken, error: takenErr } = await ctx.supabaseAdmin
@@ -881,10 +885,19 @@ export async function readRoundSnapshot(
     },
   }
 
-  // The names go to exactly two people, the same two the debt table goes to.
+  /*
+   * The names go to exactly two people, the same two the debt table goes to.
+   *
+   * SPELLED AS WHAT IT IS, not as `scope !== 'totals'`. The negative form is
+   * what the money screens each wrote for themselves and it broke the moment a
+   * fourth scope existed — a helper fell through to the table branch and was
+   * handed the rows the split was made to keep from them. Naming the two that
+   * may see them cannot fail that way when a fifth arrives.
+   */
+  const named = scope === 'all' || scope === 'mine'
   return {
     round, rounds, scope, totals,
-    lines: showsSellerNames(scope) ? lines : [],
+    lines: named ? lines : [],
     takenAt: (rows ?? [])[0]?.taken_at ?? null,
   }
 }

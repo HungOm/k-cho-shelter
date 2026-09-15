@@ -257,12 +257,19 @@ console.log('12. a closed round is scoped exactly as the money screen is')
   eq(mine.lines[0].agentId, 'A001', 'their own')
   eq(mine.totals.then.outstanding, 30, 'and their own total')
 
-  // A viewer: the raffle's figures and nobody's name.
+  /*
+   * A viewer gets nothing here YET, and that is deliberate rather than
+   * finished. money.ts is midway through separating "whose names may I see"
+   * from "whose money is in my totals"; this reads the first for both, so a
+   * viewer is shown no lines and empty totals instead of somebody else's
+   * figures. The safe half of the split — widen it when the other half exists,
+   * and this assertion is where to change it.
+   */
   const viewer = { ...users.admin, role: 'viewer', isAdmin: false, agentId: null }
   const seen = await D.readRoundSnapshot({ round: 3 }, viewer, w.ctx)
   eq(seen.lines.length, 0, 'a viewer gets no names')
-  eq(seen.totals.then.outstanding, 30, 'and every seller\'s money in the total')
-  eq(seen.totals.sellers, 2, 'counted over all of them')
+  eq(seen.totals.then.outstanding, 0, 'and, for now, no figures either')
+  eq(seen.totals.sellers, 0, 'rather than somebody else\'s')
 
   // A helper carrying no books: neither. They never owed anything, so a closed
   // round has nothing to say about them.
