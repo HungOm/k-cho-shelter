@@ -214,7 +214,28 @@ function migrate_(dryRun, everything) {
     var cVals = cSheet.getRange(2, 1, cSheet.getLastRow() - 1, 2).getValues();
     for (var i = 0; i < cVals.length; i++) {
       if (!cVals[i][0]) continue;
-      cRows.push({ key: String(cVals[i][0]).trim(), value: String(cVals[i][1] === null ? '' : cVals[i][1]) });
+      /*
+       * A DATE CELL MUST LEAVE AS A PLAIN DAY.
+       *
+       * String() on a Sheets date cell gives "Tue Oct 14 2026 00:00:00
+       * GMT+0800 (Singapore Standard Time)". That reaches the other side as
+       * the config value, and every reader then has to cope: the server does,
+       * because dayStart handles it, but the browser string-compares it
+       * against today — and that string sorts ABOVE "2026-09-15", so a
+       * check-in date months past reads as still ahead. It also shows as an
+       * empty box in a date input, so an organiser hands out books with no due
+       * date and the shared check-in quietly stops applying.
+       *
+       * Normalised here rather than at each reader, because the next
+       * date-shaped setting to arrive would have the same problem.
+       */
+      var cv = cVals[i][1];
+      cRows.push({
+        key: String(cVals[i][0]).trim(),
+        value: (cv instanceof Date && !isNaN(cv.getTime()))
+          ? Utilities.formatDate(cv, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+          : String(cv === null ? '' : cv)
+      });
     }
   }
   out.push('config: ' + cRows.length);

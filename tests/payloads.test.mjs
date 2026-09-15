@@ -92,6 +92,46 @@ function carries(payload, paths, label) {
   }
 }
 
+console.log('every date whoami sends is a plain day, whatever the database holds')
+{
+  /*
+   * FIRST IN THIS FILE, deliberately: index.ts caches config for thirty
+   * seconds, so whichever call runs first decides what every later one sees.
+   * A test that sets up a world and then finds the previous world's values is
+   * not testing what it appears to.
+   *
+   * A config value that began life in a date-formatted spreadsheet cell reaches
+   * the database as "Tue Oct 14 2026 00:00:00 GMT+0800 (Singapore Standard
+   * Time)". The server copes, because dayStart handles it. The CLIENT does not:
+   * it string-compares these against today, and that string sorts ABOVE
+   * "2026-09-15", so a check-in date months past reads as still ahead. It also
+   * renders as an empty date input — so an organiser hands out books with no
+   * due date and the shared check-in quietly stops applying to them, which is
+   * the exact failure the deadline feature exists to prevent.
+   */
+  const ugly = 'Tue Oct 14 2026 00:00:00 GMT+0800 (Singapore Standard Time)'
+  const w = fakeDb({
+    config: baseConfig({ CHECK_IN_DATE: ugly, FINAL_DEADLINE: ugly, DRAW_DATE: ugly }),
+    app_users: [{ email: 'boss@x.com', name: 'Boss', role: 'admin', status: 'active', active: true, agent_id: null }],
+  })
+  const req = new Request('https://x/api', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'whoami', payload: {} }),
+  })
+  const res = await api.fetch(req, { ...w.ctx, userClaims: { id: 'u1', email: 'boss@x.com' } })
+  const cfg = (await res.json()).data.config
+
+  for (const k of ['checkInDate', 'finalDeadline', 'drawDate']) {
+    ok(/^\d{4}-\d{2}-\d{2}$/.test(cfg[k]), `${k} is a plain day, not "${cfg[k]}"`)
+  }
+  // And the right day — normalising to the wrong one would be worse than not
+  // normalising at all, because it would look correct.
+  ok(cfg.checkInDate === '2026-10-14', `and the correct one (${cfg.checkInDate})`)
+
+  // The comparison that was actually wrong.
+  ok(!(cfg.checkInDate > '2026-12-31'), 'so it no longer sorts above every real date')
+}
+
 // ============ the one that cost an afternoon ============
 console.log('report_draw_ready carries what the home screen computes its overview from')
 {
