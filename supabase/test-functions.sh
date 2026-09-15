@@ -49,7 +49,8 @@ docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/funct
 # 5 books of 10. Books 1-3 with A001, 4-5 with A002.
 P "insert into config(key,value) values
      ('TOTAL_TICKETS','50'),('TICKETS_PER_BOOK','10'),('TICKET_PRICE','10'),('ACTIVE_TICKETS','');
-   insert into agents(agent_id,name) values ('A001','Pa Thang'),('A002','Ma Nu');
+   insert into agents(agent_id,name,phone) values
+     ('A001','Pa Thang','0125551111'),('A002','Ma Nu','0125552222');
    insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
      select g,'Book-'||lpad(g::text,4,'0'),'KS-'||lpad(((g-1)*10+1)::text,5,'0'),
             'KS-'||lpad((g*10)::text,5,'0'),'Out', case when g<=3 then 'A001' else 'A002' end
@@ -211,6 +212,26 @@ has "$(P "select note from book_history where book_idx=3 order by at desc limit 
 echo "a book that does not exist"
 r=$(P "select settle_book('Book-9999','[]'::jsonb,0,false,null,false,'me@x.com','')")
 has "$r" "BOOK_NOT_FOUND" "is refused by name"
+
+echo "a settled book records the SELLER as the contact"
+# A seller selling from their own book keeps their own buyers: they hand back
+# the money, and whether they pass the names on is their business. So the
+# contact on these tickets is the person who can actually be telephoned about
+# them — marked as the seller, not passed off as the buyer.
+P "update books set status='Out', held_by_agent='A001', declared_sold=null, amount_due=null, amount_paid=null where idx=2;
+   update tickets set status='Available', buyer_name='', buyer_phone='', source='' where book_idx=2" >/dev/null
+r=$(P "select settle_book('Book-0002','[\"KS-00019\"]'::jsonb,90,false,null,true,'me@x.com','')")
+ok "$(P "select buyer_name from tickets where number='KS-00011'")" "Pa Thang (seller)" "the seller is named, and marked as the seller"
+ok "$(P "select buyer_phone from tickets where number='KS-00011'")" "0125551111" "with their phone, so a winner can be traced through them"
+# The marker is the point. Without it the winners list would say the seller
+# BOUGHT it, and the difference between "knows the buyer" and "bought it" is
+# exactly what somebody needs on the day.
+ok "$(P "select buyer_name like '% (seller)' from tickets where number='KS-00011'")" "t" "the record says which it is"
+ok "$(P "select buyer_name from tickets where number='KS-00019'")" "" "a ticket handed back carries nobody"
+
+echo "and that is enough contact for the draw"
+ok "$(P "select count(*) from tickets where book_idx=2 and status='Sold' and buyer_phone=''")" "0" "no settled ticket is left with no way to reach anybody"
+
 
 echo
 echo "$pass passed, $fail failed"

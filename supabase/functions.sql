@@ -311,6 +311,8 @@ declare
   b record;
   price numeric;
   unsold_numbers text[];
+  seller_name text;
+  seller_phone text;
   declared integer;
   v_amount_due numeric;
   bad text;
@@ -364,11 +366,37 @@ begin
       source = '', recorded_by = p_user
     where book_idx = b.idx and upper(number) = any(unsold_numbers) and status <> 'Void';
 
-    -- Everything else in the book sold. Anything already Sold or Donated keeps
-    -- the buyer somebody took the trouble to write down.
+    /*
+     * Everything else in the book sold, and THE SELLER IS THE CONTACT.
+     *
+     * A seller selling from their own book keeps their own buyers. They hand
+     * back the money; whether they pass the names on is their business. So the
+     * contact recorded against these tickets is the seller, because that is who
+     * can actually be telephoned about them.
+     *
+     * MARKED, not copied. buyer_name carries "(seller)" so the record says
+     * which it is. Writing the seller's bare name would be writing something
+     * false — if one of these wins, the winners list would say the seller
+     * bought it, and the difference between "the seller knows the buyer" and
+     * "the seller bought it themselves" is exactly what somebody would need on
+     * the day. One honest field beats two that disagree.
+     *
+     * Anything already Sold or Donated keeps the buyer somebody took the
+     * trouble to write down. A real buyer is never overwritten by this.
+     */
+    select name, phone into seller_name, seller_phone
+      from agents where agent_id = b.held_by_agent;
+
     update tickets set
       status = 'Sold', sold_by_agent = b.held_by_agent, amount = price,
-      payment_status = 'Paid', sold_at = now(), source = 'settlement', recorded_by = p_user
+      payment_status = 'Paid', sold_at = now(), source = 'settlement', recorded_by = p_user,
+      buyer_name = case
+        when coalesce(buyer_name, '') <> '' then buyer_name
+        when coalesce(seller_name, '') <> '' then seller_name || ' (seller)'
+        else '' end,
+      buyer_phone = case
+        when coalesce(buyer_name, '') <> '' then buyer_phone
+        else coalesce(seller_phone, '') end
     where book_idx = b.idx
       and upper(number) <> all(unsold_numbers)
       and status not in ('Sold','Donated','Void');
