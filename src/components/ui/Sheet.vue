@@ -75,6 +75,15 @@ onUnmounted(() => {
   border-top: 1px solid var(--border);
 }
 .foot :deep(.btn) { flex: 1; }
+/*
+ * A way OUT is not an action, and should not be given an action's share of the
+ * row. `flex: 1` gave every footer button the same width, so four controls came
+ * out identical whatever their weight — a ghost class changed the colour and
+ * left the geometry, which is most of what makes a row of buttons read as a row
+ * of equals. This one takes only its label's width and sits apart from the
+ * things that do something.
+ */
+.foot :deep(.btn.ghost) { flex: 0 0 auto; margin-left: auto; }
 
 @media (min-width: 700px) {
   .backdrop { align-items: center; }
