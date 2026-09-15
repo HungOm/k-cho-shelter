@@ -7,7 +7,7 @@
  * the keyboard: type, tab, type, tab, and a new row appears on its own.
  */
 import { ref, computed, nextTick } from 'vue'
-import { state, api, toast, loadDelta, canWrite } from '../lib/store.js'
+import { state, api, toast, loadDelta, canWrite, sellBlock } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
 import { money } from '../lib/format.js'
 import { resolveTicketNumber } from '../lib/books.js'
@@ -72,6 +72,10 @@ function resolved(r) {
   if (!t) return { bad: true, text: 'no such ticket' }
   if (t.status === 'Sold') return { bad: true, text: 'already sold' }
   if (t.status === 'Void') return { bad: true, text: 'cancelled' }
+  // A ticket in a book that is not here will be refused on save, and the whole
+  // batch goes with it. Better to say so on the line that caused it.
+  const blocked = sellBlock(t)
+  if (blocked) return { bad: true, text: blocked }
   return { bad: false, text: t.number }
 }
 

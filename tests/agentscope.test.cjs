@@ -108,16 +108,40 @@ console.log('a seller sees their own buyers and nobody else\'s');
   eq(leaked.length, 0, 'not one telephone number outside their own book');
 }
 
-// ============ 2. everybody else is unchanged ============
-console.log('organisers and recorders still see everything');
+// ============ 2. an organiser sees everything; a helper does not ============
+console.log('an organiser sees every buyer, a helper only their own entries');
 {
   world();
-  for (const [who, label] of [[admin, 'an organiser'], [recorder, 'a recorder']]) {
-    const rows = handleReadSnapshot({}, who).rows;
-    eq(col(byNumber(rows, 'KS-0011'), 'Buyer_Phone'), '0125550011', label + ' sees every buyer');
-  }
+  // Somebody has to be able to run the draw, and that is the organiser.
+  const a = handleReadSnapshot({}, admin).rows;
+  eq(col(byNumber(a, 'KS-0011'), 'Buyer_Phone'), '0125550011', 'an organiser sees every buyer');
+
+  /*
+   * A helper used to be here too, and this assertion used to read "a recorder
+   * sees every buyer". It was changed deliberately, not because it broke: a
+   * helper is usually a volunteer at a desk for one afternoon, and a desk shift
+   * is not a reason to hold several thousand refugees' telephone numbers.
+   *
+   * The fixture records every ticket with no Recorded_By, so none of them is
+   * this helper's — which is the case that matters. They can still read the
+   * number, the status and who sold it.
+   */
+  const r = handleReadSnapshot({}, recorder).rows;
+  const row = byNumber(r, 'KS-0011');
+  eq(col(row, 'Buyer_Phone'), '', 'a helper does not see a buyer they did not record');
+  eq(col(row, 'Buyer_Name'), '', 'nor the name');
+  eq(col(row, 'Status'), TICKET_STATUS.SOLD, 'but the status is still readable');
+  eq(col(row, 'Ticket_Number'), 'KS-0011', 'and the number');
+  eq(r.length, 30, 'and no rows are missing — no holes in the grid');
+
+  // The entries they DID write down stay theirs to work with.
+  T._data[11][tm.Recorded_By - 1] = recorder.email;
+  global.__clearCache();
+  const own = byNumber(handleReadSnapshot({}, recorder).rows, 'KS-0011');
+  eq(col(own, 'Buyer_Phone'), '0125550011', 'a sale they recorded keeps its buyer');
 
   // A viewer keeps the partial mask they always had.
+  world();
   const v = handleReadSnapshot({}, viewer).rows;
   const p = col(byNumber(v, 'KS-0011'), 'Buyer_Phone');
   ok(p.indexOf('\u2022') !== -1, 'a viewer still gets the phone partly hidden');

@@ -13,7 +13,7 @@ globalThis.localStorage = {
   removeItem: k => mem.delete(k)
 }
 
-const { state, reindex, whereIs, bookHolders, searchResults } = await import('../src/lib/store.js')
+const { state, reindex, whereIs, bookHolders, searchResults, sellBlock } = await import('../src/lib/store.js')
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -105,6 +105,40 @@ console.log('the dangerous case: unsold, but not actually available')
   ok(lookAvailable > trulyFree,
     'the difference is the eight sitting in a book somebody is carrying')
   state.filterStatus = ''
+}
+
+/*
+ * The screen's copy of the rule the backend enforces.
+ *
+ * It exists so a helper is told while typing rather than after keying in
+ * thirty stubs, and it is only a courtesy — the backend refuses either way.
+ * But a courtesy that disagrees with the rule is worse than none: it either
+ * blocks a sale that would have worked, or promises one that will not. So the
+ * same cases are checked here as in whoholds.test.mjs.
+ */
+console.log('the screen says the same thing the backend will')
+{
+  const inBag   = state.tickets[4]    // KS-0005, book 1, out with KUI
+  const shelf   = state.tickets[14]   // book 2, in the office
+  const back    = state.tickets[24]   // book 3, handed back
+  const lost    = state.tickets[34]   // book 4
+
+  state.user = { role: 'recorder', agentId: null }
+  ok(/KUI/.test(sellBlock(inBag) || ''), 'a helper is told who has the book')
+  eq(sellBlock(shelf), null, 'and is not blocked on a book in the office')
+  eq(sellBlock(back), null, 'nor on one that has been handed back')
+  ok(/lost/.test(sellBlock(lost) || ''), 'but is blocked on a lost book')
+
+  state.user = { role: 'admin', agentId: null }
+  eq(sellBlock(inBag), null, 'an organiser may write down what the seller reported')
+  ok(/lost/.test(sellBlock(lost) || ''), 'but a lost book is closed to them too')
+
+  state.user = { role: 'agent', agentId: 'A001' }
+  eq(sellBlock(inBag), null, 'the seller holding it is not blocked')
+  state.user = { role: 'agent', agentId: 'A002' }
+  eq(sellBlock(inBag), 'not your book', 'another seller is, in their own words')
+
+  state.user = null
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

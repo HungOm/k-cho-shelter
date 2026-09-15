@@ -47,7 +47,7 @@ const num = (v: unknown, d: number) => {
 async function loadTicket(ctx: Ctx, number: string) {
   const { data, error } = await ctx.supabaseAdmin
     .from('tickets')
-    .select('idx,number,status,version,book_idx,buyer_name,buyer_phone,books(status,held_by_agent)')
+    .select('idx,number,status,version,book_idx,buyer_name,buyer_phone,books(number,status,held_by_agent)')
     .eq('number', number)
     .maybeSingle()
   if (error) throw new ApiError('QUERY_FAILED', error.message)
@@ -61,11 +61,34 @@ async function loadTicket(ctx: Ctx, number: string) {
  * path ends up skipping one — handleVoidTicket skipped this entire gate in the
  * Sheet version and nobody noticed until a test went looking.
  */
+
+/**
+ * Books whose tickets are frozen.
+ *
+ * Lost belongs here with Settled and Void. Marking a book lost voids its unsold
+ * tickets, which covers most of it — but not a ticket that was already sold and
+ * is later corrected, and not a ticket voided then corrected back. A lost book
+ * is paper nobody can find; nothing written against it is worth trusting.
+ */
+const CLOSED_BOOKS = ['Settled', 'Void', 'Lost']
+
+/** Who is holding a book, in words a volunteer recognises. */
+async function agentLabel(ctx: Ctx, agentId: string | null): Promise<string> {
+  if (!agentId) return 'a seller'
+  const { data } = await ctx.supabaseAdmin
+    .from('agents').select('name').eq('agent_id', agentId).maybeSingle()
+  return String(data?.name ?? '').trim() || agentId
+}
+
 async function assertCanWrite(
   ctx: Ctx,
   user: AppUser,
-  ticket: { idx: number; number: string; books?: { status: string; held_by_agent: string | null } | null },
-  opts: { force?: boolean } = {},
+  ticket: {
+    idx: number
+    number: string
+    books?: { number?: string; status: string; held_by_agent: string | null } | null
+  },
+  opts: { force?: boolean; claiming?: boolean } = {},
 ) {
   const cfg = await config(ctx)
   const generated = num(cfg.TOTAL_TICKETS, 0)
@@ -84,8 +107,8 @@ async function assertCanWrite(
   const book = ticket.books
   if (!book) throw new ApiError('BOOK_NOT_FOUND', 'That ticket has no book.', null, 404)
 
-  // Settled and void books are frozen unless an admin explicitly forces it.
-  if (book.status === 'Settled' || book.status === 'Void') {
+  // Closed books are frozen unless an admin explicitly forces it.
+  if (CLOSED_BOOKS.includes(book.status)) {
     if (!(user.isAdmin && opts.force)) {
       throw new ApiError(
         'BOOK_CLOSED',
@@ -98,6 +121,47 @@ async function assertCanWrite(
   if (user.role === 'agent') {
     if (!user.agentId || book.held_by_agent !== user.agentId) {
       throw new ApiError('NOT_YOUR_BOOK', 'That book is not issued to you.', null, 403)
+    }
+  }
+
+  /*
+   * You can only sell paper you can hand to the buyer.
+   *
+   * A book that is Out is in a seller's bag, possibly an hour away. Claiming
+   * one of its tickets from the office gives the buyer a number and no ticket,
+   * and leaves the seller free to sell that same number to somebody standing in
+   * front of them. Two people hold it; one of them loses an argument at the
+   * draw.
+   *
+   * So a book that is out is writable by the person holding it, and by an
+   * organiser — who is not selling but WRITING DOWN what the seller reported,
+   * which is ordinary and has to keep working. A helper cannot: get the book
+   * marked returned first, and then it is paper on the desk like any other.
+   *
+   * That leaves an organiser able to do the damaging thing. The second half of
+   * the rule closes it: a sale out of a book that is Out is CREDITED TO THE
+   * HOLDER, always (see sellTicket). The money lands on that seller's balance
+   * and settlement reconciles it against the stubs they hand back. A sale
+   * invented at the desk does not stay quiet — it turns up as a discrepancy
+   * with a name on it.
+   *
+   * Only for claiming a ticket. Correcting a spelling, releasing a hold or
+   * voiding on a book that happens to be out is office work and stays open.
+   *
+   * A book that is Out with nobody recorded should not exist; it is refused
+   * rather than guessed at in the permissive direction.
+   */
+  if (opts.claiming && book.status === 'Out') {
+    const holdsIt = !!user.agentId && book.held_by_agent === user.agentId
+    if (!holdsIt && !(user.isAdmin && book.held_by_agent)) {
+      const who = await agentLabel(ctx, book.held_by_agent)
+      throw new ApiError(
+        'BOOK_WITH_SELLER',
+        `Book ${book.number ?? ''} is out with ${who}, so its tickets are not here to sell. ` +
+          'If the book is back, ask an organiser to mark it returned first.',
+        { book: book.number ?? '', heldBy: book.held_by_agent ?? '' },
+        403,
+      )
     }
   }
 }
@@ -173,7 +237,7 @@ export async function sellTicket(p: Record<string, unknown>, user: AppUser, ctx:
   const { name, phone } = requireBuyer(p)
 
   const t = await loadTicket(ctx, number)
-  await assertCanWrite(ctx, user, t, { force: !!p.force })
+  await assertCanWrite(ctx, user, t, { force: !!p.force, claiming: true })
 
   if (SOLD.includes(t.status)) {
     throw new ApiError(
@@ -188,12 +252,23 @@ export async function sellTicket(p: Record<string, unknown>, user: AppUser, ctx:
 
   const cfg = await config(ctx)
   const donated = !!p.donated
+
+  /*
+   * The other half of the out-with-a-seller rule.
+   *
+   * If the book is in somebody's bag then they handed the ticket over, whoever
+   * typed it in afterwards. Crediting anyone else would be false, and it is
+   * what makes the organiser's transcription safe: the money goes onto the
+   * holder's balance, where settlement checks it against the stubs.
+   */
+  const heldBy = t.books?.status === 'Out' ? (t.books.held_by_agent ?? null) : null
+
   const row = await updateIfUnchanged(ctx, t.idx, num(p.expectedVersion, t.version), {
     status: donated ? 'Donated' : 'Sold',
     buyer_name: name,
     buyer_phone: phone,
     buyer_zone: String(p.buyerZone ?? ''),
-    sold_by_agent: p.agentId ?? user.agentId ?? null,
+    sold_by_agent: heldBy ?? p.agentId ?? user.agentId ?? null,
     amount: donated ? 0 : Number(p.amount ?? cfg.TICKET_PRICE ?? 10),
     payment_status: String(p.paymentStatus ?? 'Paid'),
     sold_at: new Date().toISOString(),
@@ -212,7 +287,7 @@ export async function reserveTicket(p: Record<string, unknown>, user: AppUser, c
   if (!name) throw new ApiError('MISSING_FIELD', 'Buyer name is required.')
 
   const t = await loadTicket(ctx, number)
-  await assertCanWrite(ctx, user, t, { force: !!p.force })
+  await assertCanWrite(ctx, user, t, { force: !!p.force, claiming: true })
   if (t.status !== 'Available') {
     throw new ApiError('NOT_AVAILABLE', `Ticket ${number} is ${t.status.toLowerCase()}.`)
   }
@@ -255,12 +330,24 @@ export async function correctTicket(p: Record<string, unknown>, user: AppUser, c
   const t = await loadTicket(ctx, number)
   await assertCanWrite(ctx, user, t, { force: !!p.force })
 
-  // The hole that was found in the Sheet version: Status was a freely patchable
-  // field here, so an ordinary admin could void a ticket through a correction
-  // and it logged as CORRECT rather than VOID — the audit trail did not show a
-  // ticket leaving the draw. Both values are refused outright.
-  if (p.status !== undefined) {
-    const next = String(p.status)
+  /*
+   * The hole that was found in the Sheet version: Status was a freely patchable
+   * field here, so an ordinary admin could void a ticket through a correction
+   * and it logged as CORRECT rather than VOID — the audit trail did not show a
+   * ticket leaving the draw. Both values are refused outright.
+   *
+   * READ BOTH SPELLINGS, for the same reason the patch map below accepts both —
+   * and this line is the more important of the two. Accepting `Status` as an
+   * alias while guarding only `status` would have reopened exactly the hole
+   * this guard was written to close, and silently: a non-organiser sending
+   * Status:'Void' would have walked straight past it into the patch. A widened
+   * input and an un-widened check is how a fix becomes a vulnerability.
+   */
+  const nextStatus = p.status !== undefined ? p.status
+                   : p.Status !== undefined ? p.Status
+                   : undefined
+  if (nextStatus !== undefined) {
+    const next = String(nextStatus)
     if (next === 'Void') {
       throw new ApiError('USE_VOID_ACTION',
         'Voiding a ticket is done with the void action, not a correction.')
@@ -276,10 +363,33 @@ export async function correctTicket(p: Record<string, unknown>, user: AppUser, c
 
   const patch: Record<string, unknown> = { recorded_by: user.email }
   const before: Record<string, unknown> = {}
+  /*
+   * BOTH SPELLINGS, and that is a fix rather than a kindness.
+   *
+   * Apps Script's correction reads the SHEET COLUMN NAMES — Buyer_Name,
+   * Buyer_Phone — because it was writing to a spreadsheet row. This port read
+   * camelCase. Both read camelCase for a SALE, so selling worked and only
+   * correcting was broken, which is why it survived the switch to Supabase as
+   * the default: "Fix this" had been dead for every user since, failing with
+   * NOTHING_TO_DO — "No changed fields were supplied" — a sentence that is
+   * true, useless, and blames the person typing rather than the wire.
+   *
+   * An ignored write is worse than a bad read. A bad read shows as an empty
+   * screen and somebody reports it; an ignored write looks exactly like a write
+   * refused for a good reason.
+   *
+   * The aliases stay after the client stops sending the sheet names. The
+   * contract this port promised was "same action names, same payloads", and a
+   * backend that accepts only one of two spellings its twin accepts has not
+   * kept it.
+   */
   const allowed = {
     buyerName: 'buyer_name', buyerPhone: 'buyer_phone', buyerZone: 'buyer_zone',
     paymentStatus: 'payment_status', notes: 'notes', agentId: 'sold_by_agent',
     status: 'status',
+    Buyer_Name: 'buyer_name', Buyer_Phone: 'buyer_phone', Buyer_Zone: 'buyer_zone',
+    Payment_Status: 'payment_status', Notes: 'notes', Sold_By_Agent: 'sold_by_agent',
+    Status: 'status',
   } as const
 
   for (const [from, col] of Object.entries(allowed)) {

@@ -30,6 +30,20 @@ function heldByAgent_(bookNumber) {
 }
 
 /**
+ * The holder of a book that is OUT, or ''.
+ *
+ * The second half of the out-with-a-seller rule. If the book is in somebody's
+ * bag then they handed the ticket over, whoever typed it in afterwards, so the
+ * sale is credited to them and not to whoever the payload names. That is what
+ * makes an organiser transcribing a seller's report safe: the money lands on
+ * the seller's balance, where settlement checks it against their stubs.
+ */
+function heldByAgentIfOut_(bookNumber) {
+  var b = getBookOwnerMap()[String(bookNumber).toUpperCase()];
+  return b && b.status === BOOK_STATUS.OUT ? (b.agentId || '') : '';
+}
+
+/**
  * Writes named columns of a book row.
  *
  * Unlike Tickets, the Books sheet ends in four ARRAYFORMULA columns
@@ -662,7 +676,8 @@ function handleSellBook(payload, user) {
   for (var i = 0; i < books.length; i++) {
     var range = ticketRangeOfBook(books[i], cfg);
     if (!range) throw new ApiError('BOOK_NOT_FOUND', 'Book ' + books[i] + ' does not exist.');
-    assertCanWriteTicket(user, ticketNumberAt(range.first, cfg), { force: payload.force });
+    assertCanWriteTicket(user, ticketNumberAt(range.first, cfg),
+      { force: payload.force, claiming: true });
     plan.push({ book: books[i], range: range });
   }
 
@@ -674,7 +689,8 @@ function handleSellBook(payload, user) {
     var count = r.last - r.first + 1;
     var startRow = r.first + 1;
     var values = sheet.getRange(startRow, 1, count, lastCol).getValues();
-    var agentId = payload.agentId || heldByAgent_(plan[p].book) || user.agentId || '';
+    var agentId = heldByAgentIfOut_(plan[p].book) || payload.agentId ||
+                  heldByAgent_(plan[p].book) || user.agentId || '';
 
     for (var v = 0; v < values.length; v++) {
       var num = String(values[v][map.Ticket_Number - 1] || '').trim();

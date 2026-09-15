@@ -11,23 +11,25 @@
  * the helpers are wrong — which is the point. The raffle's calendar is
  * Asia/Singapore and the server's is not.
  */
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { setEnv, loadModule, cleanup } from './loadts.mjs'
 
-// The module is TypeScript; strip the types rather than add a build step for
-// four pure functions.
-const src = readFileSync(new URL('../supabase/functions/api/deadlines.ts', import.meta.url), 'utf8')
-const pure = src
-  .slice(src.indexOf("const ZONE"), src.indexOf('export async function configDate'))
-  .replace(/export function/g, 'export function')
-  .replace(/: string\b/g, '').replace(/: number\b/g, '').replace(/: unknown\b/g, '')
-  .replace(/: Date\b/g, '').replace(/\bconst asDay = \(d\) =>/, 'const asDay = (d) =>')
-
-const dir = mkdtempSync(join(tmpdir(), 'dates-'))
-const file = join(dir, 'dates.mjs')
-writeFileSync(file, pure)
-const { today, dayStart, addMonths, daysBetween } = await import('file://' + file)
+/*
+ * Loaded through the real transpiler, not a regex.
+ *
+ * This file used to slice the pure helpers out of deadlines.ts and strip the
+ * types with .replace(/: string\b/g, ''). That worked until somebody wrote a
+ * function returning string[]: the pattern ate the `: string` and left the
+ * brackets, producing `function f(a, b)[] {` — a SyntaxError in a temp file,
+ * from a test that had nothing to do with the change. The person who hit it
+ * had no reason to suspect a date test.
+ *
+ * Every other suite here loads handlers through esbuild, which is already a
+ * dependency and actually parses TypeScript. There was never a reason for this
+ * one to be different, and the reason given — "rather than add a build step for
+ * four pure functions" — was wrong on its own terms: the build step existed.
+ */
+setEnv({ SUPER_ADMIN_EMAIL: 'boss@x.com' })
+const { today, dayStart, addMonths, daysBetween } = await loadModule('deadlines.ts')
 
 let pass = 0, fail = 0
 const eq = (g, w, what) => { String(g) === String(w) ? pass++ : (fail++, console.log(`  FAIL ${what}: got ${g}, want ${w}`)) }
@@ -111,4 +113,5 @@ console.log('the ordering the whole feature rests on')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
+cleanup()
 process.exit(fail ? 1 : 0)

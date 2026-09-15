@@ -166,6 +166,25 @@ class Query {
     return all.filter((r) => this.filters.every((f) => f(r)))
   }
 
+  /**
+   * A result the way PostgREST hands it back.
+   *
+   * .maybeSingle() after an UPDATE returns an object, not an array of one —
+   * which is what every handler here indexes into. The fake used to return the
+   * array on the write paths and the object on the read paths, so a handler
+   * could read `row.status` off a write, get undefined, and no test could tell:
+   * the assertion that would have caught it was reading the same undefined.
+   */
+  shaped(rows) {
+    if (!this.wantSingle) return { data: rows.map(copy), error: null }
+    if (rows.length === 0) {
+      return this.wantSingle === 'maybe'
+        ? { data: null, error: null }
+        : { data: null, error: { message: 'no rows returned' } }
+    }
+    return { data: copy(rows[0]), error: null }
+  }
+
   run() {
     const t = this.db.tables[this.table]
     if (!t) return { data: null, error: { message: `relation "${this.table}" does not exist` } }
@@ -183,14 +202,14 @@ class Query {
         out.push(fresh)
       }
       this.db.writes.push({ table: this.table, op: this.op, count: out.length })
-      return { data: this.returning ? out.map(copy) : null, error: null }
+      return this.returning ? this.shaped(out) : { data: null, error: null }
     }
 
     if (this.op === 'update') {
       const hit = this.rows()
       for (const r of hit) Object.assign(r, copy(this.payload))
       this.db.writes.push({ table: this.table, op: 'update', count: hit.length })
-      return { data: this.returning ? hit.map(copy) : null, error: null }
+      return this.returning ? this.shaped(hit) : { data: null, error: null }
     }
 
     if (this.op === 'delete') {

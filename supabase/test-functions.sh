@@ -94,6 +94,51 @@ ok "$(P "select count(*) from tickets where book_idx=4 and status='Sold'")" "0" 
 r=$(P "select sell_books('Book-0004',null,null,'Ma Nu','0125550100','',false,'b@x.com','agent','A002')")
 has "$r" '"sold": 10' "the agent holding it can sell it"
 
+echo "a book that is out with a seller is not the office's to sell"
+# The rule: you can only sell paper you can hand to the buyer. A book that is
+# Out is in somebody's bag, so a helper at the desk claiming one of its tickets
+# gives the buyer a number and no ticket — and leaves the seller free to sell
+# that same number in person. sell_books had NO check for this at all: the only
+# question it asked was whether the book existed.
+P "update books set status='Out', held_by_agent='A002' where idx=5;
+   update tickets set status='Available', buyer_name='', buyer_phone='' where book_idx=5" >/dev/null
+r=$(P "select sell_books('Book-0005',null,null,'X','0125550100','',false,'help@x.com','recorder',null)")
+has "$r" "BOOK_WITH_SELLER" "a helper cannot sell a whole book out of a seller's bag"
+ok "$(P "select count(*) from tickets where book_idx=5 and status='Sold'")" "0" "and not one ticket was written"
+
+# An organiser may, because that is transcribing what the seller reported —
+# and the sale is credited to the HOLDER, which is what keeps it honest: the
+# money lands on their balance where settlement checks it against their stubs.
+r=$(P "select sell_books('Book-0005',null,null,'Ma Hlaing','0125550100','',false,'admin@x.com','admin',null)")
+has "$r" '"sold": 10' "an organiser writing down the seller's report is fine"
+ok "$(P "select distinct sold_by_agent from tickets where book_idx=5")" "A002" "credited to whoever holds the book"
+
+echo "and a batch of stubs obeys the same rule"
+P "update books set status='Out', held_by_agent='A002' where idx=5;
+   update tickets set status='Available', buyer_name='', buyer_phone='', sold_by_agent=null where book_idx=5" >/dev/null
+r=$(P "select bulk_record_sales('[{\"ticketNumber\":\"KS-00041\",\"buyerName\":\"A\",\"buyerPhone\":\"0125550100\"}]'::jsonb,'help@x.com','recorder',null,false)")
+has "$r" "BOOK_WITH_SELLER" "a helper's batch into a seller's book is refused"
+ok "$(P "select status from tickets where number='KS-00041'")" "Available" "and nothing was written"
+
+r=$(P "select bulk_record_sales('[{\"ticketNumber\":\"KS-00041\",\"buyerName\":\"A\",\"buyerPhone\":\"0125550100\",\"agentId\":\"A001\"}]'::jsonb,'admin@x.com','admin',null,false)")
+has "$r" '"recorded": 1' "an organiser transcribing it is fine"
+ok "$(P "select sold_by_agent from tickets where number='KS-00041'")" "A002" "and the named agent cannot take the credit from the holder"
+
+echo "a book handed back is paper on the desk again"
+# The row people trip on. Returned means the book is physically here but not
+# counted yet — which is exactly when somebody types the stubs in, so this must
+# stay open or counting a book in becomes impossible.
+P "update books set status='Returned' where idx=5;
+   update tickets set status='Available', buyer_name='', buyer_phone='', sold_by_agent=null where book_idx=5" >/dev/null
+r=$(P "select bulk_record_sales('[{\"ticketNumber\":\"KS-00042\",\"buyerName\":\"A\",\"buyerPhone\":\"0125550100\"}]'::jsonb,'help@x.com','recorder',null,false)")
+has "$r" '"recorded": 1' "a helper can record against a book that has been handed back"
+
+echo "a lost book is closed like a settled one"
+P "update books set status='Lost' where idx=5" >/dev/null
+r=$(P "select sell_books('Book-0005',null,null,'X','0125550100','',false,'admin@x.com','admin',null)")
+has "$r" "BOOK_CLOSED" "lost sits with settled and void"
+P "update books set status='Out', held_by_agent='A002' where idx=5" >/dev/null
+
 echo "held-back tickets cannot be sold"
 P "update config set value='20' where key='ACTIVE_TICKETS'" >/dev/null
 r=$(P "select sell_books('Book-0005',null,null,'X','0125550100','',false,'admin@x.com','admin',null)")

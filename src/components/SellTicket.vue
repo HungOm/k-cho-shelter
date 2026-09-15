@@ -11,7 +11,7 @@
  * A sold ticket nobody can telephone is a winner you cannot find.
  */
 import { ref, computed, nextTick, watch } from 'vue'
-import { state, optimistic, toast, setSellMode, agentMap, whereIs } from '../lib/store.js'
+import { state, optimistic, toast, setSellMode, agentMap, whereIs, sellBlock } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
 import { money, STATUS_WORDS, plainName, isSellerContact } from '../lib/format.js'
 import Sheet from './ui/Sheet.vue'
@@ -44,6 +44,17 @@ const canSell = computed(() => nameOk.value && phoneOk.value)
 
 const agent = computed(() => agentMap.value[t.value?.agent])
 const place = computed(() => whereIs(t.value))
+
+/**
+ * Set when the backend will REFUSE this sale, not merely when it is unwise.
+ *
+ * The warning below it has always said "check with them first" — advice, with
+ * the button still live. This is the harder case: the book is not here, and
+ * pressing Sold produces an error rather than a sale. Saying so before the
+ * press, and taking the button away, is the difference between a rule and a
+ * trap.
+ */
+const blocked = computed(() => (done.value ? null : sellBlock(t.value)))
 
 async function focusFirst() {
   await nextTick()
@@ -119,7 +130,17 @@ async function correct() {
       name: name.value.trim(), phone: phone.value.trim()
     }, 'correct_ticket', {
       ticketNumber: t.value.number, reason: reason.value.trim(),
+      // BOTH SPELLINGS, because the two backends disagree about this one action.
+      // Apps Script's correction reads sheet column names (Buyer_Name); the
+      // Supabase port reads camelCase (buyerName) — while BOTH read camelCase
+      // for a sale. Sending only the sheet names, as this did, meant a
+      // correction on Supabase supplied nothing the server recognised and came
+      // back "No changed fields were supplied", which is true and useless.
+      // Sending only camelCase would break Apps Script, still live for
+      // volunteers mid-cutover. Each backend ignores the spelling it does not
+      // know, so both work. Remove the sheet names once Supabase accepts them.
       Buyer_Name: name.value.trim(), Buyer_Phone: phone.value.trim(),
+      buyerName: name.value.trim(), buyerPhone: phone.value.trim(),
       expectedVersion: t.value.version
     })
     toast('Fixed', 'ok')
@@ -135,7 +156,13 @@ async function correct() {
 
     <!-- An unsold ticket in a book somebody is carrying is not free stock. It
          is 200km away, and it may already have been sold on paper. -->
-    <div v-if="!done && place?.out && t.status === 'Available'" class="note warn">
+    <div v-if="blocked && place?.out && t.status === 'Available'" class="note bad">
+      <b>This one is with {{ place.agentName || place.agentId }}.</b>
+      The ticket itself is not here, so it cannot be sold from this screen —
+      they may already have sold it in person. If the book is back, ask an
+      organiser to mark it returned first.
+    </div>
+    <div v-else-if="!done && place?.out && t.status === 'Available'" class="note warn">
       <b>This one is with {{ place.agentName || place.agentId }}.</b>
       The ticket itself is not here, and they may already have sold it without
       writing it down. Check with them before selling it to anybody else.
@@ -252,24 +279,24 @@ async function correct() {
 
       <template v-else-if="isReserved">
         <button class="btn" :disabled="busy" @click="release"><Bi text="Let it go" /></button>
-        <button class="btn primary" :disabled="busy || !canSell" @click="sell"><Bi text="It is sold" /></button>
+        <button class="btn primary" :disabled="busy || !canSell || !!blocked" @click="sell"><Bi text="It is sold" /></button>
       </template>
 
       <template v-else-if="mode === 'steps' && step === 1">
         <button class="btn" @click="emit('close')"><Bi text="Cancel" /></button>
-        <button class="btn primary lg" :disabled="!nameOk" @click="next"><Bi text="Next" /> →</button>
+        <button class="btn primary lg" :disabled="!nameOk || !!blocked" @click="next"><Bi text="Next" /> →</button>
       </template>
 
       <template v-else-if="mode === 'steps'">
         <button class="btn" @click="step = 1">← <Bi text="Back" /></button>
-        <button class="btn primary lg" :disabled="busy || !canSell" @click="sell">
+        <button class="btn primary lg" :disabled="busy || !canSell || !!blocked" @click="sell">
           {{ busy ? 'Saving…' : 'Sold · ' + money(cfg.ticketPrice, cfg.currency) }}
         </button>
       </template>
 
       <template v-else>
-        <button class="btn" :disabled="busy || !nameOk" @click="hold"><Bi text="Hold it" /></button>
-        <button class="btn primary" :disabled="busy || !canSell" @click="sell">
+        <button class="btn" :disabled="busy || !nameOk || !!blocked" @click="hold"><Bi text="Hold it" /></button>
+        <button class="btn primary" :disabled="busy || !canSell || !!blocked" @click="sell">
           {{ busy ? 'Saving…' : 'Sold · ' + money(cfg.ticketPrice, cfg.currency) }}
         </button>
       </template>
