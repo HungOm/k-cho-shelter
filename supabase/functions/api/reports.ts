@@ -12,7 +12,7 @@
  * a number that reconciles against nothing. book_ledger encodes this, so every
  * report below inherits it rather than re-deciding it.
  */
-import { ApiError, type AppUser } from './gate.ts'
+import { ApiError, mask, agentBooks, type AppUser } from './gate.ts'
 import { configDate, today } from './deadlines.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
@@ -153,11 +153,11 @@ export async function reportOverdue(_p: Record<string, unknown>, _u: AppUser, ct
  * The most important report in the system on the day of the draw: a sold ticket
  * with no contact details is a winner you cannot find.
  */
-export async function reportMissingContact(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+export async function reportMissingContact(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const active = Number((await ctx.supabaseAdmin.rpc('active_tickets', {})).data ?? 0)
   const { data, error } = await ctx.supabaseAdmin
     .from('tickets')
-    .select('number,book_idx,buyer_name,buyer_phone,sold_by_agent,sold_at')
+    .select('number,book_idx,buyer_name,buyer_phone,sold_by_agent,sold_at,recorded_by')
     .in('status', ['Sold', 'Donated'])
     .lte('idx', active)
     .or('buyer_phone.eq.,buyer_name.eq.')
@@ -165,7 +165,21 @@ export async function reportMissingContact(p: Record<string, unknown>, _u: AppUs
     .limit(Math.min(Number(p.limit ?? 500), 1000))
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
-  return { tickets: data ?? [], count: data?.length ?? 0 }
+  /*
+   * MASKED, like every other path that hands out a buyer.
+   *
+   * Every row here has a name or a phone missing — that is the filter — but the
+   * OTHER half is present, and this report is callable by a helper. So it
+   * handed a helper the names of buyers they never recorded, which is the
+   * narrowing undone by the report whose job is to find gaps in it.
+   *
+   * It stays useful narrowed: a helper sees their own entries in full, and for
+   * everyone else's sees the ticket number and who sold it, which is the person
+   * to ask. Chasing a missing number goes through the seller anyway.
+   */
+  const holds = await agentBooks(user, ctx)
+  const tickets = (data ?? []).map((t: Record<string, unknown>) => mask(t, user, holds))
+  return { tickets, count: tickets.length }
 }
 
 /**
@@ -337,11 +351,39 @@ export async function exportEntries(_p: Record<string, unknown>, _u: AppUser, ct
 
 // ============ WINNERS ============
 
-export async function listWinners(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+export async function listWinners(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const { data, error } = await ctx.supabaseAdmin
-    .from('winners').select('*, tickets(number,buyer_name,buyer_phone)').order('drawn_at')
+    .from('winners')
+    .select('*, tickets(number,book_idx,buyer_name,buyer_phone,recorded_by)')
+    .order('drawn_at')
   if (error) throw new ApiError('QUERY_FAILED', error.message)
-  return { winners: data ?? [] }
+
+  /*
+   * MASKED, and it was not. The signature said `_u` — the caller deliberately
+   * unused — and viewer and recorder can both call this action. So a VIEWER,
+   * whose entire defining property is that telephone numbers come through as
+   * ••••100, read every winner's number in full; and a helper read them
+   * regardless of who recorded the sale.
+   *
+   * The masker was correct in the three places index.ts called it, and being
+   * correct there is what stopped anyone looking here. Three was not all of
+   * them.
+   *
+   * A winner's NAME survives — announcing who won is what a draw is for. It is
+   * the telephone number that belongs to the person who has to ring them.
+   */
+  const holds = await agentBooks(user, ctx)
+  const winners = (data ?? []).map((w: Record<string, unknown>) => {
+    const t = w.tickets as Record<string, unknown> | null
+    if (!t) return w
+    // The NAME survives for everyone, and that is a deliberate departure from
+    // the masker rather than an oversight. Applying it whole inverted the
+    // hierarchy: a viewer kept the name and a helper lost it, so the LESS
+    // trusted role saw more. And announcing who won is what a draw is for —
+    // it is the telephone number that belongs only to whoever has to ring them.
+    return { ...w, tickets: { ...mask(t, user, holds), buyer_name: t.buyer_name } }
+  })
+  return { winners }
 }
 
 export async function recordWinner(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {

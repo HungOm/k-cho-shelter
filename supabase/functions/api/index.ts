@@ -32,6 +32,11 @@ import {
   type ActionSpec,
   type AppUser,
   type Role,
+  // Both moved to gate.ts so reports.ts can use them too: index.ts imports
+  // reports.ts, so reports.ts cannot import back, and a second masker is how
+  // two of them come to disagree about what a viewer sees.
+  mask,
+  agentBooks,
 } from './gate.ts'
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
@@ -744,30 +749,6 @@ async function generatedTickets(ctx: Ctx): Promise<number> {
   return num((await readConfig(ctx)).TOTAL_TICKETS, 0)
 }
 
-/**
- * A view-only account never sees a full phone number. Applied on the way out,
- * per request — the same rule as Tickets.gs, and for the same reason: it
- * depends on who is asking, so it can never be computed once and shared.
- */
-/**
- * The books one seller is physically carrying, as a set of book indexes.
- *
- * Cached for the life of the request: an agent reading twenty thousand tickets
- * must not cause twenty thousand lookups.
- */
-async function agentBooks(user: AppUser, ctx: Ctx): Promise<Set<number> | null> {
-  if (user.role !== 'agent') return null
-
-  // A seller linked to no seller record sees NOTHING, not everything. Returning
-  // null here is the masker's signal that no narrowing applies, so an
-  // agent-role account with no agent_id was getting every buyer's name and
-  // phone number — the exact thing the narrowing exists to prevent, reached by
-  // leaving a field blank. Failing to an empty set is the only safe direction.
-  if (!user.agentId) return new Set()
-  const { data } = await ctx.supabaseAdmin
-    .from('books').select('idx').eq('held_by_agent', user.agentId)
-  return new Set((data ?? []).map((b: { idx: number }) => b.idx))
-}
 
 /**
  * What each kind of user is allowed to see on a ticket row.
@@ -829,41 +810,6 @@ function toWire(r: Record<string, unknown>): unknown[] {
   ]
 }
 
-function mask(row: Record<string, unknown>, user: AppUser, holds?: Set<number> | null) {
-  if (user.role === 'viewer') {
-    // Same shape as the Apps Script masker, deliberately: two backends that
-    // hide a phone number differently look like two different apps.
-    const phone = String(row.buyer_phone ?? '')
-    return {
-      ...row,
-      buyer_phone: phone ? (phone.length < 4 ? '\u2022\u2022\u2022\u2022' : '\u2022\u2022\u2022\u2022' + phone.slice(-3)) : '',
-    }
-  }
-
-  if (holds && user.role === 'agent' && !holds.has(Number(row.book_idx))) {
-    return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
-  }
-
-  /*
-   * A helper reads the buyers they wrote down, and no others.
-   *
-   * This has to be here as well as in tickets_readable, not instead of it.
-   * Direct reads are the default on Supabase and go straight to the view — but
-   * ?directreads=off is a documented switch, offered precisely for the day the
-   * views misbehave, and it routes the same read through this function. If the
-   * narrowing lived only in the view, that switch would hand a helper every
-   * buyer's telephone number, and it would look like a performance setting.
-   *
-   * Masked in one path and not the other is this project's most repeated bug:
-   * it is how every seller came to be sent every buyer's phone number, because
-   * the row was masked for viewers only.
-   */
-  if (user.role === 'recorder' && String(row.recorded_by ?? '') !== user.email) {
-    return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
-  }
-
-  return row
-}
 
 const num = (v: unknown, d: number) => {
   const n = parseInt(String(v ?? ''), 10)

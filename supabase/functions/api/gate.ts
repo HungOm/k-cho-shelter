@@ -206,3 +206,63 @@ export function requireSuperAdmin(user: AppUser, what: string): void {
     )
   }
 }
+
+/*
+ * WHOSE BUYER DETAILS A CALLER MAY READ — one implementation, here.
+ *
+ * It lived in index.ts and was applied by the three read paths there. Three was
+ * not all of them: list_winners returned a winner's full telephone number to a
+ * VIEWER, whose entire defining property is that phone numbers are masked, and
+ * to a helper regardless of who recorded the sale. The guard was right
+ * everywhere it was called, and being right is what stopped anyone looking for
+ * the place it was not.
+ *
+ * Moved to gate.ts because reports.ts cannot import index.ts — index imports
+ * reports — and a second copy in reports.ts is how two maskers come to disagree
+ * about what a viewer sees.
+ */
+export type BookSet = Set<number> | null
+
+/**
+ * The books one seller is physically carrying, as a set of book indexes.
+ *
+ * Cached for the life of the request: an agent reading twenty thousand tickets
+ * must not cause twenty thousand lookups.
+ */
+export async function agentBooks(
+  user: AppUser,
+  ctx: { supabaseAdmin: { from: (t: string) => any } },
+): Promise<BookSet> {
+  if (user.role !== 'agent') return null
+  if (!user.agentId) return new Set()
+  const { data } = await ctx.supabaseAdmin
+    .from('books').select('idx').eq('held_by_agent', user.agentId)
+  return new Set((data ?? []).map((b: { idx: number }) => b.idx))
+}
+
+
+export function mask(
+  row: Record<string, unknown>,
+  user: AppUser,
+  holds?: BookSet,
+): Record<string, unknown> {
+  if (user.role === 'viewer') {
+    const phone = String(row.buyer_phone ?? '')
+    return {
+      ...row,
+      buyer_phone: phone
+        ? (phone.length < 4 ? '\u2022\u2022\u2022\u2022' : '\u2022\u2022\u2022\u2022' + phone.slice(-3))
+        : '',
+    }
+  }
+
+  if (holds && user.role === 'agent' && !holds.has(Number(row.book_idx))) {
+    return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
+  }
+
+  if (user.role === 'recorder' && String(row.recorded_by ?? '') !== user.email) {
+    return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
+  }
+
+  return row
+}
