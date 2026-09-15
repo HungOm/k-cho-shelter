@@ -16,6 +16,11 @@ const props = defineProps({
   needsClientId: Boolean,
   savedUrl: String,
   supabase: Boolean,      // sign in through Supabase Auth rather than GIS
+  // Supabase too can use the Google button on this page and trade the token it
+  // returns, instead of handing off to supabase.co and coming back. Same
+  // button, same account; the consent screen names this site rather than the
+  // project reference.
+  gsi: Boolean,
   refused: Boolean        // the account is not on the list, or was turned off
 })
 const emit = defineEmits(['connect', 'reset', 'retry', 'signin'])
@@ -31,7 +36,7 @@ function connect() {
 // The Google button is drawn by Google's script into this element, so it has to
 // exist in the DOM before we ask for it.
 watch(() => props.phase, async p => {
-  if (props.supabase) return
+  if (props.supabase && !props.gsi) return
   if (p === 'signin' || p === 'waiting') {
     await nextTick()
     window.__renderGoogleButton?.(gsiTarget.value)
@@ -39,7 +44,7 @@ watch(() => props.phase, async p => {
 }, { immediate: true })
 
 onMounted(async () => {
-  if (props.supabase) return
+  if (props.supabase && !props.gsi) return
   if (props.phase === 'signin') {
     await nextTick()
     window.__renderGoogleButton?.(gsiTarget.value)
@@ -96,9 +101,9 @@ onMounted(async () => {
       <!-- sign in -->
       <div v-else-if="phase === 'signin'" class="pad">
         <p class="muted small">Sign in with the Google account the organiser approved.</p>
-        <!-- Supabase Auth runs the Google flow itself, so this is an ordinary
-             button that hands off and comes back, not a widget Google draws. -->
-        <div v-if="supabase" class="gsi">
+        <!-- The handoff to supabase.co: only when this build has no Google
+             client id, or somebody asked for it with ?signin=redirect. -->
+        <div v-if="supabase && !gsi" class="gsi">
           <button class="btn primary block lg" @click="emit('signin')">
             Continue with Google
           </button>

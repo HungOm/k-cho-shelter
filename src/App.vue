@@ -137,6 +137,10 @@ let renewTimer = null
 const reauth = ref(false)    // the "sign in again" overlay
 
 function onCredential(res) {
+  // On Supabase a Google token is not a session — it is the thing you trade for
+  // one. The Edge Function verifies Supabase's own JWT and has no reason to
+  // trust a token signed by Google for a Google client id.
+  if (isSupabase) return exchangeForSupabaseSession(res)
   clearTimeout(silentTimer)
   lastToken = res.credential
   configure({ idToken: res.credential })
@@ -259,7 +263,11 @@ function initGoogle() {
     callback: onCredential,
     auto_select: true,
     cancel_on_tap_outside: false,
-    use_fedcm_for_prompt: true
+    use_fedcm_for_prompt: true,
+    // Apps Script verifies the token itself and never asked for a nonce, so it
+    // does not get one: adding a claim to the token on a path nobody checks it
+    // on is change without purpose.
+    ...(gsiNonce ? { nonce: gsiNonce.hashed } : {})
   })
   // SignIn.vue and ReAuth.vue call this once their target element exists.
   window.__renderGoogleButton = el => {
@@ -301,11 +309,48 @@ async function bootSupabase() {
   // refuses unauthenticated calls outright, so a pre-flight check before
   // sign-in would only ever report a working backend as a broken one.
   const session = await sbAuth.currentSession()
-  if (!session?.access_token) { phase.value = 'signin'; return }
+  if (!session?.access_token) {
+    try { clientId.value = CLIENT_ID || (localStorage.getItem(LS.cid) || '').trim() } catch { /* private window */ }
+    const forceRedirect = new URLSearchParams(location.search).get('signin') === 'redirect'
+    useGsi.value = !!clientId.value && !forceRedirect
+    if (useGsi.value) {
+      gsiNonce = await sbAuth.makeNonce()
+      initGoogle()
+    }
+    phase.value = 'signin'
+    return
+  }
 
   configure({ idToken: session.access_token })
   signedInAs.value = session.user?.email || ''
   return start()
+}
+
+/**
+ * Which door the Supabase sign-in uses.
+ *
+ * The Google button on our own page, normally: Google's consent screen then
+ * names the address the volunteer typed in rather than a forty-character
+ * project reference on supabase.co, and nobody leaves the page. The redirect is
+ * still there for a build with no Google client id compiled in, and on
+ * ?signin=redirect for when somebody needs it deliberately.
+ */
+let gsiNonce = null
+const useGsi = ref(false)
+
+async function exchangeForSupabaseSession(res) {
+  try {
+    phase.value = 'waiting'
+    const session = await sbAuth.signInWithGoogleToken(res.credential, gsiNonce?.raw)
+    configure({ idToken: session.access_token })
+    signedInAs.value = session.user?.email || ''
+    await start()
+  } catch (err) {
+    // A refusal here is a project setting, not a wrong password, so it must not
+    // read as "try again" — the person at the phone cannot fix it by retrying.
+    phase.value = 'error'
+    errorMsg.value = err?.message || 'Could not complete the Google sign-in.'
+  }
 }
 
 async function supabaseSignIn() {
@@ -488,7 +533,7 @@ function seeTickets(book) {
 
 <template>
   <SignIn v-if="phase !== 'ready'" :phase="phase" :message="errorMsg"
-          :needs-client-id="!CLIENT_ID" :saved-url="savedUrl" :supabase="isSupabase"
+          :needs-client-id="!CLIENT_ID" :saved-url="savedUrl" :supabase="isSupabase" :gsi="useGsi"
           :refused="refused"
           @connect="connect" @reset="reset" @retry="() => location.reload()"
           @signin="supabaseSignIn" />

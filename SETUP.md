@@ -82,6 +82,28 @@ protects it is the *Authorized JavaScript origins* list you just filled in: a si
 your client ID can only be issued to a page served from your own domain. A copy on somebody else's
 site is useless.
 
+### On Supabase, the same client ID has to be listed there too
+
+Skip this if you are running on Apps Script.
+
+The app signs in with the Google button on its own page and trades the token Google returns for a
+Supabase session, rather than handing off to `<project>.supabase.co` and coming back. That is why
+Google's screen says **Sign in to shtrtickets.ceamalaysia.org** and not a forty-character project
+reference — which is worth keeping, because a random string is exactly what a phishing page looks
+like to somebody being careful.
+
+Supabase will only accept a token minted for a client ID it has been told to trust:
+
+> Supabase dashboard → **Authentication** → **Providers** → **Google** → enable it, and paste the
+> client ID from step 3 into **Authorized Client IDs**.
+
+Until that is done every sign-in is refused. The app says so in those words rather than reporting a
+rejected credential, because it is a setting somebody has to change and no amount of trying again at
+the phone will fix it.
+
+If you need the old behaviour — a build with no client ID compiled in, say — add `?signin=redirect`
+to the address and the handoff comes back.
+
 ---
 
 ## Step 4 — Tell the script who you are
