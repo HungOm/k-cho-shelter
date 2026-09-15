@@ -8,7 +8,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api, toast, state } from '../../lib/store.js'
 import { money, date } from '../../lib/format.js'
-import { waNumber } from '../../lib/search.js'
+import { waNumber, isDialable } from '../../lib/search.js'
 import Sheet from '../ui/Sheet.vue'
 import Logo from '../ui/Logo.vue'
 
@@ -57,7 +57,9 @@ function print() {
 onUnmounted(done)
 
 const waLink = computed(() => {
-  if (!r.value?.agent.phone) return null
+  // Not merely present: a number we cannot place sends this handover receipt,
+  // naming books and their value, to whoever owns that number elsewhere.
+  if (!isDialable(r.value?.agent.phone)) return null
   const list = r.value.books.map(b => `${b.book} (${b.firstTicket}-${b.lastTicket})`).join(', ')
   const text = `${r.value.org}\n${r.value.event}\n\nBooks given to ${r.value.agent.name}:\n${list}\n\n` +
     `${r.value.bookCount} books, ${r.value.ticketCount} tickets, worth ` +

@@ -8,7 +8,7 @@
  */
 import { computed } from 'vue'
 import { state, isAdmin } from '../lib/store.js'
-import { waNumber } from '../lib/search.js'
+import { waNumber, isDialable } from '../lib/search.js'
 import { money, date } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 
@@ -64,7 +64,17 @@ function reportReminder(a) {
     `yet. Thank you!`
 }
 
+/*
+ * No link for a number we cannot place.
+ *
+ * Four of this raffle's sellers have numbers whose leading zero was lost, so
+ * wa.me read them as country code 1 and every reminder went to North America.
+ * A link built from a number like that is indistinguishable from one that
+ * works, which is the whole problem — the organiser presses it, WhatsApp opens,
+ * and a stranger receives a reminder about somebody else's raffle books.
+ */
 function reportWaLink(a) {
+  if (!isDialable(a.phone)) return ''
   return `https://wa.me/${waNumber(a.phone)}?text=${encodeURIComponent(reportReminder(a))}`
 }
 
@@ -76,6 +86,7 @@ function reminder(o) {
     `${o.daysOverdue} days ago. Could you bring the unsold tickets and the money? Thank you!`
 }
 function waLink(o) {
+  if (!isDialable(o.agentPhone)) return ''
   return `https://wa.me/${waNumber(o.agentPhone)}?text=${encodeURIComponent(reminder(o))}`
 }
 </script>
@@ -105,7 +116,7 @@ function waLink(o) {
           <b>{{ a.name || a.id }}</b>
           <div class="tiny muted">{{ chaseLine(a) }}</div>
         </div>
-        <a v-if="a.phone" class="btn sm" :href="reportWaLink(a)" target="_blank" rel="noopener">
+        <a v-if="reportWaLink(a)" class="btn sm" :href="reportWaLink(a)" target="_blank" rel="noopener">
           Remind
         </a>
         <button v-if="isAdmin" class="btn sm primary" @click="emit('record-check-in', a)">
@@ -126,9 +137,12 @@ function waLink(o) {
             {{ o.book }} · {{ o.daysOverdue }} days late · {{ money(o.expected, currency) }} expected
           </div>
         </div>
-        <a v-if="o.agentPhone" class="btn sm" :href="waLink(o)" target="_blank" rel="noopener">
+        <a v-if="waLink(o)" class="btn sm" :href="waLink(o)" target="_blank" rel="noopener">
           Remind
         </a>
+        <!-- Said, not hidden. A missing button is a puzzle; this is the one
+             fact that explains it and the one thing somebody can act on. -->
+        <span v-else-if="o.agentPhone" class="tiny">{{ o.agentPhone }} cannot be dialled</span>
       </div>
     </div>
 
