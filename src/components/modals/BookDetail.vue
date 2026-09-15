@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { state, isAdmin, go } from '../../lib/store.js'
+import { state, isAdmin, go, bookBlock } from '../../lib/store.js'
 import { money, date, BOOK_WORDS } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import StatusPill from '../ui/StatusPill.vue'
@@ -19,6 +19,8 @@ const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status)
  */
 const canPrintReceipt = computed(() =>
   isAdmin.value && !!props.book.agentId && props.book.status === 'Out')
+
+const blocked = computed(() => bookBlock(props.book))
 </script>
 
 <template>
@@ -44,7 +46,16 @@ const canPrintReceipt = computed(() =>
 
     <template #actions>
       <button class="btn" @click="emit('see-tickets', book)">See its tickets</button>
-      <button v-if="book.available" class="btn" @click="emit('sell-book', book)">Sell it whole</button>
+      <!-- Shown and DISABLED rather than hidden, when this person cannot sell
+           from this book. Hiding it makes the app look different to different
+           people for no stated reason; letting them press it makes the server
+           refuse after they have committed to the action. Disabled with the
+           reason on it is the only one of the three that tells them anything. -->
+      <button v-if="book.available" class="btn" :disabled="!!blocked"
+              :title="blocked ? `Cannot sell — ${blocked}` : ''"
+              @click="emit('sell-book', book)">
+        Sell it whole
+      </button>
       <button v-if="canPrintReceipt" class="btn" @click="emit('receipt', book.agentId)">Receipt</button>
       <button v-if="isAdmin && canSettle" class="btn primary" @click="emit('settle', book)">Count it in</button>
       <button v-else class="btn" @click="emit('close')">Close</button>
