@@ -663,3 +663,101 @@ Overall:                7/10   YES, WITH CONDITIONS → the remaining conditions
                                Phase 2 (snapshots, settlement payment in the RPC) and
                                verifying production carries rls.sql
 ```
+
+---
+
+## V. The roadmap, finished (2026-09-16)
+
+Sections I and P listed eleven things across Phases 2, 3 and 4. All of them
+are built, each as its own commit with its own tests. What follows is what
+landed, what it cost, and — the part worth reading — what is still owed.
+
+| Item | Commit | What it closed |
+|---|---|---|
+| P2.1 Round snapshots | `76feaa2` | A closed round is frozen per seller, append-only. The one item that could not be built late: a round that closes without a snapshot can never be snapshotted afterwards |
+| P2.2 Settlement payment in the RPC | `7853da7` | The book said money came in over a ledger with no row for it. Written inside the transaction now; a re-settle is a reversal and a new row |
+| P2.3 `agent_money` | `486210b` | Per-seller sums moved into Postgres, in the type money is stored in, spelled once instead of three times |
+| P2.4 Organiser change log | `d9bfb92` | `read_audit` opened to organisers with the super admin's address scrubbed everywhere, including nested in details |
+| P2.5 Scheduled backup | `28c5ce2` | Weekly, gpg-sealed before it becomes an artifact, refusing rather than falling back to plaintext |
+| P3.1 Return verification | `631ca96` | The seller's declaration put beside what an organiser actually counted in |
+| P3.2 Write-offs | `680db60` | Rule L6 made satisfiable without recording a payment that never happened |
+| P4.1 Chase-today | `177fcd0` | Three lists merged into one line per person |
+| P4.2 Seller acknowledgement | `92ef2f5` | Whose word a confirmation is, recorded so an organiser cannot manufacture the seller's |
+| P4.3 Docs lead with Supabase | `009a80b` | The setup guide was building the backend with none of the integrity work |
+| IssueBooks defect | `2659329` | The screen threw away every name the server sent |
+
+### What the work kept finding
+
+Four of the eleven turned up something the audit had not: a guard that did not
+guard, or a fixture describing data the database would refuse.
+
+- **`gateparity` never compared the two registries.** The comment above the
+  action table says it "compares both gates over every action and role, so a
+  value mistyped here shows up as a disagreement". It reads ONE spec — the Apps
+  Script one — and hands it to both implementations, so it compared the two
+  algorithms against a spec neither file necessarily held. Removing `sup: true`
+  from one side should have failed it instantly and did not. The registries are
+  now compared directly, with divergences required to carry a reason and to
+  still BE divergent.
+- **The fake database disproved two fixes before they landed.** Its `upsert`
+  read `'round,agent_id'` as one column name, matched `undefined` against
+  `undefined`, and merged onto the first row in the table; and it stubbed
+  `settle_book` without the ledger row, so every handler test would have watched
+  a settlement leave no trace and agreed. `agent_money` is COMPUTED there for
+  the same reason — a seedable total is one somebody typed into a fixture rather
+  than one that follows from the books.
+- **Two fixtures described impossible rows.** A payment with
+  `source: 'handover'`, against a column checked for `('hand','settlement')`;
+  and ledger rows for sellers in no `agents` table, which the foreign key
+  forbids. Both passed because the sums asked for "not settlement", which an
+  invalid value satisfies as happily as a valid one.
+- **The change log had never worked.** It read `e.time` against a column called
+  `at`, so every line showed an em dash, and `String(jsonb)` printed
+  "[object Object]". Nobody had reported it, which is what a screen only one
+  person can open looks like when it is broken.
+
+### Still owed
+
+**Nothing here has been run against production, and two things need a person.**
+
+1. **`supabase/test-functions.sh` has not been run.** Docker was unavailable for
+   the whole of this work. Every SQL case added to it — the append-only
+   triggers, the settlement ledger arithmetic, `agent_money` — was instead
+   reproduced statement for statement against a local Postgres and matched, and
+   that is what the commits record. Run the script before deploying.
+2. **Four migrations are unapplied**: `20260916150000_round_snapshots`,
+   `20260916170000_settlement_payment_in_rpc`,
+   `20260916190000_write_off_adjustments`, `20260916210000_agent_money_view`.
+   Each was rehearsed twice on a database built from the committed schema. Take
+   a backup first; the section M verification still applies.
+3. **The backup workflow fails every week until its secrets exist.**
+   `BACKUP_GPG_PUBLIC_KEY`, `SUPABASE_DB_URL`, `SUPABASE_URL`,
+   `SUPABASE_SECRET_KEY`. That is deliberate — a backup nobody has finished
+   setting up should be loud — but it is a red cross on the repository until
+   somebody does it. The two `gpg` commands are at the top of the workflow.
+4. **The receipt's acknowledgement UI is written and not committed.** The
+   server half of P4.2 is in; the screen that lets a seller tap "I received
+   these" is held back because `clientcoverage` forbids a screen calling an
+   action Apps Script does not have, and the exemption mechanism was another
+   session's uncommitted work. Land it once that bar has moved.
+
+### One deliberate divergence, recorded
+
+`read_audit` is organiser-readable on Supabase and super-admin-only on Apps
+Script, because Supabase can take the address out per request and a sheet
+cannot. It is the first entry in gateparity's `DIVERGENT` map, which now
+refuses both an unexplained difference and an explanation that has outlived it.
+
+### Scores after the roadmap
+
+```
+Ticket integrity:       9/10   unchanged since §T
+Money integrity:        9/10   (+2) settlement atomic, sums in SQL, write-offs recorded
+Auditability:           9/10   (+1) the change log is readable by the people running the raffle
+Reporting integrity:    8/10   (+3) rounds frozen, returns verified, chase list merged
+UI/UX:                  7/10   unchanged; the acknowledgement screen is still waiting
+Free-tier suitability:  9/10   (+1) backups happen without anybody remembering
+Overall:                8/10   The conditions in section A are closed in the repository.
+                               They are not closed in production until the four
+                               migrations are applied and the backup secrets set.
+```
