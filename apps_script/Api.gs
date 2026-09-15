@@ -378,6 +378,10 @@ function handleWhoami(payload, user) {
       // else's — see Logo.vue. Small is optional and only ever a size choice.
       orgLogo: cfg.ORG_LOGO || '',
       orgLogoSmall: cfg.ORG_LOGO_SMALL || '',
+      // One colour; the stylesheet derives the rest. Blank is a real no-op —
+      // applyBrand removes the tokens and the stylesheet's own colour stands,
+      // rather than half a theme being applied over it.
+      brandColor: cfg.BRAND_COLOR || '',
       projectCode: cfg.PROJECT_CODE || '',
       drawDate: cfg.DRAW_DATE || ''
     }

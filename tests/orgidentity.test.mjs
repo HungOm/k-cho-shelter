@@ -96,6 +96,26 @@ console.log('both backends carry the logo to the client')
 
   const cfg = readFileSync(join(ROOT, 'apps_script/Config.gs'), 'utf8')
   ok(/\['ORG_LOGO',\s*''/.test(cfg), 'and the Sheet seeds it BLANK, not with a logo')
+
+  /*
+   * The brand colour travels the same road, and a new config key is EXACTLY the
+   * shape of the six field-shape divergences this repository has had: a key one
+   * end builds and the other does not. Counted, not matched — a pattern is
+   * satisfied by the first hit, which is how a half-applied change reports as
+   * fine. That trap has now been hit three times in two days by two people.
+   */
+  for (const [name, src] of [['Supabase', ts], ['Apps Script', gs]]) {
+    ok((src.match(/brandColor:/g) ?? []).length === 1, `${name} sends brandColor exactly once`)
+  }
+  ok(/\['BRAND_COLOR',\s*''/.test(cfg), 'and the Sheet seeds the colour blank too')
+
+  // Blank must be a real no-op. A key that arrives as undefined instead of ''
+  // would make applyBrand strip the tokens anyway, but only by luck; the
+  // contract is a string.
+  for (const [name, src] of [['Supabase', ts], ['Apps Script', gs]]) {
+    ok(/brandColor: cfg\.BRAND_COLOR (\?\?|\|\|) ''/.test(src),
+       `${name} sends '' rather than undefined when it is unset`)
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

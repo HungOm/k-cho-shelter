@@ -140,6 +140,9 @@ var CONFIG_DEFAULTS = [
     + 'it will NEVER show somebody else\'s.'],
   ['ORG_LOGO_SMALL', '', 'Optional smaller version of the same logo, for phones on mobile data. '
     + 'Blank uses ORG_LOGO.'],
+  ['BRAND_COLOR', '', 'Your main colour, as a hex code like #0B7285. Buttons, tabs and the '
+    + 'default mark follow it. Blank keeps the standard colour. The text colour on top is '
+    + 'worked out for readability and is not set here.'],
   ['PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. '
     + 'NOT part of ticket numbers, so it is safe to change at any time.'],
   ['ACTIVE_TICKETS', '', 'How many of the generated tickets are IN PLAY, counting from the '
