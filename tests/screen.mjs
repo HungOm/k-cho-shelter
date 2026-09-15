@@ -24,7 +24,7 @@
  * difference. Every one passed its own tests. Only running the screen finds it.
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync, writeFileSync, mkdtempSync, cpSync, rmSync, symlinkSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdtempSync, cpSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -53,18 +53,8 @@ function build(componentPath, storeStub, withTemplate) {
   const { descriptor } = parse(sfc, { filename: componentPath })
   const script = compileScript(descriptor, { id: 'r', inlineTemplate: false })
 
-  /*
-   * The probe sits BESIDE the component, not at a fixed path.
-   *
-   * It used to be written to src/components/ whatever the component's actual
-   * home, so a modal — whose imports read ../../lib/ — resolved one directory
-   * too high and esbuild could not find the store at all. The failure arrives
-   * as four "could not resolve" lines about files that plainly exist, which
-   * reads as a broken project rather than a misplaced probe.
-   */
   const name = componentPath.split('/').pop().replace('.vue', '')
-  const home = componentPath.slice(0, componentPath.lastIndexOf('/'))
-  const probe = join(dir, home, `__${name}.js`)
+  const probe = join(dir, 'src/components', `__${name}.js`)
   const stub = (code) => code.replace(/from '(.*)\.vue'/g, "from './__stubvue.js'")
 
   if (withTemplate) {
@@ -97,14 +87,8 @@ function build(componentPath, storeStub, withTemplate) {
    */
   const SLOT_STUB = 'export default { setup(_, { slots }) {\n' +
     '  return () => Object.keys(slots).map((k) => slots[k]?.())\n} }\n'
-  // Every directory under src/, because the rewrite above points a child import
-  // at './__stubvue.js' relative to whichever file is doing the importing — and
-  // that is now any depth, not just the two that happened to be needed first.
-  const everyDir = (d) => readdirSync(d, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .flatMap((e) => [join(d, e.name), ...everyDir(join(d, e.name))])
-  for (const d of [join(dir, 'src'), ...everyDir(join(dir, 'src'))]) {
-    writeFileSync(join(d, '__stubvue.js'), SLOT_STUB)
+  for (const p of ['src/components/__stubvue.js', 'src/components/ui/__stubvue.js']) {
+    writeFileSync(join(dir, p), SLOT_STUB)
   }
 
   const out = join(dir, 'bundle.mjs')

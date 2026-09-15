@@ -33,6 +33,8 @@
  * "that request has already been decided" — which is a fake disagreeing with
  * Postgres, and a test that would fail on correct code.
  */
+let paymentId = 0
+
 const DEFAULTS = {
   pending_approvals: { status: 'Pending', note: '', requested_at: () => new Date().toISOString() },
   app_users: { status: 'active', role: 'viewer', name: '', added_by: '', added_at: () => new Date().toISOString() },
@@ -41,6 +43,12 @@ const DEFAULTS = {
   agents: { active: true },
   check_in_reports: { books_back: 0, tickets_sold: 0, amount_paid: 0, note: '',
                       recorded_by: '', reported_at: () => new Date().toISOString() },
+  // `id` is a bigint identity in Postgres. Generated here too, because
+  // reverse_payment addresses a row by the id the insert handed back — a fake
+  // that left it undefined would make every reversal look like a missing row.
+  payments: { id: () => ++paymentId, method: 'cash', note: '', received_by: '',
+              source: 'hand', book_idx: null, reverses: null,
+              received_at: () => new Date().toISOString() },
   audit_log: { at: () => new Date().toISOString() },
   book_history: { at: () => new Date().toISOString(), note: '' },
 }
@@ -281,6 +289,7 @@ export function fakeDb(seed = {}) {
       config: [], tickets: [], books: [], agents: [], app_users: [],
       book_history: [], audit_log: [], pending_approvals: [], winners: [],
       permissions: [], book_ledger: [], book_ledger_all: [], check_in_reports: [],
+      payments: [],
       ...copy(seed),
     },
     writes: [],

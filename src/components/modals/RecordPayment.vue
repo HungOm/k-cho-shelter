@@ -1,0 +1,123 @@
+<script setup>
+/**
+ * Cash handed in, written down at the moment it changes hands.
+ *
+ * THIS IS THE THING THAT WAS MISSING. Settling a book was the only way to
+ * record money: whole book, organiser only, and it closes the book. So a seller
+ * who brought half of it, or who is keeping the book to sell the rest, could
+ * not be recorded at all — and the organiser's only choices were to wait or to
+ * close a book that is not finished.
+ *
+ * SETTLING IS STILL SEPARATE, deliberately. This records that cash arrived.
+ * Settling is where a book is counted and the figures are declared. Somebody
+ * handing over RM200 against six books has not settled anything, and a screen
+ * that treated it as a settlement would close books nobody has counted.
+ */
+import { ref, computed } from 'vue'
+import { api, state, toast, refresh, isAdmin } from '../../lib/store.js'
+import { money } from '../../lib/format.js'
+import Sheet from '../ui/Sheet.vue'
+
+const props = defineProps({ seller: Object })
+const emit = defineEmits(['close', 'saved'])
+
+const amount = ref('')
+const note = ref('')
+const bookNumber = ref('')
+const busy = ref(false)
+const problem = ref('')
+
+const currency = computed(() => state.cfg?.currency || '')
+const owed = computed(() => Number(props.seller?.outstanding || 0))
+
+/** Prefilled with what they owe, because that is what usually arrives. */
+function fillAll() { amount.value = String(owed.value.toFixed(2)) }
+
+const left = computed(() => {
+  const n = Number(amount.value)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.round((owed.value - n) * 100) / 100
+})
+
+async function save() {
+  const n = Number(amount.value)
+  if (!Number.isFinite(n) || n <= 0) {
+    problem.value = 'How much was handed in?'
+    return
+  }
+  busy.value = true
+  problem.value = ''
+  try {
+    const r = await api('record_payment', {
+      agentId: props.seller.agentId,
+      amount: n,
+      note: note.value.trim(),
+      bookNumber: bookNumber.value.trim(),
+    })
+    toast(`${money(r.amount, currency.value)} recorded`, 'ok')
+    emit('saved')
+    refresh()
+  } catch (err) {
+    problem.value = err.message
+  } finally { busy.value = false }
+}
+</script>
+
+<template>
+  <Sheet :title="`Money from ${seller?.name || 'seller'}`"
+         subtitle="Recorded as handed in. It does not settle or close a book."
+         @close="emit('close')">
+
+    <p class="muted small lead">
+      They owe <b>{{ money(owed, currency) }}</b> across
+      {{ seller?.booksOut || 0 }} {{ seller?.booksOut === 1 ? 'book' : 'books' }} still out.
+    </p>
+
+    <div class="field">
+      <label for="pa">How much <span class="req">*</span></label>
+      <div class="row">
+        <input id="pa" v-model="amount" type="number" inputmode="decimal" min="0"
+               step="0.01" class="xl" placeholder="0.00" autofocus>
+        <button v-if="owed > 0" class="btn sm" @click="fillAll">All of it</button>
+      </div>
+      <p v-if="left !== null" class="hint">
+        <template v-if="left > 0">{{ money(left, currency) }} would still be owed.</template>
+        <template v-else-if="left === 0">That clears what they owe.</template>
+        <template v-else>That is {{ money(-left, currency) }} more than they owe — check it.</template>
+      </p>
+    </div>
+
+    <div class="field">
+      <label for="pb">Against a book <span class="opt">— not required</span></label>
+      <input id="pb" v-model="bookNumber" autocomplete="off" placeholder="Book-0042">
+      <p class="hint">
+        Leave empty if it is just cash handed over. Money that arrives before
+        anybody counts a book belongs to the seller, not yet to a book.
+      </p>
+    </div>
+
+    <div class="field">
+      <label for="pn">Note <span class="opt">— not required</span></label>
+      <input id="pn" v-model="note" autocomplete="off" placeholder="Handed in at the hall">
+    </div>
+
+    <div v-if="problem" class="note bad">{{ problem }}</div>
+
+    <p v-if="!isAdmin" class="muted tiny">
+      Recorded under your name. Only an organiser can undo it.
+    </p>
+
+    <template #actions>
+      <button class="btn" @click="emit('close')">Cancel</button>
+      <button class="btn primary" :disabled="busy" @click="save">
+        {{ busy ? 'Saving…' : 'Record it' }}
+      </button>
+    </template>
+  </Sheet>
+</template>
+
+<style scoped>
+.lead { margin: 0 0 14px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row input { flex: 1; }
+</style>

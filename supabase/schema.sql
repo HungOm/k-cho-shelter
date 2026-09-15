@@ -318,6 +318,42 @@ create table if not exists check_in_reports (
 -- "Who has answered this round" is the question asked on every seller list.
 create index if not exists check_in_round_idx on check_in_reports (round);
 
+create table if not exists payments (
+  /*
+   * EVERY CASH HANDOVER, whether or not a book is being closed.
+   *
+   * settle_book was the only way to record money, so a seller bringing half of
+   * it — or keeping the book to sell the rest — could not be recorded at all.
+   * This is the ledger that makes partial payment expressible.
+   *
+   * MONEY FOLLOWS CUSTODY. The debt is keyed on agent_id, not on whoever typed
+   * the sale in: a helper at a desk records sales credited to the book's
+   * holder, so a helper never owes anything, and "what I owe" stays answerable
+   * for a seller and correctly empty for a helper carrying no books.
+   */
+  id           bigint generated always as identity primary key,
+  agent_id     text not null references agents(agent_id) on delete restrict,
+  -- Negative is a reversal. Never zero: a row that changes nothing is a row
+  -- somebody has to interpret.
+  amount       numeric(12,2) not null check (amount <> 0),
+  received_at  timestamptz not null default now(),
+  received_by  text not null default '',
+  method       text not null default 'cash',
+  note         text not null default '',
+  -- Optional: cash handed over before anybody counts a book belongs to the
+  -- seller, not yet to a book, and saying so is more honest than guessing.
+  book_idx     integer references books(idx) on delete set null,
+  -- A reversal points at what it undoes. Corrections are new rows, never
+  -- deletes, so the trail survives the mistake.
+  reverses     bigint references payments(id) on delete restrict,
+  source       text not null default 'hand' check (source in ('hand','settlement'))
+);
+create index if not exists payments_agent_idx on payments (agent_id);
+-- One settlement row per book, so a forced re-settle replaces rather than adds
+-- and the same cash is never counted twice.
+create unique index if not exists payments_settlement_book_idx
+  on payments (book_idx) where source = 'settlement';
+
 -- ============ THE ONE THING THE SHEET COULD NOT ENFORCE ============
 -- A ticket cannot be sold without a name and a usable phone number. In the
 -- Sheet this is checked in three handlers and could be bypassed by editing a

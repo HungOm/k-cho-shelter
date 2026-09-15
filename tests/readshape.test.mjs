@@ -162,8 +162,19 @@ console.log('the two backends agree about report_outstanding')
   ok(/status === 'Out'\)\s*a\.booksOut\+\+/.test(block.replace(/\s+/g, ' ').replace(/if \(r\./g, '')) ||
      /booksOut\+\+/.test(block),
      'booksOut counts books that are Out')
-  ok(/user\.role === 'agent'/.test(block),
-     'and a seller sees their own line only — the scoping the port dropped')
+  /*
+   * WIDENED, and the real proof moved somewhere it is RUN.
+   *
+   * This pinned one spelling of the scope check. The rule now covers more than
+   * agents — a helper sees their own line, a viewer gets totals and no names —
+   * so it is decided in one helper rather than inline, and a grep for the old
+   * expression went red when the rule got STRONGER. money.test.mjs calls the
+   * handler as each role and asserts what actually comes back.
+   */
+  ok(/visibleAgents\(user\)/.test(block),
+     'and who may be told about whom is decided in one place')
+  ok(/only && !only\.includes\(key\)/.test(block),
+     'and the rows are actually filtered by it')
 }
 
 /*

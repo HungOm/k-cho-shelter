@@ -4,20 +4,43 @@
  * last column and the only one in colour.
  */
 import { ref, onMounted, computed } from 'vue'
-import { state, api, toast } from '../lib/store.js'
+import { state, api, toast, canWrite } from '../lib/store.js'
 import { money, moneyShort, date } from '../lib/format.js'
 import { waNumber, isDialable } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
 
 const rows = ref(null)
+const scope = ref('all')
 const currency = computed(() => state.cfg?.currency || '')
 const o = computed(() => state.totals)
+
+/*
+ * WHO SEES WHOSE, decided by the server and merely rendered here.
+ *
+ *   all     an organiser: every seller
+ *   mine    a seller, or a helper who also carries books: their own line
+ *   totals  a viewer, or a helper carrying nothing: the shape of the raffle
+ *           without who is behind on what
+ *
+ * The screen never filters — it would be a second opinion about a question the
+ * report has already answered, and the two would disagree the first time one
+ * of them changed.
+ */
+const emit = defineEmits(['record-payment'])
+
+/**
+ * Anybody who can take cash can write it down. A viewer cannot, and the server
+ * refuses it regardless of what this draws — the button is hidden as a courtesy,
+ * not as the control.
+ */
+const canRecord = canWrite
 
 onMounted(load)
 async function load() {
   try {
     const r = await api('report_outstanding', {})
     rows.value = r.agents || []
+    scope.value = r.scope || 'all'
   } catch (err) {
     toast(err.message, 'bad', err.code)
     rows.value = []
@@ -26,7 +49,10 @@ async function load() {
 
 /** Which tickets make up the debt — who bought them, and what came in. */
 const open = ref('')
-function toggle(id) { open.value = open.value === id ? '' : id }
+function toggle(id) {
+  open.value = open.value === id ? '' : id
+  if (open.value) loadPayments(id)
+}
 
 function ticketsFor(agentId) {
   return state.tickets
@@ -34,8 +60,42 @@ function ticketsFor(agentId) {
     .sort((x, y) => String(x.number).localeCompare(String(y.number)))
 }
 
-/** Paid is the ticket's own record, not a guess from the seller's total. */
-const isPaid = t => /paid|received|in/i.test(String(t.payment || ''))
+/*
+ * A CAP, because a seller with sixty books has six hundred tickets.
+ *
+ * This list is read to settle an argument about a particular ticket, not to be
+ * scrolled end to end, and rendering every row of a raffle this size is how the
+ * screen locks up on the phone of the person trying to use it. The count is
+ * always stated, so a cap never reads as "that is all of them".
+ */
+const CAP = 50
+const showAll = ref('')
+function ticketsShown(agentId) {
+  const all = ticketsFor(agentId)
+  return showAll.value === agentId ? all : all.slice(0, CAP)
+}
+
+/** What has been handed in, per seller, once expanded. */
+const payments = ref({})
+async function loadPayments(agentId) {
+  if (payments.value[agentId]) return
+  try {
+    const r = await api('list_payments', { agentId })
+    payments.value = { ...payments.value, [agentId]: r.payments || [] }
+  } catch { payments.value = { ...payments.value, [agentId]: [] } }
+}
+
+/*
+ * WHETHER THE BUYER PAID THE SELLER — which is NOT whether the seller has
+ * handed it in, and conflating the two is what made this column meaningless.
+ *
+ * It was `/paid|received|in/i`, and the only two values ever written are 'Paid'
+ * and 'Unpaid'. "Unpaid" contains "paid", so every ticket in the raffle showed
+ * the green chip, including the ones nobody had paid for. The column could not
+ * say "not in" — it had no reachable state that did.
+ */
+const isPaid = t => String(t.payment || '').trim().toLowerCase() === 'paid'
+
 
 /*
  * The number comes with the report, not from the seller list.
@@ -86,6 +146,11 @@ function waLink(a) {
         <div v-for="i in 4" :key="i" class="skel"></div>
       </div>
 
+      <div v-else-if="scope === 'totals'" class="note info" style="margin-top:12px">
+        The totals above are the whole raffle. Who owes what is shown to the
+        organiser — it is the one part of this that names people.
+      </div>
+
       <div v-else-if="rows.length" class="tablewrap" style="margin-top:8px">
         <table>
           <thead>
@@ -104,11 +169,11 @@ function waLink(a) {
                 </td>
                 <td class="num">{{ a.booksOut }}</td>
                 <td class="num">{{ a.ticketsSold }}</td>
-                <td class="num">{{ money(a.expected) }}</td>
-                <td class="num">{{ money(a.collected) }}</td>
+                <td class="num">{{ money(a.expected, currency) }}</td>
+                <td class="num">{{ money(a.collected, currency) }}</td>
                 <td class="num">
                   <b :style="a.outstanding > 0 ? 'color:var(--warn)' : 'color:var(--muted)'">
-                    {{ money(a.outstanding) }}
+                    {{ money(a.outstanding, currency) }}
                   </b>
                 </td>
               </tr>
@@ -136,6 +201,30 @@ function waLink(a) {
                     <span v-else class="tiny muted">No phone number on file for this seller.</span>
                   </div>
 
+                  <!--
+                    RECORDING CASH IS A SEPARATE ACT FROM SETTLING A BOOK.
+                    Settling counts a book and declares its figures; this only
+                    says money arrived. A seller bringing part of it had no way
+                    to be recorded at all before, so the organiser either waited
+                    or closed a book nobody had counted.
+                  -->
+                  <div v-if="canRecord" class="row wrap gap" style="margin-bottom:10px">
+                    <button class="btn sm primary" @click.stop="emit('record-payment', a)">
+                      Record money handed in
+                    </button>
+                  </div>
+
+                  <div v-if="(payments[a.agentId] || []).length" class="paid">
+                    <div class="tiny muted" style="margin-bottom:4px">Handed in so far</div>
+                    <div v-for="p in payments[a.agentId]" :key="p.id" class="paidrow">
+                      <span :class="p.amount < 0 ? 'bad' : ''">{{ money(p.amount, currency) }}</span>
+                      <span class="tiny muted">{{ p.receivedAt ? date(p.receivedAt) : '' }}</span>
+                      <span class="tiny muted grow">
+                        {{ p.source === 'settlement' ? 'counted in with a book' : (p.note || 'handed in') }}
+                      </span>
+                    </div>
+                  </div>
+
                   <!-- Books out now means books actually out; until the port was
                        fixed it counted every book the seller had ever touched,
                        so nought was unreachable and this sentence impossible.
@@ -155,24 +244,35 @@ function waLink(a) {
                   </div>
                   <table v-else class="inner">
                     <thead>
+                      <!-- "Buyer paid", not "money": whether the buyer paid the
+                           SELLER is a different fact from whether the seller has
+                           handed it in, and the column that showed both as one
+                           is why this screen could contradict itself. -->
                       <tr><th>Ticket</th><th>Book</th><th>Bought by</th>
-                          <th class="num">Amount</th><th>Money</th><th>When</th></tr>
+                          <th class="num">Amount</th><th>Buyer paid</th><th>When</th></tr>
                     </thead>
                     <tbody>
-                      <tr v-for="t in ticketsFor(a.agentId)" :key="t.number">
+                      <tr v-for="t in ticketsShown(a.agentId)" :key="t.number">
                         <td><b>{{ t.number }}</b></td>
                         <td>{{ t.book }}</td>
                         <td>{{ t.name || '—' }}<template v-if="t.phone"> · {{ t.phone }}</template></td>
                         <td class="num">{{ money(t.amount) }}</td>
                         <td>
                           <span :class="['pill', isPaid(t) ? 'ok' : 'bad']">
-                            {{ isPaid(t) ? 'in' : 'not in' }}
+                            {{ isPaid(t) ? 'paid' : 'not paid' }}
                           </span>
                         </td>
                         <td class="tiny muted">{{ t.saleDate ? date(t.saleDate) : '' }}</td>
                       </tr>
                     </tbody>
                   </table>
+
+                  <p v-if="ticketsFor(a.agentId).length > ticketsShown(a.agentId).length"
+                     class="tiny muted" style="margin-top:8px">
+                    Showing {{ ticketsShown(a.agentId).length }} of
+                    {{ ticketsFor(a.agentId).length }}.
+                    <button class="linkish" @click.stop="showAll = a.agentId">Show them all</button>
+                  </p>
                 </td>
               </tr>
             </template>

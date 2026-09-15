@@ -558,6 +558,11 @@ function handleSettleBook(payload, user) {
   // to be ticked off a list by the person who counted it.
   noteReportFromSettle_(agentId, bookNumber, user);
 
+  // And the cash counted in at settlement IS a handover, so it goes in the same
+  // ledger as every other one. Without this the book's declared figure and the
+  // seller's running total would be two separate truths.
+  noteSettlementPayment_(agentId, bookNumber, amountPaid, user);
+
   return {
     book: bookNumber,
     declaredSold: declaredSold,

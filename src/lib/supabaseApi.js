@@ -29,6 +29,7 @@ const WRITES = new Set([
   'set_user_status', 'set_permission', 'request_approval', 'cancel_approval',
   'decide_approval', 'record_winner', 'expand_tickets', 'set_active_tickets',
   'set_ticket_ceiling', 'roll_check_in', 'set_final_deadline', 'record_check_in',
+  'record_payment', 'reverse_payment',
 ])
 
 let functionUrl = ''

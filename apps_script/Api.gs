@@ -53,6 +53,12 @@ function actionRegistry() {
     transfer_books:        { fn: handleTransferBooks,     roles: ADMIN_ONLY, kind: 'bulk', lock: true },
     return_books:          { fn: handleReturnBooks,       roles: ADMIN_ONLY, kind: 'bulk', lock: true },
     settle_book:           { fn: handleSettleBook,        roles: ADMIN_ONLY, kind: 'write', lock: true },
+    // A helper takes cash at the table and must be able to write it down there
+    // and then. What they cannot do is record it against somebody else, or
+    // close a book — both change what another person is shown as owing.
+    record_payment:        { fn: handleRecordPayment,     roles: [ROLES.RECORDER, ROLES.AGENT], kind: 'write', lock: true },
+    reverse_payment:       { fn: handleReversePayment,    roles: ADMIN_ONLY, kind: 'write', lock: true },
+    list_payments:         { fn: handleListPayments,      roles: [ROLES.VIEWER, ROLES.RECORDER, ROLES.AGENT], kind: 'read' },
     set_book_status:       { fn: handleSetBookStatus,     roles: ADMIN_ONLY, kind: 'bulk', lock: true },
     restock_books:         { fn: handleRestockBooks,      roles: ADMIN_ONLY, kind: 'bulk', lock: true },
     book_history:          { fn: handleBookHistory,       roles: null, kind: 'read' },
@@ -82,7 +88,7 @@ function actionRegistry() {
     set_user_status:       { fn: handleSetUserStatus,     roles: ADMIN_ONLY, kind: 'write', lock: true },
 
     // --- reports ---
-    report_outstanding:    { fn: handleReportOutstanding, roles: [ROLES.VIEWER, ROLES.RECORDER], kind: 'report' },
+    report_outstanding:    { fn: handleReportOutstanding, roles: [ROLES.VIEWER, ROLES.RECORDER, ROLES.AGENT], kind: 'report' },
     report_overdue:        { fn: handleReportOverdue,     roles: [ROLES.RECORDER], kind: 'report' },
     report_missing_contact:{ fn: handleReportMissingContact, roles: [ROLES.RECORDER], kind: 'report' },
     report_draw_ready:     { fn: handleReportDrawReady,   roles: [ROLES.VIEWER, ROLES.RECORDER], kind: 'report' },
@@ -135,6 +141,9 @@ function actionMeta() {
     set_final_deadline:     { group: 'Books',   label: 'Change the final deadline', danger: true },
 
     settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },
+    record_payment:         { group: 'Money',   label: 'Record money handed in' },
+    reverse_payment:        { group: 'Money',   label: 'Undo a recorded payment', danger: true },
+    list_payments:          { group: 'Money',   label: 'See what has been handed in' },
     report_outstanding:     { group: 'Money',   label: 'Who still owes money' },
     agent_statement:        { group: 'Money',   label: "A seller's statement" },
 

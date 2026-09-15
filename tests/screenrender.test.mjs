@@ -57,10 +57,6 @@ export const api = async () => ({ agents: __ROWS__, currency: 'RM' })
 export const toast = () => {}
 export const agentMap = computed(() => ({}))
 export const isSuper = computed(() => true)
-// Mirrors the real store's exports. A screen that grows an import breaks the
-// bundle here with "no matching export", which reads as a broken test rather
-// than as a stub one field behind.
-export const canWrite = computed(() => true)
 export const go = () => {}
 `
 

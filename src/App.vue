@@ -39,6 +39,7 @@ import MakeTickets from './components/modals/MakeTickets.vue'
 import TicketsInPlay from './components/modals/TicketsInPlay.vue'
 import Deadlines from './components/modals/Deadlines.vue'
 import CheckIn from './components/modals/CheckIn.vue'
+import RecordPayment from './components/modals/RecordPayment.vue'
 import WinnerForm from './components/modals/WinnerForm.vue'
 import AskApproval from './components/modals/AskApproval.vue'
 import Toasts from './components/ui/Toasts.vue'
@@ -568,7 +569,8 @@ function seeTickets(book) {
                    @make-tickets="openModal('make')"
                    @tickets-in-play="openModal('inplay')"
                    @deadlines="openModal('deadlines')"
-                   @record-check-in="a => openModal('checkin', a)" />
+                   @record-check-in="a => openModal('checkin', a)"
+                   @record-payment="a => openModal('payment', a)" />
       </KeepAlive>
     </Transition>
   </AppShell>
@@ -608,6 +610,8 @@ function seeTickets(book) {
     <Deadlines v-else-if="modal?.kind === 'deadlines'" @close="closeModal" />
     <CheckIn v-else-if="modal?.kind === 'checkin'" :agent="modal.payload"
              @close="closeModal" @saved="closeModal" />
+    <RecordPayment v-else-if="modal?.kind === 'payment'" :seller="modal.payload"
+                   @close="closeModal" @saved="closeModal" />
     <WinnerForm v-else-if="modal?.kind === 'winner'" @close="closeModal" @saved="closeModal" />
   </Teleport>
 

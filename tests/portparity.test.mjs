@@ -175,7 +175,7 @@ console.log('the edge function never reads an RLS-filtered view')
    */
   const FILTERED = ['book_ledger', 'tickets_readable', 'agents_readable', 'config_readable']
   const files = ['index.ts', 'books.ts', 'tickets.ts', 'people.ts', 'reports.ts',
-                 'approvals.ts', 'deadlines.ts']
+                 'approvals.ts', 'deadlines.ts', 'money.ts']
 
   for (const f of files) {
     let src
@@ -210,7 +210,7 @@ console.log('the server calls the person at the top by the CURRENT word')
    * every time the volunteers' word changes would lose the history for nothing.
    */
   const files = ['index.ts', 'gate.ts', 'people.ts', 'books.ts', 'tickets.ts',
-                 'reports.ts', 'approvals.ts', 'deadlines.ts']
+                 'reports.ts', 'approvals.ts', 'deadlines.ts', 'money.ts']
   const STALE = ['super admin', 'superadmin', 'the owner', 'owner account', 'owner role']
 
   let checked = 0

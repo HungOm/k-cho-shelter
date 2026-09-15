@@ -34,15 +34,12 @@ async function save() {
   if (!name.value.trim()) return toast('What is their name?', 'bad')
   busy.value = true
   try {
-    const r = await api('upsert_agent', {
+    await api('upsert_agent', {
       agentId: props.agent?.id || '',
       name: name.value.trim(), phone: phone.value.trim(), zone: zone.value.trim()
     })
     toast('Saved', 'ok')
-    // The id travels with the event so a caller that opened this form mid-task
-    // can carry straight on with the seller it just created. Existing listeners
-    // ignore the payload and are unaffected.
-    emit('saved', { agentId: r?.agentId || props.agent?.id || '', created: !!r?.created })
+    emit('saved')
     refresh()
   } catch (err) { toast(err.message, 'bad', err.code) } finally { busy.value = false }
 }
