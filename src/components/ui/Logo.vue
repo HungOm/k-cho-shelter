@@ -21,12 +21,15 @@
  * falls back to ORG_LOGO — that fallback is about FILE SIZE, not identity, so
  * it cannot show the wrong organisation.
  *
- * WHAT AN UNSET LOGO SHOULD LOOK LIKE IS NOT DECIDED. Today it renders nothing.
- * The open question is whether a fresh deployment with no mark set should show
- * a neutral default instead, because a raffle ticket with no logo looks
- * unofficial to the person being asked for money. That is the organiser's call,
- * not a default to be guessed at in code, and it is the ONLY part of this file
- * that is provisional — the config plumbing is settled either way.
+ * AN UNSET LOGO SHOWS RAFFLED'S OWN MARK, decided by the organiser rather than
+ * guessed at here: a raffle ticket with no logo at all looks unofficial to the
+ * person being asked for cash, and that costs more than a neutral mark does.
+ *
+ * It is DRAWN, not fetched, and drawn in var(--brand) — so a deployment that
+ * has set its colour but not yet uploaded a logo already looks like itself, a
+ * fresh install has a mark on the very first paint with no asset to serve, and
+ * the product's own default can never be mistaken for somebody's real logo the
+ * way a bundled PNG could.
  */
 import { computed } from 'vue'
 import { state } from '../../lib/store.js'
@@ -50,6 +53,20 @@ const label = computed(() => String(state.cfg?.orgName ?? '').trim())
 <template>
   <img v-if="src" :src="src" :width="size" :height="size"
        :alt="label" class="logo" loading="eager" decoding="async">
+
+  <!-- A ticket, torn where the stub comes away. aria-hidden because this is the
+       product's mark and not a claim about who is running this raffle: naming it
+       would put "Raffled" into a screen reader exactly where the organisation
+       belongs, and saying nothing beats saying the wrong name. -->
+  <svg v-else class="logo" :width="size" :height="size" viewBox="0 0 64 64"
+       aria-hidden="true" focusable="false">
+    <circle cx="32" cy="32" r="32" fill="var(--brand)" />
+    <rect x="12" y="20" width="40" height="24" rx="4" fill="var(--brand-ink)" />
+    <circle cx="38" cy="20" r="3.5" fill="var(--brand)" />
+    <circle cx="38" cy="44" r="3.5" fill="var(--brand)" />
+    <line x1="38" y1="26" x2="38" y2="38" stroke="var(--brand)"
+          stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3.5" />
+  </svg>
 </template>
 
 <style scoped>
