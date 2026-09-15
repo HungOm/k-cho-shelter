@@ -221,7 +221,7 @@ function handleUpsertUser(payload, user) {
   // Managing SELLERS is a different thing and stays with organisers: adding,
   // banning and deactivating an agent is the daily work of running the raffle,
   // and an agent record grants nobody any access to this system.
-  if (isSuperAdminEmail_(email)) requireSuperAdmin_(user, 'Changing the owner account');
+  if (isSuperAdminEmail_(email)) requireSuperAdmin_(user, 'Changing the System Admin account');
 
   if (existing && existing.row) {
     sheet.getRange(existing.row, map.Role).setValue(role);
@@ -258,7 +258,7 @@ function handleSetUserStatus(payload, user) {
   // a row in the Users tab at all.
   if (isSuperAdminEmail_(email)) {
     throw new ApiError('SUPER_ADMIN_ONLY',
-      'The owner account cannot be enabled or disabled from the app. '
+      'The System Admin account cannot be enabled or disabled from the app. '
       + 'Change SUPER_ADMIN_EMAIL in Script Properties instead.');
   }
 

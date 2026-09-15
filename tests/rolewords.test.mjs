@@ -53,7 +53,20 @@ const BANNED = [
   // 'agent' lowercase only: "the Agents tab" is the literal name of a sheet
   // and cannot be reworded, while "an agent user" is somebody being described.
   [/\b(?:[Aa]n?|[Tt]he|[Aa]ny)\s+agents?\b/, 'an/the agent'],
+
+  // NOT wire words — previous ANSWERS. The top role has been called super
+  // admin, then owner, then System Admin, all in a day. A wire-word list would
+  // never catch "owner" creeping back, because to anybody who was not present
+  // for the reversals it reads as perfectly correct prose. After two renames
+  // the stale answer is the likelier regression, not the database word.
+  [/\bowners?\b/i, 'owner (a previous answer — the word is System Admin)'],
+  [/\b(?:an|the|any|a)\s+organisers?\b(?=[^.]*\bsigns? in\b)/i,
+    'organiser used where System Admin is meant'],
 ]
+
+/** What the top role is called this week, read rather than retyped. */
+const { ROLE_WORDS: RW } = await import('../src/lib/format.js')
+const TOP_WORD = RW.superadmin
 
 // ---------------------------------------------------------------- 1. server
 
@@ -72,6 +85,29 @@ console.log('the Apps Script backend calls people what the app calls them')
     }
   }
   ok(offences.length === 0, 'wire words in prose:\n      ' + offences.join('\n      '))
+}
+
+console.log('and the top role is called what it is called now')
+{
+  // Asserting the CURRENT word rather than the absence of old ones. A test that
+  // only forbids yesterday's vocabulary passes a file that has quietly reverted
+  // to the day before yesterday's.
+  ok(/^[A-Z]/.test(TOP_WORD), `the top role has a word: ${TOP_WORD}`)
+
+  const surfaces = [
+    ['apps_script/Auth.gs', read('apps_script/Auth.gs')],
+    ['apps_script/People.gs', read('apps_script/People.gs')],
+    ['supabase/functions/api/gate.ts', read('supabase/functions/api/gate.ts')],
+  ]
+  for (const [name, src] of surfaces) {
+    const prose = proseOf(src).join(' | ')
+    ok(!/\bowner\b/i.test(prose), `${name} still says "owner" to somebody`)
+  }
+
+  // At least one of them has to name it, or the refusal a volunteer reads
+  // identifies nobody.
+  const named = surfaces.some(([, src]) => proseOf(src).some(p => p.includes(TOP_WORD)))
+  ok(named, `no backend refusal names the ${TOP_WORD}`)
 }
 
 // ------------------------------------------------- 2. the two backends agree

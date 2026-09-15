@@ -98,7 +98,7 @@ Back in the Apps Script editor:
 
 3. Click **Save script properties**.
 
-`SUPER_ADMIN_EMAIL` is the **super admin** — one account, above every other, and the most important
+`SUPER_ADMIN_EMAIL` is the **System Admin** — one account, above every other, and the most important
 setting in this list.
 
 It is your way back in: that address is treated as an admin even before the Users tab exists, so a
@@ -108,7 +108,7 @@ read the audit log. Ordinary admins never see it — not the row, not the addres
 
 It is deliberately kept here, in Script Properties, rather than in the spreadsheet. Nothing inside
 the app can change it, and neither can anybody editing the Sheet by hand. Moving it to another
-person means coming back to this screen, which only the owner of the script can open. Put your own
+person means coming back to this screen, which only the Google account that owns the script can open. Put your own
 address in it, not a shared mailbox.
 
 > Set up before this change? `ADMIN_BOOTSTRAP_EMAIL` is still read as the old name, so your
@@ -200,8 +200,8 @@ The last check-in lands *on* the final deadline rather than being refused for ov
 says so: that is the last round.
 
 **Who may do what.** Moving the check-in date on is an organiser's job — it happens every month, and
-a checkpoint that needs the super admin every time is a checkpoint that stops happening. Changing the
-final deadline is the super admin's alone: it is the promise the raffle made to everybody who bought
+a checkpoint that needs the System Admin every time is a checkpoint that stops happening. Changing the
+final deadline is the System Admin's alone: it is the promise the raffle made to everybody who bought
 a ticket. Shortening it, or removing it, asks for the date to be typed back. Shortening it also pulls
 the check-in date in with it, because nothing may sit later than the wall.
 
@@ -211,7 +211,7 @@ sellers are still adding to, and it cannot be undone once a name has been read o
 
 ### Growing a raffle that is already running
 
-If the project expands after tickets are out, the super admin can add more — `expand_tickets`. It only
+If the project expands after tickets are out, the System Admin can add more — `expand_tickets`. It only
 ever adds. A total can never be reduced, because every ticket above a lowered line would quietly stop
 existing, including ones already paid for.
 
@@ -380,7 +380,7 @@ out of logs and browser history.
 
 Small corrections go through straight away. Anything that cancels tickets across a range
 of books is refused and offered to the organiser instead: the person sees what it would
-do, presses **Ask the organiser**, and nothing changes until the super admin approves it
+do, presses **Ask the organiser**, and nothing changes until the System Admin approves it
 on the **Approvals** screen. Approving carries it out immediately, in the name of the
 person who asked. Requests lapse after a day.
 
@@ -389,7 +389,7 @@ the change — so what is approved is exactly what happens.
 
 ## Turning features on and off
 
-The super admin has an **Access** screen: every feature, every role, on or off. What is
+The System Admin has an **Access** screen: every feature, every role, on or off. What is
 written in the code is only the starting point.
 
 Two things cannot be changed there, and the server refuses them too even if somebody

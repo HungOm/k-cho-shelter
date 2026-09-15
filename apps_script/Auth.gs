@@ -211,7 +211,7 @@ function isSuperAdminEmail_(email) {
 function requireSuperAdmin_(user, what) {
   if (!user || !user.isSuperAdmin) {
     throw new ApiError('SUPER_ADMIN_ONLY',
-      (what || 'That') + ' can only be done by the owner.');
+      (what || 'That') + ' can only be done by the System Admin.');
   }
 }
 
@@ -317,7 +317,7 @@ function requireUser(idToken, allowedRoles, needSuper, action) {
     // there is worse than telling them plainly that it is not theirs.
     if (needSuper) {
       throw new ApiError('SUPER_ADMIN_ONLY',
-        'Only the owner can do this. It cannot be switched on for anybody else.');
+        'Only the System Admin can do this. It cannot be switched on for anybody else.');
     }
     throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.');
   }
@@ -530,7 +530,7 @@ function handleSetPermission(payload, user) {
   }
   if (spec.sup) {
     throw new ApiError('SUPER_ADMIN_ONLY',
-      'That is reserved to the owner and cannot be handed to a role.');
+      'That is reserved to the System Admin and cannot be handed to a role.');
   }
   if (!allowed && role === ROLES.ADMIN && PERMISSION_LOCKED_FOR_ADMIN.indexOf(action) !== -1) {
     throw new ApiError('BAD_REQUEST',

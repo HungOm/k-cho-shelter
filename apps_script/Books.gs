@@ -1061,7 +1061,7 @@ function handleRollCheckIn(payload, user) {
   if (!lastDay) {
     throw new ApiError('NO_FINAL_DEADLINE',
       'There is no final deadline yet, so there is nothing for the check-in date to count ' +
-      'down to. The owner sets that first, on the same screen.');
+      'down to. The System Admin sets that first, on the same screen.');
   }
 
   var from = current || now;
