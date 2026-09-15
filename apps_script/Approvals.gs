@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — Approvals.gs
+ * Raffled — Approvals.gs
  *
  * Two-person control over the handful of actions that take something away: a
  * range of books marked lost, tickets put back on the shelf, a settled book

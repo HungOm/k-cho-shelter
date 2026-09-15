@@ -1,4 +1,4 @@
-# Setting up K'Cho Shelter
+# Setting up Raffled
 
 One-time setup, about 30 minutes. Do the steps in order — later ones depend on earlier ones.
 
@@ -9,7 +9,7 @@ You need: a Google account, and the ability to create a GitHub repository.
 ## Step 1 — Create the spreadsheet
 
 1. Go to [sheets.new](https://sheets.new) to make a new blank spreadsheet.
-2. Name it **K'Cho Shelter Tickets**.
+2. Name it after your raffle — **Raffled Tickets** will do.
 3. Leave it open — you need it in the next step.
 
 This spreadsheet is your database. Everything lives here. Nothing sensitive ever goes into GitHub.
@@ -36,7 +36,7 @@ This spreadsheet is your database. Everything lives here. Nothing sensitive ever
 
    (The editor adds the `.gs` itself. You can delete the empty `Code.gs`.)
 
-4. Click the **save** icon. Name the project **K'Cho Shelter API**.
+4. Click the **save** icon. Name the project **Raffled API**.
 
 > Prefer the command line? `npm i -g @google/clasp`, then `clasp login`, `clasp clone <script id>`,
 > copy the files in, and `clasp push`. Much faster when you need to update the code later.
@@ -48,17 +48,18 @@ This spreadsheet is your database. Everything lives here. Nothing sensitive ever
 This is what lets people prove who they are. It is the fiddliest step; take it slowly.
 
 1. Go to [console.cloud.google.com](https://console.cloud.google.com).
-2. Top left, click the project dropdown → **New Project**. Name it **K'Cho Shelter**. Create it, then select it.
+2. Top left, click the project dropdown → **New Project**. Name it **Raffled**. Create it, then select it.
 3. In the search bar type **OAuth consent screen** and open it.
    - User type: **External** → Create
-   - App name: `K'Cho Shelter`, user support email: your email, developer contact: your email
+   - App name: your organisation's name — this is what Google shows the person signing in —
+     user support email: your email, developer contact: your email
    - Save and continue through the remaining steps. You do **not** need to add scopes.
    - On *Audience* / *Test users*, either add the Google accounts of your helpers as test users,
      or click **Publish app** so anyone can sign in. (Access is controlled by the Users tab either
      way — publishing does not give anyone access to your data.)
 4. Search for **Credentials** → **+ Create Credentials** → **OAuth client ID**.
    - Application type: **Web application**
-   - Name: `K'Cho Shelter web`
+   - Name: `Raffled web`
    - Under **Authorized JavaScript origins**, click *Add URI* and add:
      - `https://hungom.github.io`
      - `https://shtrtickets.ceamalaysia.org`
@@ -149,7 +150,8 @@ address in it, not a shared mailbox.
 
 1. In the Apps Script editor, pick `setup` from the function dropdown at the top and press **Run**.
 2. The first time, Google asks for permission: **Review permissions** → choose your account →
-   **Advanced** → **Go to K'Cho Shelter API (unsafe)** → **Allow**.
+   **Advanced** → **Go to <the name you gave the project> (unsafe)** → **Allow**.
+   On this deployment that reads *K'Cho Shelter API*, because it was set up before the rename.
    (The "unsafe" warning appears for every script that hasn't been through Google's paid review.
    It is your own code, running in your own account.)
 3. Go back to the spreadsheet. You now have tabs: **Tickets, Books, Agents, Users, Winners,
@@ -325,13 +327,14 @@ is also the only one that lets the web page talk to the script at all — with "
 account", the browser blocks the request before it ever arrives.
 
 Test it: paste the `/exec` URL into a browser tab. You should see
-`{"ok":true,"message":"K'Cho Shelter API is running..."}`.
+`{"ok":true,"message":"Raffled API is running..."}` — or the name the deployed copy was
+written with, which on this deployment is still *K'Cho Shelter API*.
 
 ---
 
 ## Step 7 — Put the app online
 
-1. Create a new **GitHub repository**, named `k-cho-shelter`. Public or private both work.
+1. Create a new **GitHub repository** — `raffled`, or whatever you like. Public or private both work.
 2. The client ID sits near the top of the `<script>` block in `index.html`. Check it matches the
    one in your Google Cloud credentials:
    ```js
@@ -340,12 +343,17 @@ Test it: paste the `/exec` URL into a browser tab. You should see
 3. Push the project:
    ```bash
    git add .
-   git commit -m "K'Cho Shelter ticket tracker"
-   git remote add origin git@github.com:HungOm/k-cho-shelter.git
+   git commit -m "Raffled ticket tracker"
+   git remote add origin git@github.com:<you>/<your-repo>.git
    git push -u origin master
    ```
 4. On GitHub: **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main`, folder `/ (root)`
-   → **Save**. After a minute your site is at `https://hungom.github.io/k-cho-shelter/`.
+   → **Save**. After a minute your site is at `https://<you>.github.io/<your-repo>/`.
+
+> **On this deployment** the repository is `HungOm/k-cho-shelter` and the site is
+> `https://shtrtickets.ceamalaysia.org`. Both predate the rename and are deliberately unchanged:
+> renaming a repository moves every clone's remote, and renaming the domain takes the app off the
+> air until DNS catches up. Neither is part of naming the product.
 5. Check that this address matches what you put in **Authorized JavaScript origins** in step 3.
    The origin is just the `https://hungom.github.io` part — no repository name.
 
@@ -409,7 +417,9 @@ You are in, as admin.
 
 In the Apps Script editor, run **`installBackupTrigger`** once.
 
-A copy of the whole spreadsheet is saved to a Drive folder called *K'Cho Shelter Backups* every
+A copy of the whole spreadsheet is saved to a Drive folder called *K'Cho Shelter Backups* — named
+before the rename and deliberately left alone, because the string names a folder that already has
+backups in it — every
 night, keeping the last 30. This spreadsheet becomes the only record of every ringgit collected.
 Do not skip this.
 

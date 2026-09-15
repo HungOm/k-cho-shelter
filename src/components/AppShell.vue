@@ -71,16 +71,16 @@ defineEmits(['signout'])
     <aside class="sidebar noprint">
       <!--
         The organisation line is deliberately absent here. The mark beside the
-        title is the credit, and repeating "K'Cho Ethnic Association Malaysia"
-        underneath pushed the header to five wrapped lines in a 246px column.
-        CEAM is spelled out in full where there is room for it and where it
-        matters: the sign-in screen, and the handover receipt that physically
-        goes out with a seller.
+        title is the credit, and repeating the organisation's full name
+        underneath pushed the header to five wrapped lines in a 246px column —
+        the name that prompted this was 37 characters, and plenty are longer.
+        It is spelled out where there is room for it and where it matters: the
+        sign-in screen, and the handover receipt that goes out with a seller.
       -->
       <div class="brand" :title="state.cfg?.orgName">
         <Logo :size="42" />
         <span class="grow">
-          <b>{{ state.cfg?.eventName || "K'Cho Shelter" }}</b>
+          <b>{{ state.cfg?.eventName || "Raffled" }}</b>
           <span v-if="state.cfg?.projectCode" class="code">{{ state.cfg.projectCode }}</span>
         </span>
       </div>
@@ -109,7 +109,7 @@ defineEmits(['signout'])
       <header class="appbar noprint">
         <Logo :size="34" />
         <span class="grow">
-          <b>{{ state.cfg?.eventName || "K'Cho Shelter" }}</b>
+          <b>{{ state.cfg?.eventName || "Raffled" }}</b>
           <small>{{ state.user?.name }} · {{ roleWord }}</small>
         </span>
         <button class="btn sm ghost" @click="$emit('signout')"><Bi text="Leave" /></button>

@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — the API, as a Supabase Edge Function.
+ * Raffled — the API, as a Supabase Edge Function.
  *
  * One function with an action router, mirroring Api.gs, so the port is a
  * translation rather than a redesign and the behaviour can be compared action
