@@ -135,14 +135,19 @@ console.log('base tables stay unreadable by the browser')
   ok(/grant\s+select\s+on\s+tickets_readable/i.test(code),
      'the masked view is what the browser gets instead')
   /*
-   * NOT ASSERTED YET, and named rather than left out silently.
+   * The mask belongs to the VIEW, not to the caller.
    *
-   * `security_invoker = false` is what makes tickets_readable mask as the VIEW
-   * rather than as the caller — without it the mask is only as good as the
-   * caller's own grants. It exists in the shared working tree as somebody's
-   * uncommitted hardening and is not in HEAD, so asserting it here would make
-   * this file red for anyone who clones. It goes in the hour that lands.
+   * Without security_invoker = false, tickets_readable would run with the
+   * reader's own rights — and the reader's own rights are tickets_read, which
+   * returns raw buyer contact. The mask would then be worth exactly nothing
+   * while continuing to look like a mask, which is the worst of both.
+   *
+   * Asserted on the CODE with comments stripped: the phrase also appears in
+   * rls.sql's own prose, so a match on the raw file would pass on a file that
+   * merely talks about it.
    */
+  ok(/create\s+view\s+tickets_readable\s+with\s*\(\s*security_invoker\s*=\s*false\s*\)/i.test(code),
+     'tickets_readable masks as the view, so the mask is not the caller\'s to opt out of')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
