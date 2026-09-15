@@ -53,7 +53,7 @@ function migrateConfig_() {
  * Only 429 and 5xx are retried. A 400 means the rows themselves are wrong and
  * sending them again would fail identically, just slower.
  */
-function supaPost_(cfg, table, rows, onConflict, label) {
+function supaPost_(cfg, table, rows, onConflict, label, resolution) {
   if (!rows.length) return 0;
 
   // Anything prefixed with _ is ours, for deciding what to send, and is not a
@@ -77,7 +77,7 @@ function supaPost_(cfg, table, rows, onConflict, label) {
         headers: {
           apikey: cfg.key,
           Authorization: 'Bearer ' + cfg.key,
-          Prefer: 'resolution=merge-duplicates,return=minimal'
+          Prefer: 'resolution=' + (resolution || 'merge-duplicates') + ',return=minimal'
         },
         payload: payload,
         muteHttpExceptions: true
@@ -246,7 +246,15 @@ function migrate_(dryRun, everything) {
         email: String(o.Email).trim().toLowerCase(),
         name: String(o.Name || ''),
         role: String(o.Role || 'viewer').trim().toLowerCase(),
-        active: !(o.Active === false || String(o.Active).toLowerCase() === 'false'),
+        // STATUS, not active. `active` is generated from status on the other
+        // side now, and Postgres refuses an insert that names a generated
+        // column at all — so sending it fails the whole batch.
+        status: (function () {
+          var st = String(o.Status || '').trim().toLowerCase();
+          if (['pending', 'active', 'suspended', 'banned'].indexOf(st) !== -1) return st;
+          return (o.Active === false || String(o.Active).toLowerCase() === 'false')
+            ? 'suspended' : 'active';
+        })(),
         agent_id: o.Agent_ID ? String(o.Agent_ID).trim() : null,
         added_by: String(o.Added_By || ''),
         added_at: iso_(o.Added_Date) || new Date().toISOString()
@@ -360,7 +368,24 @@ function migrate_(dryRun, everything) {
   // config in particular decides how the other side reads everything else.
   supaPost_(cfg, 'config', cRows, 'key', 'config');
   supaPost_(cfg, 'agents', aRows, 'agent_id', 'agents');
-  supaPost_(cfg, 'app_users', uRows, 'email', 'users');
+  /*
+   * USERS ARE CARRIED, NEVER OVERWRITTEN.
+   *
+   * Everything else here is a copy: the Sheet is the source and the other side
+   * should end up matching it. Who may sign in is the exception, because it is
+   * now managed on the other side — roles are assigned there, accounts are
+   * suspended there, and the Sheet's copy is stale the moment anybody does.
+   *
+   * Merging would quietly undo that. A re-run before cutover would read a role
+   * from the Sheet and demote somebody who had been promoted, or re-admit an
+   * account somebody had stopped — with no error and nothing in the audit log
+   * to say it happened, because this writes straight to the table.
+   *
+   * ignore-duplicates: a user the other side has never seen is created, and one
+   * it already knows is left exactly as it stands.
+   */
+  supaPost_(cfg, 'app_users', uRows, 'email', 'users', 'ignore-duplicates');
+
 
   var bSend = changedSince_(bRows, watermark, function (r) {
     return r._srcModified ? new Date(r._srcModified) : null;
@@ -379,6 +404,21 @@ function migrate_(dryRun, everything) {
       'tickets ' + (ti + 1) + '-' + Math.min(ti + MIGRATE_BATCH, tSend.length) +
       ' of ' + tSend.length);
   }
+
+  // A line in the audit log saying the migration ran, because otherwise rows
+  // appear on the other side with no account of where they came from — which
+  // is the question that started this.
+  try {
+    supaPost_(cfg, 'audit_log', [{
+      action: 'MIGRATE',
+      email: Session.getActiveUser().getEmail() || 'migration',
+      details: {
+        tickets: tSend.length, books: bSend.length,
+        agents: aRows.length, usersOffered: uRows.length,
+        note: 'Users are created if missing and never overwritten.'
+      }
+    }], 'id', 'audit');
+  } catch (e) { /* a missing audit row must not fail a good migration */ }
 
   // Only after every batch has landed. A watermark written after a partial run
   // would quietly skip the rows the failed batches were carrying.

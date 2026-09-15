@@ -140,5 +140,45 @@ console.log('a failure says where it stopped');
   }
 }
 
+// ============ 8. what the migration must not overwrite ============
+console.log('the migration carries users without overwriting them');
+{
+  // Who may sign in is managed on the OTHER side now. A re-run reading a stale
+  // role from the Sheet would demote somebody who had been promoted, or
+  // re-admit an account somebody had stopped — silently, because this writes
+  // straight to the table with nothing in the audit log.
+  let sent = [];
+  global.Utilities = { sleep: () => {} };
+  global.UrlFetchApp = { fetch: (url, opts) => {
+    sent.push({ url, prefer: opts.headers.Prefer, rows: JSON.parse(opts.payload) });
+    return { getResponseCode: () => 201, getContentText: () => '' };
+  } };
+
+  supaPost_({ url: 'https://x', key: 'k' },
+    'app_users', [{ email: 'a@x.com', role: 'viewer' }], 'email', 'users', 'ignore-duplicates');
+  ok(sent[0].prefer.indexOf('ignore-duplicates') !== -1,
+     'users are sent as ignore-duplicates, so an existing row is left alone');
+
+  sent = [];
+  supaPost_({ url: 'https://x', key: 'k' },
+    'tickets', [{ idx: 1 }], 'idx', 'tickets');
+  ok(sent[0].prefer.indexOf('merge-duplicates') !== -1,
+     'but tickets still merge — that is the whole point of the migration');
+}
+
+console.log('a user row carries status, never the generated active column');
+{
+  // `active` is generated from status on the other side. Naming a generated
+  // column in an insert does not warn — Postgres refuses the whole batch, so
+  // one stale field would fail the final pre-cutover migration entirely.
+  const src = fs.readFileSync(path + 'Migrate.gs', 'utf8');
+  const block = src.slice(src.indexOf('uRows.push({'), src.indexOf('out.push(\'users: '));
+  ok(block.indexOf('status:') !== -1, 'the user row sends status');
+  ok(!/^\s*active:/m.test(block), 'and does not send active');
+
+  // The mapping itself, since a wrong one silently locks somebody out.
+  ok(block.indexOf("'suspended'") !== -1, 'a row switched off in the sheet arrives suspended');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

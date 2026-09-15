@@ -6,11 +6,28 @@
  * lets an admin grant themselves something the bar exists to withhold — most
  * dangerously `read_audit`, which would let them erase the record of doing it.
  *
- * ONE THING THAT MUST NOT MOVE IN THE PORT: the super admin is an environment
- * variable, never a row. Nothing inside the system can grant it — not an admin,
- * not somebody with write access to the database. In Apps Script that was a
- * Script Property; here it is a function secret. A `super_admin` column would
- * be a smaller change and a worse one.
+ * WHERE OWNER AUTHORITY COMES FROM, which changed on 2026-09-14 and the rest of
+ * this file has to be read with that in mind.
+ *
+ * It began as: the function secret and nothing else. Nothing inside the system
+ * could grant it — not an admin, not somebody with write access to the
+ * database. That is still true of the SECRET, which remains the one authority
+ * no row can create, remove or switch off.
+ *
+ * The user then asked for it to be assignable as well, and the reason is a good
+ * one: decide_approval is owner-only, so a single unreachable person blocked
+ * every two-person approval in the raffle — a single point of failure guarding
+ * the control that exists to remove single points of failure.
+ *
+ * So a row may now say 'superadmin', and the cost is stated plainly rather than
+ * hidden: a signed-in owner can create another owner from inside the app, which
+ * the original design made impossible. What has NOT changed is that only an
+ * owner can do it, that the secret always wins, and that a row can be suspended
+ * where the secret cannot.
+ *
+ * Every such change is recorded. upsertUser and setUserStatus write to
+ * audit_log, so who granted what and when is answerable — which the original
+ * design did not need, because nothing could grant it at all.
  */
 
 export type Role = 'admin' | 'recorder' | 'agent' | 'viewer'
