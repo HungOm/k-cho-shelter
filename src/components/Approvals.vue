@@ -10,7 +10,7 @@
  * later would let the payload change in between.
  */
 import { ref, onMounted, onActivated, computed, watch } from 'vue'
-import { api, toast, state } from '../lib/store.js'
+import { api, toast, state, go } from '../lib/store.js'
 import { dateTime, relative } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 
@@ -49,6 +49,67 @@ async function load() {
   } catch (err) {
     toast(err.message, 'bad', err.code)
     rows.value = []
+  }
+}
+
+/**
+ * Where a request points, so you can look before you decide.
+ *
+ * An approval asks somebody to say yes to a sentence. For anything bigger than
+ * a name change, the sentence is not enough on its own — "mark 12 books Lost"
+ * is a different decision depending on whose books they are and what is still
+ * in them. Deciding without being able to look is how a rubber stamp forms.
+ *
+ * Built from the structured `detail` the server sends rather than by reading
+ * the summary text, because the summary is prose written for a person and
+ * parsing it back into facts is how the two end up disagreeing.
+ */
+function subjectOf(r) {
+  const d = r.detail || {}
+  if (d.kind === 'upsert_user' || r.action === 'upsert_user' || r.action === 'set_user_status') {
+    return { screen: 'admin', label: 'See who can sign in' }
+  }
+  if (d.firstBook) {
+    return { screen: 'search', query: d.firstBook,
+             label: d.lastBook && d.lastBook !== d.firstBook
+               ? `Look inside ${d.firstBook}–${d.lastBook}` : `Look inside ${d.firstBook}` }
+  }
+  if (/book/.test(r.action)) return { screen: 'books', label: 'Look at the books' }
+  if (/ticket/.test(r.action)) return { screen: 'search', label: 'Find the tickets' }
+  return null
+}
+
+function lookAt(r) {
+  const s = subjectOf(r)
+  if (!s) return
+  if (s.query) state.query = s.query
+  go(s.screen)
+}
+
+/**
+ * The link the new person needs, for a request that was about letting somebody
+ * sign in.
+ *
+ * Approving grants the access; it does not tell them where to go. Without this
+ * the organiser approves, nothing visible happens, and the person waiting still
+ * cannot find the site — so the last step of "let them in" happens over the
+ * phone, badly, or not at all.
+ */
+const signInLink = computed(() => location.origin + location.pathname)
+
+function isSignIn(r) {
+  return (r.detail?.kind === 'upsert_user' || r.action === 'upsert_user')
+}
+
+async function copyLink() {
+  try {
+    await navigator.clipboard.writeText(signInLink.value)
+    toast('Link copied — send it to them', 'ok')
+  } catch {
+    // Clipboard refused (an insecure origin, or permission denied). Showing the
+    // link is not as good as copying it, but it is the difference between a
+    // person who can do the thing and one who cannot.
+    toast(signInLink.value, '')
   }
 }
 
@@ -125,6 +186,12 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
         <p class="what">{{ r.summary }}</p>
         <p class="tiny muted">Asked by {{ r.requestedBy }} · {{ dateTime(r.requestedAt) }}</p>
 
+        <!-- Look before you decide. A sentence alone turns an approval into a
+             rubber stamp for anything bigger than a name. -->
+        <button v-if="subjectOf(r)" class="btn sm ghost look" @click="lookAt(r)">
+          {{ subjectOf(r).label }} →
+        </button>
+
         <div v-if="youDecide" class="mt">
           <input v-model="note" placeholder="A note, if you want (optional)">
           <div class="row mt">
@@ -164,6 +231,13 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
               </span>
               <span :class="['pill', TONE[r.status] || '']">{{ r.status }}</span>
             </div>
+            <!-- Approving grants the access; it does not tell them where to go.
+                 Without this the last step of letting somebody in happens over
+                 the phone, badly, or not at all. -->
+            <div v-if="r.status === 'Approved' && isSignIn(r)" class="linkrow">
+              <code>{{ signInLink }}</code>
+              <button class="btn sm" @click="copyLink">Copy link</button>
+            </div>
           </li>
         </ul>
       </div>
@@ -172,6 +246,14 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 </template>
 
 <style scoped>
+.look { margin-top: 8px; }
+.linkrow {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 14px 12px; border-top: 1px solid var(--border);
+}
+.linkrow code {
+  font-size: .82rem; color: var(--muted); word-break: break-all; flex: 1 1 200px;
+}
 .req { border-left: 4px solid var(--warn); }
 .what { font-size: 1.08rem; font-weight: 650; line-height: 1.4; }
 .stake { font-size: 1.25rem; font-weight: 800; color: var(--bad); margin-bottom: 2px; }
