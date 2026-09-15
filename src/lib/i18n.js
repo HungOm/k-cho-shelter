@@ -236,6 +236,13 @@ export const MY_ERRORS = {
   BOOKS_NOT_AVAILABLE: 'ဤစာအုပ်များ မရနိုင်ပါ',
   TRANSFER_BLOCKED: 'လွှဲပြောင်း၍ မရပါ',
   MONEY_STILL_OWED: 'ငွေ ကျန်ရှိနေသေးသည် — အရင် ရှင်းပါ',
+  // Uploading a logo. Short on purpose: the English underneath carries the
+  // detail, and these are read by an organiser at a desk, not in the field.
+  SVG_REFUSED: 'SVG ဖိုင် လက်မခံပါ — PNG အဖြစ် သိမ်းပါ',
+  BAD_IMAGE: 'ဤဖိုင်သည် ဓာတ်ပုံ မဟုတ်ပါ',
+  WRONG_IMAGE_TYPE: 'ဖိုင်အမျိုးအစား မကိုက်ညီပါ',
+  IMAGE_TOO_BIG: 'ဓာတ်ပုံ အရွယ်အစား ကြီးလွန်းသည်',
+  BAD_COLOUR: 'အရောင်ကုဒ် မမှန်ပါ — #0B7285 ပုံစံ',
   // Dates and deadlines. Short on purpose: the English underneath carries the
   // detail, and a gloss that runs to three lines stops being a gloss.
   BAD_DATE: 'ရက်စွဲကို ဖတ်၍ မရပါ',
