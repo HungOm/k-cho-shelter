@@ -14,7 +14,6 @@
  */
 import { ApiError, type AppUser } from './gate.ts'
 import { configDate, defaultDueDate, noteReportFromSettle } from './deadlines.ts'
-import { noteSettlementPayment } from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -335,12 +334,13 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
   // to be ticked off a list by the person who counted it.
   await noteReportFromSettle(ctx, holder, bookNumber, user)
 
-  // And the cash counted in at settlement IS a handover, so it goes in the same
-  // ledger as every other one. Without this the book's declared figure and the
-  // seller's running total would be two separate truths.
-  await noteSettlementPayment(
-    ctx, holder, Number((held as { idx?: number } | null)?.idx ?? 0),
-    amountPaid, bookNumber, user)
+  // The cash counted in at settlement is written by settle_book itself now,
+  // inside the transaction that counted it — so the book's declared figure and
+  // the seller's running total cannot end up as two separate truths. It used
+  // to happen here, in a call that deliberately could not fail the settlement,
+  // and the price of that was a book saying money came in over a ledger with
+  // no row for it.
+
 
   return data
 }
@@ -407,6 +407,39 @@ export async function restockBooks(p: Record<string, unknown>, user: AppUser, ct
       'or the amount owed disappears from the outstanding report. Nothing was changed.',
       { books: owing },
     )
+  }
+
+  /*
+   * THE LEDGER GOES BACK WITH THE FIGURE, and this is the half that used to be
+   * missed.
+   *
+   * Clearing amount_paid takes the money off the book. The settlement rows
+   * that made up that figure stayed in `payments`, so the book and the ledger
+   * stopped agreeing the moment a settled book was restocked — silently,
+   * because nothing sums them against each other. Reversed rather than
+   * deleted, for the same reason a re-settle is: the claim was made, and a
+   * correction whose evidence is gone cannot be told from a figure that was
+   * always right.
+   */
+  const { data: live } = await ctx.supabaseAdmin
+    .from('payments').select('id,agent_id,amount,book_idx,method')
+    .in('book_idx', ids).eq('source', 'settlement').is('reverses', null)
+
+  const already = new Set<number>()
+  const { data: undone } = await ctx.supabaseAdmin
+    .from('payments').select('reverses').in('book_idx', ids).not('reverses', 'is', null)
+  for (const r of (undone ?? []) as Array<{ reverses: number }>) already.add(Number(r.reverses))
+
+  const toReverse = ((live ?? []) as Array<Record<string, unknown>>)
+    .filter((r) => !already.has(Number(r.id)))
+  if (toReverse.length) {
+    const { error } = await ctx.supabaseAdmin.from('payments').insert(
+      toReverse.map((r) => ({
+        agent_id: r.agent_id, amount: -Number(r.amount), received_by: user.email,
+        method: r.method ?? 'cash', book_idx: r.book_idx, source: 'settlement',
+        reverses: r.id, note: 'Reversed: book put back on the shelf',
+      })))
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
   }
 
   await ctx.supabaseAdmin.from('books').update({

@@ -510,6 +510,48 @@ begin
   values (b.idx, b.held_by_agent, 'settle', p_user,
           'sold ' || declared || ', due ' || v_amount_due || ', paid ' || p_amount_paid);
 
+  /*
+   * THE CASH GOES IN THE LEDGER HERE, INSIDE THE TRANSACTION THAT COUNTED IT.
+   *
+   * It used to be written afterwards by the Edge Function, in a separate call
+   * that could not fail the settlement — deliberately, because a raffle must
+   * not be left unable to close a book over a bookkeeping row. The cost was
+   * that the two could disagree: the book said RM120 came in and the ledger
+   * had no row for it, and the only sign was a seller's running total quietly
+   * short. Written here it cannot happen. Either the book is settled and the
+   * money is in the ledger, or neither is true.
+   *
+   * A RE-SETTLE IS A REVERSAL AND A NEW ROW, NEVER AN EDIT.
+   *
+   * The old path updated the row in place, and deleted it outright when a book
+   * was re-settled at zero. Both destroy the only record that the first figure
+   * was ever claimed — and a correction whose evidence is gone is
+   * indistinguishable from the figure having always been right. Every other
+   * correction in this system is an opposing row with a reason on it; this one
+   * now is too. What the ledger holds afterwards is the whole argument: RM120
+   * counted in, RM120 reversed, RM90 counted in, and the sum is what the book
+   * says.
+   *
+   * ZERO IS NOT A ROW. `payments` refuses amount = 0 — a row that changes
+   * nothing is a row somebody has to interpret — so settling for nothing
+   * leaves the reversal and no replacement, which reads correctly: the money
+   * was claimed and then taken back.
+   */
+  if b.held_by_agent is not null then
+    insert into payments(agent_id, amount, received_by, method, note, book_idx, source, reverses)
+    select p.agent_id, -p.amount, p_user, p.method,
+           'Reversed: ' || p_book_number || ' counted in again', p.book_idx, 'settlement', p.id
+      from payments p
+     where p.book_idx = b.idx and p.source = 'settlement' and p.reverses is null
+       and not exists (select 1 from payments r where r.reverses = p.id);
+
+    if p_amount_paid <> 0 then
+      insert into payments(agent_id, amount, received_by, method, note, book_idx, source)
+      values (b.held_by_agent, p_amount_paid, p_user, 'cash',
+              'Counted in with ' || p_book_number, b.idx, 'settlement');
+    end if;
+  end if;
+
   return jsonb_build_object(
     'book', p_book_number,
     'declaredSold', declared,

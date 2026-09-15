@@ -543,10 +543,43 @@ create table if not exists payments (
   source       text not null default 'hand' check (source in ('hand','settlement'))
 );
 create index if not exists payments_agent_idx on payments (agent_id);
--- One settlement row per book, so a forced re-settle replaces rather than adds
--- and the same cash is never counted twice.
-create unique index if not exists payments_settlement_book_idx
+-- Settlement rows are read per book on every re-settle, to find what to reverse.
+create index if not exists payments_settlement_book_idx
   on payments (book_idx) where source = 'settlement';
+
+/*
+ * THAT INDEX USED TO BE UNIQUE, and it cannot be any more.
+ *
+ * It said one settlement row per book, which was exactly right while a forced
+ * re-settle REPLACED the row: update it in place, or delete it when the second
+ * count came to nothing. Both of those destroy the only evidence that the first
+ * figure was ever claimed, and a correction whose evidence is gone cannot be
+ * told apart from a figure that was always right. So a re-settle is now a
+ * reversal and a new row, like every other correction to money here — which
+ * means a book legitimately carries +120, -120, +90, and uniqueness would
+ * refuse the third.
+ *
+ * WHAT REPLACES IT IS NOT NOTHING. The race it guarded — two organisers
+ * settling one book, both writing a row — is now impossible for a better
+ * reason: the rows are written inside settle_book, in the same transaction
+ * that already holds `select … for update` on the book. The second organiser
+ * waits for the first to commit and is then refused as a re-settle. The index
+ * was protecting a write that happened outside any transaction, and that write
+ * no longer exists.
+ *
+ * The invariant that remains is arithmetic rather than structural: the
+ * settlement rows for a book sum to what the book says was paid. It is
+ * asserted in supabase/test-functions.sh over settle, re-settle, settle-at-zero
+ * and restock, because a sum is not something an index can hold.
+ *
+ * ON AN EXISTING DATABASE THE NAME IS THE TRAP. The unique index is already
+ * there under exactly the name above, so `create index if not exists` sees the
+ * name, does nothing, and leaves the unique one in place — a fresh database
+ * would take reversals and production would refuse them. The migration drops
+ * it by name before creating this one; this file is only ever applied to an
+ * empty database, where there is nothing to drop.
+ */
+
 
 -- ============ THE ONE THING THE SHEET COULD NOT ENFORCE ============
 -- A ticket cannot be sold without a name and a usable phone number. In the

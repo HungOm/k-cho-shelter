@@ -768,8 +768,9 @@ export async function snapshotRound(ctx: Ctx, round: number, takenBy: string) {
    * A SNAPSHOT THAT FAILS MUST NOT STOP THE ROLL. The roll is what keeps the
    * chasing honest and a raffle cannot be left unable to move its own
    * check-in date because a bookkeeping row would not write. It is loud in the
-   * log instead — the same trade `noteSettlementPayment` makes, and for the
-   * same reason.
+   * log instead. Unlike the settlement's own ledger row, which belongs in the
+   * transaction that counted the money, a snapshot is a measurement taken
+   * alongside the roll rather than part of what the roll means.
    */
   const { error } = await ctx.supabaseAdmin
     .from('round_snapshots')

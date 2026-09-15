@@ -204,8 +204,8 @@ console.log('9. the roll survives a snapshot that will not write')
   /*
    * The roll is what keeps the chasing honest. A raffle must not be left
    * unable to move its own check-in date because a bookkeeping row would not
-   * write — the same trade noteSettlementPayment makes, and loud in the log
-   * for the same reason.
+   * write — loud in the log instead, because a snapshot is a measurement
+   * taken alongside the roll rather than part of what the roll means.
    */
   const w = world()
   delete w.db.tables.round_snapshots           // the table is not there at all

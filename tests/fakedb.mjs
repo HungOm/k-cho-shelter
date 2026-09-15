@@ -389,9 +389,52 @@ export function fakeDb(seed = {}) {
        * real code on the live path and nothing else exercises it.
        */
       if (fn === 'settle_book') {
+        /*
+         * THE LEDGER ROW IS PART OF THE FUNCTION NOW, so the stub writes one.
+         *
+         * It used to be written by the handler after the call, where a stub
+         * that ignored it was harmless. Moving it inside settle_book made this
+         * stub wrong in the direction that matters: every handler test would
+         * see a settlement leave no trace in `payments` and would agree, which
+         * is the fake quietly disproving the thing that was just fixed.
+         *
+         * Still not a reimplementation of settlement — nothing here touches
+         * tickets or amount_paid, and the real arithmetic is proven against
+         * Postgres in supabase/test-functions.sh. What is modelled is only the
+         * part a handler can observe: a re-settle reverses what it replaces,
+         * and zero leaves the reversal with nothing after it.
+         */
+        const book = db.tables.books.find((x) => x.number === args?.p_book_number)
+        const paid = Number(args?.p_amount_paid ?? 0)
+        // One transaction: if the ledger cannot be written, the settlement does
+        // not happen either. The old path swallowed this and settled anyway,
+        // which is the disagreement being removed.
+        if (!db.tables.payments) {
+          return Promise.resolve({ data: null, error: { message: 'relation "payments" does not exist' } })
+        }
+        if (book?.held_by_agent) {
+          const reversed = new Set(db.tables.payments.filter((r) => r.reverses).map((r) => r.reverses))
+          for (const live of db.tables.payments.filter((r) =>
+            r.book_idx === book.idx && r.source === 'settlement' && !r.reverses && !reversed.has(r.id))) {
+            db.tables.payments.push(withDefaults('payments', {
+              agent_id: live.agent_id, amount: -Number(live.amount), book_idx: book.idx,
+              source: 'settlement', reverses: live.id, received_by: args?.p_user ?? '',
+              note: `Reversed: ${args?.p_book_number} counted in again`,
+            }))
+          }
+          // payments refuses amount = 0: a row that changes nothing is a row
+          // somebody has to interpret.
+          if (paid !== 0) {
+            db.tables.payments.push(withDefaults('payments', {
+              agent_id: book.held_by_agent, amount: paid, book_idx: book.idx,
+              source: 'settlement', received_by: args?.p_user ?? '',
+              note: `Counted in with ${args?.p_book_number}`,
+            }))
+          }
+        }
         return Promise.resolve({
           data: { book: args?.p_book_number, declaredSold: 0, amountDue: 0,
-                  amountPaid: args?.p_amount_paid ?? 0, variance: 0, unidentified: false },
+                  amountPaid: paid, variance: 0, unidentified: false },
           error: null,
         })
       }

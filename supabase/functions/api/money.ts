@@ -307,55 +307,19 @@ export async function owedBy(ctx: Ctx, agentId: string): Promise<number> {
   return round2(expected - paid)
 }
 
-/**
- * A settlement is also a handover, so it writes one too.
+/*
+ * noteSettlementPayment USED TO LIVE HERE, and deleting it is the point.
  *
- * Without this the book's declared figure and the seller's ledger would be two
- * separate truths, which is the disagreement this whole file exists to end. The
- * unique index on (book_idx) where source='settlement' means a forced re-settle
- * replaces its row rather than counting the same cash twice.
+ * It wrote the settlement's payment row AFTER settle_book returned, in a call
+ * that swallowed its own failures so that a bookkeeping row could never stop a
+ * book being closed. The price was that the book and the ledger could
+ * disagree — a book saying RM120 came in over a ledger with no row for it —
+ * and it updated in place on a re-settle and deleted the row outright at zero,
+ * both of which destroy the evidence that the first figure was ever claimed.
  *
- * Never throws: a settlement that failed because of its own bookkeeping echo
- * would be a money operation broken by a side note. But never silent either —
- * the same rule as the check-in hook.
+ * settle_book writes the row itself now, in the transaction that counted the
+ * money, and a re-settle reverses rather than replaces. Leaving this function
+ * here unused would leave a loaded gun on the table: it still compiles, it
+ * still writes outside any transaction, and the next person to want "record
+ * the settlement payment" would find it and call it.
  */
-export async function noteSettlementPayment(
-  ctx: Ctx, agentId: string, bookIdx: number, amount: number, bookNumber: string, user: AppUser,
-) {
-  const id = String(agentId ?? '').trim()
-  try {
-    if (!id || !Number.isFinite(amount)) return
-    const { data: existing } = await ctx.supabaseAdmin
-      .from('payments').select('id').eq('book_idx', bookIdx).eq('source', 'settlement').maybeSingle()
-
-    if (amount === 0) {
-      // Settled for nothing: remove any earlier settlement row rather than
-      // leaving a figure the book no longer claims.
-      if (existing) {
-        await ctx.supabaseAdmin.from('payments').delete()
-          .eq('book_idx', bookIdx).eq('source', 'settlement')
-      }
-      return
-    }
-
-    const row = {
-      agent_id: id, amount: round2(amount), received_by: user.email, method: 'cash',
-      note: `Counted in with ${bookNumber}`, book_idx: bookIdx, source: 'settlement',
-    }
-    const { error } = existing
-      ? await ctx.supabaseAdmin.from('payments').update(row)
-          .eq('book_idx', bookIdx).eq('source', 'settlement')
-      : await ctx.supabaseAdmin.from('payments').insert(row)
-    if (error) throw new Error(error.message)
-  } catch (e) {
-    const why = String((e as { message?: string })?.message ?? e)
-    console.error(`PAYMENT_NOT_RECORDED: ${id || '(no seller)'} settling ${bookNumber}: ${why}`)
-    try {
-      await ctx.supabaseAdmin.from('audit_log').insert({
-        action: 'PAYMENT_NOT_RECORDED',
-        details: { agent: id, book: bookNumber, amount, why },
-        email: user.email,
-      })
-    } catch { /* if the database is what failed, the log line is the record */ }
-  }
-}

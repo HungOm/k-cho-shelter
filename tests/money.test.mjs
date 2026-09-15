@@ -208,18 +208,29 @@ console.log('7. settling writes to the same ledger')
      'and the total counts the hand payment only — the settlement row is excluded')
 }
 
-console.log('8. a settlement never breaks on its own bookkeeping')
+console.log('8. a settlement and its ledger row move together, or neither does')
 {
+  /*
+   * THIS USED TO ASSERT THE OPPOSITE, and the change is the point of the fix.
+   *
+   * The payment row was written after settle_book returned, in a call that
+   * deliberately could not fail the settlement — "money is not held hostage by
+   * a bookkeeping row". The price was that the two could disagree: a book
+   * saying RM70 came in, over a ledger with no row for it, and the only
+   * symptom a seller's running total quietly short. Nothing sums them against
+   * each other, so nothing would ever have said so.
+   *
+   * Written inside the transaction, that disagreement is not reachable. The
+   * cost is the case below: a ledger that cannot be written now refuses the
+   * settlement. That is the safer half of the trade — a book that is not
+   * settled is visibly not settled, and somebody tries again.
+   */
   const w = world()
   delete w.db.tables.payments
 
-  const settled = await books.settleBook(
-    { bookNumber: 'Book-001', amountPaid: 70, unsoldTickets: [] }, users.boss, w.ctx)
-  ok(!!settled, 'the settlement still goes through — money is not held hostage')
-
-  const complaint = w.table('audit_log').find((r) => r.action === 'PAYMENT_NOT_RECORDED')
-  ok(!!complaint, 'and the failure is written down where somebody can find it')
-  eq(complaint?.details?.book, 'Book-001', 'naming the book')
+  eq(await codeOf(() => books.settleBook(
+    { bookNumber: 'Book-001', amountPaid: 70, unsoldTickets: [] }, users.boss, w.ctx)),
+    'QUERY_FAILED', 'a ledger that cannot be written refuses the settlement')
 }
 
 // ============ 4. reading it back ============
