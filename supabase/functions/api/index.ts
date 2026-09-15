@@ -331,6 +331,10 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
       // else's — see Logo.vue. Small is optional and only ever a size choice.
       orgLogo: cfg.ORG_LOGO ?? '',
       orgLogoSmall: cfg.ORG_LOGO_SMALL ?? '',
+      // One colour; the stylesheet derives the rest. Blank is a real no-op —
+      // applyBrand removes the tokens and the stylesheet's own colour stands,
+      // rather than half a theme being applied over it.
+      brandColor: cfg.BRAND_COLOR ?? '',
       projectCode: cfg.PROJECT_CODE ?? '',
       // Through dayStart, never raw. A value that arrived from a date-shaped
       // spreadsheet cell is a full timestamp string, and the client compares
