@@ -49,6 +49,10 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ||
 const phase = ref('loading')       // loading | waiting | setup | signin | error | ready
 let silentTimer = null
 const errorMsg = ref('')
+// Kept apart from errorMsg on purpose: one line is for whoever is looking at
+// the phone, the other for whoever can actually change the thing.
+const errorDetail = ref('')
+const errorNotYou = ref(false)
 // Refused is not the same as broken. A refusal needs a way to a DIFFERENT
 // account; a breakage needs another go at the same one. Offering both for both
 // is how somebody ends up pressing "Try again" at a wall.
@@ -350,6 +354,8 @@ async function exchangeForSupabaseSession(res) {
     // read as "try again" — the person at the phone cannot fix it by retrying.
     phase.value = 'error'
     errorMsg.value = err?.message || 'Could not complete the Google sign-in.'
+    errorDetail.value = err?.detail || ''
+    errorNotYou.value = !!err?.notYou
   }
 }
 
@@ -534,6 +540,7 @@ function seeTickets(book) {
 <template>
   <SignIn v-if="phase !== 'ready'" :phase="phase" :message="errorMsg"
           :needs-client-id="!CLIENT_ID" :saved-url="savedUrl" :supabase="isSupabase" :gsi="useGsi"
+          :detail="errorDetail" :not-you="errorNotYou"
           :refused="refused"
           @connect="connect" @reset="reset" @retry="() => location.reload()"
           @signin="supabaseSignIn" />

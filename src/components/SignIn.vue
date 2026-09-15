@@ -8,6 +8,7 @@
  */
 import { ref, onMounted, watch, nextTick } from 'vue'
 import Logo from './ui/Logo.vue'
+import Bi from './ui/Bi.vue'
 import { state } from '../lib/store.js'
 
 const props = defineProps({
@@ -21,6 +22,11 @@ const props = defineProps({
   // button, same account; the consent screen names this site rather than the
   // project reference.
   gsi: Boolean,
+  // A second line for whoever can act on the failure, when the person reading
+  // the first one cannot. Shown quietly, in English: it names a dashboard whose
+  // own menus are in English, so glossing it would help nobody.
+  detail: String,
+  notYou: Boolean,        // the failure is a setting, not this person's account
   refused: Boolean        // the account is not on the list, or was turned off
 })
 const emit = defineEmits(['connect', 'reset', 'retry', 'signin'])
@@ -134,7 +140,16 @@ onMounted(async () => {
 
       <!-- something went wrong -->
       <div v-else class="pad left">
-        <div class="note bad">{{ message }}</div>
+        <div class="note bad"><Bi :text="message" /></div>
+        <!-- Not the same as a breakage and not the same as a refusal: the app
+             works, the account is fine, and somebody else has to do something
+             before trying again can succeed. Saying so is the whole design —
+             an unreadable refusal and a broken app are the same screen, and a
+             volunteer who reads it as broken stops and tells nobody. -->
+        <p v-if="notYou" class="muted small">
+          <Bi text="Nothing is wrong with your phone or your account — tell the organiser." />
+        </p>
+        <p v-if="detail" class="tiny muted">{{ detail }}</p>
         <div class="row" style="justify-content:center">
           <button class="btn" @click="emit('retry')">Try again</button>
           <button class="btn ghost" @click="emit('reset')">

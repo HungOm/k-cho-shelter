@@ -46,6 +46,7 @@ ok(!/import\s*{[^}]*\bapi\b[^}]*,[^}]*configure[^}]*}\s*from\s*'\.\/lib\/api\.js
 // ---- the module ----
 
 const auth = await import(join(ROOT, 'src/lib/supabaseAuth.js'))
+const { MY } = await import(join(ROOT, 'src/lib/i18n.js'))
 for (const fn of ['signIn', 'signInWithGoogleToken', 'makeNonce', 'signOut',
                   'currentSession', 'onSession',
                   'refreshSession', 'getClient', 'isConfigured']) {
@@ -98,11 +99,21 @@ ok(!/window\.google|accounts\.id/.test(src),
   const make = err => new Function('getClient', `${body.replace('export ', '')}; return signInWithGoogleToken`)(
     async () => ({ auth: { signInWithIdToken: async () => ({ data: null, error: err }) } }))
 
-  let msg = ''
-  try { await make({ message: 'Unacceptable audience in id_token' })('t', 'n') } catch (e) { msg = e.message }
-  ok(/Authorized Client IDs/.test(msg),
-     'a rejected audience names the setting somebody has to change')
-  ok(!/audience/i.test(msg), 'and does not repeat a phrase nobody at the phone can act on')
+  let e1 = null
+  try { await make({ message: 'Unacceptable audience in id_token' })('t', 'n') } catch (e) { e1 = e }
+  ok(e1?.notYou === true, 'a rejected audience is marked as not this person\'s fault')
+  ok(/Authorized Client IDs/.test(e1?.detail || ''),
+     'and the detail names the setting somebody has to change')
+  ok(!/audience/i.test(e1?.message || ''), 'the line on screen does not repeat a phrase nobody can act on')
+  // The volunteer holding the phone cannot open the Supabase dashboard. Telling
+  // them to reads as the app being broken, and a volunteer who concludes that
+  // stops and tells nobody — which is how one checkbox costs a day of selling.
+  ok(!/Authentication|Providers|dashboard|Supabase/i.test(e1?.message || ''),
+     'and does not send somebody in Klang to a console they have no login for')
+  ok(MY[e1?.message] && /[\u1000-\u109F]/.test(MY[e1.message]),
+     'the line they DO see has a Burmese gloss — an unreadable refusal and a broken app are one screen')
+  ok(MY['Nothing is wrong with your phone or your account — tell the organiser.'],
+     'as does the sentence telling them it is not them')
 
   let other = ''
   try { await make({ message: 'network is unreachable' })('t', 'n') } catch (e) { other = e.message }
@@ -153,6 +164,10 @@ ok(!/if\s*\(props\.supabase\)\s*return/.test(signin),
    'and neither guard still turns it away for being Supabase alone')
 ok(/v-if="supabase && !gsi"/.test(signin), 'the handoff button appears only then')
 ok(signin.includes("emit('signin')"), 'and still works when it does')
+ok(/<div class="note bad"><Bi :text="message" \/><\/div>/.test(signin),
+   'the failure line goes through Bi, so any translated message glosses')
+ok(/v-if="notYou"/.test(signin) && /v-if="detail"/.test(signin),
+   'with the reassurance and the organiser\'s instruction as separate lines')
 
 // The expiry machinery is Apps Script's problem and must stay on that side:
 // Supabase refreshes its own session, so a ReAuth overlay there would interrupt

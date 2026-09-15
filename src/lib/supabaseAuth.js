@@ -118,11 +118,19 @@ export async function signInWithGoogleToken(credential, nonce) {
     provider: 'google', token: credential, nonce
   })
   if (error) {
-    const bad = /client|audience|provider|nonce/i.test(error.message || '')
-    throw new Error(bad
-      ? 'Supabase would not accept this Google sign-in. The app\'s Google client ID has to be ' +
-        'listed under Authentication → Providers → Google → Authorized Client IDs on the project.'
-      : error.message)
+    if (!/client|audience|provider|nonce/i.test(error.message || '')) throw new Error(error.message)
+    // Two audiences, one failure. The volunteer holding the phone needs to know
+    // it is not them and that trying again will not help; the organiser needs
+    // the checkbox. Putting the dashboard path in front of the volunteer tells
+    // somebody in Klang to open a console they have no login for, and reads as
+    // the app being broken — which is how a one-checkbox problem becomes a day
+    // of people giving up quietly.
+    const err = new Error('Sign-in is not set up on this raffle yet.')
+    err.notYou = true
+    err.detail = 'For the organiser: the app\'s Google client ID has to be listed under ' +
+      'Authentication → Providers → Google → Authorized Client IDs on the Supabase project. ' +
+      'Until it is, every sign-in is refused.'
+    throw err
   }
   if (!data?.session?.access_token) throw new Error('Google signed in but no session came back.')
   return data.session

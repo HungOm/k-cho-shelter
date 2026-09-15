@@ -26,6 +26,12 @@ export const MY = {
   'Connect': 'ချိတ်ဆက်ရန်',
   'Link to the spreadsheet': 'စာရင်းဇယားလင့်ခ်',
   'Sign in with Google': 'Google ဖြင့် ဝင်ရန်',
+  // Shown when the project has not been told to trust this app's Google client
+  // id. The person reading it cannot fix that, so both lines say so plainly.
+  'Sign-in is not set up on this raffle yet.':
+    'ဤမဲစနစ်တွင် အကောင့်ဝင်ခြင်း မပြင်ဆင်ရသေးပါ။',
+  'Nothing is wrong with your phone or your account — tell the organiser.':
+    'သင့်ဖုန်း သို့မဟုတ် သင့်အကောင့်တွင် ပြဿနာ မရှိပါ — စီစဉ်သူကို အကြောင်းကြားပါ။',
   'Leave': 'ထွက်ရန်',
   'Try again': 'ထပ်ကြိုးစားရန်',
 
