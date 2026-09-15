@@ -38,6 +38,7 @@ import BookAction from './components/modals/BookAction.vue'
 import MakeTickets from './components/modals/MakeTickets.vue'
 import TicketsInPlay from './components/modals/TicketsInPlay.vue'
 import Deadlines from './components/modals/Deadlines.vue'
+import WinnerForm from './components/modals/WinnerForm.vue'
 import AskApproval from './components/modals/AskApproval.vue'
 import Toasts from './components/ui/Toasts.vue'
 
@@ -546,6 +547,7 @@ function seeTickets(book) {
                    @close="closeModal" @done="closeModal"
                    @make-more="openModal('make')" />
     <Deadlines v-else-if="modal?.kind === 'deadlines'" @close="closeModal" />
+    <WinnerForm v-else-if="modal?.kind === 'winner'" @close="closeModal" @saved="closeModal" />
   </Teleport>
 
   <Teleport to="body">
