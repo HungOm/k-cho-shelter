@@ -77,7 +77,64 @@ export async function getClient() {
 }
 
 /**
- * Send them to Google.
+ * A nonce, in the two forms the two ends need.
+ *
+ * Google is given the HASH and puts it in the token it signs; Supabase is given
+ * the original and checks that it hashes to what the token carries. So a token
+ * captured from one page load cannot be replayed into another, and neither end
+ * ever sees the other's half. Hex rather than base64url because that is what
+ * Supabase compares against.
+ */
+export async function makeNonce() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  const raw = btoa(String.fromCharCode(...bytes))
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
+  const hashed = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+  return { raw, hashed }
+}
+
+/**
+ * Trade the Google token for a Supabase session, without leaving the page.
+ *
+ * WHY NOT THE REDIRECT. signInWithOAuth below sends the browser to the project
+ * at <ref>.supabase.co, so Google's consent screen names that host — a forty
+ * character random string, which is exactly what a phishing page looks like to
+ * somebody being careful. Here the sign-in happens on our own origin, so Google
+ * names the site the volunteer typed in, and there is no navigation away and
+ * back on a phone with one bar of signal.
+ *
+ * The same Google account, the same allowlist row; only the route changes.
+ *
+ * THIS NEEDS A SETTING ON THE PROJECT. Supabase will only accept a token minted
+ * for a client id it has been told to trust, so the id has to be listed under
+ * Authentication -> Providers -> Google -> Authorized Client IDs. Without it
+ * every sign-in is refused, so the refusal says so rather than reporting a
+ * rejected credential.
+ */
+export async function signInWithGoogleToken(credential, nonce) {
+  const sb = await getClient()
+  if (!sb) throw new Error('The Supabase project address is not set on this device.')
+  const { data, error } = await sb.auth.signInWithIdToken({
+    provider: 'google', token: credential, nonce
+  })
+  if (error) {
+    const bad = /client|audience|provider|nonce/i.test(error.message || '')
+    throw new Error(bad
+      ? 'Supabase would not accept this Google sign-in. The app\'s Google client ID has to be ' +
+        'listed under Authentication → Providers → Google → Authorized Client IDs on the project.'
+      : error.message)
+  }
+  if (!data?.session?.access_token) throw new Error('Google signed in but no session came back.')
+  return data.session
+}
+
+/**
+ * The old route, kept for when there is no Google client id on this build.
+ *
+ * Not a fallback for the one above: if the token exchange is refused, that is a
+ * setting somebody has to change, and quietly redirecting instead would hide it
+ * behind the ugly consent screen it exists to avoid. Reachable deliberately
+ * with ?signin=redirect.
  *
  * This navigates away and comes back, which is why nothing here returns a
  * session: the answer arrives on the next page load, through getSession().
