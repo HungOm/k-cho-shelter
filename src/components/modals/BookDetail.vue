@@ -1,9 +1,10 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { state, isAdmin, go, bookBlock } from '../../lib/store.js'
 import { money, date, BOOK_WORDS } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import StatusPill from '../ui/StatusPill.vue'
+import History from './History.vue'
 
 const props = defineProps({ book: Object })
 const emit = defineEmits(['close', 'settle', 'receipt', 'see-tickets', 'sell-book'])
@@ -21,6 +22,14 @@ const canPrintReceipt = computed(() =>
   isAdmin.value && !!props.book.agentId && props.book.status === 'Out')
 
 const blocked = computed(() => bookBlock(props.book))
+
+/*
+ * Opened ON TOP of this sheet rather than instead of it, so closing the history
+ * puts you back on the book you were looking at. Replacing it would make "where
+ * has this been?" cost you your place, which is how a useful screen stops being
+ * opened.
+ */
+const showHistory = ref(false)
 </script>
 
 <template>
@@ -46,6 +55,7 @@ const blocked = computed(() => bookBlock(props.book))
 
     <template #actions>
       <button class="btn" @click="emit('see-tickets', book)">See its tickets</button>
+      <button class="btn" @click="showHistory = true">Where it has been</button>
       <!-- Shown and DISABLED rather than hidden, when this person cannot sell
            from this book. Hiding it makes the app look different to different
            people for no stated reason; letting them press it makes the server
@@ -60,6 +70,10 @@ const blocked = computed(() => bookBlock(props.book))
       <button v-if="isAdmin && canSettle" class="btn primary" @click="emit('settle', book)">Count it in</button>
       <button v-else class="btn" @click="emit('close')">Close</button>
     </template>
+
+    <!-- Later in the DOM than this sheet, which is fixed at z-index 60, so it
+         paints over without unmounting anything underneath. -->
+    <History v-if="showHistory" :book="book.book" @close="showHistory = false" />
   </Sheet>
 </template>
 

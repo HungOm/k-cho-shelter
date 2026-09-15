@@ -59,6 +59,7 @@ export function toast() {}
 export async function loadDelta() {}
 export async function optimistic() {}
 export function setSellMode() {}
+export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
 `
 
 console.log('Sell.vue asks sellBlock before it calls a ticket sellable')

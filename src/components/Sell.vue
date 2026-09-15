@@ -7,7 +7,7 @@
  * the keyboard: type, tab, type, tab, and a new row appears on its own.
  */
 import { ref, computed, nextTick } from 'vue'
-import { state, api, toast, loadDelta, canWrite, sellBlock } from '../lib/store.js'
+import { state, api, toast, loadDelta, canWrite, sellBlock, isSold } from '../lib/store.js'
 import { phoneDigits, isDialable } from '../lib/search.js'
 import { money } from '../lib/format.js'
 import { resolveTicketNumber } from '../lib/books.js'
@@ -70,7 +70,9 @@ function resolved(r) {
   if (!r.num.trim()) return null
   const t = resolve(r.num)
   if (!t) return { bad: true, text: 'no such ticket' }
-  if (t.status === 'Sold') return { bad: true, text: 'already sold' }
+  // Donated counts: it is spoken for, and a line not flagged here is a line
+  // the server refuses with a batch of forty attached to it.
+  if (isSold(t)) return { bad: true, text: 'already sold' }
   if (t.status === 'Void') return { bad: true, text: 'cancelled' }
   // A ticket in a book that is not here will be refused on save, and the whole
   // batch goes with it. Better to say so on the line that caused it.
@@ -96,7 +98,7 @@ async function reconcile(sales) {
     const landed = [], missing = []
     for (const sale of sales) {
       const t = state.byNumber[sale.ticketNumber]
-      ;(t && t.status === 'Sold' ? landed : missing).push(sale)
+      ;(isSold(t) ? landed : missing).push(sale)
     }
 
     if (!missing.length) {

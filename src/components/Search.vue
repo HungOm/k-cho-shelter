@@ -4,7 +4,7 @@
  * you opened, so you can work down a stack without losing where you were.
  */
 import { ref, computed } from 'vue'
-import { state, searchResults, agentMap, whereIs } from '../lib/store.js'
+import { state, searchResults, agentMap, whereIs, isSold } from '../lib/store.js'
 import { STATUS_WORDS } from '../lib/format.js'
 import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
@@ -44,7 +44,7 @@ function subtitle(t) {
   // glance that the contact is the seller, which is the thing you would
   // otherwise have to open the ticket to discover.
   if (t.name) bits.push(t.name)
-  else if (t.status === 'Sold') bits.push('no name written down')
+  else if (isSold(t)) bits.push('no name written down')
   const a = agentMap.value[t.agent]
   if (a) bits.push(a.name)
   if (t.phone) bits.push(t.phone)
@@ -135,7 +135,7 @@ function place(t) {
               <span class="lead">{{ t.number }}</span>
               <span class="sub">{{ subtitle(t) }}</span>
             </span>
-            <span v-if="place(t) && t.status !== 'Sold'" :class="['pill', place(t).tone]">
+            <span v-if="place(t) && !isSold(t)" :class="['pill', place(t).tone]">
               {{ place(t).text }}
             </span>
             <StatusPill :status="t.status" />
