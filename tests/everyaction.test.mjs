@@ -120,6 +120,14 @@ const CALLS = {
   roll_check_in: {}, set_final_deadline: { date: '2027-01-01' },
   record_check_in: { agentId: 'A001', booksBack: 1, ticketsSold: 4, amountPaid: 40 },
   record_payment: { agentId: 'A001', amount: 40, note: 'at the hall' },
+  // A real 1x1 PNG, because the handler sniffs the bytes rather than trusting
+  // contentType — a made-up string would be refused for the right reason and
+  // exercise the wrong path.
+  upload_logo: {
+    data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    contentType: 'image/png'
+  },
+  set_brand_color: { color: '#0d7a6f' },
   reverse_payment: { paymentId: 999, reason: 'recorded twice' },
   list_payments: { agentId: 'A001' },
 }

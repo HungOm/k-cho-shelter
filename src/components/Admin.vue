@@ -5,10 +5,13 @@
  * The super admin is a rung above admin: it lives in a Script Property, outside
  * the spreadsheet, so nothing in this screen can grant it or take it away.
  */
-import { ref, onMounted, computed } from 'vue'
-import { state, api, toast, isSuper, go } from '../lib/store.js'
+import { ref, onMounted, computed, watch } from 'vue'
+import { state, setConfig, api, toast, isSuper, go } from '../lib/store.js'
 import { isSupabase } from '../lib/backend.js'
 import { money, date, dateTime, ROLE_WORDS } from '../lib/format.js'
+import { applyBrand, inkFor } from '../lib/brand.js'
+import { toPayload, reject as rejectLogo } from '../lib/logofile.js'
+import Logo from './ui/Logo.vue'
 
 const emit = defineEmits(['add-user', 'make-tickets', 'tickets-in-play', 'deadlines'])
 
@@ -39,6 +42,102 @@ const users = ref(null)
 const audit = ref(null)
 const superAdmin = ref('')
 const c = computed(() => state.cfg)
+
+/* ---------- branding ---------- */
+
+/**
+ * The raffle's own mark and colour.
+ *
+ * Both are settings rather than code now, so this is where they are set. The
+ * mark falls back to Raffled's own, drawn in whatever colour is chosen — which
+ * is why the colour is worth setting even before a logo exists.
+ */
+const logoInput = ref(null)
+const brand = ref('')
+const brandSaving = ref(false)
+const logoBusy = ref(false)
+const logoErr = ref('')
+
+onMounted(() => { brand.value = c.value?.brandColor || '' })
+
+/**
+ * Preview as they type, not on save.
+ *
+ * A colour is chosen by looking at it. Applying it live means the whole
+ * interface answers immediately — including the primary button below, which is
+ * the only thing here that can show the real problem: an organisation picks a
+ * colour for a letterhead, and nobody checks whether white text survives on it.
+ */
+watch(brand, v => applyBrand(v))
+
+/** What the button will actually look like, in the colour currently typed. */
+const previewInk = computed(() => inkFor(brand.value) || 'var(--brand-ink)')
+const previewBrand = computed(() => inkFor(brand.value) ? brand.value.replace(/^#?/, '#') : 'var(--brand)')
+
+function revertBrand() {
+  brand.value = c.value?.brandColor || ''
+  applyBrand(brand.value)
+}
+
+/**
+ * Taking it off again.
+ *
+ * An organisation rebrands, or the wrong file goes up. Without an explicit
+ * path the only way back is to upload something blank, which leaves a real
+ * object in the bucket pretending to be an absence.
+ */
+async function removeLogo() {
+  logoBusy.value = true
+  logoErr.value = ''
+  try {
+    const r = await api('upload_logo', { remove: true })
+    if (r?.config) setConfig(r.config)
+    toast('Logo removed', 'ok')
+  } catch (err) {
+    logoErr.value = err.message
+  } finally { logoBusy.value = false }
+}
+
+async function saveBrand() {
+  brandSaving.value = true
+  try {
+    const r = await api('set_brand_color', { color: brand.value.trim() })
+    // The action returns whoami's config object, so there is one shape and
+    // nothing to merge. Assign it whole rather than patching a field.
+    if (r?.config) setConfig(r.config)
+    brand.value = state.cfg?.brandColor || ''
+    toast('Colour saved', 'ok')
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+    revertBrand()
+  } finally { brandSaving.value = false }
+}
+
+/**
+ * Picked, shrunk on the device, sent.
+ *
+ * The resize is a courtesy — the server caps and type-checks both images
+ * independently and does not trust which one was labelled small — but it is the
+ * difference between sending 6 KB to every volunteer's phone and sending
+ * whatever came off a designer's machine.
+ */
+async function pickLogo(ev) {
+  const file = ev.target.files?.[0]
+  ev.target.value = ''          // so choosing the same file twice still fires
+  if (!file) return
+  logoErr.value = rejectLogo(file) || ''
+  if (logoErr.value) return
+
+  logoBusy.value = true
+  try {
+    const r = await api('upload_logo', await toPayload(file))
+    if (r?.config) setConfig(r.config)
+    toast('Logo saved', 'ok')
+  } catch (err) {
+    logoErr.value = err.message
+    if (err.code) toast(err.message, 'bad', err.code)
+  } finally { logoBusy.value = false }
+}
 
 
 onMounted(loadUsers)
@@ -266,6 +365,71 @@ async function loadAudit() {
       </p>
     </div>
 
+    <div class="card">
+      <h3>How this raffle looks</h3>
+      <p class="muted small">
+        Your own logo and colour, on every screen and on the receipt a seller hands over.
+      </p>
+
+      <div class="row wrap gap" style="align-items:flex-start;margin-top:12px">
+        <div class="col" style="align-items:center;gap:8px">
+          <Logo :size="76" big />
+          <span class="tiny muted">{{ c?.orgLogo ? 'Your logo' : 'Raffled\u2019s mark' }}</span>
+        </div>
+
+        <div class="col grow" style="gap:8px;min-width:220px">
+          <button class="btn sm" :disabled="logoBusy" @click="logoInput?.click()">
+            {{ logoBusy ? 'Uploading\u2026' : (c?.orgLogo ? 'Replace logo' : 'Upload a logo') }}
+          </button>
+          <input ref="logoInput" type="file" accept="image/png,image/jpeg,image/webp"
+                 :disabled="logoBusy" @change="pickLogo" hidden>
+          <p class="tiny muted">
+            PNG, JPEG or WebP. It is shrunk on this device before it is sent, so a
+            large file is fine — and a small one reaches every volunteer\u2019s phone faster.
+          </p>
+          <button v-if="c?.orgLogo" class="btn sm ghost" :disabled="logoBusy"
+                  @click="removeLogo">Remove logo</button>
+          <p v-if="logoErr" class="note bad tiny">{{ logoErr }}</p>
+          <p v-if="!c?.orgLogo" class="tiny muted">
+            Until one is set, the mark above is drawn in the colour below.
+          </p>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:18px">
+        <label for="bc">Colour</label>
+        <div class="row wrap gap" style="align-items:center">
+          <input id="bc" type="color" class="swatch" :value="previewBrand"
+                 @input="brand = $event.target.value">
+          <!-- Typed as well as picked: a brand colour usually arrives as a
+               string in an email from whoever made the logo, and a swatch alone
+               makes somebody eyeball-match it. -->
+          <input v-model="brand" style="max-width:150px" placeholder="#0d7a6f"
+                 spellcheck="false" aria-label="Colour code">
+          <span v-if="brand && !inkFor(brand)" class="pill bad">not a colour</span>
+        </div>
+      </div>
+
+      <!-- The real button with its real words, not a colour square. What goes
+           wrong with a chosen colour is contrast on the control that says
+           "Count a book in", and a square cannot show that. -->
+      <p class="tiny muted" style="margin:12px 0 6px">This is how a button will read:</p>
+      <span class="btn primary"
+            :style="{ background: previewBrand, borderColor: previewBrand, color: previewInk }">
+        Count a book in
+      </span>
+
+      <div class="sub">
+        <span class="muted small grow">
+          Previewed at once, saved when you say so. Clear the box and save to go
+          back to Raffled&rsquo;s own colour.
+        </span>
+        <button class="btn sm ghost" :disabled="brandSaving" @click="revertBrand">Undo</button>
+        <button class="btn sm primary" :disabled="brandSaving || (!!brand && !inkFor(brand))"
+                @click="saveBrand">{{ brandSaving ? 'Saving\u2026' : 'Save colour' }}</button>
+      </div>
+    </div>
+
     <div v-if="isSuper" class="card">
       <div class="spread"><h3 style="margin:0">What people have been doing</h3>
         <button class="btn sm" @click="loadAudit">Show</button></div>
@@ -283,6 +447,11 @@ async function loadAudit() {
 </template>
 
 <style scoped>
+.swatch {
+  width: 46px; height: 38px; padding: 2px;
+  cursor: pointer; flex: 0 0 auto;
+}
+
 .sub {
   display: flex; align-items: center; gap: 10px;
   margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
