@@ -46,5 +46,40 @@ for (const [file, src] of contacts) {
      `${name}: no button shown on "there is a number" alone`)
 }
 
+/*
+ * And the place a bad number is CREATED, not merely displayed.
+ *
+ * Every fix above stops the app acting on an unreachable number. None of them
+ * stops one being written down. Nine tickets on this raffle already carry a
+ * seller's number with its leading zero gone, and a buyer's number has exactly
+ * one job — finding the person whose ticket was drawn — so the table, with the
+ * buyer still standing there, is the only cheap moment to catch it.
+ */
+console.log('and the moment a number is typed')
+{
+  const sell = readFileSync(join(ROOT, 'Sell.vue'), 'utf8')
+  const body = sell.slice(sell.indexOf('function phoneWarning'), sell.indexOf('</script>'))
+  const warn = new Function('isDialable', 'phoneDigits',
+    `${body}; return phoneWarning`)(
+    (await import('../src/lib/search.js')).isDialable,
+    (await import('../src/lib/search.js')).phoneDigits)
+
+  ok(warn('012-345 6789') === '', 'a number a volunteer can ring passes without comment')
+  ok(warn('+95 9 123 4567') === '', 'so does one written in full, from anywhere')
+  ok(warn('') === '', 'an empty box is not nagged at — the buyer may not have given one')
+  ok(warn('123') === '', 'and neither is a half-typed one; the save rule says that better')
+  const bad = warn('123367462')
+  ok(/leading 0/.test(bad), 'the live shape is warned about, and told what is missing')
+  ok(/cannot be rung/.test(bad), 'in terms of what it costs rather than what it violates')
+
+  // Not a blocker, on purpose: the save rule is unchanged, and a volunteer with
+  // a queue in front of them should not be stopped by a warning.
+  ok(/phoneDigits\(r\.phone\)\.length < 7/.test(sell),
+     'the rule that actually refuses a sale is untouched')
+  ok(!/isDialable\([^)]*\)\)?\s*\{?\s*local\.push/.test(sell),
+     'and dialability does not refuse one')
+  ok(/phoneWarning\(r\.phone\)/.test(sell), 'the warning is shown beside the box it is about')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
