@@ -13,7 +13,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { state, optimistic, toast, setSellMode, agentMap, whereIs } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
-import { money, STATUS_WORDS } from '../lib/format.js'
+import { money, STATUS_WORDS, plainName, isSellerContact } from '../lib/format.js'
 import Sheet from './ui/Sheet.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Bi from './ui/Bi.vue'
@@ -154,7 +154,20 @@ async function correct() {
     <!-- already sold: fix a mistake -->
     <template v-else-if="isDone">
       <div class="facts">
-        <div class="fact"><span>Bought by</span><b>{{ t.name || 'nobody written down' }}</b></div>
+        <!-- "Bought by JOHN (seller)" would say the seller bought their own
+             ticket. They did not — they sold it and know who to. So the label
+             follows the fact rather than the fact being dressed up. -->
+        <div class="fact">
+          <span>{{ isSellerContact(t.name) ? 'Ask' : 'Bought by' }}</span>
+          <b>
+            {{ plainName(t.name) || 'nobody written down' }}
+            <span v-if="isSellerContact(t.name)" class="pill">seller</span>
+          </b>
+        </div>
+        <p v-if="isSellerContact(t.name)" class="tiny muted seller-note">
+          Sold from this seller's own book. They know who bought it — ring them
+          to reach the buyer.
+        </p>
         <div class="fact"><span>Phone</span><b>{{ t.phone || 'none' }}</b></div>
         <div class="fact"><span>Book</span><b>{{ t.book }}</b></div>
         <div class="fact"><span>Now</span><StatusPill :status="t.status" /></div>
@@ -265,6 +278,7 @@ async function correct() {
 </template>
 
 <style scoped>
+.seller-note { margin: -6px 0 10px; }
 .steps-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
 .q { font-size: 1.4rem; margin-bottom: 16px; }
 
