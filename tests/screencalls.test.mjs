@@ -208,5 +208,32 @@ console.log('and the rendered button is actually disabled, not merely gated in s
      'and the refusal names who has it, in words on the screen')
 }
 
+console.log('visibleText reads entities the way a person does')
+{
+  /*
+   * The shared helper had no test of its own, which for infrastructure two
+   * files now depend on is the same gap as a guard nobody calls.
+   *
+   * The failure it guards against is a silently wrong NEGATIVE: leave entities
+   * encoded and "somebody else's book" arrives as "somebody else&#39;s book",
+   * so an assertion on that sentence fails while reporting that the screen does
+   * not say it. That sends somebody to fix a feature that works.
+   */
+  for (const [html, want, what] of [
+    ['<p>somebody else&#39;s book</p>', "somebody else's book", 'a numeric apostrophe'],
+    ['<p>&#x27;hex&#x27;</p>', "'hex'", 'a hex entity'],
+    ['<p>a &quot;seller&quot;</p>', 'a "seller"', 'quotes'],
+    ['<p>5 &lt; 10</p>', '5 < 10', 'an escaped angle bracket'],
+    ['<p>Daw Hla &amp; Co</p>', 'Daw Hla & Co', 'an ampersand'],
+    // &amp; is decoded LAST, or an escaped entity becomes a real one.
+    ['<p>&amp;lt; stays escaped</p>', '&lt; stays escaped', 'a doubly-escaped entity, left alone'],
+    ['<p>a<!-- hidden -->b</p>', 'a b', 'a comment, removed'],
+    ['<div title="Daw Hla">nothing</div>', 'nothing', 'an attribute, which a person cannot read'],
+  ]) {
+    const got = visibleText(html)
+    ok(got === want, `${what}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

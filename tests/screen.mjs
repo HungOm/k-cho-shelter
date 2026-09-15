@@ -147,6 +147,13 @@ export async function renderScreen(componentPath, storeStub, { props = {}, drive
  * Rendering gets you what the browser builds. Stripping gets you what somebody
  * actually sees, and that is what an assertion about a screen is nearly always
  * about.
+ *
+ * ENTITIES ARE DECODED, and that is not fussiness. Vue escapes an apostrophe as
+ * &#39; in plenty of contexts, so a stripper that leaves entities alone turns
+ * "somebody else's book" into "somebody else&#39;s book" — and an assertion on
+ * that sentence fails while reporting that the screen does not say it. A
+ * silently wrong NEGATIVE is the worst direction for this helper to fail in,
+ * because it looks like the feature is missing rather than the test is broken.
  */
 export function visibleText(html) {
   return String(html)
@@ -154,6 +161,12 @@ export function visibleText(html) {
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<[^>]*>/g, ' ')
     .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&(lt|gt|quot|apos);/g,
+      (_, e) => ({ lt: '<', gt: '>', quot: '"', apos: "'" })[e])
+    // &amp; LAST, or "&amp;lt;" decodes to "<" — an escaped entity becoming a
+    // real one, which is the bug this ordering exists to avoid.
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim()
