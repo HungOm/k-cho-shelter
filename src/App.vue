@@ -7,10 +7,9 @@
  * starting over each time.
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, refresh, go, toast, isAdmin, bootFromCache, forgetCache, poll } from './lib/store.js'
+import { state, setConfig, refresh, go, toast, isAdmin, bootFromCache, forgetCache, poll } from './lib/store.js'
 import { tokenIsStale, LS } from './lib/api.js'
 import { api, configure, isSupabase } from './lib/backend.js'
-import { applyBrand } from './lib/brand.js'
 import * as sbAuth from './lib/supabaseAuth.js'
 
 import AppShell from './components/AppShell.vue'
@@ -464,11 +463,11 @@ async function start() {
   try {
     const me = await api('whoami', {}, { noRetry: true })
     state.user = me
-    state.cfg = me.config
-    // Before the first paint of the signed-in app, not after: applying it later
-    // means every volunteer watches the interface change colour on load, which
-    // reads as a glitch rather than as branding.
-    applyBrand(state.cfg?.brandColor)
+    // setConfig, not an assignment: it applies the raffle's colour too, and
+    // before the first paint of the signed-in app rather than after — applying
+    // it later means every volunteer watches the interface change colour on
+    // load, which reads as a glitch rather than as branding.
+    setConfig(me.config)
     phase.value = 'ready'
     // Paint from the local copy first — ticket numbers and statuses are on the
     // device, so the app is usable before the network answers. Buyer names are

@@ -19,6 +19,7 @@ import { ATTN } from './attentionlines.js'
 // that reads it as one. `new Date('2026-10-14')` is UTC midnight and renders as
 // the 13th west of here — the day-early bug this codebase has had four times.
 import { date } from './format.js'
+import { applyBrand } from './brand.js'
 
 export const TICKET_STATUS = {
   AVAILABLE: 'Available', RESERVED: 'Reserved', SOLD: 'Sold',
@@ -139,6 +140,25 @@ export function whereIs(ticket) {
  * stubs, and because this screen has been wrong about the data before — a
  * stale book list must never be what decides a sale.
  */
+/**
+ * The one way config gets into the app.
+ *
+ * NOT just an assignment. The raffle's colour has to be applied the moment its
+ * config arrives, and doing that at the call site meant a correct applyBrand
+ * that nothing was obliged to call — I deleted the line from App.vue and the
+ * whole suite stayed green. Routing every config change through here turns
+ * "did somebody remember?" into "is there another way in?", and the second
+ * question can be answered exhaustively by looking.
+ *
+ * So: no `state.cfg =` anywhere else. A test asserts that, because the rule is
+ * only worth anything if it holds everywhere.
+ */
+export function setConfig(cfg) {
+  state.cfg = cfg || null
+  applyBrand(state.cfg?.brandColor)
+  return state.cfg
+}
+
 export function sellBlock(ticket) {
   return bookBlock(whereIs(ticket))
 }
