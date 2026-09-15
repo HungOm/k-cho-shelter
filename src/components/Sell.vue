@@ -8,7 +8,7 @@
  */
 import { ref, computed, nextTick } from 'vue'
 import { state, api, toast, loadDelta, canWrite, sellBlock } from '../lib/store.js'
-import { phoneDigits } from '../lib/search.js'
+import { phoneDigits, isDialable } from '../lib/search.js'
 import { money } from '../lib/format.js'
 import { resolveTicketNumber } from '../lib/books.js'
 import Bi from './ui/Bi.vue'
@@ -168,6 +168,29 @@ async function saveAll() {
     busy.value = false
   }
 }
+/**
+ * A contact somebody could actually ring, checked as it is typed.
+ *
+ * NOT a blocker. The length test below still decides whether a sale saves, and
+ * a volunteer at a table with a queue in front of them should not be stopped by
+ * a warning. But a buyer's telephone number has exactly one job — finding the
+ * person whose ticket was drawn — and a number missing its leading zero looks
+ * completely normal in the box while being unreachable forever after.
+ *
+ * Nine tickets on this raffle already carry a number like that. This is the
+ * place they would have been caught: at the table, while the buyer is still
+ * standing there and can repeat it.
+ */
+function phoneWarning(phone) {
+  const typed = String(phone || '').trim()
+  if (isDialable(typed)) return ''
+  // Also covers an empty box: nothing typed is nothing to warn about, and the
+  // buyer may simply not have given a number. A separate !typed guard read as
+  // a second rule and was the same rule twice.
+  if (phoneDigits(typed).length < 7) return ''
+  return 'Check this number — it has no leading 0 and no country code, so it cannot be rung.'
+}
+
 </script>
 
 <template>
@@ -208,8 +231,11 @@ async function saveAll() {
             </small>
           </div>
           <input v-model="r.name" class="f" autocomplete="off" placeholder="Name" aria-label="Buyer name">
-          <input v-model="r.phone" class="f" type="tel" inputmode="tel" autocomplete="off"
-                 placeholder="Phone" aria-label="Phone" @keydown.tab="onLastField(i)">
+          <div class="f col" style="gap:2px">
+            <input v-model="r.phone" type="tel" inputmode="tel" autocomplete="off"
+                   placeholder="Phone" aria-label="Phone" @keydown.tab="onLastField(i)">
+            <small v-if="phoneWarning(r.phone)" class="tag bad">{{ phoneWarning(r.phone) }}</small>
+          </div>
           <button class="del" @click="removeRow(i)" aria-label="Remove this line">✕</button>
         </div>
       </div>
