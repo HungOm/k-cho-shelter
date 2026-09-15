@@ -60,6 +60,25 @@ const to = ref('')
 const due = ref(defaultDue())
 const busy = ref(false)
 const blocked = ref(null)
+const partly = ref(null)
+
+/**
+ * A blocked book, said in words rather than in the server's field names.
+ *
+ * The server sends {book, status, agentId} — never `reason`, which is what
+ * this template asked for and got nothing from, printing every refusal as a
+ * book number followed by an empty dash. The status is already a phrase
+ * chosen to read aloud ('out', 'settled', 'not released yet', 'taken
+ * meanwhile'), so the only thing missing is WHO, which is the half an
+ * organiser standing at a table actually needs: a book that is 'out' is out
+ * with somebody, and that somebody is who they have to ring.
+ */
+function whyBlocked(b) {
+  const held = b.agentId && state.agents.find(a => a.id === b.agentId)
+  if (held) return `${b.status} — with ${held.name}`
+  if (b.agentId) return `${b.status} — with ${b.agentId}`
+  return b.status || 'not free'
+}
 
 /**
  * The shared check-in date, not a month from today.
@@ -124,6 +143,26 @@ async function issue() {
       toBook: bookNumber(to.value || from.value),
       dueDate: due.value
     })
+    /*
+     * A PARTIAL HANDOVER STOPS HERE, and that is the whole point of it.
+     *
+     * The server gives out the books it can and names the ones it could not —
+     * somebody else took them between the range being typed and the button
+     * being pressed. This closed on the count alone and went straight to the
+     * handover receipt, so an organiser who asked for five and gave out three
+     * printed paper for five and put it in a seller's hand. The server's own
+     * comment says it: a receipt for five books when three went out is the
+     * paper a seller holds up later and is wrong about.
+     *
+     * So when anything was skipped the sheet stays up and says which, and the
+     * receipt is a deliberate second tap rather than the automatic next thing.
+     */
+    if (r.skipped?.length) {
+      partly.value = r
+      await refresh()
+      return
+    }
+
     toast(`${r.issued} books given to ${r.agent.name}`, 'ok')
     // Close first. The write is done and the toast has said so; reloading the
     // whole ticket table before closing reads as a hang, which is exactly what
@@ -131,7 +170,12 @@ async function issue() {
     emit('issued', r.agent.id)
     refresh()
   } catch (err) {
-    if (err.code === 'BOOKS_NOT_AVAILABLE' && err.details?.blocked) blocked.value = err.details.blocked
+    // BOOKS_CHANGED_MEANWHILE carries the same `blocked` list and was not
+    // caught, so a race — two organisers giving out the same run within a
+    // second — fell through to a toast and threw away the names of the books
+    // it had just gone to the trouble of identifying.
+    const named = err.code === 'BOOKS_NOT_AVAILABLE' || err.code === 'BOOKS_CHANGED_MEANWHILE'
+    if (named && err.details?.blocked) blocked.value = err.details.blocked
     else toast(err.message, 'bad', err.code)
   } finally { busy.value = false }
 }
@@ -200,14 +244,35 @@ async function issue() {
     <!-- the server refused: it names every blocked book, so show them all -->
     <div v-if="blocked" class="note bad">
       <b>Nothing was changed. These are not free:</b>
-      <div v-for="b in blocked" :key="b.book" class="tiny">{{ b.book }} — {{ b.reason }}</div>
+      <div v-for="b in blocked" :key="b.book" class="tiny">{{ b.book }} — {{ whyBlocked(b) }}</div>
+    </div>
+
+    <!-- some went out and some did not: the receipt must not claim otherwise -->
+    <div v-if="partly" class="note warn">
+      <b>{{ partly.issued }} of {{ partly.issued + partly.skipped.length }} books went to
+        {{ partly.agent.name }}</b> — the rest were given out by somebody else while you
+      were typing, so they are not on this handover.
+      <div v-for="b in partly.skipped.slice(0, 12)" :key="b" class="tiny">{{ b }} — taken meanwhile</div>
+      <div v-if="partly.skipped.length > 12" class="tiny">…and {{ partly.skipped.length - 12 }} more</div>
     </div>
 
     <template #actions>
-      <button class="btn" @click="emit('close')">Cancel</button>
-      <button class="btn primary" :disabled="busy || !count || !canIssue" @click="issue">
-        {{ busy ? 'Saving…' : `Give out ${count || ''}` }}
-      </button>
+      <!-- After a partial handover the only two useful actions are the receipt
+           for what ACTUALLY went out, and leaving. Offering "Give out" again
+           over a range that is now half gone is how the same mistake is made
+           twice. -->
+      <template v-if="partly">
+        <button class="btn" @click="emit('close')">Done</button>
+        <button class="btn primary" @click="emit('issued', partly.agent.id)">
+          Receipt for the {{ partly.issued }} that went out
+        </button>
+      </template>
+      <template v-else>
+        <button class="btn" @click="emit('close')">Cancel</button>
+        <button class="btn primary" :disabled="busy || !count || !canIssue" @click="issue">
+          {{ busy ? 'Saving…' : `Give out ${count || ''}` }}
+        </button>
+      </template>
     </template>
     <!-- On top of this sheet, not instead of it: Sheet is fixed at z-index 60
          and this one comes later in the DOM, so it paints over. Nothing here

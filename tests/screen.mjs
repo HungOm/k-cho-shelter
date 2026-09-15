@@ -117,10 +117,16 @@ function build(componentPath, storeStub, withTemplate) {
 }
 
 /** The setup context of a screen: its refs, computeds and functions, live. */
-export async function setupOf(componentPath, storeStub, props = {}) {
+export async function setupOf(componentPath, storeStub, props = {}, { emit } = {}) {
   const { out, cleanup } = build(componentPath, storeStub, false)
   const mod = await import('file://' + out)
-  const ctx = mod.default.setup(props, { attrs: {}, slots: {}, emit() {}, expose() {} })
+  // The emit is swallowed unless a caller asks for it. What a modal tells its
+  // parent is sometimes the whole behaviour — a handover that went out half
+  // and emitted 'issued' anyway prints a receipt for books nobody received —
+  // and a no-op emit makes that indistinguishable from the correct version.
+  const ctx = mod.default.setup(props, {
+    attrs: {}, slots: {}, emit: emit ?? (() => {}), expose() {},
+  })
   return { ctx, cleanup }
 }
 
