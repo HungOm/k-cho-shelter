@@ -24,6 +24,7 @@
  * that produced three identical error toasts on one dialog: a wall with no door
  * reads as a fault worth retrying.
  */
+import { cut } from './source.mjs'
 import { readFileSync } from 'node:fs'
 const read = p => readFileSync(new URL(p, import.meta.url), 'utf8')
 
@@ -58,8 +59,10 @@ ok(/:refused="refused"/.test(app), 'and it reaches the screen')
 ok(/refused: Boolean/.test(signin), 'which declares it')
 
 console.log('and a refusal gets a door rather than a retry')
-const refusedBlock = signin.slice(signin.indexOf('v-else-if="refused"'),
-                                 signin.indexOf('<!-- something went wrong -->'))
+// Ends at the next branch in the markup rather than at the comment above it:
+// a comment is the least stable text in a file and the one nothing depends on.
+const refusedBlock = cut(signin, 'v-else-if="refused"', '<div v-else class="pad left">',
+                         'the refusal branch')
 ok(refusedBlock.length > 0, 'the refusal branch exists')
 ok(/emit\('reset'\)/.test(refusedBlock), 'it offers a way to a different account')
 ok(!/emit\('retry'\)/.test(refusedBlock),

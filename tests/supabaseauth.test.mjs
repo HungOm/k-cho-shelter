@@ -21,6 +21,7 @@
  * it were a session.
  */
 import { readFileSync } from 'node:fs'
+import { cut } from './source.mjs'
 import { join } from 'node:path'
 
 const ROOT = new URL('..', import.meta.url).pathname
@@ -94,8 +95,12 @@ ok(!/window\.google|accounts\.id/.test(src),
 // A refusal here is a project setting, not a wrong password. Run the real
 // function with a stubbed client rather than trusting the message by sight.
 {
-  const body = src.slice(src.indexOf('export async function signInWithGoogleToken'),
-                         src.indexOf('/**\n * The old route'))
+  // Anchored on code at both ends. This used to end at the comment above
+  // signIn, so rewording that prose would have silently changed the region
+  // under test — and a missing marker makes indexOf -1, which slices to the end
+  // of the file rather than failing.
+  const body = cut(src, 'export async function signInWithGoogleToken',
+                   'export async function signIn(', 'the token exchange')
   const make = err => new Function('getClient', `${body.replace('export ', '')}; return signInWithGoogleToken`)(
     async () => ({ auth: { signInWithIdToken: async () => ({ data: null, error: err }) } }))
 
