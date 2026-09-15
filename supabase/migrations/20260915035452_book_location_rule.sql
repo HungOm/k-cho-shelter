@@ -1,3 +1,7 @@
+-- Who may sell a ticket, decided by where the paper is.
+-- Re-applies supabase/functions.sql in full; every statement is
+-- create-or-replace, so running it twice changes nothing.
+
 -- K'Cho Shelter — the operations that must be all-or-nothing.
 --
 -- Apps Script took one script-wide lock for every write, which made two

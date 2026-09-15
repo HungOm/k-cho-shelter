@@ -660,6 +660,39 @@ function assertCanWriteTicket(user, ticketNumber, opts) {
     logAudit('REOPEN', { book: bookNum, ticket: ticketNumber }, user.email);
   }
 
+  /*
+   * You can only sell paper you can hand to the buyer.
+   *
+   * A book that is Out is in a seller's bag, possibly an hour away. Claiming
+   * one of its tickets from the office gives the buyer a number and no ticket,
+   * and leaves the seller free to sell that same number to somebody standing in
+   * front of them. Two people hold it; one of them loses an argument at the
+   * draw.
+   *
+   * So a book that is out is writable by the person holding it, and by an
+   * organiser — who is not selling but WRITING DOWN what the seller reported,
+   * which is ordinary and has to keep working. A helper cannot: get the book
+   * marked returned first, and then it is paper on the desk like any other.
+   *
+   * The second half of the rule is in handleSellTicket: a sale out of a book
+   * that is Out is CREDITED TO THE HOLDER. The money lands on that seller's
+   * balance and settlement reconciles it against the stubs they hand back, so
+   * a sale invented at the desk does not stay quiet.
+   *
+   * Agents fall through to NOT_YOUR_BOOK below, which says the same thing in
+   * the words that fit their situation.
+   */
+  if (opts.claiming && book.status === BOOK_STATUS.OUT && user.role !== ROLES.AGENT &&
+      (!user.agentId || book.agentId !== user.agentId) &&
+      !(user.isAdmin && book.agentId)) {
+    var holder = agentNameMap_()[book.agentId];
+    throw new ApiError('BOOK_WITH_SELLER',
+      'Book ' + bookNum + ' is out with ' + ((holder && holder.name) || 'a seller') +
+      ', so its tickets are not here to sell. ' +
+      'If the book is back, ask an organiser to mark it returned first.',
+      { book: bookNum, heldBy: book.agentId || '' });
+  }
+
   if (user.isAdmin || user.role === ROLES.RECORDER) return bookNum;
 
   if (user.role !== ROLES.AGENT) {

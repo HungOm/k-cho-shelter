@@ -86,8 +86,14 @@ var BOOK_STATUS = {
 
 var ROLES = { ADMIN: 'admin', RECORDER: 'recorder', AGENT: 'agent', VIEWER: 'viewer' };
 
-/** Books in these states are frozen — no ticket writes without admin force. */
-var CLOSED_BOOK_STATUSES = [BOOK_STATUS.SETTLED, BOOK_STATUS.VOID];
+/**
+ * Books in these states are frozen — no ticket writes without admin force.
+ *
+ * Lost is here with Settled and Void: marking a book lost voids its unsold
+ * tickets, which covers most of it, but not one already sold and later
+ * corrected. A lost book is paper nobody can find.
+ */
+var CLOSED_BOOK_STATUSES = [BOOK_STATUS.SETTLED, BOOK_STATUS.VOID, BOOK_STATUS.LOST];
 
 // ============ CONFIG DEFAULTS ============
 // Seeded into the Config tab by setup(). Change them IN THE SHEET, not here.

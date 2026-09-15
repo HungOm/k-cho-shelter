@@ -836,6 +836,24 @@ function mask(row: Record<string, unknown>, user: AppUser, holds?: Set<number> |
     return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
   }
 
+  /*
+   * A helper reads the buyers they wrote down, and no others.
+   *
+   * This has to be here as well as in tickets_readable, not instead of it.
+   * Direct reads are the default on Supabase and go straight to the view — but
+   * ?directreads=off is a documented switch, offered precisely for the day the
+   * views misbehave, and it routes the same read through this function. If the
+   * narrowing lived only in the view, that switch would hand a helper every
+   * buyer's telephone number, and it would look like a performance setting.
+   *
+   * Masked in one path and not the other is this project's most repeated bug:
+   * it is how every seller came to be sent every buyer's phone number, because
+   * the row was masked for viewers only.
+   */
+  if (user.role === 'recorder' && String(row.recorded_by ?? '') !== user.email) {
+    return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
+  }
+
   return row
 }
 

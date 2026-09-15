@@ -177,8 +177,30 @@ select
 from (
   select t.*,
          b.number as book_number,
-         (app_role() <> 'agent'
-          or t.book_idx in (select idx from books where held_by_agent = app_agent_id())) as mine
+         /*
+          * WHOSE BUYER DETAILS THIS PERSON MAY READ.
+          *
+          * Everyone sees every ticket's NUMBER and STATUS — "is 03291 still
+          * going?" must have an answer for anybody, or the raffle cannot be
+          * worked. What `mine` gates is the buyer: their name, telephone
+          * number, area and the note about them. Most of those people are
+          * refugees, and the list is several thousand long.
+          *
+          * An agent: the books physically in their hands.
+          * A helper: the sales THEY wrote down. They are usually a volunteer at
+          *   a desk for an afternoon, and a desk shift is not a reason to hold
+          *   every buyer in the raffle. Where they need to reach a buyer they
+          *   did not record, the route is the seller — sold_by_agent stays
+          *   visible and agents_readable gives them that person's number.
+          * An organiser: everyone. Somebody has to be able to run the draw.
+          */
+         (case app_role()
+            when 'agent' then
+              t.book_idx in (select idx from books where held_by_agent = app_agent_id())
+            when 'recorder' then
+              t.recorded_by = auth_email()
+            else true
+          end) as mine
   from tickets t
   -- Left, not inner: a ticket whose book row is missing must still be readable.
   -- Dropping it would hide a sold ticket from the draw over a bookkeeping fault.

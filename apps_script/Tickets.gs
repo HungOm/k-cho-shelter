@@ -47,6 +47,7 @@ var WIRE_BOOK = TICKET_WIRE_FIELDS.indexOf('Book_Number');
 var WIRE_NAME = TICKET_WIRE_FIELDS.indexOf('Buyer_Name');
 var WIRE_ZONE = TICKET_WIRE_FIELDS.indexOf('Buyer_Zone');
 var WIRE_NOTES = TICKET_WIRE_FIELDS.indexOf('Notes');
+var WIRE_RECORDED_BY = TICKET_WIRE_FIELDS.indexOf('Recorded_By');
 
 /** The row as it is cached: every field, nothing masked, dates already ISO. */
 function ticketToWireRaw_(t) {
@@ -133,6 +134,20 @@ function maskWireRow_(row, user, holds) {
     c[WIRE_ZONE] = '';
     c[WIRE_NOTES] = '';
     return c;
+  }
+
+  // A helper reads the buyers they wrote down, and no others. Same rule as
+  // tickets_readable and the edge function's mask(): a volunteer at a desk for
+  // an afternoon has no reason to hold several thousand refugees' telephone
+  // numbers. To reach a buyer they did not record, they ring the seller.
+  if (user.role === ROLES.RECORDER &&
+      String(row[WIRE_RECORDED_BY] || '').toLowerCase() !== String(user.email || '').toLowerCase()) {
+    var r = row.slice();
+    r[WIRE_NAME] = '';
+    r[WIRE_PHONE] = '';
+    r[WIRE_ZONE] = '';
+    r[WIRE_NOTES] = '';
+    return r;
   }
 
   return row;
@@ -403,7 +418,7 @@ function handleSellTicket(payload, user) {
     throw new ApiError('BAD_PHONE', 'That phone number looks too short to call back.');
   }
 
-  var bookNum = assertCanWriteTicket(user, ticketNumber, { force: payload.force });
+  var bookNum = assertCanWriteTicket(user, ticketNumber, { force: payload.force, claiming: true });
   var ctx = loadTicket_(ticketNumber);
   var t = ctx.ticket;
 
@@ -418,7 +433,11 @@ function handleSellTicket(payload, user) {
   assertVersion_(t, payload.expectedVersion, user);
 
   var cfg = getConfig();
-  var agentId = payload.agentId || user.agentId || heldByAgent_(bookNum);
+  // A sale out of a book that is still with a seller is credited to that
+  // seller, whoever typed it in — the other half of the rule in
+  // assertCanWriteTicket.
+  var agentId = heldByAgentIfOut_(bookNum) || payload.agentId || user.agentId ||
+                heldByAgent_(bookNum);
 
   var version = writeTicketRow_(ctx.sheet, ctx.map, ctx.row, t, {
     Status: payload.donated ? TICKET_STATUS.DONATED : TICKET_STATUS.SOLD,
@@ -443,7 +462,7 @@ function handleReserveTicket(payload, user) {
   var ticketNumber = requireField_(payload, 'ticketNumber');
   var buyerName = requireField_(payload, 'buyerName');
 
-  var bookNum = assertCanWriteTicket(user, ticketNumber, { force: payload.force });
+  var bookNum = assertCanWriteTicket(user, ticketNumber, { force: payload.force, claiming: true });
   var ctx = loadTicket_(ticketNumber);
   var t = ctx.ticket;
 
@@ -599,7 +618,7 @@ function handleBulkRecordSales(payload, user) {
       if (isBlank_(s.buyerName)) throw new ApiError('MISSING_FIELD', 'Buyer name is required.');
       if (normalisePhone(s.buyerPhone).length < 7) throw new ApiError('BAD_PHONE', 'Phone number is too short.');
 
-      var bookNum = assertCanWriteTicket(user, num, { force: payload.force });
+      var bookNum = assertCanWriteTicket(user, num, { force: payload.force, claiming: true });
       var rowNum = findTicketRow(sheet, num, cfg);
       if (!rowNum) throw new ApiError('TICKET_NOT_FOUND', 'Not found.');
 
@@ -645,7 +664,8 @@ function handleBulkRecordSales(payload, user) {
     vals[map.Buyer_Name - 1] = String(p.sale.buyerName).trim();
     vals[map.Buyer_Phone - 1] = String(p.sale.buyerPhone).trim();
     vals[map.Buyer_Zone - 1] = p.sale.buyerZone || '';
-    vals[map.Sold_By_Agent - 1] = p.sale.agentId || heldByAgent_(p.book) || '';
+    vals[map.Sold_By_Agent - 1] = heldByAgentIfOut_(p.book) || p.sale.agentId ||
+                                  heldByAgent_(p.book) || '';
     vals[map.Amount - 1] = price;
     vals[map.Payment_Status - 1] = 'Paid';
     vals[map.Sale_Date - 1] = now;
