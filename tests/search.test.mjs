@@ -21,7 +21,28 @@ console.log('folding names')
 eq(fold('Pa Thang'), 'pa thang', 'lowercases')
 eq(fold('  Pa   THANG '), 'pa thang', 'collapses whitespace')
 eq(fold("K'Cho"), 'kcho', 'drops apostrophes')
+/*
+ * BOTH APOSTROPHES, and the curly one is the one that matters most here.
+ *
+ * iOS and Android autocorrect a typed ' into a curly ’, so a volunteer
+ * searching on a phone — which is nearly all of them — sends the curly form,
+ * while a name pasted from a spreadsheet usually carries the straight one. If
+ * the fold handled only one, the two would stop matching and search would fail
+ * for phone users and for nobody else, which is the hardest kind of bug to have
+ * reported.
+ *
+ * It was already handled and not pinned: removing ’ from the fold passed the
+ * whole suite. This community's names carry apostrophes constantly — K'Cho
+ * itself does — so this is closer to the common case than to an edge one.
+ */
+eq(fold('K’Cho'), 'kcho', 'drops the curly apostrophe a phone types')
+eq(fold("K’Cho Women's Group"), fold("K'Cho Women’s Group"),
+   'so a name typed on a phone matches the same name pasted from a spreadsheet')
 eq(fold('Za-Aung'), 'zaaung', 'drops hyphens')
+// Initials and abbreviations: "U. Kyaw" written out by one person and "U Kyaw"
+// by the next is the same seller. Folded and unpinned until now.
+eq(fold('U. Kyaw'), 'u kyaw', 'drops full stops')
+eq(fold('U. Kyaw'), fold('U Kyaw'), 'so an initial with a stop matches one without')
 eq(fold('José'), 'jose', 'strips accents')
 eq(fold(null), '', 'handles null')
 
