@@ -62,8 +62,8 @@ function explain(err) {
     case 'ABOVE_CEILING':
       return `This raffle is planned to end at ${Number(d.ceiling).toLocaleString()} tickets, ` +
              `and ${Number(d.requested).toLocaleString()} is past that. If the plan really has ` +
-             `changed, the ceiling is set in the Config tab — but check the number first, ` +
-             `because making tickets cannot be undone.`
+             `changed, only the System Admin can raise the ceiling — but check the ` +
+             `number first, because making tickets cannot be undone.`
     case 'CANNOT_SHRINK':
       return 'Ticket rows cannot be removed once they exist. This can only go up.'
     case 'NO_CHANGE':

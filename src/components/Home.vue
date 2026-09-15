@@ -4,6 +4,7 @@
  * going, and what needs doing. Every attention row is a shortcut to the fix.
  */
 import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh } from '../lib/store.js'
+import { isSupabase } from '../lib/backend.js'
 import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
 import Icon from './ui/Icon.vue'
@@ -20,16 +21,28 @@ function doStep(action) {
 
 <template>
   <div>
-    <!-- the spreadsheet has not been prepared yet -->
+    <!-- The backend has not been prepared yet. WHICH backend matters here: this
+         card names the exact steps somebody has to take, and the two are
+         nothing alike. Telling a Supabase deployment to open Extensions → Apps
+         Script sends a volunteer to a place that has no bearing on the app they
+         are looking at. -->
     <div v-if="state.needsSetup" class="card setup">
-      <h3 class="row"><Icon name="gear" :size="22" /> The spreadsheet is not ready yet</h3>
-      <p>
+      <h3 class="row">
+        <Icon name="gear" :size="22" />
+        {{ isSupabase ? 'The database is not ready yet' : 'The spreadsheet is not ready yet' }}
+      </h3>
+      <p v-if="isSupabase">
+        Your sign-in worked — but the tables the app reads from have not been
+        made. Whoever set this up needs to run the setup steps against the
+        database. Nothing here will work until they have.
+      </p>
+      <p v-else>
         Your sign-in worked — but the tabs the app reads from have not been made.
         Somebody needs to open the spreadsheet, go to
         <b>Extensions → Apps Script</b>, choose <b>setup</b> from the list at the top
         and press <b>Run</b>. It takes about a minute.
       </p>
-      <p class="muted small">
+      <p v-if="!isSupabase" class="muted small">
         Set the ticket numbers in the <b>Config</b> tab first — they are fixed
         once the tickets are made.
       </p>

@@ -66,6 +66,50 @@ for (const f of files) {
   ok(!hit, `${rel} — says "${hit?.[0]}"`)
 }
 
+/*
+ * Naming a spreadsheet is only correct on one of two backends.
+ *
+ * Supabase is the deployed default now. Telling somebody to change a setting in
+ * the Config tab sends them to a sheet nothing reads — and worse than useless,
+ * because the change STICKS in the sheet and never reaches the app, so they
+ * have every reason to think they did it right.
+ *
+ * Some mentions are correct: the Apps Script transport's own errors, and the
+ * setup form that asks for a script.google.com link, are only ever shown on
+ * that backend. Those are listed with the reason. Everything else must be
+ * backend-aware — the file has to import isSupabase and choose.
+ */
+const SHEET_OK = new Map([
+  ['/src/lib/api.js',
+   'the Apps Script transport itself; every message in it fires only on that backend'],
+  ['/src/components/SignIn.vue',
+   'the setup form asks for a script.google.com link and is unreachable on Supabase'],
+  ['/src/lib/i18n.js',
+   'translation keys for those Apps Script labels; a key is not a screen'],
+])
+
+console.log('a spreadsheet is named only where a spreadsheet exists')
+for (const f of files) {
+  const rel = f.slice(f.indexOf('/src/'))
+  const raw = readFileSync(f, 'utf8')
+  const v = visible(raw)
+  if (!/Config tab|the spreadsheet\b/.test(v)) { pass++; continue }
+  const why = SHEET_OK.get(rel)
+  if (why) {
+    ok(why.length > 30, `${rel} is listed with an actual reason`)
+    continue
+  }
+  // Not listed, so it has to choose at run time rather than assume.
+  ok(/from '\.\.\/lib\/backend\.js'|from '\.\/lib\/backend\.js'/.test(raw) &&
+     /isSupabase/.test(v),
+     `${rel} names a spreadsheet without asking which backend is running`)
+}
+
+console.log('and the listed ones have not quietly become backend-aware')
+for (const [rel] of SHEET_OK) {
+  ok(files.some(f => f.endsWith(rel.slice(1))), `${rel} still exists`)
+}
+
 console.log('and no screen still says the words it replaced')
 for (const f of files) {
   const rel = f.slice(f.indexOf('/src/'))
