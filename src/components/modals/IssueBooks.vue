@@ -4,6 +4,7 @@ import { ref, computed } from 'vue'
 import { state, api, toast, refresh } from '../../lib/store.js'
 import { money, date } from '../../lib/format.js'
 import { inspectRange, bookNumber } from '../../lib/books.js'
+import { asDay, todayDay, dayFromNow } from '../../lib/days.js'
 import Sheet from '../ui/Sheet.vue'
 import FreeRuns from '../ui/FreeRuns.vue'
 
@@ -26,21 +27,20 @@ const blocked = ref(null)
  * has passed and nobody has moved it yet, and only then the old rolling month.
  */
 function defaultDue() {
-  const today = new Date().toISOString().slice(0, 10)
-  const checkIn = state.cfg?.checkInDate
+  const today = todayDay()
+  const checkIn = asDay(state.cfg?.checkInDate)
   if (checkIn && checkIn >= today) return checkIn
 
-  const last = state.cfg?.finalDeadline
+  const last = asDay(state.cfg?.finalDeadline)
   if (last && last >= today) return last
 
-  const d = new Date()
-  d.setDate(d.getDate() + (state.cfg?.defaultDueDays || 30))
-  return d.toISOString().slice(0, 10)
+  return dayFromNow(state.cfg?.defaultDueDays || 30)
 }
 
 /** Whether the date in the box is still the one everybody else is on. */
-const isShared = computed(() =>
-  !!state.cfg?.checkInDate && due.value === state.cfg.checkInDate)
+const sharedDay = computed(() => asDay(state.cfg?.checkInDate))
+const lastDay = computed(() => asDay(state.cfg?.finalDeadline))
+const isShared = computed(() => !!sharedDay.value && due.value === sharedDay.value)
 
 // Resolved locally against books already loaded, so the answer appears as they
 // type rather than after a save they had to wait for.
@@ -139,12 +139,12 @@ async function issue() {
 
     <div class="field mt">
       <label for="id">Bring back by</label>
-      <input id="id" v-model="due" type="date" :max="state.cfg?.finalDeadline || null">
+      <input id="id" v-model="due" type="date" :max="lastDay || null">
       <p v-if="isShared" class="hint">
         The check-in date — the same day every seller reports by.
       </p>
-      <p v-else-if="state.cfg?.checkInDate" class="hint warnish">
-        Everybody else reports by {{ date(state.cfg.checkInDate) }}. Giving these books a
+      <p v-else-if="sharedDay" class="hint warnish">
+        Everybody else reports by {{ date(sharedDay) }}. Giving these books a
         different date takes them off that list.
       </p>
     </div>
