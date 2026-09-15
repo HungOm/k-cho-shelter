@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — Auth.gs
+ * Raffled — Auth.gs
  *
  * The security boundary.
  *

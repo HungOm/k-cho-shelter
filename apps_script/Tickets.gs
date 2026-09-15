@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — Tickets.gs
+ * Raffled — Tickets.gs
  *
  * Reading the ticket table, and every write that touches a ticket.
  *

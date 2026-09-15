@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — Books.gs
+ * Raffled — Books.gs
  *
  * Custody. The Books sheet is the single source of truth for who is holding
  * which physical book; a ticket's owning agent is always derived from its

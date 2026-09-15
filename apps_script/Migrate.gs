@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — Migrate.gs
+ * Raffled — Migrate.gs
  *
  * Copies the raffle out of this spreadsheet and into Supabase. Run from the
  * Apps Script editor; nothing calls it over the web.

@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — Api.gs
+ * Raffled — Api.gs
  *
  * Request router, response envelopes, and the write lock.
  *
@@ -188,7 +188,7 @@ function doGet(e) {
   if (!e || !e.parameter) {
     return jsonOut_({
       ok: true,
-      message: "K'Cho Shelter API is running. Deploy as a web app and call it from the tracker."
+      message: "Raffled API is running. Deploy as a web app and call it from the tracker."
     });
   }
   return route_(readGetRequest_(e));

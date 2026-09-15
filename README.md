@@ -1,4 +1,6 @@
-# K'Cho Shelter — ticket & book tracker
+# Raffled
+
+**Raffle ticket books, sellers and money.** Who holds which book, what sold, and what is still to come in.
 
 A ticket and book inventory tracker for a community fundraising raffle. Paper tickets are printed in
 books, handed to agents, sold for cash, and reconciled when the books come back.

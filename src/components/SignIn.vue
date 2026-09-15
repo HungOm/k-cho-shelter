@@ -62,13 +62,15 @@ onMounted(async () => {
   <div class="gate">
     <div class="box">
       <Logo :size="76" big class="mark" />
-      <h1>K'Cho Shelter</h1>
-      <p class="muted">Raffle ticket record</p>
-      <!-- The config has not loaded before sign-in, so this falls back to the
-           registered name. Once signed in it follows the raffle's settings,
-           wherever the chosen backend keeps them. -->
-      <p class="tiny muted credit">
-        {{ state.cfg?.orgName || "K'Cho Ethnic Association Malaysia" }}
+      <h1>Raffled</h1>
+      <p class="muted">Raffle ticket books, sellers and money</p>
+      <!-- Config has not loaded before sign-in — whoami has not run yet — so on
+           this screen the fallback was not the edge case, it was every load.
+           Which made one organisation's name the credit line of every
+           deployment. Nothing is the honest answer: a blank space says nothing,
+           and a name says something untrue about who is asking for the money. -->
+      <p v-if="state.cfg?.orgName" class="tiny muted credit">
+        {{ state.cfg.orgName }}
       </p>
 
       <!-- checking -->

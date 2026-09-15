@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — Config.gs
+ * Raffled — Config.gs
  *
  * Sheet names, column layouts, the Config tab reader, and the ticket<->book
  * arithmetic that the rest of the system depends on.
@@ -134,8 +134,8 @@ var CONFIG_DEFAULTS = [
     + 'filed against a round number, and changing this by hand re-opens or hides them.'],
   ['DEFAULT_DUE_DAYS', '30', 'Fallback return period, used only for a raffle with no '
     + 'CHECK_IN_DATE and no FINAL_DEADLINE still ahead.'],
-  ['EVENT_NAME', "K'Cho Shelter Fundraising Raffle", 'Shown on receipts.'],
-  ['ORG_NAME', "K'Cho Ethnic Association Malaysia", 'Shown on receipts.'],
+  ['EVENT_NAME', 'Fundraising Raffle', 'The name of THIS raffle, shown on receipts. Change it.'],
+  ['ORG_NAME', '', 'Who is running the raffle. Shown on receipts. Set this before selling.'],
   ['PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. '
     + 'NOT part of ticket numbers, so it is safe to change at any time.'],
   ['ACTIVE_TICKETS', '', 'How many of the generated tickets are IN PLAY, counting from the '

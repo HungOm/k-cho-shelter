@@ -1,4 +1,4 @@
--- K'Cho Shelter — the operations that must be all-or-nothing.
+-- Raffled — the operations that must be all-or-nothing.
 --
 -- Apps Script took one script-wide lock for every write, which made two
 -- volunteers in different books queue behind each other, and still only

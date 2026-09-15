@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — Setup.gs
+ * Raffled — Setup.gs
  *
  * Run these from the Apps Script editor, not over the web.
  *
@@ -437,6 +437,9 @@ function dailyBackup() {
 }
 
 function backupFolder_() {
+  // NOT renamed with the product. This names a folder that exists in Drive with
+  // backups already in it; changing the string silently starts a second folder
+  // and orphans the history. Renaming it is a deliberate move, not a rename.
   var name = "K'Cho Shelter Backups";
   var folders = DriveApp.getFoldersByName(name);
   return folders.hasNext() ? folders.next() : DriveApp.createFolder(name);

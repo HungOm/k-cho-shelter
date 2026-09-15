@@ -1,5 +1,5 @@
 /**
- * K'Cho Shelter — People.gs
+ * Raffled — People.gs
  *
  * Agents and Users are deliberately separate things.
  *

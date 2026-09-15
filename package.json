@@ -1,9 +1,9 @@
 {
-  "name": "kcho-shelter",
+  "name": "raffled",
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "Ticket and book inventory tracker for the K'Cho Shelter fundraising raffle",
+  "description": "Raffle ticket books, sellers and money — who holds what, what sold, and what is still owed",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

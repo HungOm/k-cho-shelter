@@ -1,4 +1,4 @@
--- K'Cho Shelter — Postgres schema
+-- Raffled — Postgres schema
 --
 -- A candidate replacement for the Google Sheet, not a change to it. Nothing
 -- here is live until the migration in this directory is run deliberately.
