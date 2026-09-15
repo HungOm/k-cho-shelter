@@ -6,7 +6,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { state, api, toast } from '../lib/store.js'
 import { money, moneyShort, date } from '../lib/format.js'
-import { waNumber } from '../lib/search.js'
+import { waNumber, isDialable } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
 
 const rows = ref(null)
@@ -51,7 +51,9 @@ function telHref(phone) {
 }
 
 function waLink(a) {
-  if (!a.phone) return ''
+  // Not just "is there a number". A number we cannot place is a link to a
+  // stranger, and it looks exactly like a link that works.
+  if (!isDialable(a.phone)) return ''
   const msg = `Hello ${a.name}, the raffle shows ${money(a.outstanding, currency.value)} ` +
     `still to come in from ${a.ticketsSold} ticket${a.ticketsSold === 1 ? '' : 's'}. ` +
     `Could you let us know when you can hand it in? Thank you.`
@@ -120,8 +122,17 @@ function waLink(a) {
                   <div class="row wrap gap" style="margin-bottom:10px">
                     <a v-if="waLink(a)" class="btn sm" :href="waLink(a)"
                        target="_blank" rel="noopener">Message on WhatsApp</a>
-                    <a v-if="a.phone" class="btn sm ghost"
+                    <a v-if="isDialable(a.phone)" class="btn sm ghost"
                        :href="telHref(a.phone)">{{ a.phone }}</a>
+                    <!-- Three states, not two. A number nobody can ring is not
+                         the same as no number, and hiding the difference is how
+                         somebody presses a button that reaches a stranger. The
+                         digits are shown so whoever can fix the record sees
+                         what is actually stored. -->
+                    <span v-else-if="a.phone" class="tiny">
+                      The number on file — <b>{{ a.phone }}</b> — cannot be dialled.
+                      It looks incomplete; check it against the seller list.
+                    </span>
                     <span v-else class="tiny muted">No phone number on file for this seller.</span>
                   </div>
 
