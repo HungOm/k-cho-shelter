@@ -170,6 +170,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   upsert_user: { group: 'People', label: 'Add or change a user' },
   set_user_status: { group: 'People', label: 'Turn an account on or off', danger: true },
   report_overdue: { group: 'Reports', label: 'Books that are late' },
+  chase_today: { group: 'Reports', label: 'Who to message today' },
   report_missing_contact: { group: 'Reports', label: 'Tickets with no phone number' },
   report_draw_ready: { group: 'Reports', label: 'Is the draw ready' },
   export_entries: { group: 'Reports', label: 'Download the entry list', danger: true },
@@ -277,6 +278,9 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // --- reports ---
   report_outstanding: { roles: ['viewer', 'recorder', 'agent'], kind: 'report', fn: reports.reportOutstanding },
   report_overdue: { roles: ['recorder'], kind: 'report', fn: reports.reportOverdue },
+  // The same audience as the overdue list it merges, because it IS that
+  // list plus the two nobody had put beside it.
+  chase_today: { roles: ['recorder'], kind: 'report', fn: reports.chaseToday },
   report_missing_contact: { roles: ['recorder'], kind: 'report', fn: reports.reportMissingContact },
   report_draw_ready: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportDrawReady },
   agent_statement: { roles: ['agent', 'recorder'], kind: 'report', fn: reports.agentStatement },

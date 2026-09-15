@@ -13,7 +13,9 @@
  * report below inherits it rather than re-deciding it.
  */
 import { ApiError, mask, agentBooks, type AppUser } from './gate.ts'
-import { configDate, today } from './deadlines.ts'
+import {
+  checkInRound, configDate, configNum, reportedIn, reportState, today,
+} from './deadlines.ts'
 import {
   collectedByAgent, deskMoney, moneyScope, round2, visibleAgents, writtenOffByAgent,
 } from './money.ts'
@@ -172,6 +174,137 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
     totalOutstanding: round2(rows.reduce((s, a) => s + a.outstanding, 0)),
     currency: await currency(ctx),
   }
+}
+
+/**
+ * Who to message today, as one list with one line per person.
+ *
+ * EVERYTHING NEEDED FOR THIS ALREADY EXISTED and none of it was in one place.
+ * Overdue books are on the Books screen, who has not reported is on the
+ * Sellers screen, what is owed is on Money, and the WhatsApp link is on each
+ * of them separately. An organiser chasing people on a Sunday afternoon had to
+ * visit three screens, hold the overlap in their head, and work out for
+ * themselves that the person late with two books is the same person who owes
+ * RM80 and never answered the check-in.
+ *
+ * ONE LINE PER PERSON, NOT ONE PER REASON, and that is the whole shape of it.
+ * The three screens would have had somebody appear on all three, and a chase
+ * list that messages a volunteer four times in an afternoon for four halves of
+ * the same conversation is worse than no list: it reads as harassment, and the
+ * fourth message is the one that gets a seller to stop replying.
+ *
+ * SORTED BY WHAT IS ACTUALLY URGENT. Holding books past the final deadline is
+ * not the same kind of late as being three days past a checkpoint — one is
+ * late for a raffle that is about to be drawn, the other is late for a
+ * reminder. Days overdue breaks the tie, because the person who has had a book
+ * for six weeks is not in the same conversation as the one who has had it
+ * since Tuesday.
+ *
+ * SOMEBODY WITH NO USABLE NUMBER STAYS ON THE LIST. Dropping them would make
+ * the list quietly incomplete, and the seller nobody can telephone is the one
+ * most worth knowing about — so they are marked unreachable rather than
+ * omitted, and sorted first among equals, because finding another way to reach
+ * them takes longer than sending a message.
+ */
+export async function chaseToday(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const only = visibleAgents(user)
+  const now = today()
+  const checkIn = await configDate(ctx, 'CHECK_IN_DATE')
+  const final = await configDate(ctx, 'FINAL_DEADLINE')
+  const grace = await configNum(ctx, 'REPORT_GRACE_DAYS', 3, 0)
+  const round = await checkInRound(ctx)
+  const answered = await reportedIn(ctx, round)
+  const past = !!final && final < now
+
+  let mq = ctx.supabaseAdmin.from('agent_money')
+    .select('agent_id,name,phone,books_out,overdue_books,outstanding')
+  if (only) mq = mq.in('agent_id', only)
+  const { data: money, error } = await mq
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  let bq = ctx.supabaseAdmin.from('book_ledger_all')
+    .select('number,held_by_agent,due_at,days_overdue')
+    .eq('status', 'Out').gt('days_overdue', 0)
+  if (only) bq = bq.in('held_by_agent', only)
+  const { data: late } = await bq
+  const lateBy = new Map<string, Array<Record<string, unknown>>>()
+  for (const b of (late ?? []) as Array<Record<string, unknown>>) {
+    const id = String(b.held_by_agent ?? '')
+    if (!lateBy.has(id)) lateBy.set(id, [])
+    lateBy.get(id)!.push(b)
+  }
+
+  const money$ = await currency(ctx)
+  const lines = []
+
+  for (const m of (money ?? []) as Array<Record<string, unknown>>) {
+    const id = String(m.agent_id ?? '')
+    const booksOut = Number(m.books_out ?? 0)
+    const owes = round2(Number(m.outstanding ?? 0))
+    const theirs = lateBy.get(id) ?? []
+    const daysOverdue = theirs.reduce((n, b) => Math.max(n, Number(b.days_overdue ?? 0)), 0)
+
+    const state = reportState({ booksOut, reported: answered.has(id), checkIn, grace, now })
+
+    const why = []
+    if (past && booksOut > 0) {
+      why.push({ code: 'past-final', what: `holding ${booksOut} ${booksOut === 1 ? 'book' : 'books'} after the final deadline` })
+    } else if (daysOverdue > 0) {
+      why.push({ code: 'overdue', what: `${theirs.length} ${theirs.length === 1 ? 'book' : 'books'} ${daysOverdue} ${daysOverdue === 1 ? 'day' : 'days'} overdue` })
+    }
+    if (state === 'late') why.push({ code: 'no-report', what: 'has not reported this check-in' })
+    if (owes > 0) why.push({ code: 'owes', what: `${money$}${owes} not handed in` })
+
+    if (!why.length) continue
+
+    // The same rule the client uses to decide whether to offer a link: a number
+    // written with a leading 0, or already carrying a country code, can be
+    // acted on. Anything else is a number whose country we would be guessing.
+    const phone = String(m.phone ?? '')
+    const reachable = /^(0|60)/.test(phone.replace(/\D/g, ''))
+
+    lines.push({
+      agentId: id,
+      name: String(m.name ?? '') || id,
+      phone,
+      reachable,
+      booksOut,
+      booksLate: theirs.map((b) => String(b.number)).sort(),
+      daysOverdue,
+      owes,
+      reasons: why,
+      // Ready to send, because the point of this list is that nobody has to
+      // compose the same message forty times.
+      message: chaseMessage(String(m.name ?? '') || id, why),
+      urgency: (past && booksOut > 0 ? 3000 : 0) + Math.min(daysOverdue, 999)
+        + (state === 'late' ? 500 : 0) + (owes > 0 ? 1 : 0),
+    })
+  }
+
+  lines.sort((a, b) =>
+    b.urgency - a.urgency ||
+    Number(a.reachable) - Number(b.reachable) ||
+    (a.name < b.name ? -1 : 1))
+
+  return {
+    date: now,
+    checkInDate: checkIn,
+    finalDeadline: final,
+    pastFinal: past,
+    currency: money$,
+    people: lines,
+    total: lines.length,
+    unreachable: lines.filter((l) => !l.reachable).length,
+  }
+}
+
+/** One message covering every reason, because one person gets one message. */
+function chaseMessage(name: string, why: Array<{ what: string }>): string {
+  const bits = why.map((w) => w.what)
+  const list = bits.length === 1 ? bits[0]
+    : `${bits.slice(0, -1).join(', ')} and ${bits[bits.length - 1]}`
+  return `Hello ${name}, a reminder about the raffle: ${list}. ` +
+    'Could you let us know when you can bring things in? Thank you.'
 }
 
 export async function reportOverdue(_p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {

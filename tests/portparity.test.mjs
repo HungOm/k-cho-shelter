@@ -95,6 +95,11 @@ console.log('every Apps Script action is either ported or listed as not ported')
     // summed apart. A spreadsheet can hold the row and cannot hold the
     // guarantee, which is the only part that matters about it.
     ['write_off', 'a forgiven debt must be a row nobody can edit afterwards, which a sheet cannot promise'],
+    // Merging overdue books, missed check-ins and outstanding money into one
+    // line per person means joining three things at once and sorting the
+    // result. Apps Script would have to read three tabs whole to do it, on a
+    // backend whose cheapest call already costs a second.
+    ['chase_today', 'merges three lists into one per person, which means joining three tabs a spreadsheet must read whole'],
   ])
   const extra = [...supabase].filter(a => !appsScript.has(a) && !SUPABASE_ONLY.has(a)).sort()
   ok(extra.length === 0,
