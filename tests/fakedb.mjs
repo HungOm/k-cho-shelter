@@ -289,7 +289,7 @@ export function fakeDb(seed = {}) {
       config: [], tickets: [], books: [], agents: [], app_users: [],
       book_history: [], audit_log: [], pending_approvals: [], winners: [],
       permissions: [], book_ledger: [], book_ledger_all: [], check_in_reports: [],
-      payments: [],
+      payments: [], ticket_history: [],
       ...copy(seed),
     },
     writes: [],
@@ -310,6 +310,31 @@ export function fakeDb(seed = {}) {
         })
       }
       if (fn === 'server_now') return Promise.resolve({ data: new Date().toISOString(), error: null })
+
+      /*
+       * desk_money, computed from the rows the way the SQL does: sold tickets
+       * in books nobody holds, and how many of those were marked paid. A stub
+       * that returned zeros would let a handler drop the desk line and pass.
+       */
+      if (fn === 'desk_money') {
+        const holderOf = new Map(db.tables.books.map((b) => [b.idx, b.held_by_agent ?? null]))
+        const get = (k, d) => {
+          const row = db.tables.config.find((c) => c.key === k)
+          return parseInt(row?.value ?? '', 10) || d
+        }
+        const total = get('TOTAL_TICKETS', 0)
+        const activeRaw = get('ACTIVE_TICKETS', 0)
+        const active = activeRaw <= 0 || activeRaw > total ? total : activeRaw
+        const desk = db.tables.tickets.filter((t) =>
+          ['Sold', 'Donated'].includes(t.status) && (active === 0 || t.idx <= active) &&
+          holderOf.has(t.book_idx) && holderOf.get(t.book_idx) === null)
+        const sum = (rows) => Math.round(rows.reduce((s, t) => s + Number(t.amount ?? 0), 0) * 100) / 100
+        return Promise.resolve({
+          data: { sold: desk.length, expected: sum(desk),
+                  collected: sum(desk.filter((t) => t.payment_status === 'Paid')) },
+          error: null,
+        })
+      }
 
       /*
        * The plpgsql functions, stubbed to a plausible success.

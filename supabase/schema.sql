@@ -191,12 +191,23 @@ select
   r.available,
   r.reserved,
   r.missing_contact,
-  case when b.status in ('Settled','Lost')
-       then coalesce(b.declared_sold, 0)
+  -- DECLARED FIGURES ONLY WHEN SOMEBODY DECLARED THEM. A book marked Lost
+  -- from the Books screen never had a settlement, so declared_sold is null;
+  -- reading that as "declared nought" made every sale recorded on it worth
+  -- nothing in the money reports, and the seller's debt left the chase list.
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then b.declared_sold
        else r.recorded_sold end                      as counted_sold,
-  case when b.status in ('Settled','Lost')
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
        then coalesce(b.amount_due, 0)
        else r.recorded_amount end                    as counted_expected,
+  -- Sold by the seller's count, but with no ticket number written down. Money
+  -- the raffle expects and entries the draw cannot include — so it is a
+  -- number the readiness check has to see.
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then greatest(b.declared_sold - r.recorded_sold, 0) else 0 end as unidentified_sold,
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then greatest(coalesce(b.amount_due, 0) - r.recorded_amount, 0) else 0 end as unidentified_amount,
   coalesce(b.amount_paid, 0)                         as counted_collected,
   coalesce(b.declared_sold, 0) - r.recorded_sold     as variance_sold,
   coalesce(b.amount_due, 0) - r.recorded_amount      as variance_amount,
@@ -238,6 +249,66 @@ create table if not exists book_history (
   note         text not null default ''
 );
 create index if not exists book_history_book_idx on book_history (book_idx, at desc);
+
+-- ============ TICKET HISTORY (begin) ============
+-- A ticket row keeps only its LATEST state. A correction, a settlement or a
+-- restock overwrites the buyer, the seller and the status, and until now the
+-- only trace was a version number going up. "Who was on KS-00413 before it was
+-- corrected" and "who was credited with this sale in March" had no answer.
+--
+-- Written by a trigger rather than by the handlers, so no code path can forget
+-- it — the same reason the contact rule is a constraint. Server-only, like
+-- audit_log: it holds the names and numbers that were overwritten.
+create table if not exists ticket_history (
+  id            bigint generated always as identity primary key,
+  at            timestamptz not null default now(),
+  ticket_idx    integer not null references tickets(idx) on delete restrict,
+  book_idx      integer not null,
+  from_status   text not null default '',
+  to_status     text not null default '',
+  from_agent    text,
+  to_agent      text,
+  from_buyer    text not null default '',
+  to_buyer      text not null default '',
+  from_phone    text not null default '',
+  to_phone      text not null default '',
+  from_amount   numeric(12,2),
+  to_amount     numeric(12,2),
+  from_payment  text not null default '',
+  to_payment    text not null default '',
+  source        text not null default '',
+  by_user       text not null default '',
+  note          text not null default ''
+);
+create index if not exists ticket_history_ticket_idx on ticket_history (ticket_idx, at);
+create index if not exists ticket_history_book_idx on ticket_history (book_idx, at);
+
+create or replace function record_ticket_history() returns trigger as $$
+begin
+  -- Only the facts that matter to money or the draw. A modified_at bump or a
+  -- zone edit is not a movement.
+  if (old.status, old.buyer_name, old.buyer_phone, old.sold_by_agent,
+      old.amount, old.payment_status, old.notes)
+     is distinct from
+     (new.status, new.buyer_name, new.buyer_phone, new.sold_by_agent,
+      new.amount, new.payment_status, new.notes) then
+    insert into ticket_history (
+      ticket_idx, book_idx, from_status, to_status, from_agent, to_agent,
+      from_buyer, to_buyer, from_phone, to_phone, from_amount, to_amount,
+      from_payment, to_payment, source, by_user, note)
+    values (
+      new.idx, new.book_idx, old.status, new.status, old.sold_by_agent, new.sold_by_agent,
+      old.buyer_name, new.buyer_name, old.buyer_phone, new.buyer_phone, old.amount, new.amount,
+      old.payment_status, new.payment_status, new.source, new.recorded_by,
+      case when new.notes is distinct from old.notes then new.notes else '' end);
+  end if;
+  return new;
+end $$ language plpgsql;
+
+drop trigger if exists tickets_record_history on tickets;
+create trigger tickets_record_history after update on tickets
+  for each row execute function record_ticket_history();
+-- ============ TICKET HISTORY (end) ============
 
 -- ============ ACCESS CONTROL ============
 -- The same shape as the Permissions tab: the registry default stands unless a

@@ -92,6 +92,25 @@ export async function collectedByAgent(ctx: Ctx, agentIds?: string[] | null) {
 /** Money is read aloud to the person who owes it; floating point is not. */
 export const round2 = (n: number) => Math.round(n * 100) / 100
 
+/**
+ * Sales that never had a seller: tickets sold out of books nobody is holding.
+ *
+ * The ledger counted their price as expected and nothing could count it as
+ * collected — a desk sale's cash goes straight into the tin, which is what
+ * payment_status 'Paid' means on one — so the overview showed money owed by
+ * nobody, for ever. Summed in the database (desk_money) rather than here.
+ */
+export async function deskMoney(ctx: Ctx): Promise<{ sold: number; expected: number; collected: number }> {
+  const { data, error } = await ctx.supabaseAdmin.rpc('desk_money', {})
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+  const d = (data ?? {}) as Record<string, unknown>
+  return {
+    sold: Number(d.sold ?? 0),
+    expected: round2(Number(d.expected ?? 0)),
+    collected: round2(Number(d.collected ?? 0)),
+  }
+}
+
 // ============ RECORDING A HANDOVER ============
 
 export async function recordPayment(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {

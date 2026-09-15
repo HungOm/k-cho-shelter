@@ -161,6 +161,13 @@ denied 'admin@x.com' 'select count(*) from audit_log'          "an admin could r
 denied 'admin@x.com' 'select count(*) from pending_approvals'  "an admin could read the approvals queue directly"
 denied 'admin@x.com' 'select count(*) from permissions'        "an admin could read the permissions table directly"
 
+echo "the desk's money is the function's, not the browser's"
+# desk_money() sums tickets and books directly. It is plain SQL run as the
+# caller, so a browser role reaches neither table — and it is revoked outright
+# as well, so a later grant on the tables cannot open it by accident.
+denied 'view@x.com'  'select desk_money()' "a viewer could call desk_money()"
+denied 'admin@x.com' 'select desk_money()' "an admin could call desk_money() from a browser"
+
 echo "nobody can write through the browser path"
 denied 'admin@x.com' "update tickets set buyer_name='hacked' where idx=1" "an admin could write directly"
 denied 'admin@x.com' "delete from tickets where idx=1"                    "an admin could delete directly"

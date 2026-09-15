@@ -97,6 +97,7 @@ alter table permissions   enable row level security;
 alter table pending_approvals enable row level security;
 alter table check_in_reports enable row level security;
 alter table payments      enable row level security;
+alter table ticket_history enable row level security;
 alter table winners       enable row level security;
 
 -- Nothing below grants INSERT, UPDATE or DELETE to anybody. Writes go through
@@ -231,8 +232,19 @@ select
   b.status, b.held_by_agent, a.name as agent_name, b.due_at,
   b.declared_sold, b.amount_due, b.amount_paid,
   r.recorded_sold, r.recorded_amount, r.available, r.reserved, r.missing_contact,
-  case when b.status in ('Settled','Lost') then coalesce(b.declared_sold,0) else r.recorded_sold end as counted_sold,
-  case when b.status in ('Settled','Lost') then coalesce(b.amount_due,0) else r.recorded_amount end as counted_expected,
+  -- Declared figures only when a count was actually declared. A book marked
+  -- Lost from the Books screen has declared_sold null, and reading that as
+  -- nought made every sale recorded on it worth nothing to the money reports.
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then b.declared_sold else r.recorded_sold end as counted_sold,
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then coalesce(b.amount_due,0) else r.recorded_amount end as counted_expected,
+  -- Sold by the seller's count with no ticket number written down: money the
+  -- raffle expects and entries the draw cannot include.
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then greatest(b.declared_sold - r.recorded_sold, 0) else 0 end as unidentified_sold,
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then greatest(coalesce(b.amount_due,0) - r.recorded_amount, 0) else 0 end as unidentified_amount,
   coalesce(b.amount_paid,0) as counted_collected,
   coalesce(b.declared_sold,0) - r.recorded_sold as variance_sold,
   coalesce(b.amount_due,0) - r.recorded_amount as variance_amount,
@@ -289,8 +301,19 @@ select
   b.status, b.held_by_agent, a.name as agent_name, b.due_at,
   b.declared_sold, b.amount_due, b.amount_paid,
   r.recorded_sold, r.recorded_amount, r.available, r.reserved, r.missing_contact,
-  case when b.status in ('Settled','Lost') then coalesce(b.declared_sold,0) else r.recorded_sold end as counted_sold,
-  case when b.status in ('Settled','Lost') then coalesce(b.amount_due,0) else r.recorded_amount end as counted_expected,
+  -- Declared figures only when a count was actually declared. A book marked
+  -- Lost from the Books screen has declared_sold null, and reading that as
+  -- nought made every sale recorded on it worth nothing to the money reports.
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then b.declared_sold else r.recorded_sold end as counted_sold,
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then coalesce(b.amount_due,0) else r.recorded_amount end as counted_expected,
+  -- Sold by the seller's count with no ticket number written down: money the
+  -- raffle expects and entries the draw cannot include.
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then greatest(b.declared_sold - r.recorded_sold, 0) else 0 end as unidentified_sold,
+  case when b.status in ('Settled','Lost') and b.declared_sold is not null
+       then greatest(coalesce(b.amount_due,0) - r.recorded_amount, 0) else 0 end as unidentified_amount,
   coalesce(b.amount_paid,0) as counted_collected,
   coalesce(b.declared_sold,0) - r.recorded_sold as variance_sold,
   coalesce(b.amount_due,0) - r.recorded_amount as variance_amount,
@@ -367,7 +390,7 @@ grant select on config_readable to authenticated;
 -- ============ EVERYTHING ELSE STAYS SHUT ============
 --
 -- app_users, audit_log, permissions, pending_approvals, winners, book_history,
--- check_in_reports and payments get NO select policy, so row security denies
+-- check_in_reports, payments and ticket_history get NO select policy, so row security denies
 -- every browser read.
 -- They are reachable only through the Edge Function, which applies the
 -- super-admin rules the interface depends on — who may see the audit log, who
@@ -376,14 +399,15 @@ grant select on config_readable to authenticated;
 -- is not attempted here.
 
 revoke all on app_users, audit_log, permissions, pending_approvals, winners,
-              book_history, check_in_reports, payments from authenticated;
+              book_history, check_in_reports, payments, ticket_history from authenticated;
 
 -- And from anon, which is the role a request with no session gets. Row security
 -- already returns nothing to it, so this changes no outcome today — it is here
 -- so that adding a policy later for some other reason cannot accidentally open
 -- these to an unauthenticated caller.
 revoke all on app_users, audit_log, permissions, pending_approvals, winners,
-              book_history, check_in_reports, payments, tickets, books, agents, config from anon;
+              book_history, check_in_reports, payments, ticket_history,
+              tickets, books, agents, config from anon;
 
 -- Re-granted after the revoke above, which would otherwise take it back.
 grant select on config to authenticated;
@@ -409,3 +433,7 @@ create or replace function server_now() returns timestamptz
   language sql stable as $$ select now() $$;
 
 grant execute on function server_now() to authenticated;
+
+-- The desk's money is an organiser's figure. The function reads it as the
+-- service role; a browser has no business calling it.
+revoke execute on function desk_money() from public, anon, authenticated;

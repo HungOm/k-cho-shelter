@@ -304,6 +304,79 @@ echo "and that is enough contact for the draw"
 ok "$(P "select count(*) from tickets where book_idx=2 and status='Sold' and buyer_phone=''")" "0" "no settled ticket is left with no way to reach anybody"
 
 
+
+# ============ PHASE 1 INTEGRITY (audit of 2026-09-15) ============
+#
+# Each of these was reproduced on a clean database before it was fixed. They
+# stay here so the fix cannot quietly come undone.
+
+echo "a lost book keeps the sales recorded on it"
+# Marking a book Lost from the Books screen never declares a count, and the
+# ledger read that null as nought — so three recorded sales became RM 0 and
+# the seller's debt left the chase list.
+P "update books set status='Out', held_by_agent='A001', declared_sold=null, amount_due=null, amount_paid=null where idx=2;
+   update tickets set status='Available', buyer_name='', buyer_phone='', source='', sold_by_agent=null, amount=null, payment_status='' where book_idx=2;
+   update tickets set status='Sold', buyer_name='Ma Aye', buyer_phone='0125550777', amount=10, sold_by_agent='A001',
+     payment_status='Paid', sold_at=now(), source='app' where number in ('KS-00011','KS-00012','KS-00013')" >/dev/null
+ok "$(P "select round(counted_expected) from book_ledger where idx=2")" "30" "three sold: RM 30 expected while the book is out"
+P "update books set status='Lost', notes='seller says lost' where idx=2" >/dev/null
+ok "$(P "select round(counted_expected) from book_ledger where idx=2")" "30" "still RM 30 once it is marked lost — the sales did not stop existing"
+ok "$(P "select counted_sold from book_ledger where idx=2")" "3" "and the three sales are still counted"
+ok "$(P "select unidentified_sold from book_ledger where idx=2")" "0" "with nothing unidentified, because nothing was declared"
+
+echo "sold by count with no numbers is money, and the ledger says how many cannot be drawn"
+P "update books set status='Out', held_by_agent='A002', declared_sold=null, amount_due=null, amount_paid=null where idx=4;
+   update tickets set status='Available', buyer_name='', buyer_phone='', source='', sold_by_agent=null, amount=null, payment_status='' where book_idx=4" >/dev/null
+r=$(P "select settle_book('Book-0004','[]'::jsonb,60,true,6,false,'me@x.com','stubs lost')")
+has "$r" '"declaredSold": 6' "six declared"
+ok "$(P "select unidentified_sold from book_ledger where idx=4")" "6" "none of them identified"
+ok "$(P "select round(unidentified_amount) from book_ledger where idx=4")" "60" "worth RM 60 the draw cannot include"
+ok "$(P "select round(counted_expected) from book_ledger where idx=4")" "60" "and still expected in full — the money is real"
+
+echo "counting a book in does not erase a buyer"
+P "update books set status='Out', held_by_agent='A001', declared_sold=null, amount_due=null, amount_paid=null where idx=2;
+   update tickets set status='Available', buyer_name='', buyer_phone='', source='', sold_by_agent=null, amount=null, payment_status='' where book_idx=2;
+   update tickets set status='Sold', buyer_name='Real Buyer', buyer_phone='0125559999', amount=10, sold_by_agent='A001',
+     payment_status='Paid', sold_at=now(), source='app', recorded_by='helper@x.com' where number='KS-00011'" >/dev/null
+r=$(P "select settle_book('Book-0002','[\"KS-00011\"]'::jsonb,90,false,null,false,'me@x.com','')")
+has "$r" "SOLD_TICKET_NAMED_UNSOLD" "a sold ticket typed as unsold is refused"
+has "$r" "KS-00011 (Real Buyer)" "and named with its buyer, so the mistake can be found"
+ok "$(P "select status||'/'||buyer_name from tickets where number='KS-00011'")" "Sold/Real Buyer" "the sale is untouched"
+ok "$(P "select status from books where idx=2")" "Out" "and the book was not settled"
+r=$(P "select settle_book('Book-0002','[]'::jsonb,100,false,null,false,'me@x.com','')")
+has "$r" '"declaredSold": 10' "without the mistake it settles"
+# A placeholder written by that settlement is not a buyer anybody wrote down,
+# so a forced re-settle may still hand it back.
+r=$(P "select settle_book('Book-0002','[\"KS-00012\"]'::jsonb,90,false,null,true,'me@x.com','one came back')")
+has "$r" '"declaredSold": 9' "a settlement placeholder may be named as unsold on a re-settle"
+ok "$(P "select status from tickets where number='KS-00012'")" "Available" "and goes back on the shelf"
+ok "$(P "select buyer_name from tickets where number='KS-00011'")" "Real Buyer" "while the real buyer is still there"
+
+echo "two settlements of one book cannot interleave"
+ok "$(P "select count(*) from pg_proc where proname='settle_book' and prosrc ilike '%for update%'")" "1" "the book row is locked for the transaction"
+
+echo "a ticket keeps its past"
+n0=$(P "select count(*) from ticket_history where ticket_idx=11")
+P "update tickets set buyer_name='Corrected Buyer', recorded_by='fixer@x.com' where number='KS-00011'" >/dev/null
+ok "$(P "select from_buyer||' -> '||to_buyer from ticket_history where ticket_idx=11 order by id desc limit 1")" "Real Buyer -> Corrected Buyer" "a correction records what the name was before"
+ok "$(P "select by_user from ticket_history where ticket_idx=11 order by id desc limit 1")" "fixer@x.com" "and who changed it"
+ok "$(P "select from_status||' -> '||to_status from ticket_history where ticket_idx=12 order by id desc limit 1")" "Sold -> Available" "the re-settle that handed KS-00012 back is on its record"
+ok "$(P "select by_user from ticket_history where ticket_idx=12 order by id desc limit 1")" "me@x.com" "signed by whoever counted the book"
+P "update tickets set modified_at=now() where number='KS-00011'" >/dev/null
+ok "$(P "select count(*) from ticket_history where ticket_idx=11")" "$((n0+1))" "a touch that changes nothing that matters writes nothing"
+ok "$(P "select count(*) from ticket_history where ticket_idx=11 and from_status='' and to_status=''")" "0" "and no row is ever blank"
+
+echo "money taken at the desk is counted, paid or not"
+P "update config set value='' where key='ACTIVE_TICKETS';
+   update books set status='Unassigned', held_by_agent=null, declared_sold=null, amount_due=null, amount_paid=null where idx=1;
+   update tickets set status='Sold', buyer_name='Desk '||idx, buyer_phone='0125550'||lpad(idx::text,3,'0'), amount=10,
+     payment_status='Paid', sold_at=now(), source='app', sold_by_agent=null where book_idx=1;
+   update tickets set payment_status='Unpaid' where number='KS-00001'" >/dev/null
+r=$(P "select desk_money()")
+has "$r" '"sold": 10' "ten sales out of a book nobody holds"
+has "$r" '"expected": 100' "worth RM 100"
+has "$r" '"collected": 90' "of which RM 90 was paid at the desk and RM 10 is owed by a named buyer"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
