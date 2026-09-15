@@ -1,0 +1,129 @@
+/*
+ * Run a screen — its script, its template, or both.
+ *
+ * ONE HARNESS, because there were two. screencalls.test.mjs compiled the script
+ * block to prove a guard is CALLED; screenrender.test.mjs compiled the template
+ * as well, to reach bindings only the template touches. Nearly the same forty
+ * lines twice, which is the shape this repository has spent two days removing
+ * from its own source and had just reintroduced in its tests.
+ *
+ * The template half and the driving idea are shelter-ticket-inventory-tracker's;
+ * this file is its work with the script-only path folded back in.
+ *
+ * WHY EITHER EXISTS: a helper can be correct, thoroughly tested, and never
+ * called. That has happened four times here in two days — a byte-sniff never
+ * invoked, a sell guard no screen consulted, applyBrand never applied, and a
+ * paid/unpaid pill hardcoded to "in" on the one report that exists to tell the
+ * difference. Every one passed its own tests. Only running the screen finds it.
+ */
+import { execFileSync } from 'node:child_process'
+import { readFileSync, writeFileSync, mkdtempSync, cpSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
+
+const ROOT = fileURLToPath(new URL('../', import.meta.url))
+const ESBUILD = join(ROOT, 'node_modules/.bin/esbuild')
+
+/**
+ * Compile a component against a stubbed store and bundle it.
+ *
+ * src/ is COPIED and lib/store.js replaced in the copy, so the component's own
+ * import is left exactly as it ships — rewriting that import would test a
+ * different file from the one that runs.
+ *
+ * @param withTemplate  compile the render function too. Needed for anything a
+ *                      template reaches on its own; a script-only build cannot
+ *                      see it and reports clean.
+ */
+function build(componentPath, storeStub, withTemplate) {
+  const dir = mkdtempSync(join(tmpdir(), 'screen-'))
+  cpSync(join(ROOT, 'src'), join(dir, 'src'), { recursive: true })
+  writeFileSync(join(dir, 'src/lib/store.js'), storeStub)
+
+  const sfc = readFileSync(join(ROOT, componentPath), 'utf8')
+  const { descriptor } = parse(sfc, { filename: componentPath })
+  const script = compileScript(descriptor, { id: 'r', inlineTemplate: false })
+
+  const name = componentPath.split('/').pop().replace('.vue', '')
+  const probe = join(dir, 'src/components', `__${name}.js`)
+  const stub = (code) => code.replace(/from '(.*)\.vue'/g, "from './__stubvue.js'")
+
+  if (withTemplate) {
+    // bindingMetadata is what tells the template that these names come from the
+    // script block. Without it every binding is looked up on the instance,
+    // finds nothing, and the component renders blank — which reads as a broken
+    // component rather than a mis-wired test.
+    const tpl = compileTemplate({
+      source: descriptor.template.content, id: 'r', filename: componentPath,
+      compilerOptions: { bindingMetadata: script.bindings },
+    })
+    writeFileSync(probe,
+      stub(script.content).replace('export default', 'const __c =') + '\n' +
+      stub(tpl.code) + '\nexport default { ...__c, render }\n')
+  } else {
+    writeFileSync(probe, stub(script.content))
+  }
+
+  /*
+   * Children render their SLOTS and nothing of their own.
+   *
+   * Rendering them as null looked right and swallowed everything: SellTicket's
+   * whole body lives inside <Sheet>, so a null-rendering Sheet produced empty
+   * HTML and every assertion about the screen's own output failed with no hint
+   * that the screen had never been drawn. A stub that erases the thing under
+   * test is worse than no stub.
+   *
+   * Slots pass through; the child's own chrome does not. So this screen's
+   * markup is what is measured, without a stub deciding what survives.
+   */
+  const SLOT_STUB = 'export default { setup(_, { slots }) {\n' +
+    '  return () => Object.keys(slots).map((k) => slots[k]?.())\n} }\n'
+  for (const p of ['src/components/__stubvue.js', 'src/components/ui/__stubvue.js']) {
+    writeFileSync(join(dir, p), SLOT_STUB)
+  }
+
+  const out = join(dir, 'bundle.mjs')
+  execFileSync(ESBUILD, [probe, '--bundle', '--format=esm', '--platform=neutral',
+    '--external:vue', '--log-level=error', '--outfile=' + out])
+  // vue stays external and resolves from the project's own copy, so the screen
+  // runs against the reactivity it actually ships with.
+  symlinkSync(join(ROOT, 'node_modules'), join(dir, 'node_modules'))
+  return { out, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
+}
+
+/** The setup context of a screen: its refs, computeds and functions, live. */
+export async function setupOf(componentPath, storeStub, props = {}) {
+  const { out, cleanup } = build(componentPath, storeStub, false)
+  const mod = await import('file://' + out)
+  const ctx = mod.default.setup(props, { attrs: {}, slots: {}, emit() {}, expose() {} })
+  return { ctx, cleanup }
+}
+
+/**
+ * The HTML a screen produces.
+ *
+ * `drive` runs against the setup bindings before rendering, because server
+ * rendering never fires onMounted and some state does not exist until somebody
+ * has acted — a rendered but untouched screen asserts the skeleton and calls it
+ * proof. No jsdom: a DOM library carried forever to click one row is a worse
+ * trade than driving the component's own bindings.
+ */
+export async function renderScreen(componentPath, storeStub, { props = {}, drive } = {}) {
+  const { createSSRApp } = await import('vue')
+  const { renderToString } = await import('vue/server-renderer')
+  const { out, cleanup } = build(componentPath, storeStub, true)
+  const real = (await import('file://' + out)).default
+  const driven = {
+    render: real.render,
+    async setup() {
+      const b = real.setup(props, { attrs: {}, slots: {}, emit() {}, expose() {} })
+      if (drive) await drive(b)
+      return b
+    },
+  }
+  const html = await renderToString(createSSRApp(driven))
+  cleanup()
+  return html
+}

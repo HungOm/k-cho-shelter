@@ -29,53 +29,14 @@
  * for the call would be a pattern, and a pattern is satisfied by a comment
  * mentioning the name.
  */
-import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync, mkdtempSync, cpSync, rmSync, symlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parse, compileScript } from '@vue/compiler-sfc'
+import { setupOf, renderScreen } from './screen.mjs'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
-
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
-const ESBUILD = join(ROOT, 'node_modules/.bin/esbuild')
-
-/**
- * Compile one component's <script setup> and run it with a spied store.
- *
- * src/ is copied so the real tree is never touched, and lib/store.js is
- * REPLACED in the copy — the spy has to sit where the component already looks,
- * because rewriting the component's own import would be testing a different
- * file from the one that ships.
- */
-function runSetup(componentPath, storeStub) {
-  const dir = mkdtempSync(join(tmpdir(), 'screen-'))
-  cpSync(join(ROOT, 'src'), join(dir, 'src'), { recursive: true })
-  writeFileSync(join(dir, 'src/lib/store.js'), storeStub)
-
-  const sfc = readFileSync(join(ROOT, componentPath), 'utf8')
-  const { descriptor } = parse(sfc, { filename: componentPath })
-  const compiled = compileScript(descriptor, { id: 'probe', inlineTemplate: false })
-
-  // Beside the real component, so every relative import resolves as it does in
-  // the build. Child .vue imports are stubbed to a bare object — this exercises
-  // the script block, not the rendering.
-  const name = componentPath.split('/').pop().replace('.vue', '')
-  const probe = join(dir, 'src/components', `__${name}.js`)
-  writeFileSync(probe, compiled.content.replace(/from '(.*)\.vue'/g, "from './__stubvue.js'"))
-  writeFileSync(join(dir, 'src/components/__stubvue.js'), 'export default {}\n')
-  writeFileSync(join(dir, 'src/components/ui/__stubvue.js'), 'export default {}\n')
-
-  const out = join(dir, 'bundle.mjs')
-  execFileSync(ESBUILD, [probe, '--bundle', '--format=esm', '--platform=neutral',
-    '--external:vue', '--log-level=error', '--outfile=' + out])
-  // vue stays external and is resolved from the project's own copy, so the
-  // component runs against the reactivity it actually ships with.
-  symlinkSync(join(ROOT, 'node_modules'), join(dir, 'node_modules'))
-  return { url: 'file://' + out, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
-}
 
 /** A store whose sellBlock records every call and answers however we like. */
 const storeWith = (answer) => `
@@ -101,13 +62,9 @@ export function setSellMode() {}
 `
 
 console.log('Sell.vue asks sellBlock before it calls a ticket sellable')
-const sell = runSetup('src/components/Sell.vue', storeWith('with Daw Hla'))
 {
   globalThis.__sellBlockCalls = []
-  const mod = await import(sell.url)
-  ok(typeof mod.default?.setup === 'function', 'Sell.vue has a runnable setup()')
-
-  const ctx = mod.default.setup({}, { emit: () => {}, expose: () => {}, attrs: {}, slots: {} })
+  const { ctx, cleanup } = await setupOf('src/components/Sell.vue', storeWith('with Daw Hla'))
   ok(typeof ctx.resolved === 'function', 'resolved() is exposed to the template')
 
   // A ticket that exists and looks sellable — so the only thing that can refuse
@@ -120,29 +77,29 @@ const sell = runSetup('src/components/Sell.vue', storeWith('with Daw Hla'))
   ok(verdict?.bad === true, 'and refuses the row when the guard refuses')
   ok(verdict?.text === 'with Daw Hla',
      `and shows the guard's own words, not its own (got ${JSON.stringify(verdict?.text)})`)
+  cleanup()
 }
 
 console.log('and calls it sellable when the guard allows it')
-const allowed = runSetup('src/components/Sell.vue', storeWith(null))
 {
   globalThis.__sellBlockCalls = []
-  const mod = await import(allowed.url)
-  const ctx = mod.default.setup({}, { emit: () => {}, expose: () => {}, attrs: {}, slots: {} })
+  const { ctx, cleanup } = await setupOf('src/components/Sell.vue', storeWith(null))
   ctx.state.byNumber['KS-00011'] = { number: 'KS-00011', status: 'Available', book: 'Book-002' }
 
   const verdict = ctx.resolved({ num: 'KS-00011', name: '', phone: '' })
   ok(globalThis.__sellBlockCalls.includes('KS-00011'), 'the guard is consulted either way')
   ok(verdict?.bad === false, 'and an allowed ticket is not flagged')
+  cleanup()
 }
 
+const TICKET = { number: 'KS-00001', status: 'Available', book: 'Book-001', version: 1,
+                 name: '', phone: '', zone: '', agent: '' }
+
 console.log('SellTicket asks it too, and takes the button away when refused')
-const modal = runSetup('src/components/SellTicket.vue', storeWith('with Daw Hla'))
 {
   globalThis.__sellBlockCalls = []
-  const mod = await import(modal.url)
-  const ticket = { number: 'KS-00001', status: 'Available', book: 'Book-001', version: 1,
-                   name: '', phone: '', zone: '', agent: '' }
-  const ctx = mod.default.setup({ ticket }, { emit: () => {}, expose: () => {}, attrs: {}, slots: {} })
+  const { ctx, cleanup } = await setupOf('src/components/SellTicket.vue',
+    storeWith('with Daw Hla'), { ticket: TICKET })
 
   // `blocked` is what the template disables the Sold button on. If it stops
   // consulting the guard, the button goes live over a book that is 200km away
@@ -152,23 +109,28 @@ const modal = runSetup('src/components/SellTicket.vue', storeWith('with Daw Hla'
      'the modal CALLS sellBlock for the ticket it is about to sell')
   ok(blocked === 'with Daw Hla',
      `and carries the guard's answer to the button (got ${JSON.stringify(blocked)})`)
+  cleanup()
 }
 
-console.log('and every button that would sell honours it — counted, not matched')
+console.log('every selling button gates on the guard — counted, because only one branch renders')
 {
   /*
-   * A COUNTED PATTERN, and I would rather say so than dress it up. Running the
-   * template would be better, but it needs a renderer and a DOM for one fact
-   * the source states plainly. What makes it worth having anyway is the count:
-   * `ok(/blocked/.test(src))` is satisfied by ONE of five bindings, which is
-   * exactly how a half-applied change reports as fine — the trap this project
-   * has now hit four times.
+   * KEPT ALONGSIDE THE RENDER BELOW, and the reason is a gap I created and then
+   * measured rather than assumed. I replaced this counted check with the render
+   * and re-ran the mutants: removing ONE of the five gates went from caught to
+   * uncaught. SellTicket has three template branches — quick, steps, reserved —
+   * and only one renders per pass, so a render can never see all five bindings
+   * at once. Counting can.
+   *
+   * The reverse is also true, which is why both are here: counting cannot tell
+   * a binding that MENTIONS the guard from one that honours it, and the render
+   * below can. Neither is redundant; each catches what the other structurally
+   * cannot.
    *
    * Five, not seven. The two ungated buttons are "Save the fix" and "Let it
-   * go": correcting a spelling and releasing a hold on a book that is out with
-   * somebody are ordinary office work, deliberately still allowed. If that
-   * number moves in either direction somebody has changed the rule, and this
-   * should stop them either way.
+   * go" — correcting a spelling and releasing a hold on a book that is out are
+   * ordinary office work, deliberately still allowed. If that number moves in
+   * either direction somebody has changed the rule.
    */
   const src = readFileSync(join(ROOT, 'src/components/SellTicket.vue'), 'utf8')
   const gated = (src.match(/:disabled="[^"]*blocked[^"]*"/g) ?? []).length
@@ -177,6 +139,65 @@ console.log('and every button that would sell honours it — counted, not matche
   ok(all - gated === 2, `and exactly two stay open — correct and release (found ${all - gated})`)
 }
 
+console.log('and the rendered button is actually disabled, not merely gated in source')
+{
+  /*
+   * RENDERED, not counted. This assertion used to count :disabled bindings
+   * containing `blocked` and require exactly five — a counted pattern, which is
+   * better than a bare match but still reads the source rather than the screen.
+   * It could not tell a binding that mentions the guard from one that honours
+   * it, and `:disabled="busy || !canSell || (blocked && false)"` would have
+   * passed.
+   *
+   * Rendering settles it: the Sold button either carries disabled in the HTML
+   * or it does not. The template half of the harness is
+   * shelter-ticket-inventory-tracker's; this is the assertion it unlocked.
+   */
+  // DRIVEN with a buyer filled in. Without it both screens disable the button
+  // anyway — for want of a name, not for want of permission — and the two
+  // renders are identical. A comparison between two screens that are disabled
+  // for different reasons proves nothing, and it passed at first.
+  const fill = (b) => { b.name.value = 'Ma Nu'; b.phone.value = '0125550100' }
+  const refused = await renderScreen('src/components/SellTicket.vue',
+    storeWith('with Daw Hla'), { props: { ticket: TICKET }, drive: fill })
+  const allowedHtml = await renderScreen('src/components/SellTicket.vue',
+    storeWith(null), { props: { ticket: TICKET }, drive: fill })
+
+  /*
+   * THE SOLD BUTTON SPECIFICALLY, not a count of disabled attributes anywhere.
+   *
+   * Counting was my first version and it was too coarse: neutering one gate to
+   * `(blocked && false)` left the total unchanged, because other controls are
+   * disabled for their own reasons and the comparison could not see which one
+   * had stopped listening. Naming the button settles it — it either carries
+   * disabled or it does not, and that is the control that takes the money.
+   *
+   * Found by text because it is the one button whose label survives the child
+   * stubs: <Bi text="..."> renders through a prop, so those buttons come out
+   * empty, while "Sold · RM 10.00" is plain template text.
+   */
+  const soldButton = (h) => (h.match(/<button[^>]*>Sold[^<]*<\/button>/) ?? [''])[0]
+  ok(/disabled/.test(soldButton(refused)),
+     `the Sold button is disabled when the guard refuses (${soldButton(refused) || 'not rendered'})`)
+  ok(!/disabled/.test(soldButton(allowedHtml)),
+     `and live when it does not (${soldButton(allowedHtml) || 'not rendered'})`)
+
+  /*
+   * And the words differ, which matters as much as the button.
+   *
+   * BOTH screens name the seller: one as a refusal, one as the older advisory
+   * "check with them first" that has always been there. My first assertion was
+   * that an allowed ticket does not mention Daw Hla, and it failed correctly —
+   * the advice is right to stay. What distinguishes them is whether the screen
+   * says the sale CANNOT happen or merely that it is unwise.
+   */
+  ok(/cannot be sold from this screen/.test(refused),
+     'a refused ticket says it cannot be sold here')
+  ok(!/cannot be sold from this screen/.test(allowedHtml),
+     'and an allowed one does not')
+  ok(/Check with them before selling/.test(allowedHtml),
+     'while the older advice survives for a book that is merely out')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
-sell.cleanup(); allowed.cleanup(); modal.cleanup()
 process.exit(fail ? 1 : 0)
