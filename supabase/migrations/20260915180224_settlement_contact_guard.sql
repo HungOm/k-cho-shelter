@@ -1,3 +1,6 @@
+-- Settlement must not write a contact nobody can ring.
+-- Re-applies supabase/functions.sql; every statement is create-or-replace.
+
 -- Raffled — the operations that must be all-or-nothing.
 --
 -- Apps Script took one script-wide lock for every write, which made two

@@ -258,6 +258,32 @@ echo "a book that does not exist"
 r=$(P "select settle_book('Book-9999','[]'::jsonb,0,false,null,false,'me@x.com','')")
 has "$r" "BOOK_NOT_FOUND" "is refused by name"
 
+echo "a settlement never writes a contact nobody can ring"
+# The live raffle had four sellers whose numbers had lost their leading zero,
+# and this copy turned them into NINE tickets whose contact of record was
+# undialable. The field was not empty, so every check downstream passed.
+P "update agents set phone = '123367462' where agent_id = 'A002';
+   update books set status='Out', held_by_agent='A002' where idx=5;
+   update tickets set status='Available', buyer_name='', buyer_phone='', source='' where book_idx=5" >/dev/null
+r=$(P "select settle_book('Book-0005','[]'::jsonb,100,false,null,false,'me@x.com','')")
+has "$r" '"declaredSold": 10' "the book still settles"
+ok "$(P "select buyer_phone from tickets where number='KS-00041'")" "" "an undialable seller number is treated as absent, not copied"
+ok "$(P "select buyer_name from tickets where number='KS-00041'")" "Ma Nu (seller)" "the name still identifies who to ask"
+# And it lands where somebody looks, rather than looking fine and reaching a stranger.
+ok "$(P "select count(*) from tickets where book_idx=5 and status='Sold' and buyer_phone=''")" "10" "all ten show as missing a contact"
+
+echo "but a dialable seller number is still copied"
+P "update agents set phone = '0123367462' where agent_id = 'A002';
+   update books set status='Out', held_by_agent='A002' where idx=5;
+   update tickets set status='Available', buyer_name='', buyer_phone='', source='' where book_idx=5" >/dev/null
+r=$(P "select settle_book('Book-0005','[]'::jsonb,100,false,null,false,'me@x.com','')")
+ok "$(P "select buyer_phone from tickets where number='KS-00041'")" "0123367462" "a number with a leading zero is trusted"
+P "update agents set phone = '60123367462' where agent_id = 'A002';
+   update books set status='Out', held_by_agent='A002' where idx=5;
+   update tickets set status='Available', buyer_name='', buyer_phone='', source='' where book_idx=5" >/dev/null
+r=$(P "select settle_book('Book-0005','[]'::jsonb,100,false,null,false,'me@x.com','')")
+ok "$(P "select buyer_phone from tickets where number='KS-00041'")" "60123367462" "and so is one already carrying a country code"
+
 echo "a settled book records the SELLER as the contact"
 # A seller selling from their own book keeps their own buyers: they hand back
 # the money, and whether they pass the names on is their business. So the
