@@ -884,7 +884,7 @@ export default {
         // exists or ever can.
         if (spec.sup && !user.isSuperAdmin) {
           throw new ApiError('SUPER_ADMIN_ONLY',
-            'Only the owner can do this. It cannot be switched on for anybody else.',
+            'Only the system admin can do this. It cannot be switched on for anybody else.',
             null, 403)
         }
         throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.', null, 403)
