@@ -36,6 +36,7 @@ import {
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
 import * as deadlines from './deadlines.ts'
+import { today } from './deadlines.ts'
 import * as people from './people.ts'
 import * as reports from './reports.ts'
 import * as approvals from './approvals.ts'
@@ -375,9 +376,47 @@ async function readVersion(_p: Record<string, unknown>, user: AppUser, ctx: Ctx)
     waiting = count ?? 0
   }
 
+  /*
+   * BOOKS COMING DUE, so the banner clears itself.
+   *
+   * The counts come from the books, never from a dismissal. An alert somebody
+   * can tick away is an alert everybody ticks away, and the one time it
+   * mattered it had already been trained into furniture. This one goes when the
+   * books are actually back and the tickets in them are accounted for — which
+   * is the only thing that should make it go.
+   *
+   * Scoped like every other read: a seller is told about the books in their own
+   * hands, an organiser about all of them. A seller shown the whole raffle's
+   * overdue count cannot act on it and learns to ignore the banner, which is
+   * the same failure by a different route.
+   *
+   * On the poll rather than a screen of its own, so it follows somebody from
+   * page to page — the seller who needs it is not going to open a reports page
+   * to find it.
+   */
+  const soon = new Date(Date.parse(today() + 'T00:00:00Z') + 7 * 864e5).toISOString().slice(0, 10)
+  const mine = user.role === 'agent'
+
+  const countBooks = async (build: (q: any) => any) => {
+    let q = ctx.supabaseAdmin.from('books').select('idx', { count: 'exact', head: true })
+      .eq('status', 'Out')
+    if (mine) q = q.eq('held_by_agent', user.agentId ?? '\u0000')
+    const { count } = await build(q)
+    return count ?? 0
+  }
+
+  const booksLate = await countBooks((q: any) => q.lt('due_at', today()))
+  const booksDueSoon = await countBooks((q: any) => q.gte('due_at', today()).lte('due_at', soon))
+
   return {
     tickets: data?.modified_at ?? null,
     approvalsWaiting: waiting,
+    // What the banner is made of. Both are counts of BOOKS still out, because a
+    // book is the thing somebody physically brings back.
+    booksLate,
+    booksDueSoon,
+    dueSoonBy: soon,
+    scope: mine ? 'mine' : 'all',
     serverTime: new Date().toISOString(),
   }
 }

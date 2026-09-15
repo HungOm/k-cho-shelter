@@ -249,6 +249,27 @@ console.log('whoami carries what the app boots on')
   ok(Number(d.config.totalBooks) > 0, `totalBooks is counted (${d.config.totalBooks})`)
 }
 
+console.log('the poll carries what a self-clearing banner is made of')
+{
+  const d = await call('read_version')
+  carries(d, ['booksLate', 'booksDueSoon', 'dueSoonBy', 'scope', 'approvalsWaiting'], 'read_version')
+
+  // Counts, not flags. The banner has nothing to dismiss: it goes when the
+  // books are back, which is the only thing that should make it go.
+  ok(typeof d.booksLate === 'number', 'booksLate is a number')
+  ok(typeof d.booksDueSoon === 'number', 'booksDueSoon is a number')
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(d.dueSoonBy), `dueSoonBy is a plain day (${d.dueSoonBy})`)
+
+  // Book 2 in the fixture is Out. With no due date it is neither late nor due
+  // soon — a book nobody set a date for must not be reported as overdue.
+  ok(d.booksLate === 0, `a book out with no due date is not late (got ${d.booksLate})`)
+  ok(d.booksDueSoon === 0, `nor due soon (got ${d.booksDueSoon})`)
+
+  // And a seller is told about their own, which is the only count they can act
+  // on. Shown the whole raffle's, they learn to ignore the banner.
+  ok(d.scope === 'all', `an organiser sees the whole raffle (${d.scope})`)
+}
+
 console.log('the money reports carry their own shape')
 {
   const out = await call('report_outstanding')

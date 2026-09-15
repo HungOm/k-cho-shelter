@@ -56,6 +56,8 @@ function withDefaults(table, row) {
 /** Deep-ish clone, so a handler mutating a returned row cannot reach the store. */
 const copy = (v) => (v === null || typeof v !== 'object' ? v : JSON.parse(JSON.stringify(v)))
 
+const notNull = (v) => v !== null && v !== undefined
+
 const cmp = (a, b) => {
   if (a === b) return 0
   if (a === null || a === undefined) return -1
@@ -92,10 +94,21 @@ class Query {
   // ---- filters ----
   eq(col, v) { this.filters.push((r) => r[col] === v); return this }
   neq(col, v) { this.filters.push((r) => r[col] !== v); return this }
-  gt(col, v) { this.filters.push((r) => cmp(r[col], v) > 0); return this }
-  gte(col, v) { this.filters.push((r) => cmp(r[col], v) >= 0); return this }
-  lt(col, v) { this.filters.push((r) => cmp(r[col], v) < 0); return this }
-  lte(col, v) { this.filters.push((r) => cmp(r[col], v) <= 0); return this }
+  /*
+   * NULL NEVER MATCHES A COMPARISON, as in SQL.
+   *
+   * `null < '2026-09-15'` is not true in Postgres — it is NULL, and a WHERE
+   * clause drops the row. Sorting null as "smallest" instead, which is what the
+   * ordering helper does, made a book with no due date count as overdue: the
+   * fake reported a banner the real database never would.
+   *
+   * A fake that disagrees with Postgres fails on correct code, which teaches
+   * you to distrust the test — worse than having no fake at all.
+   */
+  gt(col, v) { this.filters.push((r) => notNull(r[col]) && cmp(r[col], v) > 0); return this }
+  gte(col, v) { this.filters.push((r) => notNull(r[col]) && cmp(r[col], v) >= 0); return this }
+  lt(col, v) { this.filters.push((r) => notNull(r[col]) && cmp(r[col], v) < 0); return this }
+  lte(col, v) { this.filters.push((r) => notNull(r[col]) && cmp(r[col], v) <= 0); return this }
   in(col, vs) { const s = new Set(vs); this.filters.push((r) => s.has(r[col])); return this }
   is(col, v) {
     this.filters.push((r) => (v === null ? r[col] === null || r[col] === undefined : r[col] === v))

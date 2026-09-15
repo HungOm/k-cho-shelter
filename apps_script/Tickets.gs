@@ -299,10 +299,38 @@ function handleReadVersion(payload, user) {
     }
   } catch (e) { waiting = 0; }   // an older deployment has no approvals tab
 
+  // Books coming due, so a banner can clear itself rather than be dismissed.
+  // The counts come from the books; there is nothing to tick away. Scoped the
+  // same as every other read — a seller is told about the books in their own
+  // hands, because a seller shown the whole raffle's overdue count cannot act
+  // on it and learns to ignore the banner.
+  var booksLate = 0, booksDueSoon = 0, dueSoonBy = '';
+  try {
+    var cfgD = getConfig();
+    var todayD = dayStart_(new Date());
+    var soonD = new Date(todayD.getTime() + 7 * 86400000);
+    dueSoonBy = isoDay_(soonD);
+    var allBooks = readBooksRaw_();
+    for (var bi = 0; bi < allBooks.length; bi++) {
+      var bk = allBooks[bi];
+      if (bk.Status !== BOOK_STATUS.OUT) continue;
+      if (user.role === ROLES.AGENT && bk.Held_By_Agent !== user.agentId) continue;
+      if (!bk.Due_Date) continue;
+      var due = dayStart_(bk.Due_Date);
+      if (!due) continue;
+      if (due.getTime() < todayD.getTime()) booksLate++;
+      else if (due.getTime() <= soonD.getTime()) booksDueSoon++;
+    }
+  } catch (e) { booksLate = 0; booksDueSoon = 0; }
+
   return {
     tickets: ticketCacheVersion_(),
     books: bookCacheVersion_(),
     approvalsWaiting: waiting,
+    booksLate: booksLate,
+    booksDueSoon: booksDueSoon,
+    dueSoonBy: dueSoonBy,
+    scope: user.role === ROLES.AGENT ? 'mine' : 'all',
     serverTime: new Date().toISOString()
   };
 }
