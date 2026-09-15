@@ -8,18 +8,22 @@
  * in or reviewed.
  */
 import { computed } from 'vue'
-import { my } from '../../lib/i18n.js'
+import { my, fill } from '../../lib/i18n.js'
 
 const props = defineProps({
   text: { type: String, required: true },
-  inline: Boolean          // for use inside a button, where a block would stretch it
+  inline: Boolean,         // for use inside a button, where a block would stretch it
+  // Fills {n}-style placeholders in BOTH languages, so a counted sentence is
+  // one key rather than a fragment with a number stranded beside it.
+  vars: { type: Object, default: null }
 })
-const sub = computed(() => my(props.text))
+const shown = computed(() => fill(props.text, props.vars))
+const sub = computed(() => my(props.text, props.vars))
 </script>
 
 <template>
   <span :class="['bi', { inline }]">
-    <span class="en">{{ text }}</span>
+    <span class="en">{{ shown }}</span>
     <span v-if="sub" class="my" lang="my" aria-hidden="true">{{ sub }}</span>
   </span>
 </template>

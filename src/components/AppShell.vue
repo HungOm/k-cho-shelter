@@ -12,6 +12,7 @@ import { ROLE_WORDS } from '../lib/format.js'
 import Logo from './ui/Logo.vue'
 import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
+import ReturnDue from './ui/ReturnDue.vue'
 
 const SCREENS = [
   { id: 'home',   icon: 'home', label: 'Home',    roles: ['admin', 'recorder', 'agent', 'viewer'] },
@@ -115,6 +116,9 @@ defineEmits(['signout'])
       </header>
 
       <main class="content">
+        <!-- Above the screen, not on one: the seller who needs this is not
+             going to open a reports page to find it. -->
+        <ReturnDue />
         <slot />
       </main>
 

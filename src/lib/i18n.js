@@ -115,6 +115,21 @@ export const MY = {
   'Getting your raffle': 'အချက်အလက်များ ရယူနေသည်',
   'One moment…': 'ခဏစောင့်ပါ…',
   'Administrator': 'စီမံခန့်ခွဲသူ',
+  // Return dates. Templates so the number lands where Burmese puts it.
+  'Your book is past its return date': 'သင့်စာအုပ် ပြန်အပ်ရမည့်ရက် ကျော်လွန်နေပြီ',
+  '{n} of your books are past their return date': 'သင့်စာအုပ် {n} အုပ် ပြန်အပ်ရမည့်ရက် ကျော်လွန်နေပြီ',
+  'A book is past its return date': 'စာအုပ်တစ်အုပ် ပြန်အပ်ရမည့်ရက် ကျော်လွန်နေပြီ',
+  '{n} books are past their return date': 'စာအုပ် {n} အုပ် ပြန်အပ်ရမည့်ရက် ကျော်လွန်နေပြီ',
+  'Your book is due back soon': 'သင့်စာအုပ် မကြာမီ ပြန်အပ်ရန်ရှိသည်',
+  '{n} of your books are due back soon': 'သင့်စာအုပ် {n} အုပ် မကြာမီ ပြန်အပ်ရန်ရှိသည်',
+  'A book is due back soon': 'စာအုပ်တစ်အုပ် မကြာမီ ပြန်အပ်ရန်ရှိသည်',
+  '{n} books are due back soon': 'စာအုပ် {n} အုပ် မကြာမီ ပြန်အပ်ရန်ရှိသည်',
+  'Another {n} due by {when}.': 'နောက်ထပ် {n} အုပ် {when} တွင် ပြန်အပ်ရန်။',
+  'Bring them back, or write down which tickets sold.': 'ပြန်အပ်ပါ၊ သို့မဟုတ် ရောင်းပြီးသော လက်မှတ်များကို မှတ်သားပါ။',
+  'Chase the sellers holding them.': 'ကိုင်ဆောင်ထားသော ရောင်းသူများကို ဆက်သွယ်ပါ။',
+  'Due by {when}.': '{when} တွင် ပြန်အပ်ရန်။',
+  'Due by {when}. Bring them back, or write down which tickets sold.': '{when} တွင် ပြန်အပ်ရန်။ ရောင်းပြီးသော လက်မှတ်များကို မှတ်သားပါ။',
+  'See the books': 'စာအုပ်များ ကြည့်ရန်',
   'Ask the owner': 'စီစဉ်သူထံ တောင်းခံရန်',
   // Kept: older strings may still be in a cached build on a phone.
   'Ask the organiser': 'စီစဉ်သူထံ တောင်းခံရန်',
@@ -239,9 +254,26 @@ export const MY_ERRORS = {
   SERVER_ERROR: 'စနစ်တွင် အမှားဖြစ်နေသည်'
 }
 
-/** The Burmese for a piece of interface text, or nothing if it is untranslated. */
-export function my(text) {
-  return MY[String(text || '').trim()] || ''
+/**
+ * The Burmese for a piece of interface text, or nothing if it is untranslated.
+ *
+ * `vars` fills {n}-style placeholders, so a sentence with a count in it can be
+ * ONE translatable key instead of a fragment with a number stranded beside it.
+ * Without this, "3 of your books are late" could only be translated as "of your
+ * books are late" with the 3 outside — which reads as broken Burmese and puts
+ * the number in the wrong place for a language that does not order it that way.
+ *
+ * The same substitution runs on the English, so the key and what a reader sees
+ * cannot drift: there is one template and both languages fill it.
+ */
+export function fill(text, vars) {
+  const t = String(text ?? '')
+  if (!vars) return t
+  return t.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m))
+}
+
+export function my(text, vars) {
+  return fill(MY[String(text || '').trim()] || '', vars)
 }
 
 export function myError(code) {
