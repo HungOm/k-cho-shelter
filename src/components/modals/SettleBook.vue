@@ -2,10 +2,17 @@
 /**
  * Counting a book back in.
  *
- * The seller is standing there holding the tickets that did NOT sell, so that
- * is what we ask for. Typing two numbers takes five seconds and is exact,
+ * Whoever is holding the leftovers reads out the numbers that did NOT sell, so
+ * that is what we ask for. Typing two numbers takes five seconds and is exact,
  * whereas "I sold eight" throws away which numbers went to whom — and the draw
  * depends on knowing that.
+ *
+ * TWO DIFFERENT MOMENTS REACH THIS SCREEN and they are not the same room. An
+ * `Out` book is still with the seller: they are standing there with the unsold
+ * tickets in their hand. A `Returned` book has already been handed back — the
+ * tickets are in the office and the seller is not there. Telling an organiser
+ * counting yesterday's returns that "the seller is holding the tickets" sends
+ * them looking for somebody who went home, so the words follow the book.
  */
 import { ref, computed } from 'vue'
 import { state, api, toast, refresh, loadDelta } from '../../lib/store.js'
@@ -25,6 +32,9 @@ const busy = ref(false)
 const per = computed(() => state.cfg?.ticketsPerBook || 10)
 const price = computed(() => state.cfg?.ticketPrice || 0)
 const currency = computed(() => state.cfg?.currency || '')
+
+/** Already handed back and sitting in the office, rather than still out. */
+const handedBack = computed(() => props.book.status === 'Returned')
 
 const unsoldList = computed(() =>
   unsold.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))
@@ -117,8 +127,14 @@ async function settle() {
   <Sheet :title="`Count in ${book.book}`"
          :subtitle="book.agentName ? `from ${book.agentName}` : ''" @close="emit('close')">
     <div class="note info">
-      The seller is holding the tickets that <b>did not</b> sell.
-      Type those numbers — everything else in the book counts as sold.
+      <template v-if="handedBack">
+        These tickets are back in the office. Type the numbers that <b>did not</b> sell
+        — everything else in the book counts as sold.
+      </template>
+      <template v-else>
+        The seller is holding the tickets that <b>did not</b> sell.
+        Type those numbers — everything else in the book counts as sold.
+      </template>
     </div>
 
     <template v-if="!lost">
@@ -182,7 +198,8 @@ async function settle() {
 
     <label class="lostbox">
       <input type="checkbox" v-model="lost">
-      <span>They lost the leftover tickets</span>
+      <span v-if="handedBack">The leftover tickets did not come back</span>
+      <span v-else>They lost the leftover tickets</span>
     </label>
 
     <template #actions>
