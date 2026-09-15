@@ -54,6 +54,50 @@ export function reject(file) {
   return null
 }
 
+/**
+ * What the file actually is, read from its first bytes.
+ *
+ * Both checks above can be walked past by renaming, because BOTH are labels:
+ * the filename and the declared type are supplied by whoever picked the file,
+ * and a browser will happily report image/png for a renamed SVG. The bytes are
+ * the only part of a file that is not a claim about itself.
+ *
+ * This still is not the defence — the server reads its own bytes and does not
+ * trust these. What it buys is the honest case: somebody renames logo.svg to
+ * logo.png to get past the picker and finds out here, in a sentence, instead of
+ * after a slow upload and a server error they cannot interpret.
+ */
+export function sniffType(bytes) {
+  const b = bytes || []
+  const at = (i, ...want) => want.every((v, k) => b[i + k] === v)
+  if (at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png'
+  if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg'
+  // RIFF....WEBP — the four size bytes between are not ours to check.
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp'
+  return null
+}
+
+/**
+ * Why the CONTENT cannot be used, in words — or null.
+ *
+ * Kept apart from reject() because one reads labels and this reads the file.
+ * A disagreement between them is the interesting case and gets its own
+ * sentence: it is either a renamed file or a mistake, and both are worth
+ * saying plainly rather than reporting as an unreadable picture.
+ */
+export function rejectBytes(declared, bytes) {
+  const actual = sniffType(bytes)
+  if (!actual) {
+    return 'That file is not a PNG, JPEG or WebP inside, whatever it is called. ' +
+      'If it is an SVG, save it as a PNG and upload that.'
+  }
+  if (actual !== String(declared || '').toLowerCase()) {
+    return `That file is named as ${declared} but is really ${actual}. ` +
+      'Re-save it in the format you want and upload it again.'
+  }
+  return null
+}
+
 /** Square, centred, transparent where the picture does not reach. */
 export function drawSquare(img, side, doc = document) {
   const canvas = doc.createElement('canvas')
@@ -86,6 +130,11 @@ export function bare(dataUrl) {
 export async function toPayload(file) {
   const why = reject(file)
   if (why) throw new Error(why)
+
+  // The bytes, before the browser is asked to decode anything.
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer())
+  const whyBytes = rejectBytes(file.type, head)
+  if (whyBytes) throw new Error(whyBytes)
 
   const url = URL.createObjectURL(file)
   try {
