@@ -540,7 +540,22 @@ create table if not exists payments (
   -- A reversal points at what it undoes. Corrections are new rows, never
   -- deletes, so the trail survives the mistake.
   reverses     bigint references payments(id) on delete restrict,
-  source       text not null default 'hand' check (source in ('hand','settlement'))
+  /*
+   * WHAT KIND OF ROW THIS IS, and the third one is not money.
+   *
+   *   'hand'       cash somebody handed over
+   *   'settlement' cash counted in when a book was closed
+   *   'writeoff'   a debt the raffle has decided will not be collected
+   *
+   * A WRITE-OFF MUST NEVER READ AS COLLECTED. It is in this table because it
+   * belongs to the same running total — what a seller still owes is expected,
+   * less what came in, less what has been forgiven — and because every
+   * correction to money here is a row with a reason rather than an edit. But
+   * summing it with the cash would say the money arrived, which is the one
+   * thing it did not do. Every caller that adds up payments therefore has to
+   * say which kinds it means; collectedByAgent names the two that are cash.
+   */
+  source       text not null default 'hand' check (source in ('hand','settlement','writeoff'))
 );
 create index if not exists payments_agent_idx on payments (agent_id);
 -- Settlement rows are read per book on every re-settle, to find what to reverse.

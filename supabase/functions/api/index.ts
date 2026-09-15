@@ -161,6 +161,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
   record_payment: { group: 'Money', label: 'Record money handed in' },
   reverse_payment: { group: 'Money', label: 'Undo a recorded payment', danger: true },
+  write_off: { group: 'Money', label: 'Write off money that is not coming back', danger: true },
   list_payments: { group: 'Money', label: 'See what has been handed in' },
   report_outstanding: { group: 'Money', label: 'Who still owes money' },
   list_agents: { group: 'People', label: 'See the sellers' },
@@ -220,6 +221,10 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   record_payment: { roles: ['recorder', 'agent'], kind: 'write', fn: money.recordPayment },
   // Undoing is an organiser's: it moves a figure somebody has already been told.
   reverse_payment: { roles: ADMIN_ONLY, kind: 'write', fn: money.reversePayment },
+  // Organisers, like reverse_payment and for the same reason: it is a
+  // decision about money that has to be made by somebody accountable, and
+  // it is on the record with a reason attached either way.
+  write_off: { roles: ADMIN_ONLY, kind: 'write', fn: money.writeOff },
   list_payments: { roles: ['viewer', 'recorder', 'agent'], kind: 'read', fn: money.listPayments },
   set_book_status: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.setBookStatus },
   restock_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.restockBooks },

@@ -14,7 +14,9 @@
  */
 import { ApiError, mask, agentBooks, type AppUser } from './gate.ts'
 import { configDate, today } from './deadlines.ts'
-import { collectedByAgent, deskMoney, moneyScope, round2, visibleAgents } from './money.ts'
+import {
+  collectedByAgent, deskMoney, moneyScope, round2, visibleAgents, writtenOffByAgent,
+} from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -81,6 +83,7 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
     agentId: string; name: string; phone: string; zone: string
     booksOut: number; booksSettled: number; overdueBooks: number
     ticketsSold: number; expected: number; collected: number; outstanding: number
+    writtenOff?: number
   }
   const byAgent = new Map<string, Row>()
 
@@ -115,6 +118,7 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
    */
   const paid = await collectedByAgent(ctx, only)
   for (const [id, a] of byAgent) a.collected = paid.get(id) ?? 0
+  const forgiven = await writtenOffByAgent(ctx, only)
 
   const lines: Row[] = [...byAgent.values()]
 
@@ -141,7 +145,16 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
   const rows = lines
     // Rounded like the Sheet: floating point turns 30 - 10.1 into a figure with
     // fifteen decimal places, and this one is read aloud to the person who owes it.
-    .map((a) => ({ ...a, outstanding: Math.round((a.expected - a.collected) * 100) / 100 }))
+    // Forgiven is not owed. A debt written off with a reason has been decided
+    // about, and leaving it here keeps a seller on the chase list for money
+    // somebody accountable already said would never come. Carried as its own
+    // figure rather than folded into `collected`, because a screen that added
+    // them would tell an organiser the cash arrived.
+    .map((a) => ({
+      ...a,
+      writtenOff: round2(forgiven.get(a.agentId) ?? 0),
+      outstanding: round2(a.expected - a.collected - (forgiven.get(a.agentId) ?? 0)),
+    }))
     // Biggest debt first: this list exists to decide who to telephone, and
     // alphabetical order would answer a question nobody asked.
     .sort((x, y) => y.outstanding - x.outstanding)
@@ -298,7 +311,27 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
   const collectedScoped = round2([...paidBy.values()].reduce((s, n) => s + n, 0) + deskPaid)
   const expectedScoped = round2(mineBooks.reduce(
     (s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0))
-  const outstanding = round2(expectedScoped - collectedScoped)
+
+  /*
+   * RULE L6, THE HALF THAT COULD NOT BE SATISFIED HONESTLY.
+   *
+   * The draw is ready when outstanding money is zero, OR every non-zero line
+   * has been explicitly written off with a reason. Only the first half was
+   * buildable, so a raffle with one seller who genuinely never pays could
+   * never read as ready — and the only way to clear this blocker was to record
+   * a payment that never happened. A rule that can only be satisfied by lying
+   * teaches people to put false figures in the one place the raffle keeps its
+   * accounts.
+   *
+   * Written off is subtracted, NOT added to collected, because it is not cash
+   * and nothing on any screen should say it is. What it means here is
+   * narrower: somebody accountable decided this money is not coming, said why,
+   * and the decision is on the record — so it is no longer a thing standing
+   * between the raffle and its draw.
+   */
+  const writtenOffBy = await writtenOffByAgent(ctx, only)
+  const writtenOff = round2([...writtenOffBy.values()].reduce((s, n) => s + n, 0))
+  const outstanding = round2(expectedScoped - collectedScoped - writtenOff)
 
   const problems = []
   if (missingContact) {
@@ -315,8 +348,13 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
   }
   if (outstanding > 0) {
     problems.push({ what: 'money not handed in', count: outstanding,
-      why: 'Sold, but the cash has not come back.' })
+      why: writtenOff > 0
+        ? `Sold, but the cash has not come back. ${writtenOff} has been written off ` +
+          'already and is not counted here.'
+        : 'Sold, but the cash has not come back. If some of it is never coming, write ' +
+          'it off with a reason rather than recording a payment that did not happen.' })
   }
+
   if (reserved) {
     problems.push({ what: 'tickets still being held', count: reserved,
       why: 'Neither sold nor available — decide before the draw.' })

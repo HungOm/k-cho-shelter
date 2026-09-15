@@ -41,8 +41,13 @@ const world = () => fakeDb({
     { idx: 2, number: 'Book-002', status: 'Returned', held_by_agent: 'A002', counted_collected: 0, counted_expected: 20, recorded_amount: 20 },
   ],
   payments: [
-    { id: 1, agent_id: 'A001', amount: 30, source: 'handover' },
-    { id: 2, agent_id: 'A002', amount: 10, source: 'handover' },
+    // 'hand', not 'handover': the column is checked against
+    // ('hand','settlement','writeoff') and the database would refuse the row
+    // this fixture used to describe. It passed because the sum asked for
+    // "not settlement", which an invalid value satisfies as happily as a valid
+    // one — so the fixture was testing that a row nobody can insert is counted.
+    { id: 1, agent_id: 'A001', amount: 30, source: 'hand' },
+    { id: 2, agent_id: 'A002', amount: 10, source: 'hand' },
   ],
 })
 

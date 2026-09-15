@@ -90,6 +90,11 @@ console.log('every Apps Script action is either ported or listed as not ported')
     // Script has the rows in two tabs and no way to join them without reading
     // both in full, which is the habit the migration exists to end.
     ['return_check', 'joins the declaration to the returns, which a spreadsheet cannot do without reading both tabs whole'],
+    // Forgiving a debt has to be a row nobody can quietly edit afterwards,
+    // sitting in the same ledger as the cash so the two are read together and
+    // summed apart. A spreadsheet can hold the row and cannot hold the
+    // guarantee, which is the only part that matters about it.
+    ['write_off', 'a forgiven debt must be a row nobody can edit afterwards, which a sheet cannot promise'],
   ])
   const extra = [...supabase].filter(a => !appsScript.has(a) && !SUPABASE_ONLY.has(a)).sort()
   ok(extra.length === 0,

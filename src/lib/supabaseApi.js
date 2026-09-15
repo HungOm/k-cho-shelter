@@ -32,6 +32,7 @@ const WRITES = new Set([
   'upload_logo', 'set_brand_color',
   'record_payment', 'reverse_payment',
   'acknowledge_books',
+  'write_off',
 ])
 
 let functionUrl = ''

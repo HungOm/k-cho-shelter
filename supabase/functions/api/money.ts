@@ -102,8 +102,22 @@ export async function collectedByAgent(ctx: Ctx, agentIds?: string[] | null) {
     by.set(id, round2((by.get(id) ?? 0) + Number(b.counted_collected ?? 0)))
   }
 
+  /*
+   * NAMED, NOT "EVERYTHING EXCEPT SETTLEMENT".
+   *
+   * This said `.neq('source','settlement')`, which meant "every kind of row we
+   * have not thought of yet is cash". The moment a write-off existed — a debt
+   * the raffle has decided will not be collected — that row would have been
+   * added to what a seller HANDED IN, and the total would have said the money
+   * arrived. Asking for the one kind that is cash cannot fail that way when a
+   * fourth kind is added.
+   *
+   * Settlement rows are excluded for a different reason and it is not a
+   * kinship: the book's own amount_paid is already in the ledger figure above,
+   * so counting them here would charge the same cash twice.
+   */
   let pq = ctx.supabaseAdmin.from('payments')
-    .select('agent_id,amount,source').neq('source', 'settlement')
+    .select('agent_id,amount,source').eq('source', 'hand')
   if (agentIds) pq = pq.in('agent_id', agentIds)
   const { data: paid, error } = await pq
   if (error) throw new ApiError('QUERY_FAILED', error.message)
@@ -112,6 +126,30 @@ export async function collectedByAgent(ctx: Ctx, agentIds?: string[] | null) {
     by.set(id, round2((by.get(id) ?? 0) + Number(r.amount ?? 0)))
   }
 
+  return by
+}
+
+/**
+ * What has been written off per seller — debt the raffle has decided will not
+ * be collected.
+ *
+ * SEPARATE FROM COLLECTED ON PURPOSE, and it is the whole reason this is its
+ * own function rather than a flag on the last one. "Handed in" and "forgiven"
+ * both reduce what somebody owes and they are not the same fact: one is cash
+ * in a tin and the other is a decision somebody signed. A screen that added
+ * them together would tell an organiser money had come in, and the seller
+ * whose debt was forgiven would appear to have paid it.
+ */
+export async function writtenOffByAgent(ctx: Ctx, agentIds?: string[] | null) {
+  const by = new Map<string, number>()
+  let q = ctx.supabaseAdmin.from('payments').select('agent_id,amount').eq('source', 'writeoff')
+  if (agentIds) q = q.in('agent_id', agentIds)
+  const { data, error } = await q
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const id = String(r.agent_id ?? '')
+    by.set(id, round2((by.get(id) ?? 0) + Number(r.amount ?? 0)))
+  }
   return by
 }
 
@@ -208,6 +246,106 @@ export async function recordPayment(p: Record<string, unknown>, user: AppUser, c
  * occurred, which is exactly what somebody checking the books later needs to
  * see. So the reversal is its own entry, and both survive.
  */
+/**
+ * A debt the raffle has decided will not be collected.
+ *
+ * WHY THIS HAD TO EXIST. Readiness rule L6 says the draw is ready when
+ * outstanding money is zero, OR every non-zero line has been explicitly
+ * written off with a reason. Only the first half was buildable. A raffle with
+ * one seller who genuinely never pays — who moved, who is unreachable, who
+ * lost the book — could never read as ready, and the only way to clear the
+ * blocker was to record a payment that never happened. A rule that can only
+ * be satisfied by lying is worse than no rule, because it teaches people to
+ * put false figures in the one place the raffle keeps its accounts.
+ *
+ * IT IS NOT A PAYMENT AND MUST NEVER BE SUMMED AS ONE. It lives in the same
+ * table because it belongs to the same running total and because every
+ * correction to money here is a row with a reason rather than an edit — but
+ * `source` says which kind it is, and collectedByAgent asks for cash by name.
+ *
+ * THE REASON IS THE POINT. This is the one entry in the ledger that says money
+ * is gone and nobody is chasing it. In a year somebody will ask why RM120 was
+ * forgiven, and "written off" is not an answer. Short reasons are refused for
+ * the same cause: "lost" is a word, not an explanation.
+ *
+ * IT CANNOT FORGIVE MORE THAN IS OWED. Writing off more than the debt would
+ * turn a seller's balance negative and read, on every screen, as the raffle
+ * owing them money.
+ */
+export async function writeOff(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const agentId = String(p.agentId ?? '').trim()
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Whose debt?')
+
+  const { data: agent } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name').eq('agent_id', agentId).maybeSingle()
+  if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${agentId}".`, null, 404)
+
+  const reason = String(p.reason ?? '').trim()
+  if (reason.length < 10) {
+    throw new ApiError(
+      'MISSING_FIELD',
+      'Say why this money is not coming back, in a sentence somebody can read in a ' +
+      'year. This is the one entry that says money is gone and nobody is chasing it.',
+    )
+  }
+
+  const owed = await owedBy(ctx, agentId)
+  if (owed <= 0) {
+    throw new ApiError(
+      'NOTHING_TO_DO',
+      `${agent.name} does not owe anything, so there is nothing to write off.`,
+      { owed },
+    )
+  }
+
+  // Unstated means all of it, which is the common case: somebody has gone and
+  // whatever they owed is not coming.
+  const asked = p.amount === undefined || p.amount === null || p.amount === ''
+    ? owed : Number(p.amount)
+  if (!Number.isFinite(asked) || asked <= 0) {
+    throw new ApiError('BAD_REQUEST', 'How much is being written off?')
+  }
+  const amount = round2(asked)
+  if (amount > owed) {
+    throw new ApiError(
+      'TOO_MUCH',
+      `${agent.name} owes ${owed}. Writing off ${amount} would leave the raffle owing ` +
+      'them money, which is not what happened.',
+      { owed, asked: amount },
+    )
+  }
+
+  const { data: row, error } = await ctx.supabaseAdmin.from('payments').insert({
+    agent_id: agentId,
+    amount,
+    received_by: user.email,
+    method: 'writeoff',
+    source: 'writeoff',
+    note: reason,
+  }).select('id').maybeSingle()
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'WRITE_OFF',
+    details: { agent: agentId, name: agent.name, amount, owedBefore: owed, reason },
+    email: user.email,
+  })
+
+  const left = round2(owed - amount)
+  return {
+    agent: { id: agentId, name: agent.name },
+    amount,
+    reason,
+    writeOffId: (row as { id?: number } | null)?.id ?? null,
+    owedBefore: owed,
+    stillOwed: left,
+    by: user.email,
+    message: left > 0
+      ? `${amount} written off. ${agent.name} still owes ${left}.`
+      : `${amount} written off. ${agent.name}'s account is closed.`,
+  }
+}
+
 export async function reversePayment(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const id = Number(p.paymentId)
   if (!Number.isFinite(id) || id <= 0) throw new ApiError('MISSING_FIELD', 'Which payment?')
@@ -304,7 +442,11 @@ export async function owedBy(ctx: Ctx, agentId: string): Promise<number> {
   const expected = (books ?? []).reduce(
     (s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0)
   const paid = (await collectedByAgent(ctx, [agentId])).get(agentId) ?? 0
-  return round2(expected - paid)
+  // Forgiven is not owed. A debt written off with a reason has been decided
+  // about; leaving it in this number would keep a seller on the chase list for
+  // money somebody already agreed would never come.
+  const forgiven = (await writtenOffByAgent(ctx, [agentId])).get(agentId) ?? 0
+  return round2(expected - paid - forgiven)
 }
 
 /*
