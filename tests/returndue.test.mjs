@@ -68,5 +68,37 @@ console.log('a seller is not given a number they cannot act on')
 ok(/scope === 'mine'/.test(src), 'the scope comes from the server, not guessed from the role')
 ok(/v-if="!mine"/.test(src), 'and only an organiser gets the button to go and chase them')
 
+/*
+ * The Home "needs looking at" list is the other one every role reads.
+ *
+ * It sat in assembled English until today — "3 books not returned", "2 tickets
+ * with no phone number" — rendered as plain text on the one screen a seller
+ * always opens. Same failure as the return banner and invisible the same way:
+ * a key built at run time never reaches the i18n suite's scan of static labels.
+ */
+console.log('and every Home attention row has Burmese too')
+{
+  const { ATTN } = await import('../src/lib/attentionlines.js')
+  const rows = Object.entries(ATTN)
+  ok(rows.length >= 15, `the rows are enumerated (${rows.length})`)
+  for (const [k, text] of rows) {
+    ok(my(text) !== '', `${k} is translated: "${text}"`)
+  }
+  for (const [, text] of rows) {
+    const holes = text.match(/\{\w+\}/g) || []
+    for (const h of holes) {
+      ok(my(text).includes(h), `the Burmese for "${text}" keeps ${h}`)
+    }
+  }
+  // Singular rows must carry no count at all, or "1 books" comes back.
+  for (const k of ['overdueOne', 'silentOne', 'contactOne', 'openOne']) {
+    ok(!/\{n\}/.test(ATTN[k]), `${k} is a true singular, not a count of one`)
+  }
+  const store = readFileSync(new URL('../src/lib/store.js', import.meta.url), 'utf8')
+  ok(!/title: `/.test(store.slice(store.indexOf('export const attention'),
+                                  store.indexOf('export const gettingStarted'))),
+     'no attention row assembles its title as a template string any more')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

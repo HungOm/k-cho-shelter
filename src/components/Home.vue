@@ -103,8 +103,16 @@ function doStep(action) {
         <button v-for="a in attention" :key="a.key" :class="['attn', a.tone]" @click="go(a.go)">
           <Icon :name="a.icon" :size="24" class="em" />
           <span class="grow">
-            <span class="t">{{ a.title }}</span>
-            <span class="d">{{ a.detail }}</span>
+            <!-- Bilingual: this list is the one thing on Home that every role
+                 reads, sellers included, and it was the last plain-English
+                 thing left on their screen. -->
+            <span class="t"><Bi :text="a.title.text" :vars="a.title.vars" /></span>
+            <span class="d">
+              <Bi v-if="a.detail?.text" :text="a.detail.text" :vars="a.detail.vars" />
+              <!-- A bare date is data, not interface text, and must not be
+                   glossed — a Burmese line under a date is nonsense. -->
+              <template v-else>{{ a.detail }}</template>
+            </span>
           </span>
           <span class="chev">›</span>
         </button>
