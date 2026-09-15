@@ -21,7 +21,7 @@
  * performance setting.
  */
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 
 let pass = 0, fail = 0
@@ -134,7 +134,17 @@ console.log('an organiser still sees the whole raffle')
 console.log('all three read paths carry the rule')
 {
   const rls = readFileSync(new URL('../supabase/rls.sql', import.meta.url), 'utf8')
-  const edge = readFileSync(new URL('../supabase/functions/api/index.ts', import.meta.url), 'utf8')
+  /*
+   * THE WHOLE api/ DIRECTORY, not a named file. This read index.ts, because that
+   * is where mask() lived — and when mask() moved to gate.ts so reports.ts could
+   * share it, the assertion went looking in the wrong place and failed. It was
+   * right to fail: it had pinned a LOCATION when the claim is about a RULE.
+   * Concatenating the handlers asks the question the test is actually about, and
+   * survives the next move.
+   */
+  const apiDir = new URL('../supabase/functions/api/', import.meta.url)
+  const edge = readdirSync(apiDir).filter((f) => f.endsWith('.ts'))
+    .map((f) => readFileSync(new URL(f, apiDir), 'utf8')).join('\n')
   const gs = readFileSync(new URL('../apps_script/Tickets.gs', import.meta.url), 'utf8')
 
   ok(/when 'recorder' then\s+t\.recorded_by = auth_email\(\)/.test(rls),
