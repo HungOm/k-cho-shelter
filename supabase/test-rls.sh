@@ -53,11 +53,11 @@ docker exec "$NAME" psql -U postgres -d kcho -q -c "
   insert into tickets(idx,number,book_idx,status,buyer_name,buyer_phone,amount,sold_at)
     select i,'KS-'||lpad(i::text,5,'0'),ceil(i/10.0),'Sold','Buyer '||i,'0125550'||lpad((100+i)::text,3,'0'),10,now()
     from generate_series(1,60) i;
-  insert into app_users(email,name,role,active,agent_id) values
-    ('admin@x.com','Admin','admin',true,null),
-    ('view@x.com','Viewer','viewer',true,null),
-    ('a1@x.com','Agent One','agent',true,'A001'),
-    ('off@x.com','Disabled','admin',false,null);" >/dev/null 2>&1
+  insert into app_users(email,name,role,status,agent_id) values
+    ('admin@x.com','Admin','admin','active',null),
+    ('view@x.com','Viewer','viewer','active',null),
+    ('a1@x.com','Agent One','agent','active','A001'),
+    ('off@x.com','Disabled','admin','suspended',null);" >/dev/null 2>&1
 
 # Runs a query as `authenticated` with a given email in the JWT claims.
 AS() {
@@ -69,6 +69,37 @@ AS() {
      set local role authenticated;
      $sql" 2>&1 | tail -1
 }
+
+# ============ THE FIXTURE HAS TO EXIST BEFORE A DENIAL MEANS ANYTHING ============
+#
+# A DENIAL OVER ZERO ROWS IS NOT A DENIAL. Every assertion below this line reads
+# "and they see nothing", and an empty table satisfies every one of them. So a
+# fixture that silently failed to load would turn this whole file green while
+# proving the opposite of what it claims.
+#
+# Not hypothetical, twice over. A peer session's RLS fixture aborted on a
+# `create role` that had already run, and because psql wraps a multi-statement
+# -c in one implicit transaction, NOTHING was inserted — every later query
+# answered truthfully about an empty table and the leak test passed. And this
+# very file seeded app_users by writing `active`, which no handler does; the
+# moment `active` became a generated column, as production has always had it,
+# the seed failed and the suite would have gone quietly green had the counts
+# below not happened to be non-zero.
+#
+# The specific causes differ and the family does not: an aborted transaction, a
+# typo'd column, a filter matching nothing, a role never granted the privilege
+# whose revocation is under test. Asserting the fixture is non-empty catches all
+# of them, so it is asserted here rather than assumed everywhere.
+echo "the fixture loaded at all"
+ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc 'select count(*) from app_users')" "4" "four accounts to test as"
+ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc 'select count(*) from tickets')"   "60" "sixty tickets to be refused"
+ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc 'select count(*) from books')"     "6"  "six books"
+ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc 'select count(*) from agents')"    "2"  "two sellers"
+# And that the seed wrote what the HANDLERS write. app_users.active is generated
+# from status, so a fixture writing `active` directly does not merely differ from
+# production — it fails, and takes the evidence with it.
+ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc "select active from app_users where email='admin@x.com'")" "t" "an active account reads as active"
+ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc "select active from app_users where email='off@x.com'")"   "f" "and a suspended one does not"
 
 echo "nobody signed in sees nothing"
 ok "$(AS '' 'select count(*) from tickets_readable')" "0" "no session, no tickets"
@@ -145,7 +176,7 @@ echo "a superadmin row is an admin to every policy"
 # would take a branch nobody wrote — and the one that decides whether a phone
 # number is masked is among them.
 docker exec "$NAME" psql -U postgres -d kcho -tAc \
-  "insert into app_users(email,name,role,active) values ('super2@x.com','Second','superadmin',true)" >/dev/null
+  "insert into app_users(email,name,role,status) values ('super2@x.com','Second','superadmin','active')" >/dev/null
 ok "$(AS 'super2@x.com' 'select app_role()')" "admin" "app_role resolves superadmin to admin"
 ok "$(AS 'super2@x.com' 'select count(*) from tickets_readable')" "30" "and they see every ticket in play"
 ok "$(AS 'super2@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "0125550101" "with phone numbers unmasked, as an admin"

@@ -49,23 +49,29 @@ create table if not exists agents (
   phone        text not null default '',
   zone         text not null default '',
   /*
-   * A LIFECYCLE, NOT A BOOLEAN.
+   * A PLAIN BOOLEAN, AND IT BELONGS ON THIS TABLE RATHER THAN A LIFECYCLE.
    *
-   * pending    added, not yet let in. Sees that, and nothing else.
-   * active     approved and working.
-   * suspended  temporarily stopped — a lost phone, a disputed book.
-   * banned     stopped for good.
+   * The four-state lifecycle lives on app_users below, where it decides who may
+   * SIGN IN. An agent is not an account: they carry paper books, they have no
+   * login, and most never open the app. "Waiting to be let in" and "banned"
+   * describe access to a system this person does not use. What an organiser
+   * actually needs is whether to offer them in the seller picker.
    *
-   * The three that are not 'active' all deny equally. They are separate so the
-   * person is told WHICH applies: "waiting to be let in" and "your access was
-   * stopped" are different sentences to receive, and somebody told the wrong
-   * one either waits for nothing or thinks they are in trouble.
+   * IT WAS DECLARED THE OTHER WAY HERE AND THAT BROKE BOTH WRITE PATHS. The
+   * lifecycle block, with `active` generated from `status`, sat on this table
+   * while app_users had the plain boolean — the exact mirror of production, and
+   * of what the handlers do. upsert_agent writes `active` literally on both the
+   * insert and the update, and Postgres refuses any write to a generated
+   * column, so against this file adding a seller failed with "cannot insert a
+   * non-DEFAULT value into column active" and editing one with "column active
+   * can only be updated to DEFAULT".
+   *
+   * It never showed, because this file has never been applied to the live
+   * project — which is the only reason the raffle can add a seller at all. The
+   * comment that stood here said "anything still reading `active` keeps
+   * working", which was true, and silent about writing, which is what broke.
    */
-  status       text not null default 'active'
-                 check (status in ('pending','active','suspended','banned')),
-  -- Derived, so the two can never disagree. One source of truth for whether
-  -- somebody is let in; anything still reading `active` keeps working.
-  active       boolean generated always as (status = 'active') stored,
+  active       boolean not null default true,
   notes        text not null default ''
 );
 
@@ -78,7 +84,29 @@ create table if not exists app_users (
   -- toggle against a resolution would imply a switch that does nothing.
   role         text not null default 'viewer'
                  check (role in ('admin','recorder','agent','viewer','superadmin')),
-  active       boolean not null default true,
+  /*
+   * A LIFECYCLE, NOT A BOOLEAN — and this is the table it is really on.
+   *
+   * pending    added, not yet let in. Sees that, and nothing else.
+   * active     approved and working.
+   * suspended  temporarily stopped — a lost phone, a disputed account.
+   * banned     stopped for good.
+   *
+   * The three that are not 'active' all deny equally. They are separate so the
+   * person is told WHICH applies: "waiting to be let in" and "your access was
+   * stopped" are different sentences to receive, and somebody told the wrong
+   * one either waits for nothing or thinks they are in trouble. resolveUser in
+   * gate.ts turns each into its own refusal.
+   *
+   * Every write path agrees: upsert_user and set_user_status both write
+   * `status`, never `active`, which is what makes the generated column below
+   * safe here and unsafe on agents.
+   */
+  status       text not null default 'active'
+                 check (status in ('pending','active','suspended','banned')),
+  -- Derived, so the two can never disagree. One source of truth for whether
+  -- somebody is let in; app_role() in rls.sql reads `active` and keeps working.
+  active       boolean generated always as (status = 'active') stored,
   agent_id     text references agents(agent_id) on delete set null,
   google_sub   text not null default '',
   added_by     text not null default '',
