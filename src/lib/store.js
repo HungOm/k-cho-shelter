@@ -14,6 +14,11 @@ import { api as rawApi } from './backend.js'
 import { buildIndex, runSearch } from './search.js'
 import { saveTickets, loadTickets, clearCache } from './cache.js'
 import { my, myError } from './i18n.js'
+import { ATTN } from './attentionlines.js'
+// A check-in date is a plain calendar day, so it goes through the formatter
+// that reads it as one. `new Date('2026-10-14')` is UTC midnight and renders as
+// the 13th west of here — the day-early bug this codebase has had four times.
+import { date } from './format.js'
 
 export const TICKET_STATUS = {
   AVAILABLE: 'Available', RESERVED: 'Reserved', SOLD: 'Sold',
@@ -43,6 +48,11 @@ export const state = reactive({
   agents: [],
   overdue: [],
   totals: null,
+
+  // Which reporting round is live, and the day everybody answers by. Carried on
+  // the seller list rather than fetched on its own, because every screen that
+  // needs it already has that list.
+  checkIn: { date: '', round: 1, reportBy: '', graceDays: 3 },
 
   // ui
   screen: 'home',
@@ -114,6 +124,34 @@ export function whereIs(ticket) {
   return b
 }
 
+/**
+ * Why this ticket cannot be claimed for a buyer right now, in a few words, or
+ * null if it can.
+ *
+ * The rule is: you can only sell paper you can hand to the buyer. A book that
+ * is Out is in a seller's bag — selling one of its tickets at the desk gives
+ * the buyer a number and no ticket, and leaves the seller free to sell that
+ * same number in person. An organiser may still record against it, because
+ * that is writing down what the seller reported rather than selling.
+ *
+ * This is a COURTESY, not the enforcement. The backend refuses either way. It
+ * exists so a helper finds out while typing rather than after keying in thirty
+ * stubs, and because this screen has been wrong about the data before — a
+ * stale book list must never be what decides a sale.
+ */
+export function sellBlock(ticket) {
+  const b = whereIs(ticket)
+  if (!b) return null
+  if (['Settled', 'Lost', 'Void'].includes(b.status)) return `book is ${b.status.toLowerCase()}`
+  if (b.status !== 'Out') return null
+
+  const me = state.user || {}
+  if (me.agentId && b.agentId === me.agentId) return null       // it is in their hands
+  if (me.role === 'agent') return 'not your book'
+  if (me.role === 'admin' && b.agentId) return null             // transcribing a report
+  return `with ${b.agentName || 'a seller'}`
+}
+
 export const searchResults = computed(() => {
   if (!index.length) return { total: 0, results: [] }
   return runSearch(index, {
@@ -151,23 +189,53 @@ export const attention = computed(() => {
 
   if (late) items.push({
     key: 'overdue', tone: 'bad', icon: 'clock',
-    title: `${late} book${late === 1 ? '' : 's'} not returned`,
-    detail: 'Past the date they were due back', go: 'agents'
+    title: late === 1 ? { text: ATTN.overdueOne } : { text: ATTN.overdueMany, vars: { n: late } },
+    detail: { text: ATTN.overdueWhy }, go: 'agents'
   })
+  /*
+   * WHO HAS NOT REPORTED, which is not the same question as which book is late.
+   *
+   * Derived from the seller list the server already scoped and decided, so this
+   * screen cannot disagree with the Sellers screen about who is outstanding.
+   * There is nothing to dismiss: it goes when the reports are recorded, and a
+   * roll to the next round brings it back for everybody who has not answered
+   * the new one.
+   */
+  const silent = state.agents.filter(a => a.reportState === 'late').length
+  const mine = state.agents.find(a => a.id === state.user?.agentId)
+  if (mine && (mine.reportState === 'late' || mine.reportState === 'due')) {
+    items.push({
+      key: 'myreport', tone: mine.reportState === 'late' ? 'bad' : 'warn', icon: 'clock',
+      title: { text: mine.reportState === 'late' ? ATTN.myReportLate : ATTN.myReportDue },
+      detail: state.checkIn.date
+        ? { text: ATTN.myReportBy, vars: { when: date(state.checkIn.date) } }
+        : { text: ATTN.myReportAnyway },
+      go: 'books'
+    })
+  } else if (silent) {
+    items.push({
+      key: 'reports', tone: 'bad', icon: 'clock',
+      title: silent === 1 ? { text: ATTN.silentOne } : { text: ATTN.silentMany, vars: { n: silent } },
+      detail: { text: ATTN.silentWhy }, go: 'agents'
+    })
+  }
   if (o.missingContact) items.push({
     key: 'contact', tone: 'bad', icon: 'phoneOff',
-    title: `${o.missingContact} ticket${o.missingContact === 1 ? '' : 's'} with no phone number`,
-    detail: 'You could not tell these people if they win', go: 'draw'
+    title: o.missingContact === 1
+      ? { text: ATTN.contactOne }
+      : { text: ATTN.contactMany, vars: { n: o.missingContact } },
+    detail: { text: ATTN.contactWhy }, go: 'draw'
   })
   if (o.outstanding > 0) items.push({
     key: 'money', tone: 'warn', icon: 'money',
-    title: `${o.currency} ${o.outstanding.toFixed(2)} not handed in yet`,
-    detail: 'Sold, but the money has not come back', go: 'money'
+    title: { text: ATTN.moneyOut,
+             vars: { amount: `${o.currency} ${o.outstanding.toFixed(2)}` } },
+    detail: { text: ATTN.moneyWhy }, go: 'money'
   })
   if (open) items.push({
     key: 'open', tone: '', icon: 'books',
-    title: `${open} book${open === 1 ? '' : 's'} still out`,
-    detail: 'With agents, or waiting to be counted', go: 'books'
+    title: open === 1 ? { text: ATTN.openOne } : { text: ATTN.openMany, vars: { n: open } },
+    detail: { text: ATTN.openWhy }, go: 'books'
   })
   return items
 })
@@ -409,7 +477,12 @@ export async function refresh() {
     })
 
     await step('sellers', async () => {
-      state.agents = (await api('list_agents', {})).agents ?? []
+      const people = await api('list_agents', {})
+      state.agents = people.agents ?? []
+      // Defaulted rather than assigned blindly: an older backend sends no
+      // check-in block at all, and undefined here would put "undefined" into a
+      // sentence about a date.
+      if (people.checkIn) state.checkIn = { ...state.checkIn, ...people.checkIn }
     })
 
     await step('books', async () => {
