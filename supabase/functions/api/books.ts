@@ -165,7 +165,8 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
     })))
 
   await audit(ctx, 'ISSUE_BOOKS',
-    { count: issuedIdx.size, agent: agentId, books: [...issuedIdx].sort((a, b) => a - b),
+    { count: issuedIdx.size, agent: agentId,
+      books: (changed ?? []).map((b: { number: string }) => b.number),
       skipped: skipped.length ? skipped : undefined },
     user.email)
   return {
@@ -249,7 +250,8 @@ export async function transferBooks(p: Record<string, unknown>, user: AppUser, c
   if (error) throw new ApiError('QUERY_FAILED', error.message)
   await ctx.supabaseAdmin.from('book_history').insert(history)
 
-  await audit(ctx, 'TRANSFER_BOOKS', { count: idxs.length, to: toAgent }, user.email)
+  await audit(ctx, 'TRANSFER_BOOKS',
+    { count: idxs.length, to: toAgent, books: (books ?? []).map((b: { number: string }) => b.number) }, user.email)
   return { transferred: idxs.length, books: (books ?? []).map((b: { number: string }) => b.number), agent: agent.name }
 }
 
@@ -287,7 +289,8 @@ export async function returnBooks(p: Record<string, unknown>, user: AppUser, ctx
       by_user: user.email, note: String(p.note ?? ''),
     })))
 
-  await audit(ctx, 'RETURN_BOOKS', { count: idxs.length }, user.email)
+  await audit(ctx, 'RETURN_BOOKS',
+    { count: idxs.length, books: (books ?? []).map((b: { number: string }) => b.number) }, user.email)
   return { returned: idxs.length, books: (books ?? []).map((b: { number: string }) => b.number) }
 }
 
@@ -521,7 +524,8 @@ export async function setBookStatus(p: Record<string, unknown>, user: AppUser, c
       by_user: user.email, note: reason,
     })))
 
-  await audit(ctx, 'SET_BOOK_STATUS', { count: idxs.length, status, reason }, user.email)
+  await audit(ctx, 'SET_BOOK_STATUS',
+    { count: idxs.length, status, reason, books: (books ?? []).map((b: { number: string }) => b.number) }, user.email)
   return { changed: idxs.length, status, books: (books ?? []).map((b: { number: string }) => b.number) }
 }
 

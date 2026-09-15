@@ -66,6 +66,75 @@ function pair(role, isSuper) {
   ]
 }
 
+/*
+ * THE TWO REGISTRIES, COMPARED AGAINST EACH OTHER.
+ *
+ * Everything below this feeds ONE spec — the Apps Script one — to both gates,
+ * which compares the two ALGORITHMS and never the two tables of values. So a
+ * `roles` or `sup` typed differently in index.ts from Api.gs passed silently,
+ * while the comment above that registry said this file was what kept them
+ * honest: "a value mistyped here shows up as a disagreement rather than as a
+ * quiet permission change nobody notices". It did not. The algorithms agreed
+ * about a spec neither file necessarily held.
+ *
+ * Read out of the source rather than imported, because index.ts is Deno and
+ * TypeScript and the registry is a literal — the same way portparity.test.mjs
+ * reads it. A regex over a literal is coarse; what it has to catch is a value
+ * that differs, and for that it is enough.
+ *
+ * DIVERGENCES ARE ALLOWED AND MUST BE WRITTEN DOWN. The two backends are not
+ * required to be identical any more — one has a database underneath it — but
+ * every difference in who may do what is a permission decision, and a
+ * permission decision nobody recorded is indistinguishable from a typo.
+ */
+const DIVERGENT = new Map([
+  ['read_audit',
+   'Supabase opens the change log to organisers because it can take the super ' +
+   "admin's address out of every entry per request, including inside details. " +
+   'Apps Script returns sheet rows as they are and has nowhere to do that, so ' +
+   'there it stays super-admin-only.'],
+])
+
+console.log('the two registries agree about who may do what')
+{
+  const ts = readFileSync(join(ROOT, 'supabase/functions/api/index.ts'), 'utf8')
+  const body = ts.slice(ts.indexOf('const REGISTRY'))
+  const tsSpec = new Map()
+  for (const m of body.matchAll(/^ {2}([a-z_]+):\s*\{([^}]*)\}/gm)) {
+    const [, action, inner] = m
+    if (!inner.includes('fn:')) continue
+    const roles = /roles:\s*null/.test(inner) ? null
+      : /roles:\s*ADMIN_ONLY/.test(inner) ? []
+      : (inner.match(/roles:\s*\[([^\]]*)\]/) || [, ''])[1]
+          .split(',').map(x => x.trim().replace(/['"]/g, '')).filter(Boolean)
+    tsSpec.set(action, { roles, sup: /sup:\s*true/.test(inner) })
+  }
+  ok(tsSpec.size > 25, `Supabase registry parsed (${tsSpec.size} actions)`)
+
+  let compared = 0
+  for (const action of ACTIONS) {
+    const a = REGISTRY[action]
+    const b = tsSpec.get(action)
+    if (!b) continue                       // portparity owns "missing entirely"
+    compared++
+    const why = DIVERGENT.get(action)
+    const sameSup = !!a.sup === b.sup
+    const sameRoles = JSON.stringify(a.roles ?? null) === JSON.stringify(b.roles)
+    if (why) {
+      ok(!(sameSup && sameRoles),
+        `${action} is listed as divergent but the two registries now agree — delete the entry`)
+      ok(why.length > 40, `${action}'s divergence gives an actual reason`)
+      continue
+    }
+    ok(sameSup,
+      `${action}: Apps Script sup=${!!a.sup}, Supabase sup=${b.sup} — and no reason recorded`)
+    ok(sameRoles,
+      `${action}: Apps Script roles=${JSON.stringify(a.roles ?? null)}, ` +
+      `Supabase roles=${JSON.stringify(b.roles)} — and no reason recorded`)
+  }
+  ok(compared > 25, `compared ${compared} actions present in both`)
+}
+
 console.log('every action, every role, no overrides')
 {
   for (const action of ACTIONS) {

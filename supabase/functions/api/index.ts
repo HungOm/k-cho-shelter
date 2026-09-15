@@ -37,6 +37,7 @@ import {
   // two of them come to disagree about what a viewer sees.
   mask,
   agentBooks,
+  superAdminEmail,
 } from './gate.ts'
 import { configPayload } from './config.ts'
 import * as branding from './branding.ts'
@@ -189,7 +190,9 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   read_delta: { roles: null, kind: 'read', fn: readDelta },
   search: { roles: null, kind: 'read', fn: search },
   list_books: { roles: null, kind: 'read', fn: listBooks },
-  read_audit: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: readAudit },
+  // Not `sup` any more: an organiser may read the change log of their own
+  // raffle. The handler takes the super admin's address out of it.
+  read_audit: { roles: ADMIN_ONLY, kind: 'read', fn: readAudit },
 
   // --- ticket writes ---
   // Roles copied from Api.gs exactly. gateparity.test.mjs is what keeps them
@@ -656,12 +659,62 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   }
 }
 
-async function readAudit(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+/**
+ * What people have been doing — now readable by an organiser, not only by the
+ * super admin.
+ *
+ * WHY IT WAS SHUT, AND WHY THAT WAS THE WRONG SHAPE. The log carries the super
+ * admin's email, and this system takes some trouble to make sure an ordinary
+ * admin never learns that address: it is filtered out of the people list and
+ * never sent to the browser, because it is the one account nobody inside the
+ * app can grant, disable or demote. Closing the whole log was the cheap way to
+ * keep that promise, and the cost was that the person actually running the
+ * raffle could not answer "who changed this book" about their own raffle.
+ *
+ * THE SUPER ADMIN'S ACTIONS ARE SHOWN, WITH THE ADDRESS TAKEN OUT. Hiding the
+ * entries instead would make the log lie by omission — a ticket voided by the
+ * super admin would read as nobody having touched it, which is worse than not
+ * having a log, because it invites somebody to conclude the record is complete.
+ * So the entry stays, the actor reads as the system admin, and the address is
+ * scrubbed wherever it appears, including inside details: set_permission and
+ * the approvals write it there, and a promise kept in one field and broken in
+ * the next is not kept.
+ */
+function scrubAddress(value: unknown, address: string, label: string): unknown {
+  if (typeof value === 'string') return value === address ? label : value
+  if (Array.isArray(value)) return value.map((v) => scrubAddress(v, address, label))
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = scrubAddress(v, address, label)
+    }
+    return out
+  }
+  return value
+}
+
+async function readAudit(p: Record<string, unknown>, u: AppUser, ctx: Ctx) {
   const { data, error } = await ctx.supabaseAdmin
     .from('audit_log').select('*').order('at', { ascending: false })
     .limit(Math.min(int(p.limit, 100), 500))
   if (error) throw new ApiError('QUERY_FAILED', error.message)
-  return { entries: data ?? [] }
+
+  if (u.isSuperAdmin) return { entries: data ?? [], scrubbed: false }
+
+  const address = superAdminEmail(Deno.env).toLowerCase()
+  const LABEL = 'the system admin'
+  const entries = (data ?? []).map((e: Record<string, unknown>) => {
+    const who = String(e.email ?? '').toLowerCase()
+    return {
+      ...e,
+      email: who && who === address ? LABEL : e.email,
+      details: address ? scrubAddress(e.details, address, LABEL) : e.details,
+    }
+  })
+  // Said out loud, so a reader knows the log is complete and one name in it is
+  // deliberately not an address — rather than wondering who "the system admin"
+  // is and whether anything else is missing.
+  return { entries, scrubbed: true }
 }
 
 // ============ SHARED ============

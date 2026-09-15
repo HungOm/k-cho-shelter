@@ -209,10 +209,38 @@ async function setStatus(u, status) {
   } catch (err) { toast(err.message, 'bad', err.code) }
 }
 
+const scrubbed = ref(false)
+
 async function loadAudit() {
   audit.value = 'loading'
-  try { audit.value = (await api('read_audit', { limit: 100 })).entries }
-  catch (err) { toast(err.message, 'bad', err.code); audit.value = null }
+  try {
+    const got = await api('read_audit', { limit: 100 })
+    audit.value = got.entries
+    scrubbed.value = !!got.scrubbed
+  } catch (err) { toast(err.message, 'bad', err.code); audit.value = null }
+}
+
+/**
+ * The details, as a sentence rather than as [object Object].
+ *
+ * This was String(e.details) against a jsonb column, so every line of the
+ * change log read "[object Object]" — the log had an action, a name, and
+ * nothing whatever about what was done. Nobody reported it, which is what a
+ * screen only the super admin could open looks like when it is broken.
+ *
+ * Key: value, in the order the handler wrote them, with lists spelled out. No
+ * cleverness: the keys are already words somebody chose (count, status,
+ * reason, books), and renaming them here would mean two vocabularies for one
+ * record.
+ */
+function details(d) {
+  if (d === null || d === undefined || d === '') return ''
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) return d.join(', ')
+  return Object.entries(d)
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+    .join(' · ')
 }
 </script>
 
@@ -430,18 +458,29 @@ async function loadAudit() {
       </div>
     </div>
 
-    <div v-if="isSuper" class="card">
+    <!-- An organiser may read the change log of their own raffle. It used to be
+         behind isSuper, which meant the person actually running the raffle
+         could not answer "who changed this book" about their own books. -->
+    <div class="card">
       <div class="spread"><h3 style="margin:0">What people have been doing</h3>
         <button class="btn sm" @click="loadAudit">Show</button></div>
       <div v-if="audit === 'loading'" class="col" style="gap:10px">
         <div v-for="i in 3" :key="i" class="skel"></div>
       </div>
       <div v-else-if="audit">
+        <!-- Said out loud, so "the system admin" reads as a deliberate omission
+             rather than as a gap somebody has to wonder about. -->
+        <p v-if="scrubbed" class="tiny muted">
+          Everything is here. The system admin's own actions show as
+          <b>the system admin</b> rather than by email address.
+        </p>
         <div v-for="(e, i) in audit" :key="i" class="log">
           <div class="small"><b>{{ e.action }}</b> <span class="muted">{{ e.email }}</span></div>
-          <div class="tiny muted">{{ dateTime(e.time) }} · {{ String(e.details).slice(0, 120) }}</div>
+          <!-- e.time never existed: the column is `at`, so every line read "—". -->
+          <div class="tiny muted">{{ dateTime(e.at) }}<template v-if="details(e.details)"> · {{ details(e.details).slice(0, 160) }}</template></div>
         </div>
       </div>
+      <p v-else class="hint">Every change anybody has made, most recent first.</p>
     </div>
   </div>
 </template>
