@@ -123,7 +123,18 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
     )
   }
 
-  const { error } = await ctx.supabaseAdmin
+  /*
+   * THE WRITE ONLY LANDS ON BOOKS THAT ARE STILL FREE.
+   *
+   * The check above read the books and the update below wrote them, and
+   * nothing tied the two together. Two organisers issuing the same run within
+   * a second both saw it free and both wrote; the second overwrote the first,
+   * and the history table recorded two handovers of one book to two people.
+   * The status predicate makes the update itself the check: a book that
+   * changed hands in between is simply not matched, and the reply says so
+   * rather than counting it.
+   */
+  let write = ctx.supabaseAdmin
     .from('books')
     .update({
       status: 'Out', held_by_agent: agentId,
@@ -131,18 +142,39 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
       modified_by: user.email,
     })
     .in('idx', idxs)
+  if (!p.force) write = write.eq('status', 'Unassigned')
+  const { data: changed, error } = await write.select('idx,number')
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
+  const issuedIdx = new Set((changed ?? []).map((b: { idx: number }) => Number(b.idx)))
+  const skipped = (books ?? [])
+    .filter((b: { idx: number }) => !issuedIdx.has(Number(b.idx)))
+    .map((b: { number: string }) => b.number)
+
+  if (!issuedIdx.size) {
+    throw new ApiError(
+      'BOOKS_CHANGED_MEANWHILE',
+      'Those books were given out by somebody else a moment ago. Nothing was changed.',
+      { blocked: skipped.map((book: string) => ({ book, status: 'taken meanwhile', agentId: '' })) },
+    )
+  }
+
   await ctx.supabaseAdmin.from('book_history').insert(
-    idxs.map((idx) => ({
+    [...issuedIdx].map((idx) => ({
       book_idx: idx, to_agent: agentId, action: 'issue',
       by_user: user.email, note: String(p.note ?? ''),
     })))
 
-  await audit(ctx, 'ISSUE_BOOKS', { count: idxs.length, agent: agentId }, user.email)
+  await audit(ctx, 'ISSUE_BOOKS',
+    { count: issuedIdx.size, agent: agentId, books: [...issuedIdx].sort((a, b) => a - b),
+      skipped: skipped.length ? skipped : undefined },
+    user.email)
   return {
-    issued: idxs.length,
-    books: (books ?? []).map((b: { number: string }) => b.number),
+    issued: issuedIdx.size,
+    books: (changed ?? []).map((b: { number: string }) => b.number),
+    // Named, never silently dropped: a handover receipt for five books when
+    // three went out is the paper a seller holds up later and is wrong about.
+    skipped,
     agent: { id: agentId, name: agent.name, phone: agent.phone },
     dueDate: dueAt,
   }
@@ -173,6 +205,38 @@ export async function transferBooks(p: Record<string, unknown>, user: AppUser, c
       'TRANSFER_BLOCKED',
       `${blocked.length} of ${idxs.length} books are not out with anybody. Nothing was changed.`,
       { blocked },
+    )
+  }
+
+  /*
+   * MONEY DOES NOT CHANGE HANDS WITH THE BOOK.
+   *
+   * Expected money is worked out per book and charged to whoever holds it. So
+   * passing on a book with sales already recorded moved the value of those
+   * sales — made by the first seller, whose name is still on every ticket —
+   * onto the second, and the first seller's debt vanished from the chase list
+   * with nobody deciding it. A book that has sold anything goes back through
+   * the office: brought back, counted in with the money, and the unsold part
+   * given out again. That is the path the settlement was built for, and it is
+   * the only one that leaves each person owing what they actually sold.
+   */
+  const { data: ledger } = await ctx.supabaseAdmin
+    .from('book_ledger_all')
+    .select('idx,number,recorded_sold,recorded_amount,agent_name,held_by_agent')
+    .in('idx', idxs)
+  const withSales = (ledger ?? [])
+    .filter((r: Record<string, unknown>) => Number(r.recorded_sold ?? 0) > 0)
+    .map((r: Record<string, unknown>) => ({
+      book: r.number, sold: Number(r.recorded_sold ?? 0), amount: Number(r.recorded_amount ?? 0),
+      agent: String(r.agent_name ?? r.held_by_agent ?? ''),
+    }))
+  if (withSales.length) {
+    throw new ApiError(
+      'BOOK_HAS_SALES',
+      `${withSales.length} of ${idxs.length} books have sales recorded on them, and passing ` +
+      'them on would charge that money to the new seller. Mark them brought back and count ' +
+      'them in first; the unsold tickets can be given out again after. Nothing was changed.',
+      { books: withSales },
     )
   }
 
@@ -437,7 +501,7 @@ export async function setBookStatus(p: Record<string, unknown>, user: AppUser, c
  * asks "who had this book in March", and until now the only way to answer was
  * to open the spreadsheet.
  */
-export async function bookHistory(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const bookNumber = String(p.bookNumber ?? '').trim()
   if (!bookNumber) throw new ApiError('MISSING_FIELD', 'Which book?')
 
@@ -450,12 +514,38 @@ export async function bookHistory(p: Record<string, unknown>, _u: AppUser, ctx: 
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   // Agent ids are not what anybody wants to read in a history.
-  const ids = [...new Set((data ?? []).flatMap((h: { from_agent: string; to_agent: string }) =>
+  const ids: string[] = [...new Set((data ?? []).flatMap((h: { from_agent: string; to_agent: string }) =>
     [h.from_agent, h.to_agent].filter(Boolean)))]
   const { data: agents } = ids.length
     ? await ctx.supabaseAdmin.from('agents').select('agent_id,name').in('agent_id', ids)
     : { data: [] }
-  const names = new Map((agents ?? []).map((a: { agent_id: string; name: string }) => [a.agent_id, a.name]))
+  const names = new Map<string, string>(
+    (agents ?? []).map((a: { agent_id: string; name: string }) => [a.agent_id, a.name]))
+
+  /*
+   * AND EVERY CHANGE TO A TICKET IN IT, from the trigger-written trail.
+   *
+   * The ticket row keeps only its latest state; the trail keeps what it was
+   * before. Buyer names and numbers ride along for an organiser only — this
+   * action is open to every role so a seller can see where a book went, and a
+   * seller is not owed the name that used to be on somebody else's ticket.
+   */
+  const { data: trail } = await ctx.supabaseAdmin
+    .from('ticket_history').select('*').eq('book_idx', book.idx).order('at')
+  const { data: ticketRows } = await ctx.supabaseAdmin
+    .from('tickets').select('idx,number').eq('book_idx', book.idx)
+  const numberOf = new Map((ticketRows ?? []).map((t: { idx: number; number: string }) => [Number(t.idx), t.number]))
+  for (const h of (trail ?? []) as Array<Record<string, unknown>>) {
+    for (const k of ['from_agent', 'to_agent']) if (h[k]) ids.push(String(h[k]))
+  }
+  const extra = ids.filter((id) => !names.has(id))
+  if (extra.length) {
+    const { data: more } = await ctx.supabaseAdmin
+      .from('agents').select('agent_id,name').in('agent_id', [...new Set(extra)])
+    for (const a of (more ?? []) as Array<{ agent_id: string; name: string }>) names.set(a.agent_id, a.name)
+  }
+  const showBuyer = !!user.isAdmin
+  const who = (id: unknown) => (id ? (names.get(String(id)) ?? String(id)) : null)
 
   return {
     book: { number: book.number, status: book.status },
@@ -466,6 +556,23 @@ export async function bookHistory(p: Record<string, unknown>, _u: AppUser, ctx: 
       to: h.to_agent ? (names.get(String(h.to_agent)) ?? h.to_agent) : null,
       by: h.by_user,
       note: h.note || '',
+    })),
+    tickets: (trail ?? []).map((h: Record<string, unknown>) => ({
+      at: h.at,
+      ticket: numberOf.get(Number(h.ticket_idx)) ?? String(h.ticket_idx),
+      fromStatus: h.from_status ?? '',
+      toStatus: h.to_status ?? '',
+      fromSeller: who(h.from_agent),
+      toSeller: who(h.to_agent),
+      fromBuyer: showBuyer ? (h.from_buyer ?? '') : '',
+      toBuyer: showBuyer ? (h.to_buyer ?? '') : '',
+      fromPhone: showBuyer ? (h.from_phone ?? '') : '',
+      toPhone: showBuyer ? (h.to_phone ?? '') : '',
+      fromAmount: h.from_amount ?? null,
+      toAmount: h.to_amount ?? null,
+      source: h.source ?? '',
+      by: h.by_user ?? '',
+      note: h.note ?? '',
     })),
   }
 }

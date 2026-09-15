@@ -14,7 +14,7 @@
  */
 import { ApiError, mask, agentBooks, type AppUser } from './gate.ts'
 import { configDate, today } from './deadlines.ts'
-import { collectedByAgent, moneyScope, round2, visibleAgents } from './money.ts'
+import { collectedByAgent, deskMoney, moneyScope, round2, visibleAgents } from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -116,7 +116,29 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
   const paid = await collectedByAgent(ctx, only)
   for (const [id, a] of byAgent) a.collected = paid.get(id) ?? 0
 
-  const rows = [...byAgent.values()]
+  const lines: Row[] = [...byAgent.values()]
+
+  /*
+   * THE DESK IS A LINE TOO, for an organiser.
+   *
+   * Tickets sold out of books nobody holds have no seller to charge, so they
+   * appeared in the raffle's expected total and on nobody's line — the top of
+   * the Money screen said money was owed and the table underneath named no one.
+   * Counted here as their own line, collected when the sale was marked paid,
+   * so the two halves of the screen add up to the same raffle.
+   */
+  if (!only) {
+    const desk = await deskMoney(ctx)
+    if (desk.sold > 0) {
+      lines.push({
+        agentId: '', name: 'Sold at the office', phone: '', zone: '',
+        booksOut: 0, booksSettled: 0, overdueBooks: 0,
+        ticketsSold: desk.sold, expected: desk.expected, collected: desk.collected, outstanding: 0,
+      })
+    }
+  }
+
+  const rows = lines
     // Rounded like the Sheet: floating point turns 30 - 10.1 into a figure with
     // fifteen decimal places, and this one is read aloud to the person who owes it.
     .map((a) => ({ ...a, outstanding: Math.round((a.expected - a.collected) * 100) / 100 }))
@@ -244,15 +266,36 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
   const reserved = await count((q: any) => q.eq('status', 'Reserved').lte('idx', active))
 
   const { data: books } = await ctx.supabaseAdmin
-    .from('book_ledger_all').select('status,held_by_agent,counted_expected,counted_collected')
+    .from('book_ledger_all')
+    .select('status,held_by_agent,counted_expected,counted_collected,unidentified_sold')
   const unsettled = (books ?? []).filter((b: { status: string }) =>
     b.status === 'Out' || b.status === 'Returned').length
+
+  /*
+   * SOLD BY THE SELLER'S COUNT, WITH NO TICKET NUMBER. When the leftovers were
+   * lost, settlement records "six sold" and invents no rows — rightly. But the
+   * draw pool is the ticket rows, so those six buyers paid and cannot win, and
+   * the readiness check said READY over the top of them. It is a blocker until
+   * the numbers are recorded or the organiser accepts that gap knowingly.
+   */
+  const unidentified = (books ?? []).reduce(
+    (s: number, b: { unidentified_sold?: number }) => s + Number(b.unidentified_sold ?? 0), 0)
+
+  // A request still waiting is a change to the books that would land AFTER the
+  // draw if it were approved then. Decide them first.
+  const { count: waiting } = await ctx.supabaseAdmin
+    .from('pending_approvals').select('request_id', { count: 'exact', head: true })
+    .eq('status', 'Pending').gt('expires_at', new Date().toISOString())
+  const pendingApprovals = Number(waiting ?? 0)
 
   // The books whose money this person may be told about.
   const mineBooks = (books ?? []).filter((b: { held_by_agent?: string | null }) =>
     !only || only.includes(String(b.held_by_agent ?? '')))
   const paidBy = await collectedByAgent(ctx, only)
-  const collectedScoped = round2([...paidBy.values()].reduce((s, n) => s + n, 0))
+  // Plus the desk, for whoever may see the whole raffle: its sales are in
+  // mineBooks (no holder) and its cash is in the tin, not on any seller.
+  const deskPaid = only ? 0 : (await deskMoney(ctx)).collected
+  const collectedScoped = round2([...paidBy.values()].reduce((s, n) => s + n, 0) + deskPaid)
   const expectedScoped = round2(mineBooks.reduce(
     (s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0))
   const outstanding = round2(expectedScoped - collectedScoped)
@@ -277,6 +320,20 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
   if (reserved) {
     problems.push({ what: 'tickets still being held', count: reserved,
       why: 'Neither sold nor available — decide before the draw.' })
+  }
+  if (unidentified) {
+    problems.push({
+      what: 'tickets sold but not identified', count: unidentified,
+      why: 'Counted as money when the book was settled, but no ticket number was written ' +
+           'down, so they cannot be drawn. Record which numbers sold, or accept that those ' +
+           'buyers are not in the draw.',
+    })
+  }
+  if (pendingApprovals) {
+    problems.push({
+      what: 'requests waiting for approval', count: pendingApprovals,
+      why: 'An approved request changes the books. Decide them before drawing, not after.',
+    })
   }
 
   // Drawing before the wall means drawing from books that are still legitimately
@@ -338,6 +395,8 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
       collected: Math.round(collected * 100) / 100,
       outstanding: Math.round((expected - collected) * 100) / 100,
       missingContact,
+      unidentified,
+      pendingApprovals,
     },
     booksByStatus,
     // Kept alongside: the richer form carries the reason, which the blunt
