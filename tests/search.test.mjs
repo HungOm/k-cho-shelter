@@ -8,7 +8,7 @@
  * off to create a duplicate record for someone already in the system.
  */
 import {
-  fold, phoneDigits, waNumber, closeEnough,
+  fold, phoneDigits, waNumber, isDialable, closeEnough,
   buildIndex, parseBookRange, scoreEntry, runSearch
 } from '../src/lib/search.js'
 
@@ -73,6 +73,27 @@ eq(waNumber('+60123456789'), '60123456789', 'already international, unchanged')
  * point of writing it down is that the next deployment should not find out by
  * ringing the wrong person.
  */
+/*
+ * Absent was handled; UNUSABLE was not, and to whoever presses the button the
+ * two look identical. Four sellers on the live raffle have numbers that lost
+ * their leading zero, so 0123367462 is stored as 123367462 — wa.me reads that
+ * as country code 1 and the chase message goes to North America.
+ */
+eq(isDialable('0123367462'), true, 'a local number with its leading 0 can be dialled')
+eq(isDialable('+95 9 123 456 789'), true, 'so can one written in full, whatever the country')
+eq(isDialable('60123367462'), true, 'and one already carrying this raffle\'s country code')
+eq(isDialable('123367462'), false, 'a number with its leading 0 lost cannot — the live bug')
+eq(isDialable('12336746'), false, 'nor a shorter one of the same shape')
+eq(isDialable('1234567'), false, 'too few digits to be any telephone number')
+// That one is refused by the unknown-country rule anyway, so it pins nothing
+// about length. This is the case that isolates the floor: a leading 0 would
+// otherwise be trusted, and three digits is not a phone number.
+eq(isDialable('012'), false, 'a leading 0 is not enough on its own — the floor is real')
+eq(isDialable('0123456'), false, 'nor is seven digits')
+eq(isDialable('01234567'), true, 'eight is where a local number becomes plausible')
+eq(isDialable(''), false, 'and nothing at all is not dialable either')
+eq(isDialable(null), false, 'nor is a missing field')
+
 eq(waNumber('09 123 456 789'), '609123456789',
    'LIMITATION: a Myanmar local number becomes a Malaysian one')
 eq(waNumber('081-234-5678'), '60812345678',

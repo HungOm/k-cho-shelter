@@ -41,6 +41,36 @@ export function phoneDigits(p) {
  * Until then this is pinned by tests so it cannot drift, and written down so
  * the next deployment does not discover it by ringing the wrong person.
  */
+/**
+ * Whether we know enough about this number to offer to dial it.
+ *
+ * Absent was handled; UNUSABLE was not, and the two look identical to whoever
+ * presses the button. The live raffle has four sellers whose numbers lost their
+ * leading zero — almost certainly a spreadsheet storing a phone as a number —
+ * so 0123367462 is stored as 123367462. That does not start with 0, nothing is
+ * prepended, and wa.me/123367462 reads as country code 1: the chase message,
+ * naming a seller and what they owe, goes to North America or nowhere.
+ *
+ * So the rule is about CONFIDENCE, not validity. A number written in full with
+ * a +, or in local form with a leading 0, or already carrying this raffle's
+ * country code, we can act on. Anything else is a number whose country we are
+ * guessing at, and a guess that produces a working-looking link is worse than
+ * no link — the second sends somebody to check, the first sends a stranger a
+ * stranger's debt.
+ *
+ * The 60 here is the same assumption waNumber makes and moves to config with
+ * it; the shape of this function does not change when it does.
+ */
+export function isDialable(phone) {
+  const raw = String(phone || '').trim()
+  const d = raw.replace(/\D/g, '')
+  if (d.length < 8) return false
+  if (raw.startsWith('+')) return true
+  if (d.startsWith('0')) return true
+  if (d.startsWith('60')) return true
+  return false
+}
+
 export function waNumber(phone) {
   let d = String(phone || '').replace(/\D/g, '')
   if (d.startsWith('0')) d = '60' + d.slice(1)

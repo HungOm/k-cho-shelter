@@ -84,6 +84,32 @@ ok(/Buyer One/.test(visibleText(html)) && /0125550002/.test(visibleText(html)),
 ok(/JOHN/.test(visibleText(html)), 'under the seller who owes — read from the table, not from a link')
 ok(/wa\.me/.test(html), 'and a way to chase them')
 
+console.log('a number nobody can ring is not the same as no number')
+{
+  // The live raffle's state, rendered: a seller whose leading zero was lost.
+  // Before this, the screen offered a WhatsApp button that reached a stranger
+  // and was indistinguishable from one that worked.
+  const broken = await renderScreen('src/components/Money.vue',
+    money(tickets, [{ ...row, phone: '123367462' }]),
+    { drive: async b => { await b.load(); b.toggle('A1') } })
+  const said = visibleText(broken)
+  ok(!/wa\.me/.test(broken), 'no WhatsApp link is offered for a number we cannot place')
+  ok(!/href="tel:/.test(broken), 'and nothing to ring either')
+  ok(/cannot be dialled/.test(said), 'the screen says so in words')
+  ok(/123367462/.test(said), 'and shows what is actually stored, so somebody can fix the record')
+  // "Cannot be dialled" states the problem; this states what to do about it,
+  // and it is the half a volunteer can act on.
+  ok(/check it against the seller list/.test(said), 'and says where to go and fix it')
+  ok(!/No phone number on file/.test(said),
+     'without claiming there is no number — there is one, and that is the problem')
+
+  const none = await renderScreen('src/components/Money.vue',
+    money(tickets, [{ ...row, phone: '' }]),
+    { drive: async b => { await b.load(); b.toggle('A1') } })
+  ok(/No phone number on file/.test(visibleText(none)), 'an absent number keeps its own sentence')
+  ok(!/cannot be dialled/.test(visibleText(none)), 'and is not confused with an unusable one')
+}
+
 console.log('the branches one render cannot reach — each is a sentence somebody reads')
 {
   // A render shows ONE branch per pass. 18 measured the cost of that on a

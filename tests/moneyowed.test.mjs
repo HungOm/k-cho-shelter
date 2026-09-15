@@ -84,8 +84,10 @@ ok(!/agentMap/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')),
 console.log('the chase button uses the number the report carries')
 {
   const body = src.slice(src.indexOf('function waLink'), src.indexOf('</script>'))
-  const waLink = new Function('money', 'currency', 'waNumber', `${body}; return waLink`)(
-    (n, c) => `${c}${n.toFixed(2)}`, { value: 'RM' }, ph => ph.replace(/\D/g, ''))
+  const { waNumber, isDialable } = await import('../src/lib/search.js')
+  const waLink = new Function('money', 'currency', 'waNumber', 'isDialable',
+    `${body}; return waLink`)(
+    (n, c) => `${c}${n.toFixed(2)}`, { value: 'RM' }, waNumber, isDialable)
 
   const link = waLink({ name: 'JOHN', phone: '+60 12-345 6789', outstanding: 20, ticketsSold: 11 })
   ok(link.startsWith('https://wa.me/60123456789?text='), 'the report\'s own phone, dialling-cleaned')
@@ -99,8 +101,13 @@ console.log('the chase button uses the number the report carries')
 
   ok(waLink({ name: 'JOHN', phone: '', outstanding: 20, ticketsSold: 1 }) === '',
      'no number on file produces no link, so the screen says so instead of offering a dead one')
+  // The live raffle's actual state: four sellers whose leading zero was lost.
+  // wa.me reads 123367462 as country code 1, so the link worked and reached
+  // North America — and looked exactly like a link that works.
+  ok(waLink({ name: 'JOHN', phone: '123367462', outstanding: 20, ticketsSold: 1 }) === '',
+     'and neither does a number whose country we would be guessing at')
   const one = decodeURIComponent(
-    waLink({ name: 'J', phone: '1', outstanding: 20, ticketsSold: 1 }).split('text=')[1])
+    waLink({ name: 'J', phone: '0123456789', outstanding: 20, ticketsSold: 1 }).split('text=')[1])
   ok(one.includes('1 ticket.') && !one.includes('1 tickets'), 'one ticket is not "1 tickets"')
 }
 
