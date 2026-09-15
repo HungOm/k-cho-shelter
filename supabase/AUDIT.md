@@ -555,6 +555,65 @@ Scorecard by category:
 
 ---
 
+## S. The schema file described a different database (found after Phase 1)
+
+Raised by a peer session, reproduced and widened here. **`supabase/schema.sql`
+put the four-state sign-in lifecycle on the wrong table**, in exact mirror image
+of production:
+
+| table | `schema.sql` declared | production has | handlers write |
+|---|---|---|---|
+| `agents` | `status` + `active` generated from it | plain `active` | `active` |
+| `app_users` | plain `active` | `status` + `active` generated from it | `status` |
+
+Postgres refuses any write to a generated column, so applying that file to a
+fresh environment produced an app where:
+
+- **adding or editing a seller failed outright** — `upsert_agent` writes
+  `active` literally on both paths, giving *cannot insert a non-DEFAULT value
+  into column "active"* and *column "active" can only be updated to DEFAULT*;
+- **the whole Setup screen failed** — `app_users` had no `status`, which
+  `list_users` selects by name, `upsert_user` writes and `set_user_status`
+  writes. Nobody could be listed, admitted, paused or stopped.
+
+Sign-in itself survived, because `resolveUser` reads `row?.status ?? (row?.active
+=== false ...)` and falls back. That is why the gap was invisible from the code.
+
+**It never showed in production, and the reason is uncomfortable: this file has
+never been applied there.** The live database is internally consistent and
+correct; the repository's description of it was not. A staging restore, a new
+deployment or a contributor running the stack locally would each have hit it,
+reported as `QUERY_FAILED` with nothing pointing at a schema mismatch.
+
+The comment that stood on the old column anticipated exactly half of it —
+*"anything still reading `active` keeps working"* — true about reads, silent
+about writes, and therefore read as a clearance. Same family as the `config`
+grant comment that reasoned from a privilege nobody had (item 20).
+
+**Why it survived the suite.** `test-functions.sh` applies `schema.sql` and then
+exercises only the SQL functions, so nothing ever wrote to `agents` or
+`app_users` the way a handler does. One test adding a seller would have caught
+it the day the generated column was written.
+
+**Fixed** by moving the lifecycle to `app_users` and restoring `agents.active`
+to a plain boolean, so the file describes production. **No migration**: the live
+database already has the correct shape, so this is a correction to the canonical
+file alone, and the Phase 1 migration does not embed either table.
+
+**Guarded** by a new section in `test-functions.sh` that issues the literal
+statements the handlers issue, each naming the handler and line it copies, plus
+assertions that the two tables have not been confused for one another again.
+
+And one more, in `test-rls.sh`: its fixture seeded `app_users` by writing
+`active`, which no handler does. Correcting the schema made that seed fail, and
+the suite went from 37 passing to 22 failing — loudly, only because its
+assertions happen to expect non-zero counts. A file whose every assertion is
+"and they see nothing" would have gone green on an empty fixture. It now asserts
+the fixture loaded before asserting anything is denied, because **a denial over
+zero rows is not a denial**.
+
+---
+
 ## R. Re-audit after Phase 1 (same day)
 
 Everything marked ✔ in section I is in the working tree. Verification:

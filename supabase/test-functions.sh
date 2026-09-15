@@ -377,6 +377,66 @@ has "$r" '"sold": 10' "ten sales out of a book nobody holds"
 has "$r" '"expected": 100' "worth RM 100"
 has "$r" '"collected": 90' "of which RM 90 was paid at the desk and RM 10 is owed by a named buyer"
 
+
+# ============ THE SCHEMA MUST ACCEPT THE WRITES THE HANDLERS MAKE ============
+#
+# This suite applies schema.sql and then exercises the SQL functions, so it
+# proved the functions and never the tables the TypeScript handlers write to.
+# The gap let the four-state lifecycle sit on the wrong table for a day:
+# `agents` had `active` generated from `status` while `app_users` had the plain
+# boolean, the exact mirror of production and of what the handlers do. Postgres
+# refuses any write to a generated column, so against this repository's own
+# schema, adding a seller and editing a seller both failed outright — and
+# listing users, admitting one or suspending one failed too, because app_users
+# had no `status` to write.
+#
+# None of it showed anywhere, because schema.sql has never been applied to the
+# live project. A fresh environment — a staging restore, a new deployment, a
+# contributor running the stack locally — would have got an app whose Sellers
+# and Setup screens could not write at all, reported as QUERY_FAILED with
+# nothing pointing at the schema.
+#
+# So these are the literal statements the handlers issue, against the schema
+# this file applies. Each names the handler and line it copies.
+
+echo "the schema accepts what upsert_agent writes"
+# people.ts:184 — creating a seller.
+r=$(P "insert into agents(agent_id,name,phone,zone,active) values ('A900','New Seller','0125559000','KL',true)")
+ok "$r" "INSERT 0 1" "a seller can be added"
+# people.ts:167 — editing one.
+r=$(P "update agents set name='Renamed', phone='0125559001', zone='Klang', active=true where agent_id='A900'")
+ok "$r" "UPDATE 1" "and edited"
+# And deactivated, which is how an organiser retires somebody.
+r=$(P "update agents set active=false where agent_id='A900'")
+ok "$r" "UPDATE 1" "and deactivated"
+ok "$(P "select active from agents where agent_id='A900'")" "f" "the flag actually moved"
+P "delete from agents where agent_id='A900'" >/dev/null
+
+echo "the schema accepts what upsert_user and set_user_status write"
+# people.ts — upsertUser builds a row carrying `status`, never `active`.
+r=$(P "insert into app_users(email,name,role,status,agent_id,added_by) values ('new@x.com','New','viewer','pending',null,'boss@x.com')")
+ok "$r" "INSERT 0 1" "somebody can be staged as pending"
+ok "$(P "select active from app_users where email='new@x.com'")" "f" "and is not yet let in"
+# setUserStatus writes status alone; `active` follows because it is generated.
+r=$(P "update app_users set status='active' where email='new@x.com'")
+ok "$r" "UPDATE 1" "letting them in is a status write"
+ok "$(P "select active from app_users where email='new@x.com'")" "t" "and the active flag follows on its own"
+r=$(P "update app_users set status='banned' where email='new@x.com'")
+ok "$r" "UPDATE 1" "and stopping them"
+ok "$(P "select active from app_users where email='new@x.com'")" "f" "flips it back"
+# people.ts:197 — listUsers selects `status` by name; without the column the
+# whole Setup screen fails with a 400 rather than a missing field.
+ok "$(P "select count(*) from app_users where status is not null")" "1" "and listUsers can select status by name"
+# The lifecycle is only meaningful if the invalid states are refused.
+r=$(P "update app_users set status='whatever' where email='new@x.com'")
+has "$r" "app_users_status_check" "an invented state is refused by the constraint"
+P "delete from app_users where email='new@x.com'" >/dev/null
+
+echo "and the two tables are not confused for each other"
+ok "$(P "select is_generated from information_schema.columns where table_name='app_users' and column_name='active'")" "ALWAYS" "app_users.active is derived from its status"
+ok "$(P "select is_generated from information_schema.columns where table_name='agents' and column_name='active'")" "NEVER" "agents.active is a plain boolean the handlers write"
+ok "$(P "select count(*) from information_schema.columns where table_name='agents' and column_name='status'")" "0" "and an agent has no sign-in lifecycle, because an agent does not sign in"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
