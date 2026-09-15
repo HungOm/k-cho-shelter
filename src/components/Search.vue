@@ -40,6 +40,9 @@ const hasFilters = computed(() =>
 
 function subtitle(t) {
   const bits = [t.book]
+  // The marker stays visible in a results list — "JOHN (seller)" tells you at a
+  // glance that the contact is the seller, which is the thing you would
+  // otherwise have to open the ticket to discover.
   if (t.name) bits.push(t.name)
   else if (t.status === 'Sold') bits.push('no name written down')
   const a = agentMap.value[t.agent]

@@ -129,3 +129,29 @@ export const ROLE_BLURB = {
   agent: 'A seller who also uses the app, for their own books only',
   viewer: 'Sees totals, never phone numbers',
 }
+
+/**
+ * A ticket sold out of a seller's own book carries the SELLER as the contact.
+ *
+ * The settlement writes the seller's name with " (seller)" appended and the
+ * seller's phone, because that is who you would actually ring: the seller sold
+ * it, knows who to, and may never have passed the buyer's details on. The
+ * marker is what keeps the field honest — without it the winners list would say
+ * the seller bought their own ticket, and "the seller knows the buyer" and "the
+ * seller bought it" are different things that both happen.
+ *
+ * Written by settle_book as exactly one trailing " (seller)", so this strips
+ * exactly that and nothing else. Anchored at the end on purpose: somebody whose
+ * real name contains the word should be left alone.
+ */
+const SELLER_MARK = / \(seller\)$/
+
+/** The bare name, for showing next to a marker rather than inside one. */
+export function plainName(name) {
+  return String(name ?? '').replace(SELLER_MARK, '')
+}
+
+/** True when the contact on this ticket is the seller, not the buyer. */
+export function isSellerContact(name) {
+  return SELLER_MARK.test(String(name ?? ''))
+}
