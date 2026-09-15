@@ -28,23 +28,13 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { renderScreen } from './screen.mjs'
+import { renderScreen, visibleText } from './screen.mjs'
 import { setConfig, state } from '../src/lib/store.js'
 
 const ROOT = new URL('..', import.meta.url).pathname
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
-/**
- * What a person reads, with the markup and every attribute taken out.
- *
- * Asserting on raw HTML matches things nobody can see. The seller's name is in
- * the WhatsApp link as well as in the table, so `/JOHN/` on the HTML stayed
- * green after the name was deleted from the row — satisfied by a URL. Third
- * over-match of this kind in two days, and the first one where the pattern was
- * matching something genuinely invisible.
- */
-const textOf = h => h.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ')
 
 /* ---------- the Money screen actually asks, per ticket ---------- */
 
@@ -82,16 +72,16 @@ const html = await renderScreen('src/components/Money.vue', money(tickets, [row]
 })
 
 console.log('one ticket paid, one not — and the screen says so')
-ok(/not in/.test(textOf(html)), 'a ticket with no payment recorded reads "not in"')
+ok(/not in/.test(visibleText(html)), 'a ticket with no payment recorded reads "not in"')
 ok((html.match(/>\s*in\s*</g) || []).length >= 1, 'and the paid one reads "in"')
 // The mutant that survived everything else: hardcoding the pill to 'in'. It
 // does not break the screen, it just tells somebody the money arrived.
-ok((textOf(html).match(/not in/g) || []).length === 1,
+ok((visibleText(html).match(/not in/g) || []).length === 1,
    'exactly one ticket of the two is unpaid — not all of them, and not none')
 ok(/KS-00001/.test(html) && /KS-00002/.test(html), 'both tickets are listed')
-ok(/Buyer One/.test(textOf(html)) && /0125550002/.test(textOf(html)),
+ok(/Buyer One/.test(visibleText(html)) && /0125550002/.test(visibleText(html)),
    'with who bought them and how to ring them')
-ok(/JOHN/.test(textOf(html)), 'under the seller who owes — read from the table, not from a link')
+ok(/JOHN/.test(visibleText(html)), 'under the seller who owes — read from the table, not from a link')
 ok(/wa\.me/.test(html), 'and a way to chase them')
 
 console.log('the branches one render cannot reach — each is a sentence somebody reads')
@@ -116,7 +106,7 @@ console.log('the branches one render cannot reach — each is a sentence somebod
     { drive: async b => { await b.load(); b.toggle('A1') } })
   ok(/money\s+owed comes from a book counted in/.test(owesButNoTickets.replace(/\s+/g, ' ')),
      'a seller who owes with no tickets recorded gets the explanation, not a blank panel')
-  ok(/JOHN/.test(textOf(owesButNoTickets)), 'and is still named on the row itself')
+  ok(/JOHN/.test(visibleText(owesButNoTickets)), 'and is still named on the row itself')
 
   const loading = await renderScreen('src/components/Money.vue', money(tickets, [row]))
   ok(/skel/.test(loading), 'before the report arrives the screen shows it is working')
