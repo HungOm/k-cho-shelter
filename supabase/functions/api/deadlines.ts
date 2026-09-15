@@ -749,7 +749,11 @@ export async function snapshotRound(ctx: Ctx, round: number, takenBy: string) {
     a.expected = round2(a.expected + Number(b.counted_expected ?? 0))
   }
   for (const id of answered.keys()) line(id)
-  for (const id of paid.keys()) line(id)
+  // Only sellers who have actually handed something over. collectedByAgent now
+  // reads agent_money, which lists EVERY seller — including the ones carrying
+  // nothing, at zero — so taking its keys unfiltered would freeze a row of
+  // noughts for somebody the round has nothing to say about.
+  for (const [id, amount] of paid) if (amount) line(id)
 
   for (const [id, a] of byAgent) {
     a.collected = paid.get(id) ?? 0

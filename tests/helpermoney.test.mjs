@@ -36,6 +36,14 @@ const money = await loadModule('money.ts')
 
 const world = () => fakeDb({
   config: baseConfig({}),
+  // The sellers these ledger rows belong to. Postgres would not have let them
+  // be absent — books.held_by_agent references agents — and the per-seller
+  // money view is driven by that table, so a fixture without them describes a
+  // raffle whose books are held by people who do not exist.
+  agents: [
+    { agent_id: 'A001', name: 'Daw Hla', phone: '0125551111', active: true },
+    { agent_id: 'A002', name: 'U Kyaw', phone: '0125552222', active: true },
+  ],
   book_ledger_all: [
     { idx: 1, number: 'Book-001', status: 'Settled', held_by_agent: 'A001', counted_collected: 90, counted_expected: 90, recorded_amount: 90 },
     { idx: 2, number: 'Book-002', status: 'Returned', held_by_agent: 'A002', counted_collected: 0, counted_expected: 20, recorded_amount: 20 },

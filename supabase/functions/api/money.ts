@@ -65,67 +65,28 @@ export function moneyScope(user: AppUser): 'all' | 'mine' | 'totals' {
  * without the backfill, and running the backfill twice changes nothing.
  */
 export async function collectedByAgent(ctx: Ctx, agentIds?: string[] | null) {
+  /*
+   * SUMMED BY POSTGRES, NOT BY THIS LOOP.
+   *
+   * This read the book ledger and the payments table and added them up here,
+   * which meant `numeric(12,2)` — a type that exists so money is not a binary
+   * float — became a Number the moment it left the database, and the guarantee
+   * was given up for nothing. The same arithmetic was also written out in
+   * owedBy and in the outstanding report, and three copies of one sum is how
+   * two of them come to disagree.
+   *
+   * agent_money does it once, in the database, in the type the column has. The
+   * conversion to a Number happens at the very end, on a single value per
+   * seller, which is what has to cross into JavaScript anyway.
+   */
   const by = new Map<string, number>()
-
-  /*
-   * AN EMPTY LIST MEANS NOTHING, NOT EVERYTHING.
-   *
-   * visibleAgents returns null for an organiser — no narrowing — and [] for a
-   * helper who holds no books: they are not carrying anybody's money, so the
-   * true answer is none. Both were reaching the queries below as
-   * `agentIds && agentIds.length`, which is FALSE for [] and therefore applied
-   * no filter at all. The same [] was read as "nothing" by the book filter in
-   * report_draw_ready and as "everything" here, in the same function call.
-   *
-   * What a helper actually saw: Should have RM 0, because the books were
-   * correctly scoped to none — and Handed in RM 120, the whole raffle's cash,
-   * because this was not. Still owed came out at RM -120, which is how it was
-   * noticed. The nonsense arithmetic and the leak were one bug.
-   *
-   * The fix is ONE character of guard: `if (agentIds)` rather than
-   * `if (agentIds && agentIds.length)`. An empty list then reaches .in() and
-   * matches nothing, which is what it means.
-   *
-   * I first added an early return for [] as well, and mutation testing showed
-   * it was dead: with `if (agentIds)` in place, removing the early return
-   * changed no behaviour, because .in([]) already returns nothing. It was a
-   * guard in shape only — and worse, it MASKED the mutants that restore the
-   * real bug, so the test passed with the defect back in. One load-bearing
-   * guard beats two where only one carries.
-   */
-  let lq = ctx.supabaseAdmin.from('book_ledger_all')
-    .select('held_by_agent,counted_collected').not('held_by_agent', 'is', null)
-  if (agentIds) lq = lq.in('held_by_agent', agentIds)
-  const { data: ledger } = await lq
-  for (const b of (ledger ?? []) as Array<Record<string, unknown>>) {
-    const id = String(b.held_by_agent ?? '')
-    by.set(id, round2((by.get(id) ?? 0) + Number(b.counted_collected ?? 0)))
-  }
-
-  /*
-   * NAMED, NOT "EVERYTHING EXCEPT SETTLEMENT".
-   *
-   * This said `.neq('source','settlement')`, which meant "every kind of row we
-   * have not thought of yet is cash". The moment a write-off existed — a debt
-   * the raffle has decided will not be collected — that row would have been
-   * added to what a seller HANDED IN, and the total would have said the money
-   * arrived. Asking for the one kind that is cash cannot fail that way when a
-   * fourth kind is added.
-   *
-   * Settlement rows are excluded for a different reason and it is not a
-   * kinship: the book's own amount_paid is already in the ledger figure above,
-   * so counting them here would charge the same cash twice.
-   */
-  let pq = ctx.supabaseAdmin.from('payments')
-    .select('agent_id,amount,source').eq('source', 'hand')
-  if (agentIds) pq = pq.in('agent_id', agentIds)
-  const { data: paid, error } = await pq
+  let q = ctx.supabaseAdmin.from('agent_money').select('agent_id,collected')
+  if (agentIds) q = q.in('agent_id', agentIds)
+  const { data, error } = await q
   if (error) throw new ApiError('QUERY_FAILED', error.message)
-  for (const r of (paid ?? []) as Array<Record<string, unknown>>) {
-    const id = String(r.agent_id ?? '')
-    by.set(id, round2((by.get(id) ?? 0) + Number(r.amount ?? 0)))
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    by.set(String(r.agent_id ?? ''), round2(Number(r.collected ?? 0)))
   }
-
   return by
 }
 
@@ -142,13 +103,12 @@ export async function collectedByAgent(ctx: Ctx, agentIds?: string[] | null) {
  */
 export async function writtenOffByAgent(ctx: Ctx, agentIds?: string[] | null) {
   const by = new Map<string, number>()
-  let q = ctx.supabaseAdmin.from('payments').select('agent_id,amount').eq('source', 'writeoff')
+  let q = ctx.supabaseAdmin.from('agent_money').select('agent_id,written_off')
   if (agentIds) q = q.in('agent_id', agentIds)
   const { data, error } = await q
   if (error) throw new ApiError('QUERY_FAILED', error.message)
   for (const r of (data ?? []) as Array<Record<string, unknown>>) {
-    const id = String(r.agent_id ?? '')
-    by.set(id, round2((by.get(id) ?? 0) + Number(r.amount ?? 0)))
+    by.set(String(r.agent_id ?? ''), round2(Number(r.written_off ?? 0)))
   }
   return by
 }
@@ -437,16 +397,14 @@ export async function listPayments(p: Record<string, unknown>, user: AppUser, ct
 
 /** What one seller still owes, expected minus everything handed in. */
 export async function owedBy(ctx: Ctx, agentId: string): Promise<number> {
-  const { data: books } = await ctx.supabaseAdmin
-    .from('book_ledger_all').select('counted_expected').eq('held_by_agent', agentId)
-  const expected = (books ?? []).reduce(
-    (s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0)
-  const paid = (await collectedByAgent(ctx, [agentId])).get(agentId) ?? 0
-  // Forgiven is not owed. A debt written off with a reason has been decided
-  // about; leaving it in this number would keep a seller on the chase list for
-  // money somebody already agreed would never come.
-  const forgiven = (await writtenOffByAgent(ctx, [agentId])).get(agentId) ?? 0
-  return round2(expected - paid - forgiven)
+  // One row, one number, already worked out. This used to read every book the
+  // seller holds, sum the expected column here, read the payments, sum those
+  // here, and subtract — the whole of agent_money, rebuilt on each call in a
+  // type that cannot hold money exactly.
+  const { data, error } = await ctx.supabaseAdmin
+    .from('agent_money').select('outstanding').eq('agent_id', agentId).maybeSingle()
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+  return round2(Number((data as { outstanding?: number } | null)?.outstanding ?? 0))
 }
 
 /*

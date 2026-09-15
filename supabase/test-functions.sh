@@ -452,6 +452,45 @@ ok "$(P "select (select coalesce(sum(amount),0) from payments where book_idx=2) 
 # above; the race it guarded is now held off by the row lock settle_book takes.
 ok "$(P "select indisunique from pg_index where indexrelid = 'payments_settlement_book_idx'::regclass")" "f" "the settlement index is no longer unique"
 
+# THE SUMS BELONG TO POSTGRES. Every money total used to be added up in
+# JavaScript — read the rows, loop, round at the end — which gave up
+# numeric(12,2) the moment the values became Numbers, and wrote the same
+# arithmetic out in three places. agent_money does it once, in the type the
+# column has. What is asserted is that it agrees EXACTLY with the same figures
+# computed independently, and that the three quantities stay apart.
+echo "what each seller owes, added up by the database"
+P "insert into agents(agent_id,name,phone,zone) values ('AM','Money Seller','0125550000','KL') on conflict do nothing;
+   update books set status='Settled', held_by_agent='AM', declared_sold=8, amount_due=80, amount_paid=55 where idx=3;
+   delete from payments where agent_id='AM';
+   insert into payments(agent_id,amount,source,note) values ('AM',12.35,'hand','part'),('AM',7.65,'writeoff','gone away and not coming back')" >/dev/null
+ok "$(P "select expected||'/'||collected||'/'||written_off||'/'||outstanding from agent_money where agent_id='AM'")" "80.00/67.35/7.65/5.00" "expected, cash, forgiven and the gap"
+ok "$(P "select (select outstanding from agent_money where agent_id='AM') = (
+             (select coalesce(sum(counted_expected),0) from book_ledger_all where held_by_agent='AM')
+           - (select coalesce(sum(counted_collected),0) from book_ledger_all where held_by_agent='AM')
+           - (select coalesce(sum(amount),0) from payments where agent_id='AM' and source='hand')
+           - (select coalesce(sum(amount),0) from payments where agent_id='AM' and source='writeoff'))")" "t" "and it equals the same sum worked out independently"
+ok "$(P "select pg_typeof(outstanding)::text from agent_money where agent_id='AM'")" "numeric" "in the type money is stored in, not a float"
+
+# A SETTLEMENT ROW IS ALREADY IN THE BOOK'S OWN FIGURE. Counting it here as
+# well would charge the raffle twice for the same cash — which is why the sum
+# asks for 'hand' by name rather than for everything that is not a settlement.
+P "insert into payments(agent_id,amount,source,book_idx,note) values ('AM',55,'settlement',3,'counted in')" >/dev/null
+ok "$(P "select collected from agent_money where agent_id='AM'")" "67.35" "a settlement row does not double count"
+
+# FORGIVEN IS NOT CASH. Collapsing the two would say the money arrived, and the
+# seller whose debt was written off would read as having paid it.
+ok "$(P "select collected from agent_money where agent_id='AM'")" "67.35" "what was written off is not in what was handed in"
+ok "$(P "select written_off from agent_money where agent_id='AM'")" "7.65" "it is its own figure"
+
+# A seller carrying nothing still has a line, at nought — which is the true
+# answer rather than an absence somebody has to interpret.
+P "insert into agents(agent_id,name) values ('AMNONE','Holds Nothing') on conflict do nothing" >/dev/null
+ok "$(P "select expected||'/'||collected||'/'||outstanding from agent_money where agent_id='AMNONE'")" "0.00/0.00/0.00" "a seller holding nothing reads as nought, not as missing"
+
+# Server-only, like every other view the function reads on the raffle's behalf.
+ok "$(P "select has_table_privilege('anon','agent_money','select')")" "f" "the browser's anonymous role cannot read it"
+ok "$(P "select has_table_privilege('authenticated','agent_money','select')")" "f" "nor can a signed-in browser"
+
 echo "money taken at the desk is counted, paid or not"
 P "update config set value='' where key='ACTIVE_TICKETS';
    update books set status='Unassigned', held_by_agent=null, declared_sold=null, amount_due=null, amount_paid=null where idx=1;

@@ -66,6 +66,56 @@ function withDefaults(table, row) {
   return out
 }
 
+/*
+ * agent_money, COMPUTED — because a view is not a table and must not be one here.
+ *
+ * The obvious shortcut is to let tests seed `agent_money` like any other table.
+ * That would be the fake at its most dangerous: every money assertion would be
+ * checking a total somebody typed into the fixture rather than one that follows
+ * from the books and the payments, and a handler that stopped agreeing with its
+ * own ledger would go on passing.
+ *
+ * So it is derived here the way the SQL derives it, from the same three
+ * sources, and a test cannot set it directly any more than it could in
+ * Postgres. What is deliberately NOT modelled is the released-books window the
+ * real view inherits from book_ledger_all: fixtures seed that view directly, so
+ * the filter has already been applied by whoever wrote the rows.
+ */
+function agentMoneyRows(db) {
+  const ledger = db.tables.book_ledger_all ?? []
+  const payments = db.tables.payments ?? []
+  const round2 = (n) => Math.round(n * 100) / 100
+
+  return (db.tables.agents ?? []).map((a) => {
+    const id = String(a.agent_id ?? '')
+    const mine = ledger.filter((b) => String(b.held_by_agent ?? '') === id)
+    const sum = (rows, f) => round2(rows.reduce((t, r) => t + Number(f(r) ?? 0), 0))
+
+    const expected = sum(mine, (b) => b.counted_expected)
+    const bookCollected = sum(mine, (b) => b.counted_collected)
+    const mineP = payments.filter((r) => String(r.agent_id ?? '') === id)
+    // 'hand' BY NAME, as the SQL asks: settlement is already inside the book's
+    // own figure, and a write-off is not cash at all.
+    const handedIn = sum(mineP.filter((r) => r.source === 'hand'), (r) => r.amount)
+    const writtenOff = sum(mineP.filter((r) => r.source === 'writeoff'), (r) => r.amount)
+
+    return {
+      agent_id: id,
+      name: a.name ?? '',
+      phone: a.phone ?? '',
+      zone: a.zone ?? '',
+      books_out: mine.filter((b) => b.status === 'Out').length,
+      books_settled: mine.filter((b) => b.status === 'Settled').length,
+      overdue_books: mine.filter((b) => Number(b.days_overdue ?? 0) > 0).length,
+      tickets_sold: mine.reduce((t, b) => t + Number(b.counted_sold ?? 0), 0),
+      expected,
+      collected: round2(bookCollected + handedIn),
+      written_off: writtenOff,
+      outstanding: round2(expected - bookCollected - handedIn - writtenOff),
+    }
+  })
+}
+
 /** Deep-ish clone, so a handler mutating a returned row cannot reach the store. */
 const copy = (v) => (v === null || typeof v !== 'object' ? v : JSON.parse(JSON.stringify(v)))
 
@@ -181,7 +231,7 @@ class Query {
 
   // ---- running ----
   rows() {
-    const all = this.db.tables[this.table]
+    const all = this.table === 'agent_money' ? agentMoneyRows(this.db) : this.db.tables[this.table]
     if (!all) throw new Error(`fakedb: no table "${this.table}"`)
     return all.filter((r) => this.filters.every((f) => f(r)))
   }
@@ -206,6 +256,13 @@ class Query {
   }
 
   run() {
+    // A derived view has no entry in `tables` and is never written to, so it is
+    // resolved before the existence check rather than being given a fake table
+    // that a test could then seed.
+    if (this.table === 'agent_money') {
+      if (this.op !== 'select') return { data: null, error: { message: 'cannot change a view' } }
+      return this.shaped(this.rows())
+    }
     const t = this.db.tables[this.table]
     if (!t) return { data: null, error: { message: `relation "${this.table}" does not exist` } }
 
