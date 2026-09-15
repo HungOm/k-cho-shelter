@@ -28,7 +28,7 @@ const WRITES = new Set([
   'settle_book', 'set_book_status', 'restock_books', 'upsert_agent', 'upsert_user',
   'set_user_status', 'set_permission', 'request_approval', 'cancel_approval',
   'decide_approval', 'record_winner', 'expand_tickets', 'set_active_tickets',
-  'set_ticket_ceiling', 'roll_check_in', 'set_final_deadline',
+  'set_ticket_ceiling', 'roll_check_in', 'set_final_deadline', 'record_check_in',
 ])
 
 let functionUrl = ''

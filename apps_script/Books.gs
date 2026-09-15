@@ -540,6 +540,10 @@ function handleSettleBook(payload, user) {
   bumpBookCacheVersion();
   logAudit('SETTLE', { book: bookNumber, sold: declaredSold, due: amountDue, paid: amountPaid }, user.email);
 
+  // Somebody who has just settled a book has reported, and should not also have
+  // to be ticked off a list by the person who counted it.
+  noteReportFromSettle_(agentId, bookNumber, user);
+
   return {
     book: bookNumber,
     declaredSold: declaredSold,
@@ -1022,6 +1026,68 @@ function handleBookHistory(payload, user) {
 var MAX_CHECK_IN_MONTHS = 12;
 var MAX_FINAL_YEARS = 5;
 
+/** A week — where "due soon" starts everywhere else in this system. */
+var REPORT_NOTICE_DAYS = 7;
+
+/**
+ * Every reporting round from `anchor` to `lastDay`, worked out rather than typed.
+ *
+ * NOBODY ENTERS THE MIDDLE DATES. A raffle has one date somebody chose — the
+ * wall — and a rhythm. Asking an organiser to type each round by hand is asking
+ * them to keep a calendar in their head, and it is how a round goes missing in
+ * the month nobody was watching. Given the two dates that already exist, the
+ * rest is arithmetic.
+ *
+ * It is also what lets a seller be told every one of their dates on the day
+ * they collect their books, which is the only moment anybody has their
+ * attention.
+ *
+ * A ROUND FOR EVERY STEP THAT FITS, and the wall on the end even when it falls
+ * days after the last one. Two reports in one week is redundant; the obvious
+ * tidy-up — folding a step that lands just short of the wall INTO the wall —
+ * costs far more than it saves. That step is the last moment anybody finds out
+ * forty books are still out while there are still five days to ring people, and
+ * dropping it leaves a gap longer than the monthly rhythm this promises. The
+ * redundancy is the cheaper failure by a distance.
+ *
+ * DISPLAY AND PLANNING ONLY. The roll does not take its target from here: it
+ * steps the current date and clamps at the wall, exactly as it did before this
+ * existed. Whether a seller is late must not depend on a derivation.
+ */
+function checkInSchedule_(anchor, lastDay, everyMonths) {
+  if (!lastDay) return [];
+  if (!anchor || anchor >= lastDay) return [lastDay];
+
+  var step = Math.max(1, Math.floor(everyMonths) || 1);
+  var out = [anchor];
+  var d = anchor;
+  // Capped rather than trusted: a one-month step and a raffle somebody dated
+  // five years out must not spin here.
+  for (var i = 0; i < 60; i++) {
+    d = addMonths_(d, step);
+    if (d >= lastDay) break;
+    out.push(d);
+  }
+  out.push(lastDay);
+  return out;
+}
+
+/**
+ * Where one seller stands this round.
+ *
+ * `clear` is not `reported`: somebody holding nothing has nothing to report on,
+ * and a red mark beside the name of a seller who brought everything back is how
+ * a list stops being read.
+ */
+function reportState_(o) {
+  if (o.reported) return 'reported';
+  if (!o.booksOut) return 'clear';
+  if (!o.checkIn) return 'waiting';
+  if (daysBetween_(o.checkIn, o.now) > o.grace) return 'late';
+  if (daysBetween_(o.now, o.checkIn) <= REPORT_NOTICE_DAYS) return 'due';
+  return 'waiting';
+}
+
 /**
  * Which books a check-in move would re-date, and how many of them are late.
  *
@@ -1065,7 +1131,11 @@ function handleRollCheckIn(payload, user) {
   }
 
   var from = current || now;
-  var target = payload.date ? dayStart_(payload.date) : addMonths_(from, 1);
+  var months = cfgNum(cfg, 'CHECK_IN_EVERY_MONTHS', 1);
+  var round = cfgNum(cfg, 'CHECK_IN_ROUND', 1);
+  // A step of the configured cadence, clamped at the wall further down. The
+  // schedule is for showing people the plan, never for choosing this date.
+  var target = payload.date ? dayStart_(payload.date) : addMonths_(from, months);
   if (!target) {
     throw new ApiError('BAD_DATE', 'That is not a date this system can read. Use 2026-10-14.');
   }
@@ -1123,6 +1193,9 @@ function handleRollCheckIn(payload, user) {
     to: isoDay_(target),
     finalDeadline: isoDay_(lastDay),
     isLastRound: isLast,
+    round: round,
+    nextRound: round + 1,
+    roundsLeft: checkInSchedule_(target, lastDay, months).length,
     booksOut: sweep.out,
     booksMoving: sweep.moving.length,
     lateNow: sweep.late,
@@ -1165,12 +1238,25 @@ function handleRollCheckIn(payload, user) {
 
   setConfigValue_('CHECK_IN_DATE', isoDay_(target));
 
+  /*
+   * THE ROUND NUMBER MOVES WITH THE DATE, and this line is what makes the
+   * reporting survive the roll.
+   *
+   * Everybody is un-reported for the new round the instant this is written —
+   * there is no reset to run over every seller and nothing to clear — while the
+   * rows for the round just closed stay exactly as they are. So rolling forward
+   * forgives a late BOOK, which is the whole point of a checkpoint, without
+   * also forgiving the silence, which is not.
+   */
+  setConfigValue_('CHECK_IN_ROUND', String(round + 1));
+
   // One audit line rather than a history row per book: this is not a custody
   // move, and a thousand identical "due date changed" entries would bury the
   // handovers that history exists to record.
   logAudit('ROLL_CHECK_IN', {
     from: summary.from || 'none', to: summary.to,
-    books: sweep.moving.length, wasLate: sweep.late, last: isLast
+    books: sweep.moving.length, wasLate: sweep.late, last: isLast,
+    round: round, nextRound: round + 1
   }, user.email);
 
   return summary;
@@ -1309,6 +1395,39 @@ function handleDeadlineStatus(payload, user) {
   }
   var sweep = checkInSweep_(books, checkIn, now);
 
+  // WHO STILL HAS TO REPORT is asked of the people holding books, not of every
+  // name on the list. Somebody carrying nothing this round is not silent, they
+  // are finished, and counting them as outstanding makes the number too big to
+  // act on. `books` is already scoped above, so a seller's answer is about
+  // themselves and an organiser's is about everybody.
+  var holders = {}, holderCount = 0;
+  for (var h = 0; h < books.length; h++) {
+    if (books[h].Status !== BOOK_STATUS.OUT) continue;
+    var hid = String(books[h].Held_By_Agent || '').trim();
+    if (!hid || holders[hid]) continue;
+    holders[hid] = true;
+    holderCount++;
+  }
+
+  var months = cfgNum(cfg, 'CHECK_IN_EVERY_MONTHS', 1);
+  var grace = cfgNum(cfg, 'REPORT_GRACE_DAYS', 3);
+  var round = cfgNum(cfg, 'CHECK_IN_ROUND', 1);
+  var answered = reportedIn_(round);
+
+  var outstanding = 0;
+  for (var hid2 in holders) { if (!answered[hid2]) outstanding++; }
+
+  var plan = checkInSchedule_(checkIn, lastDay, months);
+  var steps = [];
+  for (var st = 0; st < plan.length; st++) {
+    steps.push({
+      date: isoDay_(plan[st]),
+      round: round + st,
+      last: lastDay && plan[st].getTime() === lastDay.getTime(),
+      done: plan[st] < now
+    });
+  }
+
   return {
     today: isoDay_(now),
     scope: mine ? 'mine' : 'all',
@@ -1321,6 +1440,256 @@ function handleDeadlineStatus(payload, user) {
     finalPassed: !!(lastDay && lastDay < now),
     isLastRound: !!(checkIn && lastDay && checkIn.getTime() === lastDay.getTime()),
     booksOut: sweep.out,
-    lateNow: sweep.late
+    lateNow: sweep.late,
+    // The rounds, as a plan rather than one date at a time. The DATES belong to
+    // everybody — a seller cannot report by a day nobody told them about — so
+    // these are not scoped the way the counts above are.
+    round: round,
+    everyMonths: months,
+    graceDays: grace,
+    reportBy: checkIn ? isoDay_(addDays_(checkIn, grace)) : '',
+    schedule: steps,
+    roundsLeft: steps.length,
+    sellersHolding: holderCount,
+    sellersReported: holderCount - outstanding,
+    sellersNotReported: outstanding,
+    // A seller is answered about themselves. Null for anybody else, so a screen
+    // can tell "not applicable" from "no".
+    youReported: mine ? !!answered[String(user.agentId || '')] : null
+  };
+}
+
+// ============ REPORTING IN ============
+/*
+ * THE THING THAT CLEARS THE BADGE, and the reason it cannot be a dismissal.
+ *
+ * Every other alert in this system is derived from the books, because an alert
+ * somebody can tick away is an alert everybody ticks away, and by the one time
+ * it matters it has been trained into furniture. This one is about a PERSON
+ * rather than a book, so it cannot be derived from the books: a seller can
+ * honestly report "sold six, here is the money, I am keeping the book for the
+ * rest" and still be holding it afterwards.
+ *
+ * So the badge clears on a RECORDED FACT — a row saying this seller answered
+ * this round, who wrote it down, and what came back with them. There is still
+ * nothing to dismiss: clearing the mark and recording the report are the same
+ * action, and the row is what the next round is measured against.
+ *
+ * ONE ROW PER SELLER PER ROUND, keyed by the round NUMBER rather than the date,
+ * because the date moves and the round a report answered does not. The absent
+ * row for a round nobody answered stays absent for the rest of the raffle,
+ * which is what lets "has missed three check-ins" survive a roll that makes
+ * every book look current.
+ */
+
+function ensureCheckInsSheet_() {
+  var ss = ss_();
+  var sheet = ss.getSheetByName(SHEET.CHECK_INS);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(SHEET.CHECK_INS);
+  sheet.appendRow(COLS.CHECK_INS);
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
+/**
+ * Every recorded report. Tolerant of the sheet not existing: a raffle that has
+ * never recorded one should read as "nobody has reported", not as an error on
+ * a screen that was working yesterday.
+ */
+function readCheckInsRaw_() {
+  var sheet = null;
+  try { sheet = ss_().getSheetByName(SHEET.CHECK_INS); } catch (e) { sheet = null; }
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  var map = headerMap(sheet);
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  var rows = [];
+  for (var i = 0; i < values.length; i++) {
+    var obj = rowToObject_(values[i], map);
+    if (!obj.Agent_ID) continue;
+    obj._row = i + 2;
+    obj._round = parseInt(obj.Round, 10) || 0;
+    obj._agent = String(obj.Agent_ID).trim();
+    rows.push(obj);
+  }
+  return rows;
+}
+
+/** Who has answered THIS round: agent id -> when they did. */
+function reportedIn_(round) {
+  var rows = readCheckInsRaw_();
+  var out = {};
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i]._round !== round) continue;
+    var when = rows[i].Reported_At;
+    out[rows[i]._agent] = when instanceof Date ? when.toISOString() : String(when || '');
+  }
+  return out;
+}
+
+/**
+ * How many EARLIER rounds each seller answered.
+ *
+ * Subtracted from the rounds that have been and gone, this is the count of
+ * check-ins somebody let pass in silence — the number the roll cannot launder.
+ */
+function reportsBefore_(round) {
+  var rows = readCheckInsRaw_();
+  var out = {};
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i]._round >= round || rows[i]._round < 1) continue;
+    out[rows[i]._agent] = (out[rows[i]._agent] || 0) + 1;
+  }
+  return out;
+}
+
+/**
+ * A settlement IS a report, so it is recorded as one.
+ *
+ * WITHOUT THIS, an organiser who has just counted a seller's book and taken
+ * their money is then asked to tick them off a list as having reported. Asking
+ * somebody to write the same fact down twice is how the second one stops
+ * happening, and then the chase list shows people who were standing in front of
+ * you an hour ago — which is how a list stops being believed.
+ *
+ * WHAT IT DOES NOT DO is copy the figures across. The money is decided by the
+ * settlement and lives in the ledger; a partial amount echoed into a report
+ * would read as a second, smaller settlement. This records only the fact and
+ * how it is known.
+ *
+ * IT NEVER OVERWRITES A TYPED REPORT, and it never throws. A settle that failed
+ * because of a check-in row would be a money operation broken by a side note.
+ *
+ * BUT IT IS NEVER SILENT EITHER, which is the harder half. Swallowing the
+ * failure gets the priority right and the discoverability catastrophically
+ * wrong: if the tab cannot be created on some deployment, every settle from
+ * then on records nothing, the reports never appear, and an organiser chases
+ * people who did in fact report — with nothing anywhere to explain why. So it
+ * goes to the execution log AND to the audit log, which is a screen somebody
+ * can actually open. logAudit carries its own try/catch, so saying so cannot
+ * become the thing that breaks the settlement.
+ */
+function noteReportFromSettle_(agentId, bookNumber, user) {
+  try {
+    var id = String(agentId || '').trim();
+    if (!id) return;
+    var cfg = getConfig();
+    var checkIn = cfgDate_(cfg, 'CHECK_IN_DATE');
+    if (!checkIn) return;
+    var round = cfgNum(cfg, 'CHECK_IN_ROUND', 1);
+
+    var rows = readCheckInsRaw_();
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i]._agent === id && rows[i]._round === round) return;
+    }
+
+    ensureCheckInsSheet_().appendRow([
+      id, round, isoDay_(checkIn), new Date(), 0, 0, 0,
+      'Reported by settling ' + bookNumber, user.email
+    ]);
+  } catch (e) {
+    // Caught and not rethrown — the money is already written and must not be
+    // undone by a side note — but said out loud, twice, so a failure that
+    // repeats can be found rather than merely suffered.
+    Logger.log('CHECK_IN_NOT_RECORDED: ' + agentId + ' settling ' + bookNumber + ': ' + e);
+    logAudit('CHECK_IN_NOT_RECORDED',
+      { agent: agentId, book: bookNumber, why: String(e && e.message ? e.message : e) },
+      user && user.email);
+  }
+}
+
+/** A whole number from a form field: never NaN, never negative. */
+function countField_(v) {
+  var n = parseInt(v, 10);
+  return isNaN(n) || n < 0 ? 0 : n;
+}
+
+function amountField_(v) {
+  var n = parseFloat(v);
+  return isNaN(n) || n < 0 ? 0 : n;
+}
+
+function handleRecordCheckIn(payload, user) {
+  var agentId = String(payload.agentId || '').trim();
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller is reporting?');
+
+  var agent = findAgent_(agentId);
+  if (!agent) {
+    throw new ApiError('AGENT_NOT_FOUND', 'There is no seller with the ID "' + agentId + '".');
+  }
+
+  var cfg = getConfig();
+  var checkIn = cfgDate_(cfg, 'CHECK_IN_DATE');
+  if (!checkIn) {
+    throw new ApiError('NO_CHECK_IN_DATE',
+      'There is no check-in date, so there is no round for this to be a report on. ' +
+      'Set the dates on the "Deadlines" screen first.');
+  }
+
+  var round = cfgNum(cfg, 'CHECK_IN_ROUND', 1);
+  var name = String(agent.Name || agentId);
+
+  var sheet = ensureCheckInsSheet_();
+  var map = headerMap(sheet);
+  var rows = readCheckInsRaw_();
+  var existing = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i]._agent === agentId && rows[i]._round === round) { existing = rows[i]; break; }
+  }
+
+  // UNDOING IS DELETING THE RECORD, not hiding it. Recorded against the wrong
+  // seller is a thing that happens on a phone in a car park, and the fix has to
+  // put that person back on the chase list rather than leave them quietly
+  // marked as having answered.
+  if (payload.undo) {
+    if (!existing) {
+      throw new ApiError('NOTHING_TO_DO',
+        name + ' has not been recorded as reporting this round.');
+    }
+    sheet.deleteRows(existing._row, 1);
+    logAudit('UNDO_CHECK_IN', { agent: agentId, round: round }, user.email);
+    return {
+      agentId: agentId, agentName: name, round: round,
+      checkInDate: isoDay_(checkIn), undone: true
+    };
+  }
+
+  var booksBack = countField_(payload.booksBack);
+  var ticketsSold = countField_(payload.ticketsSold);
+  var amountPaid = amountField_(payload.amountPaid);
+  var note = String(payload.note || '').trim();
+  var when = new Date();
+
+  if (existing) {
+    // Recorded twice is a seller who came back with more, not an error to
+    // refuse: a round holds one answer per person and the later one is true.
+    sheet.getRange(existing._row, map.Due_Date).setValue(isoDay_(checkIn));
+    sheet.getRange(existing._row, map.Reported_At).setValue(when);
+    sheet.getRange(existing._row, map.Books_Back).setValue(booksBack);
+    sheet.getRange(existing._row, map.Tickets_Sold).setValue(ticketsSold);
+    sheet.getRange(existing._row, map.Amount_Paid).setValue(amountPaid);
+    sheet.getRange(existing._row, map.Note).setValue(note);
+    sheet.getRange(existing._row, map.Recorded_By).setValue(user.email);
+  } else {
+    sheet.appendRow([
+      agentId, round, isoDay_(checkIn), when,
+      booksBack, ticketsSold, amountPaid, note, user.email
+    ]);
+  }
+
+  logAudit('RECORD_CHECK_IN', {
+    agent: agentId, round: round, booksBack: booksBack, amountPaid: amountPaid
+  }, user.email);
+
+  return {
+    agentId: agentId,
+    agentName: name,
+    round: round,
+    checkInDate: isoDay_(checkIn),
+    updated: !!existing,
+    booksBack: booksBack,
+    ticketsSold: ticketsSold,
+    amountPaid: amountPaid
   };
 }

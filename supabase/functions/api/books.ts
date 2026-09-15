@@ -13,7 +13,7 @@
  * ticket-to-buyer link the draw depends on.
  */
 import { ApiError, type AppUser } from './gate.ts'
-import { configDate, defaultDueDate } from './deadlines.ts'
+import { configDate, defaultDueDate, noteReportFromSettle } from './deadlines.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -242,6 +242,11 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
     throw new ApiError('MISSING_FIELD', 'How much money was handed in? (amountPaid)')
   }
 
+  // Read before the settle: the function answers about the BOOK, and the report
+  // this settlement stands for belongs to the person who was holding it.
+  const { data: held } = await ctx.supabaseAdmin
+    .from('books').select('held_by_agent').eq('number', bookNumber).maybeSingle()
+
   const { data, error } = await ctx.supabaseAdmin.rpc('settle_book', {
     p_book_number: bookNumber,
     p_unsold: p.unsoldTickets ?? [],
@@ -258,6 +263,13 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
   await audit(ctx, 'SETTLE', {
     book: bookNumber, sold: data.declaredSold, due: data.amountDue, paid: amountPaid,
   }, user.email)
+
+  // Somebody who has just settled a book has reported, and should not also have
+  // to be ticked off a list by the person who counted it.
+  await noteReportFromSettle(
+    ctx, String((held as { held_by_agent?: string } | null)?.held_by_agent ?? ''),
+    bookNumber, user)
+
   return data
 }
 

@@ -38,6 +38,7 @@ import BookAction from './components/modals/BookAction.vue'
 import MakeTickets from './components/modals/MakeTickets.vue'
 import TicketsInPlay from './components/modals/TicketsInPlay.vue'
 import Deadlines from './components/modals/Deadlines.vue'
+import CheckIn from './components/modals/CheckIn.vue'
 import WinnerForm from './components/modals/WinnerForm.vue'
 import AskApproval from './components/modals/AskApproval.vue'
 import Toasts from './components/ui/Toasts.vue'
@@ -510,7 +511,8 @@ function seeTickets(book) {
                    @record-winner="openModal('winner')"
                    @make-tickets="openModal('make')"
                    @tickets-in-play="openModal('inplay')"
-                   @deadlines="openModal('deadlines')" />
+                   @deadlines="openModal('deadlines')"
+                   @record-check-in="a => openModal('checkin', a)" />
       </KeepAlive>
     </Transition>
   </AppShell>
@@ -520,7 +522,8 @@ function seeTickets(book) {
                 @close="closeModal" @saved="closeModal" />
     <AgentForm v-else-if="modal?.kind === 'agent'" :agent="modal.payload"
                @close="closeModal" @saved="closeModal"
-               @receipt="id => openModal('receipt', id)" />
+               @receipt="id => openModal('receipt', id)"
+               @check-in="a => openModal('checkin', a)" />
     <UserForm v-else-if="modal?.kind === 'user'" @close="closeModal" @saved="closeModal"
               @needs-approval="r => openModal('askapproval', r)" />
     <IssueBooks v-else-if="modal?.kind === 'issue'"
@@ -547,6 +550,8 @@ function seeTickets(book) {
                    @close="closeModal" @done="closeModal"
                    @make-more="openModal('make')" />
     <Deadlines v-else-if="modal?.kind === 'deadlines'" @close="closeModal" />
+    <CheckIn v-else-if="modal?.kind === 'checkin'" :agent="modal.payload"
+             @close="closeModal" @saved="closeModal" />
     <WinnerForm v-else-if="modal?.kind === 'winner'" @close="closeModal" @saved="closeModal" />
   </Teleport>
 

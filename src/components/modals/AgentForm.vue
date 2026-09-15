@@ -4,7 +4,18 @@ import { api, toast, refresh, isAdmin } from '../../lib/store.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ agent: Object })
-const emit = defineEmits(['close', 'saved', 'receipt'])
+const emit = defineEmits(['close', 'saved', 'receipt', 'check-in'])
+
+/*
+ * The way to a seller's check-in, including one already recorded.
+ *
+ * The Sellers screen lists the people still to report and gives each a button,
+ * which covers the common case. It cannot cover the one that matters when
+ * something has gone wrong: a report recorded against the wrong person is, by
+ * definition, no longer on that list. Without a way in from the seller
+ * themselves, the undo would be unreachable exactly when it is needed.
+ */
+const canCheckIn = computed(() => isAdmin.value && !!props.agent?.id)
 
 /**
  * When a seller loses their handover paper, this is where someone goes looking
@@ -53,6 +64,9 @@ async function save() {
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
       <button v-if="canPrintReceipt" class="btn" @click="emit('receipt', agent.id)">Receipt</button>
+      <button v-if="canCheckIn" class="btn" @click="emit('check-in', agent)">
+        {{ agent.reportState === 'reported' ? 'Check-in' : 'Reported' }}
+      </button>
       <button class="btn primary" :disabled="busy" @click="save">{{ busy ? 'Saving…' : 'Save' }}</button>
     </template>
   </Sheet>

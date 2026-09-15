@@ -141,6 +141,8 @@ address in it, not a shared mailbox.
    | `CURRENCY` | `RM` | |
    | `CHECK_IN_DATE` | one month out | the day every seller reports by, this round |
    | `FINAL_DEADLINE` | blank | the day everything has to be back — set this |
+   | `CHECK_IN_EVERY_MONTHS` | `1` | how far apart the rounds are — `3` for quarterly |
+   | `REPORT_GRACE_DAYS` | `3` | days after the check-in before somebody is shown as late |
    | `DEFAULT_DUE_DAYS` | `30` | fallback only, if neither date above is set |
    | `EVENT_NAME`, `ORG_NAME`, `DRAW_DATE` | | shown on receipts |
 
@@ -177,7 +179,7 @@ always: `CHECK_IN_DATE` can never pass `FINAL_DEADLINE`, and `FINAL_DEADLINE` ca
 1. The check-in date arrives. The app says so, and the *Deadlines* screen shows how many books are
    out and how many are late.
 2. Go through them — settle what has come back, chase what has not.
-3. Press **Next month** on the Deadlines screen. It shows you what the move would do *before* it does
+3. Press **Next round** on the Deadlines screen. It shows you what the move would do *before* it does
    it, including how many late books would stop counting as late.
 4. Confirm. The date steps on a month, and every book still out gets the new date.
 
@@ -198,6 +200,52 @@ there is anything to absolve the date has to be typed back before it will go thr
 
 The last check-in lands *on* the final deadline rather than being refused for overshooting it, and
 says so: that is the last round.
+
+**All of the dates, worked out in advance.** Nobody types the middle ones. Given the check-in date,
+the cadence and the final deadline, the *Deadlines* screen lists every round — so a seller can be
+told all of their reporting dates on the day they collect their books, which is the only moment
+anybody has their attention. It is a plan only: the roll still steps the one stored date and stops at
+the wall, so nothing about whether a seller is late depends on it.
+
+A step landing a few days before the final deadline is **kept**, not tidied into it. Two reports in
+one week is redundant; skipping that round leaves a gap longer than the monthly rhythm, and it is the
+last moment anybody finds out forty books are still out while there are days left to ring people.
+
+### Who has reported
+
+A book coming back and a seller reporting are not the same event, and only one of them can be seen in
+the data. Somebody can honestly say "sold six, here is the money, I am keeping the book for the rest"
+and still be holding it — so nothing derived from the books can answer *who has not been in touch*.
+
+So a report is written down. On the **Sellers** screen, each person carries where they stand this
+round, and the ones still to report are listed at the top with a **Remind** button and a **Reported**
+button beside each name.
+
+| What it shows | What it means |
+|---|---|
+| *Reported* | They answered this round. Nothing more is needed from them until the next one. |
+| *To report* | The check-in is within a week, today, or inside the grace days. |
+| *n days late* | The grace ran out and they have not been in touch. Counted from the **end** of the grace, not from the check-in date. |
+| nothing at all | They are holding no books, so there is nothing to report on. |
+| *missed n check-ins* | Rounds that came and went with no word. This survives the roll. |
+
+**Recording a report is the only thing that clears the mark.** There is no dismiss button anywhere in
+this app on purpose — an alert somebody can tick away is one everybody ticks away, and by the time it
+matters it has been trained into furniture. Clearing the mark and writing down what the seller said
+are the same action, and what is written is what the next round is measured against.
+
+**Settling a book counts as a report automatically.** If you have just counted somebody's book and
+taken their money, you should not also have to tick them off a list. It records only the fact — the
+money stays in the settlement, where it is reconciled — and it never overwrites a report somebody
+typed.
+
+**The roll forgives a late book, never the silence.** Moving the check-in date forward makes every
+outstanding book current again; that is what a checkpoint is for. The rounds a seller never answered
+stay missing from the record for the rest of the raffle, so somebody who has not been in touch since
+August cannot be laundered into somebody up to date.
+
+If a report is recorded against the wrong person, open them and press **Undo**. It deletes the record
+rather than hiding it, which puts them straight back on the list.
 
 **Who may do what.** Moving the check-in date on is an organiser's job — it happens every month, and
 a checkpoint that needs the System Admin every time is a checkpoint that stops happening. Changing the

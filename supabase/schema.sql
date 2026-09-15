@@ -280,6 +280,44 @@ create table if not exists winners (
   recorded_by  text not null default ''
 );
 
+create table if not exists check_in_reports (
+  /*
+   * ONE ROW PER SELLER PER ROUND: the recorded fact that somebody turned up and
+   * said where they were.
+   *
+   * WHY A TABLE AND NOT A FLAG ON THE AGENT. A flag has one value, so the next
+   * round has to clear it, and a reset that runs over every seller is a reset
+   * that can go wrong halfway or be run twice. Rows cannot: the round number
+   * moves, every seller is un-reported the same instant, and nothing was
+   * written to make it happen.
+   *
+   * AND IT IS WHAT THE ROLL CANNOT LAUNDER. Moving the check-in date forward
+   * forgives a late book on purpose — that is what a checkpoint is for. The
+   * absent row for a round nobody answered stays absent for the rest of the
+   * raffle, so "has missed three check-ins" survives a roll that makes every
+   * book look current.
+   *
+   * ROUND, NOT DATE, as the key. The date moves; the round a report answered
+   * does not. due_at keeps the date it was at the time, so the history still
+   * reads as dates to a person looking at it later.
+   */
+  agent_id     text not null references agents(agent_id) on delete cascade,
+  round        integer not null check (round >= 1),
+  due_at       date not null,
+  reported_at  timestamptz not null default now(),
+  -- What actually came back. Nullable would mean "we do not know"; zero means
+  -- they reported and brought nothing, which is a different and useful thing
+  -- to be able to see.
+  books_back   integer not null default 0 check (books_back >= 0),
+  tickets_sold integer not null default 0 check (tickets_sold >= 0),
+  amount_paid  numeric(12,2) not null default 0 check (amount_paid >= 0),
+  note         text not null default '',
+  recorded_by  text not null default '',
+  primary key (agent_id, round)
+);
+-- "Who has answered this round" is the question asked on every seller list.
+create index if not exists check_in_round_idx on check_in_reports (round);
+
 -- ============ THE ONE THING THE SHEET COULD NOT ENFORCE ============
 -- A ticket cannot be sold without a name and a usable phone number. In the
 -- Sheet this is checked in three handlers and could be bypassed by editing a

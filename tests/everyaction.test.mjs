@@ -118,6 +118,7 @@ const CALLS = {
   set_active_tickets: { activeTickets: 20 },
   set_ticket_ceiling: { ticketCeiling: 200 },
   roll_check_in: {}, set_final_deadline: { date: '2027-01-01' },
+  record_check_in: { agentId: 'A001', booksBack: 1, ticketsSold: 4, amountPaid: 40 },
 }
 
 /*
@@ -134,7 +135,7 @@ const DELIBERATE = new Set([
   'NOT_FOUND', 'BOOK_NOT_FOUND', 'TICKET_NOT_FOUND', 'AGENT_NOT_FOUND',
   'USER_NOT_FOUND', 'NOT_AVAILABLE', 'ALREADY_SOLD', 'ALREADY_SETTLED',
   'BOOKS_NOT_AVAILABLE', 'TRANSFER_BLOCKED', 'MONEY_STILL_OWED',
-  'NO_FINAL_DEADLINE', 'FINAL_PASSED', 'IN_THE_PAST', 'CANNOT_MOVE_BACK',
+  'NO_FINAL_DEADLINE', 'NO_CHECK_IN_DATE', 'FINAL_PASSED', 'IN_THE_PAST', 'CANNOT_MOVE_BACK',
   'TOO_FAR', 'BAD_DATE', 'AFTER_DRAW', 'DUE_AFTER_FINAL', 'PARTIAL_BOOK',
   'TICKETS_IN_USE', 'BOOKS_IN_USE', 'NOT_GENERATED', 'ABOVE_CEILING',
   'CANNOT_SHRINK', 'SCHEMA_DRIFT', 'NOT_ELIGIBLE', 'NOT_IN_BOOK',

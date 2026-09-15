@@ -78,6 +78,147 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 864e5)
 }
 
+// ============ THE ROUNDS, WORKED OUT RATHER THAN TYPED ============
+/*
+ * NOBODY TYPES THE MIDDLE DATES.
+ *
+ * A raffle has one date somebody chose — the wall — and a rhythm: everybody
+ * reports, then reports again a month later, and again, until the wall. Asking
+ * an organiser to enter each of those by hand is asking them to keep a calendar
+ * in their head, and it is how a round goes missing in the month nobody was
+ * watching. So the rounds are CALCULATED from the two dates that already exist.
+ *
+ * That is also what lets a seller be told every one of their reporting dates on
+ * the day they collect their books, which is the only moment anybody has their
+ * attention.
+ *
+ * A ROUND FOR EVERY STEP THAT FITS, and the wall on the end even when it falls
+ * days after the last one. Two reports in one week is redundant; the obvious
+ * tidy-up — folding a step that lands just short of the wall INTO the wall —
+ * costs far more than it saves. That step is the last moment anybody finds out
+ * forty books are still out while there are still five days to ring people, and
+ * dropping it leaves a gap longer than the monthly rhythm this promises. The
+ * redundancy is the cheaper failure by a distance.
+ *
+ * DISPLAY AND PLANNING ONLY. The roll does not take its target from here: it
+ * steps the current date and clamps at the wall, exactly as it did before this
+ * existed. Whether a seller is late must not depend on a derivation.
+ */
+
+/** A week — when "due soon" starts everywhere else in this system. */
+export const REPORT_NOTICE_DAYS = 7
+
+/** Every round from `anchor` to `final` inclusive; [] with no wall to walk to. */
+export function checkInSchedule(anchor: string, final: string, everyMonths: number): string[] {
+  if (!final) return []
+  if (!anchor || anchor >= final) return [final]
+
+  const step = Math.max(1, Math.floor(everyMonths) || 1)
+  const out = [anchor]
+  let d = anchor
+  // Capped rather than trusted. A cadence and a wall that disagree — a one-month
+  // step and a raffle somebody dated five years out — must not spin here.
+  for (let i = 0; i < 60; i++) {
+    d = addMonths(d, step)
+    if (d >= final) break
+    out.push(d)
+  }
+  out.push(final)
+  return out
+}
+
+/** A whole number of days on from a date-only day. Never an instant. */
+export function addDays(iso: string, n: number): string {
+  if (!iso) return ''
+  return new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10)
+}
+
+export async function configNum(ctx: Ctx, key: string, fallback: number, min = 0): Promise<number> {
+  const { data } = await ctx.supabaseAdmin
+    .from('config').select('value').eq('key', key).maybeSingle()
+  const n = parseInt(String(data?.value ?? ''), 10)
+  return Number.isFinite(n) && n >= min ? n : fallback
+}
+
+/** How far apart the rounds sit. */
+export const everyMonths = (ctx: Ctx) => configNum(ctx, 'CHECK_IN_EVERY_MONTHS', 1, 1)
+
+/**
+ * The gap between the check-in date and being called late for it.
+ *
+ * Three days, not none and not a fortnight. None means somebody who says "I
+ * will come on Saturday" is red on Friday evening, and a badge that fires on
+ * people doing the right thing is one the organiser learns to scroll past. A
+ * fortnight, on a monthly rhythm, is half the round spent not chasing anybody.
+ */
+export const graceDays = (ctx: Ctx) => configNum(ctx, 'REPORT_GRACE_DAYS', 3, 0)
+
+/**
+ * Which round is live, counted rather than dated.
+ *
+ * A number rather than the date, because a report has to stay attached to the
+ * round it answered after the date has moved on. It is what makes "missed two
+ * check-ins" countable: the rows for those rounds are absent, permanently, and
+ * rolling the date forward cannot quietly forgive them the way it forgives a
+ * late book.
+ */
+export const checkInRound = (ctx: Ctx) => configNum(ctx, 'CHECK_IN_ROUND', 1, 1)
+
+/**
+ * Where one seller stands this round. Pure, so both backends and the tests can
+ * agree on it without a database.
+ *
+ * `clear` is not `reported`: a seller holding nothing has nothing to report on,
+ * and a red mark beside the name of somebody who brought everything back is how
+ * a list stops being read.
+ */
+export type ReportState = 'reported' | 'clear' | 'late' | 'due' | 'waiting'
+
+export function reportState(o: {
+  booksOut: number
+  reported: boolean
+  checkIn: string
+  grace: number
+  now: string
+}): ReportState {
+  if (o.reported) return 'reported'
+  if (o.booksOut <= 0) return 'clear'
+  if (!o.checkIn) return 'waiting'
+  if (daysBetween(o.checkIn, o.now) > o.grace) return 'late'
+  if (daysBetween(o.now, o.checkIn) <= REPORT_NOTICE_DAYS) return 'due'
+  return 'waiting'
+}
+
+/** Who has answered THIS round, and when they did. */
+export async function reportedIn(ctx: Ctx, round: number): Promise<Map<string, string>> {
+  const { data } = await ctx.supabaseAdmin
+    .from('check_in_reports').select('agent_id,reported_at').eq('round', round)
+  const m = new Map<string, string>()
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    m.set(String(r.agent_id ?? ''), String(r.reported_at ?? ''))
+  }
+  return m
+}
+
+/**
+ * How many EARLIER rounds each seller answered.
+ *
+ * Subtracted from the rounds that have been and gone, this is the count of
+ * check-ins somebody let pass in silence — the number that survives the roll,
+ * and the reason the roll cannot launder a seller who has never once answered
+ * into a seller who is up to date.
+ */
+export async function reportsBefore(ctx: Ctx, round: number): Promise<Map<string, number>> {
+  const { data } = await ctx.supabaseAdmin
+    .from('check_in_reports').select('agent_id').lt('round', round)
+  const m = new Map<string, number>()
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const id = String(r.agent_id ?? '')
+    m.set(id, (m.get(id) ?? 0) + 1)
+  }
+  return m
+}
+
 export async function configDate(ctx: Ctx, key: string): Promise<string> {
   const { data } = await ctx.supabaseAdmin
     .from('config').select('value').eq('key', key).maybeSingle()
@@ -126,13 +267,32 @@ export async function deadlineStatus(_p: Record<string, unknown>, user: AppUser,
   // A seller is told about THEIR books, not the whole raffle. Same rule as
   // every other read: their own work, nobody else's.
   const mine = user.role === 'agent'
-  let q = ctx.supabaseAdmin.from('books').select('due_at').eq('status', 'Out')
+  let q = ctx.supabaseAdmin.from('books').select('due_at,held_by_agent').eq('status', 'Out')
   if (mine) q = q.eq('held_by_agent', user.agentId ?? ' ')
   const { data: out } = await q
 
   const booksOut = (out ?? []).length
   const lateNow = (out ?? []).filter((b: { due_at: string | null }) =>
     b.due_at && b.due_at < now).length
+
+  // WHO STILL HAS TO REPORT is asked of the people holding books, not of every
+  // name on the list. Somebody who carries nothing this round is not silent,
+  // they are finished, and counting them as outstanding makes the number too
+  // big to act on.
+  const holders = new Set<string>()
+  for (const b of (out ?? []) as Array<Record<string, unknown>>) {
+    const id = String(b.held_by_agent ?? '').trim()
+    if (id) holders.add(id)
+  }
+
+  const months = await everyMonths(ctx)
+  const grace = await graceDays(ctx)
+  const round = await checkInRound(ctx)
+  const answered = await reportedIn(ctx, round)
+  const outstanding = [...holders].filter((id) => !answered.has(id))
+
+  const reportBy = checkIn ? addDays(checkIn, grace) : ''
+  const schedule = checkInSchedule(checkIn, final, months)
 
   return {
     today: now,
@@ -147,7 +307,209 @@ export async function deadlineStatus(_p: Record<string, unknown>, user: AppUser,
     isLastRound: !!checkIn && !!final && checkIn >= final,
     booksOut,
     lateNow,
+    // The rounds, as a plan rather than one date at a time. The dates belong to
+    // everybody — a seller cannot report by a day nobody told them about — so
+    // this is not scoped the way the counts are.
+    round,
+    everyMonths: months,
+    graceDays: grace,
+    reportBy,
+    chaseFrom: reportBy,
+    schedule: schedule.map((d, i) => ({
+      date: d,
+      round: round + i,
+      last: d === final,
+      done: d < now,
+    })),
+    roundsLeft: schedule.length,
+    sellersHolding: holders.size,
+    sellersReported: holders.size - outstanding.length,
+    sellersNotReported: outstanding.length,
+    // A seller is answered about themselves. Null for anybody else, so a screen
+    // can tell "not applicable" from "no".
+    youReported: mine ? answered.has(String(user.agentId ?? '')) : null,
   }
+}
+
+// ============ REPORTING IN ============
+/*
+ * THE THING THAT CLEARS THE BADGE, and the reason it cannot be a dismissal.
+ *
+ * Every other alert in this system is derived from the books, because an alert
+ * somebody can tick away is an alert everybody ticks away, and by the one time
+ * it matters it has been trained into furniture. This one is about a person
+ * rather than a book, so it cannot be derived from the books — a seller can
+ * honestly report "sold six, here is the money, I am keeping the book for the
+ * rest" and still be holding it afterwards.
+ *
+ * So the badge clears on a RECORDED FACT: a row saying this seller answered
+ * this round, who wrote it down, and what came back. There is still nothing to
+ * dismiss. Clearing the mark and recording the report are the same action, and
+ * the row is what the next round is measured against.
+ */
+
+export async function recordCheckIn(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const agentId = String(p.agentId ?? '').trim()
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller is reporting?')
+
+  const { data: agent } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name').eq('agent_id', agentId).maybeSingle()
+  if (!agent) {
+    throw new ApiError('AGENT_NOT_FOUND', `There is no seller with the ID "${agentId}".`)
+  }
+
+  const checkIn = await configDate(ctx, 'CHECK_IN_DATE')
+  if (!checkIn) {
+    throw new ApiError(
+      'NO_CHECK_IN_DATE',
+      'There is no check-in date, so there is no round for this to be a report on. ' +
+      'Set the dates on the "Deadlines" screen first.',
+    )
+  }
+
+  const round = await checkInRound(ctx)
+  const name = String((agent as { name?: string }).name ?? agentId)
+
+  const { data: existing } = await ctx.supabaseAdmin
+    .from('check_in_reports').select('*')
+    .eq('agent_id', agentId).eq('round', round).maybeSingle()
+
+  // UNDOING IS DELETING THE RECORD, not hiding it. Recorded against the wrong
+  // seller is a thing that happens on a phone in a car park, and the fix has to
+  // put that person back on the chase list rather than leave them quietly
+  // marked as having answered.
+  if (p.undo) {
+    if (!existing) {
+      throw new ApiError('NOTHING_TO_DO', `${name} has not been recorded as reporting this round.`)
+    }
+    const { error } = await ctx.supabaseAdmin
+      .from('check_in_reports').delete().eq('agent_id', agentId).eq('round', round)
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+    await ctx.supabaseAdmin.from('audit_log').insert({
+      action: 'UNDO_CHECK_IN', details: { agent: agentId, round }, email: user.email,
+    })
+    return { agentId, agentName: name, round, checkInDate: checkIn, undone: true }
+  }
+
+  const row = {
+    agent_id: agentId,
+    round,
+    due_at: checkIn,
+    books_back: int(p.booksBack),
+    tickets_sold: int(p.ticketsSold),
+    amount_paid: num(p.amountPaid),
+    note: String(p.note ?? '').trim(),
+    recorded_by: user.email,
+    reported_at: new Date().toISOString(),
+  }
+
+  // Recorded twice is a seller who came back with more, not an error to refuse:
+  // the round holds one answer per person and the later one is the true one.
+  const { error } = existing
+    ? await ctx.supabaseAdmin.from('check_in_reports').update(row)
+        .eq('agent_id', agentId).eq('round', round)
+    : await ctx.supabaseAdmin.from('check_in_reports').insert(row)
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'RECORD_CHECK_IN',
+    details: { agent: agentId, round, booksBack: row.books_back, amountPaid: row.amount_paid },
+    email: user.email,
+  })
+
+  return {
+    agentId,
+    agentName: name,
+    round,
+    checkInDate: checkIn,
+    updated: !!existing,
+    booksBack: row.books_back,
+    ticketsSold: row.tickets_sold,
+    amountPaid: row.amount_paid,
+  }
+}
+
+/**
+ * A settlement IS a report, so it is recorded as one.
+ *
+ * WITHOUT THIS, an organiser who has just counted a seller's book and taken
+ * their money is then asked to tick them off a list as having reported. Asking
+ * somebody to write the same fact down twice is how the second one stops
+ * happening, and then the chase list shows people who were standing in front of
+ * you an hour ago — which is how a list stops being believed.
+ *
+ * WHAT IT DOES NOT DO is copy the figures across. The money is decided by the
+ * settlement and lives in the ledger; a partial amount echoed into a report
+ * would read as a second, smaller settlement. This records only the fact and
+ * how it is known.
+ *
+ * IT NEVER OVERWRITES A TYPED REPORT, and it never throws. A settle that failed
+ * because of a check-in row would be a money operation broken by a side note.
+ *
+ * BUT IT IS NEVER SILENT EITHER, which is the harder half. Swallowing the
+ * failure gets the priority right and the discoverability catastrophically
+ * wrong: if this stops working on some deployment, every settle from then on
+ * records nothing, the reports never appear, and an organiser chases people who
+ * did in fact report — with nothing anywhere to explain why. That is the exact
+ * shape this project has been bitten by repeatedly, where something reports
+ * success while doing nothing. So the failure goes to the function log AND to
+ * the audit log, where somebody looking can find it.
+ *
+ * The returned `error` matters as much as a thrown one: a rejected insert comes
+ * back in the result rather than as an exception, so ignoring it is the more
+ * likely silence of the two. Both take the same path out.
+ */
+export async function noteReportFromSettle(
+  ctx: Ctx, agentId: string, bookNumber: string, user: AppUser,
+) {
+  const id = String(agentId ?? '').trim()
+  try {
+    if (!id) return
+    const checkIn = await configDate(ctx, 'CHECK_IN_DATE')
+    if (!checkIn) return
+    const round = await checkInRound(ctx)
+
+    const { data: existing, error: readFailed } = await ctx.supabaseAdmin
+      .from('check_in_reports').select('agent_id')
+      .eq('agent_id', id).eq('round', round).maybeSingle()
+    if (readFailed) throw new Error(readFailed.message)
+    if (existing) return
+
+    const { error } = await ctx.supabaseAdmin.from('check_in_reports').insert({
+      agent_id: id,
+      round,
+      due_at: checkIn,
+      note: `Reported by settling ${bookNumber}`,
+      recorded_by: user.email,
+      reported_at: new Date().toISOString(),
+    })
+    if (error) throw new Error(error.message)
+  } catch (e) {
+    // Caught and not rethrown — the money is already committed and must not be
+    // undone by a side note — but said out loud, twice, so a failure that
+    // repeats can be found rather than merely suffered.
+    const why = String((e as { message?: string })?.message ?? e)
+    console.error(`CHECK_IN_NOT_RECORDED: ${id || '(no seller)'} settling ${bookNumber}: ${why}`)
+    try {
+      await ctx.supabaseAdmin.from('audit_log').insert({
+        action: 'CHECK_IN_NOT_RECORDED',
+        details: { agent: id, book: bookNumber, why },
+        email: user.email,
+      })
+    } catch { /* if the database is what failed, the log line is the record */ }
+  }
+}
+
+/** A whole number from a form field, never NaN and never negative. */
+function int(v: unknown): number {
+  const n = parseInt(String(v ?? ''), 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+function num(v: unknown): number {
+  const n = parseFloat(String(v ?? ''))
+  return Number.isFinite(n) && n > 0 ? n : 0
 }
 
 // ============ ROLLING THE CHECK-IN FORWARD ============
@@ -169,9 +531,13 @@ export async function rollCheckIn(p: Record<string, unknown>, user: AppUser, ctx
     )
   }
 
+  // A step of the configured cadence, clamped at the wall further down. The
+  // schedule is for showing people the plan, never for choosing this date.
+  const months = await everyMonths(ctx)
+  const round = await checkInRound(ctx)
   const target = String(p.date ?? '').trim()
     ? dayStart(p.date)
-    : addMonths(current || now, 1)
+    : addMonths(current || now, months)
 
   if (!target) {
     throw new ApiError('BAD_DATE', 'That is not a date this system can read. Use 2026-10-14.')
@@ -238,6 +604,8 @@ export async function rollCheckIn(p: Record<string, unknown>, user: AppUser, ctx
     return {
       dryRun: true,
       from: current, to: landed, finalDeadline: final, isLastRound,
+      round, nextRound: round + 1,
+      roundsLeft: checkInSchedule(landed, final, months).length,
       booksOut, booksMoving: moving.length, lateNow,
       daysGiven: daysBetween(now, landed),
       effect: `${moving.length} of ${booksOut} books out would be given until ${landed}.`,
@@ -271,14 +639,29 @@ export async function rollCheckIn(p: Record<string, unknown>, user: AppUser, ctx
 
   await setConfig(ctx, 'CHECK_IN_DATE', landed)
 
+  /*
+   * THE ROUND NUMBER MOVES WITH THE DATE, and this is the line that makes the
+   * reporting survive the roll.
+   *
+   * Everyone is un-reported for the new round the moment this is written —
+   * there is no reset to run and nothing to clear — and the rows for the round
+   * just closed stay exactly as they are. A seller who never answered has an
+   * absent row for that round for the rest of the raffle, so rolling forward
+   * forgives a late BOOK, which is the point of a checkpoint, without also
+   * forgiving the silence, which is not.
+   */
+  await setConfig(ctx, 'CHECK_IN_ROUND', String(round + 1))
+
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'ROLL_CHECK_IN',
-    details: { from: current, to: landed, booksMoved: moving.length, lateNow, isLastRound },
+    details: { from: current, to: landed, booksMoved: moving.length, lateNow, isLastRound,
+               round, nextRound: round + 1 },
     email: user.email,
   })
 
   return {
     from: current, to: landed, finalDeadline: final, isLastRound,
+    round: round + 1, closedRound: round,
     booksOut, booksMoving: moving.length, lateNow,
     daysGiven: daysBetween(now, landed),
   }
