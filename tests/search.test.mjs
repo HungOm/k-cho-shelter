@@ -63,6 +63,23 @@ eq(phoneDigits(''), '', 'empty stays empty')
 eq(waNumber('0123456789'), '60123456789', 'WhatsApp form adds the country code')
 eq(waNumber('+60123456789'), '60123456789', 'already international, unchanged')
 
+/*
+ * The country code is Malaysia's, and these assertions record that as a
+ * LIMITATION rather than approving of it. Raffled is meant to be reusable now,
+ * and a local number from anywhere else comes out as a real Malaysian number
+ * belonging to a stranger — who then receives a message naming a seller and
+ * what they owe. It is pinned rather than fixed because the live raffle depends
+ * on it and the country belongs in config, like the logo and the colour; the
+ * point of writing it down is that the next deployment should not find out by
+ * ringing the wrong person.
+ */
+eq(waNumber('09 123 456 789'), '609123456789',
+   'LIMITATION: a Myanmar local number becomes a Malaysian one')
+eq(waNumber('081-234-5678'), '60812345678',
+   'LIMITATION: so does an Indonesian one')
+eq(waNumber('+95 9 123 456 789'), '959123456789',
+   'a number written in full international form survives, whatever the country')
+
 console.log('book ranges')
 eq(String(parseBookRange('Book-031..045')), '31,45', 'Book-031..045')
 eq(String(parseBookRange('book 3 to 9')), '3,9', 'book 3 to 9')
