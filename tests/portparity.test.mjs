@@ -72,6 +72,12 @@ console.log('every Apps Script action is either ported or listed as not ported')
     // Apps Script has no search ACTION — the client downloads every ticket and
     // searches locally, which is the habit this migration exists to end.
     ['search', 'Apps Script searches client-side over a full download'],
+    // Round snapshots are frozen by the Supabase roll, into a table with an
+    // append-only trigger behind it. Apps Script has neither the table nor a
+    // way to make a sheet refuse to be edited, so porting the action would
+    // give the same name to a figure anybody could retype — which is the one
+    // thing the snapshot exists to stop being true.
+    ['round_snapshot', 'no append-only storage in a spreadsheet to freeze a round into'],
   ])
   const extra = [...supabase].filter(a => !appsScript.has(a) && !SUPABASE_ONLY.has(a)).sort()
   ok(extra.length === 0,

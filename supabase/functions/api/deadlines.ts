@@ -21,6 +21,9 @@
  * and nobody able to explain why.
  */
 import { ApiError, requireSuperAdmin, type AppUser } from './gate.ts'
+import {
+  collectedByAgent, moneyScope, round2, showsSellerNames, totalsAgents,
+} from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -627,6 +630,30 @@ export async function rollCheckIn(p: Record<string, unknown>, user: AppUser, ctx
     )
   }
 
+  /*
+   * THE SNAPSHOT COMES FIRST, BEFORE ANYTHING MOVES.
+   *
+   * Every money figure in this system is live, which is right for "what does
+   * this seller owe today" and useless for "what did round 2 say" — the
+   * question asked when a seller disputes a total, when an organiser wants to
+   * know what has moved since the last checkpoint, and at the end when
+   * somebody has to explain the raffle to whoever paid for it. Correcting
+   * money afterwards is the design, not the problem; the problem is that once
+   * it is corrected nothing remembers what it was corrected FROM.
+   *
+   * ORDER IS THE WHOLE OF IT. Taken after the books moved, the row would
+   * record due dates the round never had; taken after CHECK_IN_ROUND moved, it
+   * would be the opening figures of the next round wearing the closing round's
+   * number. So it is taken here: past every refusal, past the confirmation,
+   * and before the first write.
+   *
+   * AND IT CANNOT BE TAKEN LATE. A round that closes without one can never be
+   * snapshotted afterwards, because the figures it would have frozen have
+   * already moved. That is the whole reason this is written rather than
+   * planned.
+   */
+  await snapshotRound(ctx, round, user.email)
+
   // Books first, then the config value. If this fails halfway the check-in date
   // has not moved, so the next attempt does the same work rather than a
   // different, half-applied version of it.
@@ -664,6 +691,201 @@ export async function rollCheckIn(p: Record<string, unknown>, user: AppUser, ctx
     round: round + 1, closedRound: round,
     booksOut, booksMoving: moving.length, lateNow,
     daysGiven: daysBetween(now, landed),
+  }
+}
+
+
+/**
+ * Freeze what every seller's line said, for the round that is closing.
+ *
+ * ON CONFLICT DO NOTHING, NOT AN UPSERT, and the distinction is the point. A
+ * roll that failed after the snapshot and before the config move is retried,
+ * and the retry must keep the figures from the attempt that closed the round
+ * rather than restate them as they are now — minutes or a day later, after
+ * whatever the failure sent somebody off to fix. The table refuses UPDATE
+ * outright, so an upsert would not merely be wrong here, it would raise.
+ *
+ * NOT ONLY THE SELLERS CARRYING BOOKS. The union is everyone the round has
+ * anything to say about: whoever holds or has settled a book, whoever answered
+ * this round, and whoever has handed money over. A seller who brought
+ * everything back last month still has a line worth freezing — zero out, zero
+ * owed — and it is the row that proves they were at zero rather than absent
+ * from the reckoning.
+ */
+export async function snapshotRound(ctx: Ctx, round: number, takenBy: string) {
+  const { data: ledger } = await ctx.supabaseAdmin
+    .from('book_ledger_all')
+    .select('held_by_agent,status,counted_sold,counted_expected')
+    .not('held_by_agent', 'is', null)
+
+  const answered = await reportedIn(ctx, round)
+  const earlier = await reportsBefore(ctx, round)
+  const paid = await collectedByAgent(ctx, null)
+
+  type Line = {
+    round: number; agent_id: string; taken_by: string
+    books_out: number; books_settled: number; recorded_sold: number
+    expected: number; collected: number; outstanding: number
+    reported: boolean; missed_before: number
+  }
+  const byAgent = new Map<string, Line>()
+  const line = (id: string) => {
+    let a = byAgent.get(id)
+    if (!a) {
+      a = {
+        round, agent_id: id, taken_by: takenBy,
+        books_out: 0, books_settled: 0, recorded_sold: 0,
+        expected: 0, collected: 0, outstanding: 0,
+        reported: false, missed_before: 0,
+      }
+      byAgent.set(id, a)
+    }
+    return a
+  }
+
+  for (const b of (ledger ?? []) as Array<Record<string, unknown>>) {
+    const a = line(String(b.held_by_agent))
+    if (b.status === 'Out') a.books_out++
+    if (b.status === 'Settled') a.books_settled++
+    a.recorded_sold += Number(b.counted_sold ?? 0)
+    a.expected = round2(a.expected + Number(b.counted_expected ?? 0))
+  }
+  for (const id of answered.keys()) line(id)
+  for (const id of paid.keys()) line(id)
+
+  for (const [id, a] of byAgent) {
+    a.collected = paid.get(id) ?? 0
+    a.outstanding = round2(a.expected - a.collected)
+    a.reported = answered.has(id)
+    // Rounds BEFORE this one that came and went unanswered. The round being
+    // closed is not among them — `reported` says what happened to that one —
+    // so the two together read as "missed n before, and answered/did not
+    // answer this one" without either double-counting the other.
+    a.missed_before = Math.max(0, (round - 1) - (earlier.get(id) ?? 0))
+  }
+
+  if (!byAgent.size) return 0
+
+  /*
+   * A SNAPSHOT THAT FAILS MUST NOT STOP THE ROLL. The roll is what keeps the
+   * chasing honest and a raffle cannot be left unable to move its own
+   * check-in date because a bookkeeping row would not write. It is loud in the
+   * log instead — the same trade `noteSettlementPayment` makes, and for the
+   * same reason.
+   */
+  const { error } = await ctx.supabaseAdmin
+    .from('round_snapshots')
+    .upsert([...byAgent.values()], { onConflict: 'round,agent_id', ignoreDuplicates: true })
+  if (error) {
+    console.error(`SNAPSHOT_NOT_TAKEN: round ${round}: ${error.message}`)
+    return 0
+  }
+  return byAgent.size
+}
+
+
+/**
+ * What a closed round said, and what has moved since.
+ *
+ * THE DIFFERENCE IS THE ANSWER, not the snapshot on its own. "Round 2 said you
+ * owed RM120" is only half of a conversation with a seller who says they paid;
+ * the useful half is that it says RM120 and today says RM40, so RM80 came in
+ * after the round closed and here is the row for it. So both are returned side
+ * by side and the client does no arithmetic to find the gap.
+ *
+ * WITH NO ROUND ASKED FOR, the rounds that have snapshots — which is how a
+ * screen offers them without knowing in advance which rolls happened.
+ *
+ * SCOPED EXACTLY AS THE MONEY SCREEN IS, through the same two helpers rather
+ * than a fourth rule of its own: an organiser sees every seller by name, a
+ * seller sees their own line and nobody else's, a viewer sees the totals those
+ * lines add to and no names, and a helper carrying no books gets neither —
+ * a closed round has nothing to say about somebody who never owed anything.
+ */
+export async function readRoundSnapshot(
+  p: Record<string, unknown>, user: AppUser, ctx: Ctx,
+) {
+  const only = totalsAgents(user)
+  const scope = moneyScope(user)
+
+  const { data: taken, error: takenErr } = await ctx.supabaseAdmin
+    .from('round_snapshots').select('round').order('round')
+  if (takenErr) throw new ApiError('QUERY_FAILED', takenErr.message)
+  const rounds = [...new Set((taken ?? []).map((r: { round: number }) => Number(r.round)))]
+
+  const asked = Number(p.round ?? 0)
+  const round = asked > 0 ? asked : (rounds.length ? rounds[rounds.length - 1] : 0)
+  if (!round) {
+    return { round: 0, rounds: [], lines: [], totals: null, scope, message:
+      'No round has closed yet, so there is nothing frozen to look back at. The ' +
+      'first snapshot is taken when the check-in date is next moved on.' }
+  }
+
+  let q = ctx.supabaseAdmin.from('round_snapshots').select('*').eq('round', round)
+  if (only) q = q.in('agent_id', only.length ? only : ['\u0000'])
+  const { data: rows, error } = await q
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  // Today's figures for the same sellers, built the way the Money screen
+  // builds them, so "then" and "now" are the same measurement twice.
+  const { data: ledger } = await ctx.supabaseAdmin
+    .from('book_ledger_all')
+    .select('held_by_agent,counted_expected').not('held_by_agent', 'is', null)
+  const nowExpected = new Map<string, number>()
+  for (const b of (ledger ?? []) as Array<Record<string, unknown>>) {
+    const id = String(b.held_by_agent ?? '')
+    nowExpected.set(id, round2((nowExpected.get(id) ?? 0) + Number(b.counted_expected ?? 0)))
+  }
+  const nowPaid = await collectedByAgent(ctx, only)
+
+  const { data: agents } = await ctx.supabaseAdmin.from('agents').select('agent_id,name,phone')
+  const byId = new Map((agents ?? []).map((a: Record<string, unknown>) => [String(a.agent_id), a]))
+
+  const lines = (rows ?? []).map((r: Record<string, unknown>) => {
+    const id = String(r.agent_id)
+    const who = byId.get(id) as Record<string, unknown> | undefined
+    const expected = round2(nowExpected.get(id) ?? 0)
+    const collected = round2(nowPaid.get(id) ?? 0)
+    return {
+      agentId: id,
+      name: String(who?.name ?? '') || id,
+      phone: String(who?.phone ?? ''),
+      takenAt: r.taken_at,
+      then: {
+        booksOut: Number(r.books_out ?? 0), booksSettled: Number(r.books_settled ?? 0),
+        ticketsSold: Number(r.recorded_sold ?? 0),
+        expected: Number(r.expected ?? 0), collected: Number(r.collected ?? 0),
+        outstanding: Number(r.outstanding ?? 0),
+        reported: !!r.reported, missedBefore: Number(r.missed_before ?? 0),
+      },
+      now: { expected, collected, outstanding: round2(expected - collected) },
+      changed: {
+        expected: round2(expected - Number(r.expected ?? 0)),
+        collected: round2(collected - Number(r.collected ?? 0)),
+        outstanding: round2(round2(expected - collected) - Number(r.outstanding ?? 0)),
+      },
+    }
+  })
+
+  const sum = (f: (l: typeof lines[number]) => number) => round2(lines.reduce((t, l) => t + f(l), 0))
+  const totals = {
+    sellers: lines.length,
+    then: {
+      expected: sum((l) => l.then.expected), collected: sum((l) => l.then.collected),
+      outstanding: sum((l) => l.then.outstanding),
+      reported: lines.filter((l) => l.then.reported).length,
+    },
+    now: {
+      expected: sum((l) => l.now.expected), collected: sum((l) => l.now.collected),
+      outstanding: sum((l) => l.now.outstanding),
+    },
+  }
+
+  // The names go to exactly two people, the same two the debt table goes to.
+  return {
+    round, rounds, scope, totals,
+    lines: showsSellerNames(scope) ? lines : [],
+    takenAt: (rows ?? [])[0]?.taken_at ?? null,
   }
 }
 

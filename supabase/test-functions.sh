@@ -366,6 +366,56 @@ P "update tickets set modified_at=now() where number='KS-00011'" >/dev/null
 ok "$(P "select count(*) from ticket_history where ticket_idx=11")" "$((n0+1))" "a touch that changes nothing that matters writes nothing"
 ok "$(P "select count(*) from ticket_history where ticket_idx=11 and from_status='' and to_status=''")" "0" "and no row is ever blank"
 
+# APPEND ONLY, tested as the database sees it rather than as the handlers
+# promise it. This is the only place an overwritten buyer still exists, and it
+# was immutable only in the sense that nobody had written the code to change it.
+# Run as the owning superuser, which is stricter than the key the Edge Function
+# holds: if it cannot edit the trail, neither can anything the app can do.
+echo "a ticket's record cannot be edited or erased"
+n1=$(P "select count(*) from ticket_history")
+r=$(P "update ticket_history set to_buyer='Somebody Else' where ticket_idx=11")
+has "$r" "append only" "an update is refused"
+ok "$(P "select count(*) from ticket_history where to_buyer='Somebody Else'")" "0" "and rewrote nothing"
+ok "$(P "select from_buyer||' -> '||to_buyer from ticket_history where ticket_idx=11 order by id desc limit 1")" "Real Buyer -> Corrected Buyer" "the step it tried to rewrite is as it was"
+r=$(P "delete from ticket_history where ticket_idx=11")
+has "$r" "append only" "a delete is refused"
+r=$(P "truncate ticket_history")
+has "$r" "append only" "and a truncate, which is neither an update nor a delete and would have emptied it"
+ok "$(P "select count(*) from ticket_history")" "$n1" "every row is still there"
+# The other end of the same guarantee: a ticket cannot be deleted out from
+# under its own record, so the trail can never point at nothing.
+r=$(P "delete from tickets where number='KS-00011'")
+has "$r" "violates foreign key" "and the ticket itself cannot be deleted while it has a record"
+
+# A CLOSED ROUND SAID WHAT IT SAID. Same bar as the ticket's record and for the
+# same reason: this is the only place the figures a round was closed on still
+# exist, and "append only" was going to be true of it exactly as long as nobody
+# wrote the handler that changed one. Again as the owning superuser, which is
+# stricter than the key the Edge Function holds.
+echo "a round that has closed cannot be rewritten"
+P "insert into agents(agent_id,name) values ('SNAP','Snapshot Seller') on conflict do nothing;
+   insert into round_snapshots(round,agent_id,books_out,recorded_sold,expected,collected,outstanding,reported,missed_before)
+     values (1,'SNAP',5,3,30,10,20,true,0)" >/dev/null
+ok "$(P "select expected||'/'||collected||'/'||outstanding from round_snapshots where round=1 and agent_id='SNAP'")" "30.00/10.00/20.00" "the round was frozen at RM30 expected, RM10 in, RM20 owed"
+r=$(P "update round_snapshots set outstanding=0 where round=1 and agent_id='SNAP'")
+has "$r" "append only" "an update is refused"
+ok "$(P "select outstanding from round_snapshots where round=1 and agent_id='SNAP'")" "20.00" "and the round still says RM20 was owed"
+r=$(P "delete from round_snapshots where round=1")
+has "$r" "append only" "a delete is refused"
+r=$(P "truncate round_snapshots")
+has "$r" "append only" "and a truncate, which would have emptied it without firing either"
+# The retried roll. ON CONFLICT DO NOTHING is what the handler sends, and it
+# has to be a no-op rather than a merge: a merge is an UPDATE, which this table
+# raises on, so a half-failed roll retried an hour later would fail outright
+# instead of leaving the figures the round actually closed on.
+P "insert into round_snapshots(round,agent_id,expected,collected,outstanding) values (1,'SNAP',999,999,999) on conflict do nothing" >/dev/null
+ok "$(P "select expected from round_snapshots where round=1 and agent_id='SNAP'")" "30.00" "a retried roll keeps the figures the round closed on"
+ok "$(P "select count(*) from round_snapshots where round=1 and agent_id='SNAP'")" "1" "and adds no second row for the same seller and round"
+# A measurement the raffle took of its own books has to survive the person it
+# measured, so the FK restricts rather than cascades the way a declaration does.
+r=$(P "delete from agents where agent_id='SNAP'")
+has "$r" "violates foreign key" "and the seller cannot be erased out from under a round that measured them"
+
 echo "money taken at the desk is counted, paid or not"
 P "update config set value='' where key='ACTIVE_TICKETS';
    update books set status='Unassigned', held_by_agent=null, declared_sold=null, amount_due=null, amount_paid=null where idx=1;

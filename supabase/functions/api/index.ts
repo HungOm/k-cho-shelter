@@ -150,6 +150,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   deadline_status: { group: 'Books', label: 'See the check-in and final dates' },
   roll_check_in: { group: 'Books', label: 'Move the check-in date on a month', danger: true },
   record_check_in: { group: 'Books', label: 'Record that a seller has reported' },
+  round_snapshot: { group: 'Books', label: 'What a past check-in round said' },
   set_final_deadline: { group: 'Books', label: 'Change the final deadline', danger: true },
   upload_logo: { group: 'Access', label: 'Change the raffle\'s logo' },
   set_brand_color: { group: 'Access', label: 'Change the raffle\'s colour' },
@@ -246,6 +247,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // organiser to be free is a report that gets written on the back of an
   // envelope instead.
   record_check_in: { roles: ['recorder'], kind: 'write', fn: deadlines.recordCheckIn },
+  round_snapshot: { roles: null, kind: 'read', fn: deadlines.readRoundSnapshot },
   set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline },
   // Organisers only, enforced HERE rather than by hiding a button. Branding is
   // what a buyer sees on a receipt; it is not a thing a desk volunteer changes.

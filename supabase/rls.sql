@@ -98,6 +98,7 @@ alter table pending_approvals enable row level security;
 alter table check_in_reports enable row level security;
 alter table payments      enable row level security;
 alter table ticket_history enable row level security;
+alter table round_snapshots enable row level security;
 alter table winners       enable row level security;
 
 -- Nothing below grants INSERT, UPDATE or DELETE to anybody. Writes go through
@@ -428,7 +429,8 @@ grant select on config_readable to authenticated;
 -- ============ EVERYTHING ELSE STAYS SHUT ============
 --
 -- app_users, audit_log, permissions, pending_approvals, winners, book_history,
--- check_in_reports, payments and ticket_history get NO select policy, so row security denies
+-- check_in_reports, payments, ticket_history and round_snapshots get NO select policy, so row
+-- security denies
 -- every browser read.
 -- They are reachable only through the Edge Function, which applies the
 -- super-admin rules the interface depends on — who may see the audit log, who
@@ -437,7 +439,8 @@ grant select on config_readable to authenticated;
 -- is not attempted here.
 
 revoke all on app_users, audit_log, permissions, pending_approvals, winners,
-              book_history, check_in_reports, payments, ticket_history from authenticated;
+              book_history, check_in_reports, payments, ticket_history,
+              round_snapshots from authenticated;
 
 -- And from anon, which is the role a request with no session gets. Row security
 -- already returns nothing to it, so this changes no outcome today — it is here
@@ -445,7 +448,7 @@ revoke all on app_users, audit_log, permissions, pending_approvals, winners,
 -- these to an unauthenticated caller.
 revoke all on app_users, audit_log, permissions, pending_approvals, winners,
               book_history, check_in_reports, payments, ticket_history,
-              tickets, books, agents, config from anon;
+              round_snapshots, tickets, books, agents, config from anon;
 
 -- The base tables are not readable directly either — only the views above,
 -- which is what keeps the masking from being optional.

@@ -43,6 +43,9 @@ const DEFAULTS = {
   agents: { active: true },
   check_in_reports: { books_back: 0, tickets_sold: 0, amount_paid: 0, note: '',
                       recorded_by: '', reported_at: () => new Date().toISOString() },
+  round_snapshots: { taken_by: '', books_out: 0, books_settled: 0, recorded_sold: 0,
+                     expected: 0, collected: 0, outstanding: 0, reported: false,
+                     missed_before: 0, taken_at: () => new Date().toISOString() },
   // `id` is a bigint identity in Postgres. Generated here too, because
   // reverse_payment addresses a row by the id the insert handed back — a fake
   // that left it undefined would make every reversal look like a missing row.
@@ -159,7 +162,16 @@ class Query {
   upsert(rows, opts = {}) {
     this.op = 'upsert'
     this.payload = Array.isArray(rows) ? rows : [rows]
-    this.onConflict = opts.onConflict ?? 'id'
+    // A COMMA-SEPARATED KEY IS A COMPOSITE ONE, and it used to be taken
+    // literally: `onConflict: 'round,agent_id'` looked up a column of that
+    // name, found undefined on both sides, and undefined === undefined matched
+    // the first row in the table. Every row after the first was silently
+    // written over the first one, and a test asserting "one row per seller"
+    // would have passed while the handler did something else entirely.
+    this.onConflict = String(opts.onConflict ?? 'id').split(',').map((c) => c.trim())
+    // ON CONFLICT DO NOTHING is not ON CONFLICT DO UPDATE. The fake merged
+    // either way, which models the one thing an append-only table raises on.
+    this.ignoreDuplicates = !!opts.ignoreDuplicates
     return this
   }
   delete() { this.op = 'delete'; return this }
@@ -201,9 +213,11 @@ class Query {
       const out = []
       for (const row of this.payload) {
         if (this.op === 'upsert') {
-          const key = this.onConflict
-          const at = t.findIndex((r) => r[key] === row[key])
-          if (at !== -1) { Object.assign(t[at], copy(row)); out.push(t[at]); continue }
+          const at = t.findIndex((r) => this.onConflict.every((k) => r[k] === row[k]))
+          if (at !== -1) {
+            if (this.ignoreDuplicates) continue   // DO NOTHING: the row that is there stays
+            Object.assign(t[at], copy(row)); out.push(t[at]); continue
+          }
         }
         const fresh = withDefaults(this.table, copy(row))
         t.push(fresh)
@@ -289,7 +303,7 @@ export function fakeDb(seed = {}) {
       config: [], tickets: [], books: [], agents: [], app_users: [],
       book_history: [], audit_log: [], pending_approvals: [], winners: [],
       permissions: [], book_ledger: [], book_ledger_all: [], check_in_reports: [],
-      payments: [], ticket_history: [],
+      payments: [], ticket_history: [], round_snapshots: [],
       ...copy(seed),
     },
     writes: [],
