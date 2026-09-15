@@ -79,6 +79,10 @@ function actionRegistry() {
     // organiser to be free is a report written on the back of an envelope.
     record_check_in:       { fn: handleRecordCheckIn,     roles: [ROLES.RECORDER], kind: 'write', lock: true },
     set_final_deadline:    { fn: handleSetFinalDeadline,  roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
+    // Organisers only, enforced HERE rather than by hiding a button. Branding is
+    // what a buyer sees on a receipt; it is not a thing a desk volunteer changes.
+    upload_logo:           { fn: handleUploadLogo,        roles: ADMIN_ONLY, kind: 'write' },
+    set_brand_color:       { fn: handleSetBrandColor,     roles: ADMIN_ONLY, kind: 'write' },
 
     // --- agents & users ---
     list_agents:           { fn: handleListAgents,        roles: null, kind: 'read' },
@@ -139,6 +143,8 @@ function actionMeta() {
     roll_check_in:          { group: 'Books',   label: 'Move the check-in date on a month', danger: true },
     record_check_in:        { group: 'Books',   label: 'Record that a seller has reported' },
     set_final_deadline:     { group: 'Books',   label: 'Change the final deadline', danger: true },
+    upload_logo:            { group: 'Access',  label: "Change the raffle's logo" },
+    set_brand_color:        { group: 'Access',  label: "Change the raffle's colour" },
 
     settle_book:            { group: 'Money',   label: 'Settle a book', danger: true },
     record_payment:         { group: 'Money',   label: 'Record money handed in' },
@@ -310,6 +316,55 @@ function jsonOut_(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+
+/**
+ * The config the client reads, built in one place.
+ *
+ * Pulled out of handleWhoami so the branding handlers can answer with the SAME
+ * object rather than a second one shaped like it. Both write config and both
+ * return it, and a screen assigning state.cfg from one and then the other would
+ * be reading two contracts — which is how six field-shape divergences happened
+ * in this repository, every one a key built one way and read another.
+ *
+ * The Supabase half does the same thing in config.ts, for the same reason.
+ */
+function whoamiConfig_(cfg) {
+  cfg = cfg || getConfig();
+  return {
+    ticketPrefix: cfg.TICKET_PREFIX,
+    ticketDigits: cfgNum(cfg, 'TICKET_DIGITS', 4),
+    ticketStart: cfgNum(cfg, 'TICKET_START', 1),
+    totalTickets: activeTickets(cfg),          // what is in play — the number the app works in
+    generatedTickets: cfgNum(cfg, 'TOTAL_TICKETS', 0),
+    heldBackTickets: Math.max(0, cfgNum(cfg, 'TOTAL_TICKETS', 0) - activeTickets(cfg)),
+    // The planned final size, so the release screen can show how much is left
+    // to come and stop offering steps that would go past it. Zero means no
+    // ceiling was set. The server still refuses ABOVE_CEILING regardless.
+    ticketCeiling: cfgNum(cfg, 'TICKET_CEILING', 0),
+    ticketsPerBook: cfgNum(cfg, 'TICKETS_PER_BOOK', 10),
+    bookPrefix: cfg.BOOK_PREFIX,
+    bookDigits: cfgNum(cfg, 'BOOK_DIGITS', 3),
+    totalBooks: totalBooks(cfg),
+    ticketPrice: cfgFloat(cfg, 'TICKET_PRICE', 10),
+    currency: cfg.CURRENCY || 'RM',
+    defaultDueDays: cfgNum(cfg, 'DEFAULT_DUE_DAYS', 30),
+    checkInDate: isoDay_(cfgDate_(cfg, 'CHECK_IN_DATE')),
+    finalDeadline: isoDay_(cfgDate_(cfg, 'FINAL_DEADLINE')),
+    eventName: cfg.EVENT_NAME || '',
+    orgName: cfg.ORG_NAME || '',
+    // The organiser's mark, by URL. Blank means no mark rather than somebody
+    // else's — see Logo.vue. Small is optional and only ever a size choice.
+    orgLogo: cfg.ORG_LOGO || '',
+    orgLogoSmall: cfg.ORG_LOGO_SMALL || '',
+    // One colour; the stylesheet derives the rest. Blank is a real no-op —
+    // applyBrand removes the tokens and the stylesheet's own colour stands,
+    // rather than half a theme being applied over it.
+    brandColor: cfg.BRAND_COLOR || '',
+    projectCode: cfg.PROJECT_CODE || '',
+    drawDate: cfg.DRAW_DATE || ''
+  };
+}
+
 /**
  * One script-wide lock for all writes.
  *
@@ -361,39 +416,7 @@ function handleWhoami(payload, user) {
     isSuperAdmin: !!user.isSuperAdmin,
     agentId: user.agentId,
     myBooks: myBooks,
-    config: {
-      ticketPrefix: cfg.TICKET_PREFIX,
-      ticketDigits: cfgNum(cfg, 'TICKET_DIGITS', 4),
-      ticketStart: cfgNum(cfg, 'TICKET_START', 1),
-      totalTickets: activeTickets(cfg),          // what is in play — the number the app works in
-      generatedTickets: cfgNum(cfg, 'TOTAL_TICKETS', 0),
-      heldBackTickets: Math.max(0, cfgNum(cfg, 'TOTAL_TICKETS', 0) - activeTickets(cfg)),
-      // The planned final size, so the release screen can show how much is left
-      // to come and stop offering steps that would go past it. Zero means no
-      // ceiling was set. The server still refuses ABOVE_CEILING regardless.
-      ticketCeiling: cfgNum(cfg, 'TICKET_CEILING', 0),
-      ticketsPerBook: cfgNum(cfg, 'TICKETS_PER_BOOK', 10),
-      bookPrefix: cfg.BOOK_PREFIX,
-      bookDigits: cfgNum(cfg, 'BOOK_DIGITS', 3),
-      totalBooks: totalBooks(cfg),
-      ticketPrice: cfgFloat(cfg, 'TICKET_PRICE', 10),
-      currency: cfg.CURRENCY || 'RM',
-      defaultDueDays: cfgNum(cfg, 'DEFAULT_DUE_DAYS', 30),
-      checkInDate: isoDay_(cfgDate_(cfg, 'CHECK_IN_DATE')),
-      finalDeadline: isoDay_(cfgDate_(cfg, 'FINAL_DEADLINE')),
-      eventName: cfg.EVENT_NAME || '',
-      orgName: cfg.ORG_NAME || '',
-      // The organiser's mark, by URL. Blank means no mark rather than somebody
-      // else's — see Logo.vue. Small is optional and only ever a size choice.
-      orgLogo: cfg.ORG_LOGO || '',
-      orgLogoSmall: cfg.ORG_LOGO_SMALL || '',
-      // One colour; the stylesheet derives the rest. Blank is a real no-op —
-      // applyBrand removes the tokens and the stylesheet's own colour stands,
-      // rather than half a theme being applied over it.
-      brandColor: cfg.BRAND_COLOR || '',
-      projectCode: cfg.PROJECT_CODE || '',
-      drawDate: cfg.DRAW_DATE || ''
-    }
+    config: whoamiConfig_(cfg),
   };
 }
 

@@ -87,7 +87,19 @@ console.log('both backends carry the logo to the client')
 {
   // Six field-shape divergences in this repository have been a key one end
   // builds and the other does not. A new config key is exactly that shape.
-  const ts = readFileSync(join(ROOT, 'supabase/functions/api/index.ts'), 'utf8')
+  /*
+   * THE WHOLE api/ DIRECTORY, not index.ts by name.
+   *
+   * This read index.ts because that is where whoami built the config object —
+   * and when that builder moved to config.ts so upload_logo could return the
+   * same shape, four assertions failed while the code was correct. Second time
+   * today: an assertion that names a FILE is coupled to a decision it is not
+   * about. The claim is "the backend sends orgLogo", and where it is assembled
+   * is not part of it.
+   */
+  const ts = readdirSync(join(ROOT, 'supabase/functions/api'))
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => readFileSync(join(ROOT, 'supabase/functions/api', f), 'utf8')).join('\n')
   const gs = readFileSync(join(ROOT, 'apps_script/Api.gs'), 'utf8')
   for (const [name, src] of [['Supabase', ts], ['Apps Script', gs]]) {
     ok(/orgLogo:/.test(src), `${name} sends orgLogo`)

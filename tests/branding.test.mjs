@@ -1,101 +1,154 @@
 /*
- * The raffle's own colour and the raffle's own mark.
+ * What may be stored as a raffle's logo.
  *
- * ONE VALUE MOVES THE WHOLE INTERFACE, because every button, tab, link and
- * focus ring already reads var(--brand). What it cannot move is the text drawn
- * ON that colour, and that is the part worth testing: an organisation choosing
- * a colour is not choosing a contrast ratio, so --brand-ink is computed rather
- * than configured. White on a pale yellow brand is unreadable in sunlight,
- * which is where half of this app is used — outdoors, on a phone, by somebody
- * holding a book of tickets and somebody else's money. The primary button says
- * "Count a book in".
+ * THE ATTACK THIS REFUSES: an SVG can carry script, and a logo is served from
+ * the raffle's OWN origin — the same origin as the session, next to several
+ * thousand people's telephone numbers. An upload form that accepts SVG is
+ * stored cross-site scripting with a button in front of it.
  *
- * The luminance is the sRGB one rather than (r+g+b)/3. The cheap version calls
- * pure blue bright and pure yellow dark — both backwards, and both entirely
- * plausible brand colours, so the shortcut fails exactly where a raffle is
- * likeliest to land.
- *
- * AND THE MARK. Logo.vue used to serve one organisation's PNG unconditionally.
- * It now takes the logo from config, and when none is set it draws Raffled's
- * own — in var(--brand), so a deployment that has picked a colour but not yet
- * uploaded a logo already looks like itself. The test that matters most here is
- * the negative one: no image filename may reappear in that file.
+ * Both the filename and the declared content type are supplied by whoever
+ * picked the file, and a browser reports image/png for a renamed SVG without
+ * hesitating. So the check is on the BYTES. The filename is never consulted at
+ * all — the stored name is ours, so the one the browser sent tells us nothing
+ * an attacker cannot change.
  */
-import { readFileSync } from 'node:fs'
-import { parseHex, luminance, inkFor, applyBrand } from '../src/lib/brand.js'
+import { setEnv, loadModule, cleanup } from './loadts.mjs'
+import { fakeDb, baseConfig, users, codeOf } from './fakedb.mjs'
 
-const logo = readFileSync(new URL('../src/components/ui/Logo.vue', import.meta.url), 'utf8')
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
+const eq = (g, w, what) => { String(g) === String(w) ? pass++ : (fail++, console.log(`  FAIL ${what}: got ${g}, want ${w}`)) }
 
-console.log('a colour is read, or rejected')
-ok(String(parseHex('#0d7a6f')) === '13,122,111', 'six digits')
-ok(String(parseHex('0d7a6f')) === '13,122,111', 'with or without the hash')
-ok(String(parseHex('#abc')) === '170,187,204', 'and three digits expand')
-for (const bad of ['', null, undefined, 'teal', '#12', '#1234567', 'rgb(1,2,3)', '#zzzzzz']) {
-  ok(parseHex(bad) === null, `${JSON.stringify(bad)} is not a colour we act on`)
-}
+setEnv({ SUPER_ADMIN_EMAIL: 'boss@x.com' })
+const branding = await loadModule('branding.ts')
 
-console.log('the ink is computed, and the cheap formula would get these wrong')
-ok(inkFor('#0000ff') === '#ffffff', 'white on pure blue — dark, though r+g+b calls it middling')
-ok(inkFor('#ffff00') === '#11181c', 'dark on pure yellow — bright, though r+g+b calls it middling')
-ok(luminance([0, 0, 255]) < luminance([255, 255, 0]),
-   'blue really is darker than yellow, which (r+g+b)/3 denies')
-ok(inkFor('#000000') === '#ffffff' && inkFor('#ffffff') === '#11181c', 'and the two extremes')
-ok(inkFor('#0d7a6f') === '#ffffff', 'the shipped brand keeps white text')
-// The extremes agree under almost any threshold, so they do not pin one. These
-// sit between 0.179 and the naive 0.5, which is where ordinary brand colours
-// actually land — a mid blue, a mid red, a mid grey.
-ok(inkFor('#808080') === '#11181c', 'a mid grey takes dark ink, not white')
-ok(inkFor('#3aa0d0') === '#11181c', 'and so does a mid blue somebody might pick')
-ok(inkFor('#7a1f1f') === '#ffffff', 'while a deep red still takes white')
-ok(inkFor('nonsense') === null, 'an unreadable value yields no ink rather than a guess')
+const b64 = (bytes) => Buffer.from(bytes).toString('base64')
+const PNG = b64([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array(64).fill(0)])
+const JPEG = b64([0xff, 0xd8, 0xff, ...Array(64).fill(0)])
+const WEBP = b64([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, ...Array(64).fill(0)])
+const WAV = b64([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45, ...Array(64).fill(0)])
+const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64')
+const XML_SVG = Buffer.from('<?xml version="1.0"?><svg onload="alert(1)"/>').toString('base64')
 
-console.log('applying it, and taking it back off')
-{
-  const set = {}
-  const root = {
-    style: {
-      setProperty: (k, v) => { set[k] = v },
-      removeProperty: k => { delete set[k] }
-    }
+/** A world whose storage records what it was asked to store. */
+function world() {
+  const stored = []
+  const removed = []
+  const db = fakeDb({ config: baseConfig({}), audit_log: [] })
+  db.ctx.supabaseAdmin.storage = {
+    from: () => ({
+      upload: async (name, bytes) => { stored.push({ name, bytes }); return { error: null } },
+      remove: async (paths) => { removed.push(...paths); return { error: null } },
+      getPublicUrl: (name) => ({ data: { publicUrl: `https://x.supabase.co/storage/v1/object/public/branding/${name}` } }),
+    }),
   }
-  ok(applyBrand('#ffff00', root) === true, 'a good colour applies')
-  ok(set['--brand'] === '#ffff00', 'the brand itself')
-  ok(set['--brand-ink'] === '#11181c', 'with ink that can be read on it')
-  ok(/color-mix/.test(set['--brand-soft']) && /var\(--bg\)/.test(set['--brand-soft']),
-     'and a soft tint mixed against the page, so dark mode needs no second value')
-  ok(applyBrand('0d7a6f', root) && set['--brand'] === '#0d7a6f', 'a missing hash is added')
+  return { db, stored, removed }
+}
+const upload = (w, p) => branding.uploadLogo(p, users.admin, w.db.ctx)
 
-  // A typo in a config cell must cost the custom colour, not the readability of
-  // every button in the app.
-  ok(applyBrand('teal', root) === false, 'a malformed value is refused')
-  ok(!('--brand' in set) && !('--brand-ink' in set) && !('--brand-soft' in set),
-     'and clears back to the stylesheet rather than leaving half a theme on')
-  ok(applyBrand('#0d7a6f', null) === false, 'with no document there is nothing to do')
+console.log('an SVG is refused however it is dressed up')
+{
+  for (const [data, what] of [[SVG, 'a plain SVG'], [XML_SVG, 'one behind an xml declaration']]) {
+    // Declared as PNG, which is exactly what a renamed file reports.
+    eq(await codeOf(() => upload(world(), { data, contentType: 'image/png' })),
+       'SVG_REFUSED', `${what}, declared image/png`)
+  }
+  // And nothing reached storage.
+  const w = world()
+  await codeOf(() => upload(w, { data: SVG, contentType: 'image/png' }))
+  eq(w.stored.length, 0, 'and not one byte was stored')
 }
 
-console.log('the mark, and what must not come back')
-ok(/state\.cfg\?\.orgLogo/.test(logo), 'the logo comes from config')
-// Comments stripped first: the file SHOULD say what it used to serve — that is
-// how the next person learns why the fallback is absent — but the code must not
-// be able to serve it. Testing the raw text would have forced a choice between
-// an honest comment and a working assertion.
-const code = logo.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '')
-ok(!/ceam|\.png|\.jpg/i.test(code),
-   'and no image filename appears in the CODE at all — the bug this replaced')
-ok(/<svg/.test(logo) && /v-else/.test(logo), 'an unset logo draws the built-in mark')
-// Counted, not matched. The mark has several fills and a stroke, and a regex
-// that stops at the first one reports a half-hardcoded mark as fine — which is
-// the third time today a pattern has been satisfied by its first hit.
-ok((code.match(/var\(--brand(-ink)?\)/g) || []).length >= 5,
-   'every part of the mark is drawn from the brand tokens')
-ok(!/#[0-9a-f]{3,8}\b/i.test(code),
-   'and not one literal colour survives in it — a mark that ignores the setting is worse than none')
-ok(/aria-hidden="true"/.test(logo),
-   'and announced to nobody: the product\'s mark must not read out where the organisation belongs')
-ok(/:alt="label"/.test(logo) && /state\.cfg\?\.orgName/.test(logo),
-   'an uploaded logo is labelled with whoever actually runs the raffle')
+console.log('the bytes decide, not the declared type')
+{
+  eq(await codeOf(() => upload(world(), { data: JPEG, contentType: 'image/png' })),
+     'WRONG_IMAGE_TYPE', 'a real JPEG called a PNG is refused')
+  // Its own sentence, because it is almost always a mistake rather than an
+  // attack, and "unreadable" sends somebody hunting the wrong problem.
+  let msg = ''
+  try { await upload(world(), { data: JPEG, contentType: 'image/png' }) } catch (e) { msg = e.message }
+  ok(/named as image\/png but is really image\/jpeg/.test(msg),
+     `and says which it really is (${msg.slice(0, 60)})`)
+}
+
+console.log('RIFF alone is not enough — it is also WAV and AVI')
+{
+  eq(await codeOf(() => upload(world(), { data: WAV, contentType: 'image/webp' })),
+     'BAD_IMAGE', 'a WAV file with a RIFF header is not a logo')
+  const w = world()
+  const r = await upload(w, { data: WEBP, contentType: 'image/webp' })
+  ok(!!r.config, 'while a real WebP is accepted')
+}
+
+console.log('the three real formats are stored, and the URL lands in config')
+{
+  for (const [data, type] of [[PNG, 'image/png'], [JPEG, 'image/jpeg'], [WEBP, 'image/webp']]) {
+    const w = world()
+    const r = await upload(w, { data, contentType: type })
+    eq(w.stored.length, 1, `${type} stored`)
+    ok(/^https:\/\//.test(r.config.orgLogo), `${type} URL written to config`)
+  }
+}
+
+console.log('it answers with whoami\'s own config object, not a second shape')
+{
+  /*
+   * The whole reason this action writes config itself. A screen does exactly one
+   * thing afterwards — state.cfg = res.config — and there is no second contract
+   * to diverge from. Six field-shape divergences in this repository were a key
+   * built one way and read another.
+   */
+  const w = world()
+  const r = await upload(w, { data: PNG, contentType: 'image/png' })
+  for (const k of ['ticketPrefix', 'ticketsPerBook', 'currency', 'orgName', 'orgLogo', 'brandColor']) {
+    ok(k in r.config, `config carries ${k}, like whoami`)
+  }
+  ok(!('ORG_LOGO' in r.config), 'and not the raw config keys')
+}
+
+console.log('a small version is optional and only ever a size choice')
+{
+  const w = world()
+  const r = await upload(w, { data: PNG, dataSmall: PNG, contentType: 'image/png' })
+  eq(w.stored.length, 2, 'both files stored')
+  ok(r.config.orgLogoSmall !== '', 'and the small URL is recorded')
+
+  const one = world()
+  const r2 = await upload(one, { data: PNG, contentType: 'image/png' })
+  eq(r2.config.orgLogoSmall, '', 'omitted leaves it blank, which falls back to the large one')
+}
+
+console.log('too big is refused with a number somebody can act on')
+{
+  const huge = b64([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array(600 * 1024).fill(0)])
+  let msg = ''
+  try { await upload(world(), { data: huge, contentType: 'image/png' }) } catch (e) { msg = e.message }
+  ok(/\d+ KB\. The limit is 512 KB/.test(msg), `says how big it is and what is allowed (${msg.slice(0, 70)})`)
+}
+
+console.log('removing takes the config down before the files')
+{
+  const w = world()
+  await upload(w, { data: PNG, dataSmall: PNG, contentType: 'image/png' })
+  const r = await upload(w, { remove: true })
+  eq(r.config.orgLogo, '', 'the logo is cleared')
+  eq(r.config.orgLogoSmall, '', 'and the small one')
+  eq(w.removed.length, 2, 'and both stored files are deleted')
+}
+
+console.log('a colour is a colour, and blank means the standard one')
+{
+  const set = (p) => branding.setBrandColor(p, users.admin, world().db.ctx)
+  eq((await set({ color: '#0B7285' })).config.brandColor, '#0b7285', 'a hex is accepted and lowercased')
+  eq((await set({ color: '0B7285' })).config.brandColor, '#0b7285', 'with or without the hash')
+  eq((await set({ color: '' })).config.brandColor, '', 'blank clears it')
+  eq(await codeOf(() => set({ color: 'teal' })), 'BAD_COLOUR', 'a word is not a colour')
+  eq(await codeOf(() => set({ color: '#12345' })), 'BAD_COLOUR', 'nor five digits')
+  let msg = ''
+  try { await set({ color: 'teal' }) } catch (e) { msg = e.message }
+  ok(/#0B7285/.test(msg), 'and the refusal shows what one looks like')
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
+cleanup()
 process.exit(fail ? 1 : 0)

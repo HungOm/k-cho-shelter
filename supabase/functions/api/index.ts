@@ -38,6 +38,8 @@ import {
   mask,
   agentBooks,
 } from './gate.ts'
+import { configPayload } from './config.ts'
+import * as branding from './branding.ts'
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
 import * as deadlines from './deadlines.ts'
@@ -149,6 +151,8 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   roll_check_in: { group: 'Books', label: 'Move the check-in date on a month', danger: true },
   record_check_in: { group: 'Books', label: 'Record that a seller has reported' },
   set_final_deadline: { group: 'Books', label: 'Change the final deadline', danger: true },
+  upload_logo: { group: 'Access', label: 'Change the raffle\'s logo' },
+  set_brand_color: { group: 'Access', label: 'Change the raffle\'s colour' },
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
   record_payment: { group: 'Money', label: 'Record money handed in' },
   reverse_payment: { group: 'Money', label: 'Undo a recorded payment', danger: true },
@@ -243,6 +247,10 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // envelope instead.
   record_check_in: { roles: ['recorder'], kind: 'write', fn: deadlines.recordCheckIn },
   set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline },
+  // Organisers only, enforced HERE rather than by hiding a button. Branding is
+  // what a buyer sees on a receipt; it is not a thing a desk volunteer changes.
+  upload_logo: { roles: ADMIN_ONLY, kind: 'write', fn: branding.uploadLogo },
+  set_brand_color: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setBrandColor },
 
   // --- reports ---
   report_outstanding: { roles: ['viewer', 'recorder', 'agent'], kind: 'report', fn: reports.reportOutstanding },
@@ -311,6 +319,7 @@ type Handler = (payload: Record<string, unknown>, user: AppUser, ctx: Ctx) => Pr
 // replaced by a query — the filtering that used to happen in JavaScript over
 // every row now happens in the database over an index.
 
+
 async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const cfg = await readConfig(ctx)
   const generated = num(cfg.TOTAL_TICKETS, 0)
@@ -323,43 +332,7 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
     role: user.role,
     isSuperAdmin: user.isSuperAdmin,
     agentId: user.agentId,
-    config: {
-      ticketPrefix: cfg.TICKET_PREFIX ?? '',
-      ticketDigits: num(cfg.TICKET_DIGITS, 5),
-      // Without this the setup screen printed "KS-undefined onwards", which is
-      // the ticket numbering the whole raffle is built on.
-      ticketStart: num(cfg.TICKET_START, 1),
-      ticketsPerBook: num(cfg.TICKETS_PER_BOOK, 10),
-      bookPrefix: cfg.BOOK_PREFIX ?? 'Book-',
-      bookDigits: num(cfg.BOOK_DIGITS, 3),
-      // And without this, "10 — that makes books" with the number missing.
-      totalBooks: Math.ceil(generated / Math.max(1, num(cfg.TICKETS_PER_BOOK, 10))),
-      defaultDueDays: num(cfg.DEFAULT_DUE_DAYS, 30),
-      totalTickets: active,            // what is in play — the number the app works in
-      generatedTickets: generated,
-      heldBackTickets: Math.max(0, generated - active),
-      ticketCeiling: num(cfg.TICKET_CEILING, 0),
-      ticketPrice: Number(cfg.TICKET_PRICE ?? 10),
-      currency: cfg.CURRENCY ?? 'RM',
-      eventName: cfg.EVENT_NAME ?? '',
-      orgName: cfg.ORG_NAME ?? '',
-      // The organiser's mark, by URL. Blank means no mark rather than somebody
-      // else's — see Logo.vue. Small is optional and only ever a size choice.
-      orgLogo: cfg.ORG_LOGO ?? '',
-      orgLogoSmall: cfg.ORG_LOGO_SMALL ?? '',
-      // One colour; the stylesheet derives the rest. Blank is a real no-op —
-      // applyBrand removes the tokens and the stylesheet's own colour stands,
-      // rather than half a theme being applied over it.
-      brandColor: cfg.BRAND_COLOR ?? '',
-      projectCode: cfg.PROJECT_CODE ?? '',
-      // Through dayStart, never raw. A value that arrived from a date-shaped
-      // spreadsheet cell is a full timestamp string, and the client compares
-      // these against today as plain text — where that string sorts ABOVE a
-      // real day, so a date months past reads as still ahead.
-      checkInDate: dayStart(cfg.CHECK_IN_DATE ?? ''),
-      finalDeadline: dayStart(cfg.FINAL_DEADLINE ?? ''),
-      drawDate: dayStart(cfg.DRAW_DATE ?? ''),
-    },
+    config: configPayload(cfg),
   }
 }
 
