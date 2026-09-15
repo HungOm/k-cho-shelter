@@ -41,7 +41,7 @@ const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 const tickets = [
   { number: 'KS-00001', book: 'B1', agent: 'A1', status: 'Sold', amount: 10, payment: 'Paid',
     name: 'Buyer One', phone: '0125550001', saleDate: '2026-09-10' },
-  { number: 'KS-00002', book: 'B1', agent: 'A1', status: 'Sold', amount: 10, payment: '',
+  { number: 'KS-00002', book: 'B1', agent: 'A1', status: 'Sold', amount: 10, payment: 'Unpaid',
     name: 'Buyer Two', phone: '0125550002', saleDate: '2026-09-10' },
 ]
 const row = { agentId: 'A1', name: 'JOHN', phone: '0125550011', booksOut: 1, booksSettled: 0,
@@ -57,6 +57,10 @@ export const api = async () => ({ agents: __ROWS__, currency: 'RM' })
 export const toast = () => {}
 export const agentMap = computed(() => ({}))
 export const isSuper = computed(() => true)
+// Mirrors the real store's exports. A screen that grows an import breaks the
+// bundle here with "no matching export", which reads as a broken test rather
+// than as a stub one field behind.
+export const canWrite = computed(() => true)
 export const go = () => {}
 `
 
@@ -72,11 +76,23 @@ const html = await renderScreen('src/components/Money.vue', money(tickets, [row]
 })
 
 console.log('one ticket paid, one not — and the screen says so')
-ok(/not in/.test(visibleText(html)), 'a ticket with no payment recorded reads "not in"')
-ok((html.match(/>\s*in\s*</g) || []).length >= 1, 'and the paid one reads "in"')
+/*
+ * THE FIXTURE NOW USES THE VALUES THE SYSTEM WRITES, which is the whole lesson
+ * of this assertion. It used to say payment:'' for the unpaid ticket, and the
+ * screen read it correctly — while the real value, 'Unpaid', rendered as PAID,
+ * because the test was /paid|received|in/i and "Unpaid" contains "paid". Every
+ * sold ticket in the raffle showed the green chip above a total saying ten of
+ * them had not been settled.
+ *
+ * I wrote that regex and verified it in a browser against a fixture I invented.
+ * A fixture that does not use the system's own vocabulary proves the screen can
+ * render something — not that it renders what it will be given.
+ */
+ok(/not paid/.test(visibleText(html)), 'a ticket recorded Unpaid reads "not paid"')
+ok(/\bpaid\b/.test(visibleText(html)), 'and the paid one reads "paid"')
 // The mutant that survived everything else: hardcoding the pill to 'in'. It
 // does not break the screen, it just tells somebody the money arrived.
-ok((visibleText(html).match(/not in/g) || []).length === 1,
+ok((visibleText(html).match(/not paid/g) || []).length === 1,
    'exactly one ticket of the two is unpaid — not all of them, and not none')
 ok(/KS-00001/.test(html) && /KS-00002/.test(html), 'both tickets are listed')
 ok(/Buyer One/.test(visibleText(html)) && /0125550002/.test(visibleText(html)),
@@ -125,7 +141,7 @@ console.log('the branches one render cannot reach — each is a sentence somebod
   // in a way that looks like the screen is broken.
   ok(/what they owe shows up here/.test(nothingOut),
      'a raffle with no books out explains itself, rather than showing an empty table')
-  ok(!/not in/.test(nothingOut), 'and claims nothing about money either way')
+  ok(!/not paid/.test(nothingOut), 'and claims nothing about money either way')
 
   const owesButNoTickets = await renderScreen('src/components/Money.vue',
     money([], [{ ...row, ticketsSold: 0, expected: 10, collected: 0, outstanding: 10 }]),
@@ -136,7 +152,7 @@ console.log('the branches one render cannot reach — each is a sentence somebod
 
   const loading = await renderScreen('src/components/Money.vue', money(tickets, [row]))
   ok(/skel/.test(loading), 'before the report arrives the screen shows it is working')
-  ok(!/not in/.test(loading), 'and does not report on money it has not got yet')
+  ok(!/not paid/.test(loading), 'and does not report on money it has not got yet')
 }
 
 /* ---------- config is one door, and it applies the colour ---------- */

@@ -15,13 +15,37 @@ import Logo from '../ui/Logo.vue'
 const props = defineProps({ agentId: String })
 const emit = defineEmits(['close'])
 const r = ref(null)
+const nothing = ref('')
 
-onMounted(async () => {
+/*
+ * A sheet that closes itself is the worst answer to "why is there no receipt".
+ *
+ * Both of these used to toast and emit('close'). The sheet opened, showed its
+ * skeletons, and vanished — and a toast is gone in seconds, so what the person
+ * is left with is a dialog that dismissed itself for no stated reason. That is
+ * indistinguishable from a bug, and it was reported as one.
+ *
+ * It stays open and says which of the two happened, because they need different
+ * things: nothing to print is a fact about the seller, and a failed call is a
+ * reason to try again.
+ */
+onMounted(load)
+
+async function load() {
   try {
-    r.value = await api('handover_receipt', { agentId: props.agentId })
-    if (!r.value.books.length) { toast('This person has no books out', 'bad'); emit('close') }
-  } catch (err) { toast(err.message, 'bad', err.code); emit('close') }
-})
+    const got = await api('handover_receipt', { agentId: props.agentId })
+    if (!got.books?.length) {
+      nothing.value = 'There is nothing to print: this seller is not holding any books ' +
+        'right now. A receipt lists the books somebody currently has — once they are all ' +
+        'counted back in, there is nothing left to hand over.'
+      return
+    }
+    r.value = got
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+    nothing.value = err.message
+  }
+}
 
 /**
  * The books listed here are whatever the seller holds *right now*, so this
@@ -71,7 +95,9 @@ const waLink = computed(() => {
 
 <template>
   <Sheet title="Handover receipt" wide @close="emit('close')">
-    <div v-if="!r" class="col" style="gap:12px">
+    <p v-if="nothing" class="note">{{ nothing }}</p>
+
+    <div v-else-if="!r" class="col" style="gap:12px">
       <div v-for="i in 5" :key="i" class="skel"></div>
     </div>
     <div v-else class="paper">
@@ -121,8 +147,13 @@ const waLink = computed(() => {
 
     <template #actions>
       <button class="btn" @click="emit('close')">Close</button>
-      <a v-if="waLink" class="btn" :href="waLink" target="_blank" rel="noopener">Send on WhatsApp</a>
-      <button class="btn primary" @click="print()">Print / Save as PDF</button>
+      <!-- Nothing to send and nothing to print when there is no receipt. Two
+           buttons that cannot work is how a person concludes the app is broken
+           rather than that the seller is holding no books. -->
+      <a v-if="waLink && !nothing" class="btn" :href="waLink" target="_blank" rel="noopener">
+        Send on WhatsApp
+      </a>
+      <button v-if="!nothing" class="btn primary" @click="print()">Print / Save as PDF</button>
     </template>
   </Sheet>
 </template>
