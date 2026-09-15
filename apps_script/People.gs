@@ -68,21 +68,80 @@ function handleListAgents(payload, user) {
     held[id] = (held[id] || 0) + 1;
   }
 
+  /*
+   * WHERE EACH SELLER STANDS THIS ROUND, on the list an organiser already opens
+   * to chase people.
+   *
+   * On this list rather than a screen of its own, because a screen of its own
+   * is a screen nobody opens: "who has not reported" is asked while looking at
+   * the sellers, or it is not asked at all.
+   *
+   * Every field is DERIVED — from the round, the check-in date, and the rows
+   * saying who answered. Nothing is stored against the seller and there is
+   * nothing to reset: the roll moves the round number and the whole list turns
+   * over by itself.
+   */
+  var cfg = getConfig();
+  var now = today_();
+  var checkIn = cfgDate_(cfg, 'CHECK_IN_DATE');
+  var grace = cfgNum(cfg, 'REPORT_GRACE_DAYS', 3);
+  var round = cfgNum(cfg, 'CHECK_IN_ROUND', 1);
+  var answered = reportedIn_(round);
+  var earlier = reportsBefore_(round);
+
+  // Rounds that have been and gone. The live one counts only once the grace
+  // after its date has run out — before that, nobody has missed anything.
+  var thisRoundClosed = !!(checkIn && daysBetween_(checkIn, now) > grace);
+  var roundsClosed = round - 1 + (thisRoundClosed ? 1 : 0);
+
   var out = [];
   for (var i = 0; i < agents.length; i++) {
     var a = agents[i];
     if (payload.activeOnly && !isTrue_(a.Active)) continue;
+    var id = String(a.Agent_ID).trim();
+    var booksOut = held[id] || 0;
+    var reportedAt = answered[id] || '';
+    // The report for the LIVE round only cancels a miss once that round has
+    // closed. Counting it earlier would let somebody who answered this month
+    // look as though they had also answered the three they sat out.
+    var missed = Math.max(0,
+      roundsClosed - (earlier[id] || 0) - (thisRoundClosed && reportedAt ? 1 : 0));
     out.push({
-      id: String(a.Agent_ID).trim(),
+      id: id,
       name: a.Name,
       phone: user.role === ROLES.VIEWER ? maskPhone_(a.Phone) : a.Phone,
       zone: a.Zone,
       active: isTrue_(a.Active),
-      booksOut: held[String(a.Agent_ID).trim()] || 0,
-      notes: a.Notes
+      booksOut: booksOut,
+      notes: a.Notes,
+      reportState: reportState_({
+        booksOut: booksOut, reported: !!reportedAt,
+        checkIn: checkIn, grace: grace, now: now
+      }),
+      reportedAt: reportedAt,
+      reportRound: round,
+      missedRounds: missed,
+      daysLate: checkIn && !reportedAt && booksOut
+        ? Math.max(0, daysBetween_(checkIn, now) - grace) : 0
     });
   }
-  return { agents: out };
+  return {
+    agents: out,
+    /*
+     * The round itself, once, beside the list it applies to.
+     *
+     * Per row it would be the same four values repeated behind every name, and
+     * the alternative — a second call to deadline_status every time a screen
+     * wants to say which day people are reporting by — is a round trip on a
+     * phone for something this reply already knows.
+     */
+    checkIn: {
+      date: isoDay_(checkIn),
+      round: round,
+      reportBy: checkIn ? isoDay_(addDays_(checkIn, grace)) : '',
+      graceDays: grace
+    }
+  };
 }
 
 function handleUpsertAgent(payload, user) {
@@ -180,11 +239,56 @@ function handleListUsers(payload, user) {
   };
 }
 
-function handleUpsertUser(payload, user) {
-  // Checked before anything is validated: an organiser who may not do this at
-  // all should be told that, not told which field they forgot.
-  requireSuperAdmin_(user, 'Adding or changing who can sign in');
+/**
+ * Roles an organiser may hand out.
+ *
+ * Everyone who does the daily work, and nobody above it. The organiser runs the
+ * raffle and signs people up for it, so waiting on the System Admin to approve
+ * every seller is friction in the one place there is least of it — a helper
+ * standing at a table on a Sunday.
+ *
+ * Organiser and System Admin are not on this list, and that is the whole point.
+ * An organiser who could grant those could mint a second organiser, or promote
+ * themselves, and the arrangement of one person in charge of tickets would come
+ * apart without anybody deciding that it should.
+ */
+/*
+ * A function, not a var. Apps Script evaluates every file into one shared
+ * global scope in an order it does not promise, so a module-scope array built
+ * from Config.gs's ROLES would be [undefined, undefined, undefined] whenever
+ * this file happened to load first — and nothing would throw. This project has
+ * already had that bug once, in Reports.gs, where it silently made settled and
+ * lost books count toward recorded figures.
+ */
+function organiserMayGrant_() {
+  return [ROLES.RECORDER, ROLES.AGENT, ROLES.VIEWER];
+}
 
+/**
+ * Whether this person may create or change a user at this role.
+ *
+ * Two questions, not one: what the row would BECOME, and what it already IS.
+ * Checking only the first lets an organiser edit the System Admin's row down to
+ * a seller, which is the same escalation approached from the other side.
+ */
+function assertMayGrant_(user, role, existingRole) {
+  if (user && user.isSuperAdmin) return;
+
+  if (organiserMayGrant_().indexOf(role) === -1) {
+    throw new ApiError('SUPER_ADMIN_ONLY',
+      'Only the System Admin can make somebody an organiser or a System Admin. ' +
+      'You can add sellers, helpers and view-only accounts.',
+      { role: role, mayGrant: organiserMayGrant_() });
+  }
+  if (existingRole && organiserMayGrant_().indexOf(existingRole) === -1) {
+    throw new ApiError('SUPER_ADMIN_ONLY',
+      'That account is an organiser or the System Admin, so only the System Admin ' +
+      'can change it.',
+      { role: existingRole });
+  }
+}
+
+function handleUpsertUser(payload, user) {
   var email = requireField_(payload, 'email').toLowerCase();
   var role = String(payload.role || ROLES.VIEWER).toLowerCase();
 
@@ -197,6 +301,11 @@ function handleUpsertUser(payload, user) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new ApiError('BAD_REQUEST', 'That does not look like an email address.');
   }
+  // After the role is known to be a real one, so a typo is named as a typo
+  // rather than as a permission refusal — but before anything is written.
+  var already = lookupUser(email);
+  assertMayGrant_(user, role, already && already.row ? already.role : '');
+
   if (role === ROLES.AGENT && !payload.agentId) {
     throw new ApiError('MISSING_FIELD', 'A seller who signs in must be linked to an Agent ID.');
   }
@@ -270,11 +379,12 @@ function handleSetUserStatus(payload, user) {
   var existing = lookupUser(email);
   if (!existing || !existing.row) throw new ApiError('USER_NOT_FOUND', email + ' is not on the access list.');
 
-  // An organiser may switch a SELLER's sign-in off — a lost phone at a Sunday
-  // service should not wait for the super admin to wake up. Anything above a
-  // seller is a privilege decision and goes to the super admin.
-  if (existing.role !== ROLES.AGENT) {
-    requireSuperAdmin_(user, 'Enabling or disabling anybody but a seller');
+  // An organiser may switch off anybody they could have added — a lost phone at
+  // a Sunday service should not wait for the System Admin to wake up. Turning
+  // off an organiser or the System Admin is a different kind of decision and
+  // stays with the System Admin, who is the only one who could undo it.
+  if (organiserMayGrant_().indexOf(existing.role) === -1) {
+    requireSuperAdmin_(user, 'Enabling or disabling an organiser or the System Admin');
   }
 
   var sheet = sheet_(SHEET.USERS);

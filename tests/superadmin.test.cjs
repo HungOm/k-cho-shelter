@@ -153,22 +153,41 @@ console.log('upsert_user guards');
   eq(codeOf(() => handleUpsertUser({ email: SUPER, role: 'viewer' }, admin())),
     'SUPER_ADMIN_ONLY', 'admin cannot create a row for the super admin either');
 
-  // An organiser may no longer hand out ANY role, not just the admin one.
+  // WHERE THE LINE SITS, and it moved deliberately.
   //
-  // The old rule let an organiser mint a recorder or a viewer. That is one
-  // account away from a problem: an organiser creates an account, signs into it
-  // themselves, and the rule "only the super admin decides who is an organiser"
-  // has been walked around rather than broken. Running the raffle and deciding
-  // who else runs it are different jobs.
+  // The organiser runs the raffle and signs people up for it, so they hand out
+  // the roles that do the daily work: helpers, sellers with a login, view-only.
+  // Making the System Admin approve every seller was friction in the one place
+  // there is least of it — somebody standing at a table on a Sunday.
+  //
+  // What they cannot do is hand out their own job or the one above it. An
+  // organiser who could grant those could mint a second organiser, or promote
+  // themselves, and "one person in charge of tickets" would come apart without
+  // anybody deciding that it should.
   world();
-  eq(codeOf(() => handleUpsertUser({ email: 'new@x.com', role: 'recorder' }, admin())),
-    'SUPER_ADMIN_ONLY', 'an organiser cannot add a recorder');
+  ok(handleUpsertUser({ email: 'new@x.com', role: 'recorder' }, admin()).email,
+    'an organiser adds a helper');
   world();
-  eq(codeOf(() => handleUpsertUser({ email: 'rec@x.com', role: 'viewer' }, admin())),
-    'SUPER_ADMIN_ONLY', 'nor change an existing account');
+  ok(handleUpsertUser({ email: 'rec@x.com', role: 'viewer' }, admin()).email,
+    'and changes an existing helper');
   world();
-  eq(codeOf(() => handleUpsertUser({ email: 'new@x.com', role: 'agent' }, admin())),
-    'SUPER_ADMIN_ONLY', 'nor give somebody a sign-in as a seller');
+  const seller = handleUpsertAgent({ name: 'Daw Mya', phone: '0125557777' }, admin());
+  ok(handleUpsertUser({ email: 'new@x.com', role: 'agent', agentId: seller.agentId }, admin()).email,
+    'and gives a seller a sign-in');
+
+  world();
+  eq(codeOf(() => handleUpsertUser({ email: 'new@x.com', role: 'admin' }, admin())),
+    'SUPER_ADMIN_ONLY', 'but cannot make a second organiser');
+  world();
+  eq(codeOf(() => handleUpsertUser({ email: 'new@x.com', role: 'superadmin' }, admin())),
+    'SUPER_ADMIN_ONLY', 'nor a System Admin');
+
+  // The same escalation from the other side, which is the one that is easy to
+  // miss: checking only what the row would BECOME lets an organiser edit the
+  // System Admin's row down to a seller and take the raffle with it.
+  world();
+  eq(codeOf(() => handleUpsertUser({ email: 'admin@x.com', role: 'viewer' }, admin())),
+    'SUPER_ADMIN_ONLY', 'nor demote an organiser by editing their row');
 
   // But the daily work of running the raffle is untouched: an agent RECORD is
   // a seller holding paper, and grants nobody any access to this system.
@@ -217,11 +236,12 @@ console.log('set_user_status guards');
   eq(handleSetUserStatus({ email: 'admin2@x.com', active: false }, boss()).active, 'false',
     'super admin can disable an admin');
 
-  // An organiser may cut off a SELLER — a lost phone at a Sunday service should
-  // not wait for the super admin to wake up — and nobody above one.
+  // An organiser may cut off anybody they could have added — a lost phone at a
+  // Sunday service should not wait for the System Admin to wake up — and nobody
+  // whose account they could not have created in the first place.
   world();
-  eq(codeOf(() => handleSetUserStatus({ email: 'rec@x.com', active: false }, admin())),
-    'SUPER_ADMIN_ONLY', 'an organiser cannot disable a recorder');
+  ok(handleSetUserStatus({ email: 'rec@x.com', active: false }, admin()).email === 'rec@x.com',
+    'an organiser can disable a helper');
 
   world();
   const seller = handleUpsertAgent({ name: 'Daw Hla', phone: '0125551111' }, admin());
