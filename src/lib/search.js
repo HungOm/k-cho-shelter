@@ -25,6 +25,22 @@ export function phoneDigits(p) {
 }
 
 /** Phone in the form WhatsApp wants: country code, no plus, no leading zero. */
+/**
+ * The wa.me form: digits, with a local leading 0 replaced by the country code.
+ *
+ * MALAYSIA IS HARDCODED, and under the name Raffled that is now a limitation
+ * rather than a fact. It is correct for this raffle and silently wrong for any
+ * other: a Myanmar local number 09 123 456 789 comes out as 609123456789, and
+ * an Indonesian 081-234-5678 as 60812345678 — both real, dialable Malaysian
+ * numbers belonging to somebody else. The chase button would then open WhatsApp
+ * to a stranger with a message naming a seller and what they owe.
+ *
+ * Not changed here on purpose. The live raffle depends on this behaviour, so
+ * the country belongs in config the way the logo and the colour now are, and
+ * the value has to exist on both backends before the code stops assuming it.
+ * Until then this is pinned by tests so it cannot drift, and written down so
+ * the next deployment does not discover it by ringing the wrong person.
+ */
 export function waNumber(phone) {
   let d = String(phone || '').replace(/\D/g, '')
   if (d.startsWith('0')) d = '60' + d.slice(1)
