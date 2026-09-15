@@ -275,10 +275,28 @@ console.log('whoami carries what the app boots on')
    * "10 — that makes books" with the count simply absent.
    */
   const gs = readFileSync(new URL('../apps_script/Api.gs', import.meta.url), 'utf8')
-  const block = gs.slice(gs.indexOf('function handleWhoami'))
-  const start = block.indexOf('config: {')
-  const cfgBlock = block.slice(start, block.indexOf('\n    }', start))
-  const keys = [...cfgBlock.matchAll(/^ {6}(\w+):/gm)].map((m) => m[1])
+  /*
+   * From the BUILDER, wherever it is, not from handleWhoami.
+   *
+   * This sliced from `function handleWhoami` and looked for `config: {`. When
+   * that literal moved into whoamiConfig_() — so the branding handlers could
+   * return the same object rather than a second one shaped like it — it found
+   * nothing and reported zero keys, while the code was correct. Third assertion
+   * today coupled to a LOCATION when its claim is about a RULE.
+   *
+   * It now finds the literal by its contents: the object containing
+   * ticketPrefix, wherever that lives.
+   */
+  const at = gs.indexOf('ticketPrefix:')
+  const open = gs.lastIndexOf('{', at)
+  let depth = 0, end = open
+  while (end < gs.length) {
+    if (gs[end] === '{') depth++
+    else if (gs[end] === '}' && --depth === 0) break
+    end++
+  }
+  const cfgBlock = gs.slice(open, end)
+  const keys = [...cfgBlock.matchAll(/^\s{2,8}(\w+):/gm)].map((m) => m[1])
   ok(keys.length >= 15, `read ${keys.length} config keys off the Apps Script handler`)
 
   carries(d, ['email', 'role', 'isSuperAdmin'], 'whoami')

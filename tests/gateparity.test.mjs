@@ -17,6 +17,8 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
+const gsFiles = createRequire(import.meta.url)('./loadgs.cjs')
 
 const ROOT = new URL('..', import.meta.url).pathname
 
@@ -28,8 +30,7 @@ execFileSync(join(ROOT, 'node_modules/esbuild/bin/esbuild'),
 const ported = await import(js)
 
 // --- the Apps Script gate, in its own sandbox ---
-const gs = ['Config.gs', 'Auth.gs', 'Api.gs', 'Tickets.gs', 'Books.gs', 'People.gs',
-            'Reports.gs', 'Approvals.gs', 'Setup.gs']
+const gs = gsFiles()
 const shim = `
   globalThis.PropertiesService = { getScriptProperties: () => ({
     getProperty: k => (k === 'SUPER_ADMIN_EMAIL' ? 'boss@x.com' : null), setProperty: () => {} }) };
