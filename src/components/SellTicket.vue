@@ -11,12 +11,13 @@
  * A sold ticket nobody can telephone is a winner you cannot find.
  */
 import { ref, computed, nextTick, watch } from 'vue'
-import { state, optimistic, toast, setSellMode, agentMap, whereIs, sellBlock } from '../lib/store.js'
+import { state, optimistic, toast, setSellMode, agentMap, whereIs, sellBlock, isSold } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
 import { money, STATUS_WORDS, plainName, isSellerContact } from '../lib/format.js'
 import Sheet from './ui/Sheet.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Bi from './ui/Bi.vue'
+import History from './modals/History.vue'
 
 const props = defineProps({ ticket: Object })
 const emit = defineEmits(['close', 'saved'])
@@ -36,7 +37,7 @@ const cfg = computed(() => state.cfg)
 const mode = computed(() => state.sellMode)
 const isAvailable = computed(() => t.value?.status === 'Available')
 const isReserved = computed(() => t.value?.status === 'Reserved')
-const isDone = computed(() => ['Sold', 'Donated'].includes(t.value?.status))
+const isDone = computed(() => isSold(t.value))
 
 const nameOk = computed(() => name.value.trim().length > 0)
 const phoneOk = computed(() => phoneDigits(phone.value).length >= 7)
@@ -55,6 +56,13 @@ const place = computed(() => whereIs(t.value))
  * trap.
  */
 const blocked = computed(() => (done.value ? null : sellBlock(t.value)))
+
+/*
+ * On top of this sheet, not instead of it: the answer to "who had this?" is
+ * something you check and come back from, and losing the ticket you were
+ * looking at to read it is how a screen stops being worth opening.
+ */
+const showHistory = ref(false)
 
 async function focusFirst() {
   await nextTick()
@@ -167,7 +175,7 @@ async function correct() {
       The ticket itself is not here, and they may already have sold it without
       writing it down. Check with them before selling it to anybody else.
     </div>
-    <div v-else-if="!done && place?.status === 'Lost' && t.status !== 'Sold'" class="note bad">
+    <div v-else-if="!done && place?.status === 'Lost' && !isSold(t)" class="note bad">
       <b>This book was reported lost.</b> The ticket cannot win.
     </div>
 
@@ -197,8 +205,12 @@ async function correct() {
         </p>
         <div class="fact"><span>Phone</span><b>{{ t.phone || 'none' }}</b></div>
         <div class="fact"><span>Book</span><b>{{ t.book }}</b></div>
+        <!-- Who sold it was recorded from the first version and shown nowhere.
+             It is the first thing asked about a sale somebody is querying. -->
+        <div v-if="agent" class="fact"><span>Sold by</span><b>{{ agent.name }}</b></div>
         <div class="fact"><span>Now</span><StatusPill :status="t.status" /></div>
       </div>
+      <button class="btn block mt" @click="showHistory = true">Where this ticket has been</button>
       <div v-if="t.source === 'settlement'" class="note warn">
         This was filled in when the book was counted, so nobody wrote down who bought it.
       </div>
@@ -301,6 +313,8 @@ async function correct() {
         </button>
       </template>
     </template>
+
+    <History v-if="showHistory" :ticket="t" @close="showHistory = false" />
   </Sheet>
 </template>
 

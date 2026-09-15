@@ -16,7 +16,7 @@
  * sold ticket is in the box.
  */
 import { ref, computed } from 'vue'
-import { state, api, toast, isSuper } from '../../lib/store.js'
+import { state, api, toast, isSuper, isSold } from '../../lib/store.js'
 import { resolveTicketNumber } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 
@@ -39,7 +39,7 @@ const notATicket = computed(() => !!raw.value.trim() && !number.value)
  * deciding afterwards whose it was.
  */
 const eligible = computed(() =>
-  !!ticket.value && (ticket.value.status === 'Sold' || ticket.value.status === 'Donated'))
+  !!ticket.value && isSold(ticket.value))
 
 const contactable = computed(() =>
   !!ticket.value && !!ticket.value.name.trim() && !!ticket.value.phone.trim())

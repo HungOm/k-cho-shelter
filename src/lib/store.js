@@ -27,6 +27,30 @@ export const TICKET_STATUS = {
 }
 
 /**
+ * Whether a ticket is spoken for and must not be sold again.
+ *
+ * TWO STATUSES, ONE FACT. A donated ticket is as sold as a sold one — it is in
+ * the draw, somebody's name is on it, and the money question is settled a
+ * different way. The server has always known this and says so in one place:
+ * `const SOLD = ['Sold', 'Donated']` in tickets.ts. The browser spelled it out
+ * by hand in seven, and two of them said only 'Sold'.
+ *
+ * What that cost: the bulk sell form marks a line "already sold" before saving,
+ * so that one bad row does not take a batch of forty down with it at the
+ * server. A donated ticket passed that check, went to the server, and was
+ * refused — the whole batch failed and the line that caused it was the one line
+ * not flagged. Its reconcile step had the same hole in the more dangerous
+ * direction: after a timeout it looks at what landed, and a ticket that had
+ * genuinely been written as Donated read as missing and was sent again.
+ *
+ * This is the shape of bug this repository has produced repeatedly — two halves
+ * of one fact drifting — so the fact lives here now and nowhere else.
+ */
+export function isSold(ticket) {
+  return ticket?.status === TICKET_STATUS.SOLD || ticket?.status === TICKET_STATUS.DONATED
+}
+
+/**
  * Read at module load, so it cannot be allowed to throw: a browser with storage
  * blocked (a locked-down profile, some private windows) would otherwise fail
  * the import and take the entire app down before it rendered anything.
@@ -291,7 +315,7 @@ export const gettingStarted = computed(() => {
     { done: (state.bookStats.Out || 0) > 0, title: 'Give out books',
       detail: state.bookStats.Out ? `${state.bookStats.Out} books out` : 'Hand books to a seller',
       action: 'issue' },
-    { done: state.tickets.some(t => t.status === 'Sold' || t.status === 'Donated'),
+    { done: state.tickets.some(isSold),
       title: 'Write down sales', detail: 'As they happen, or all at once later', action: 'sell' }
   ]
   return steps.every(s => s.done) ? null : steps

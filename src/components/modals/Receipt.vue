@@ -59,10 +59,22 @@ const givenOn = computed(() => {
   return days[0] || r.value.generatedAt
 })
 
+/*
+ * Fails CLOSED, because the stamp is a claim about the paper.
+ *
+ * This compared two toDateString()s, and an absent generatedAt makes that
+ * "Invalid Date" — which never equals the day the books went out, so every
+ * receipt printed at the table was stamped a copy of an earlier handover that
+ * had never happened. A stamp nobody can trust is worse than no stamp: the
+ * seller signs the original either way, and the one thing this line exists to
+ * do is stop a reprint being mistaken for one.
+ */
 const isReprint = computed(() => {
   if (!r.value || !givenOn.value) return false
-  return new Date(givenOn.value).toDateString()
-      !== new Date(r.value.generatedAt).toDateString()
+  const given = new Date(givenOn.value)
+  const printed = new Date(r.value.generatedAt)
+  if (isNaN(given) || isNaN(printed)) return false
+  return given.toDateString() !== printed.toDateString()
 })
 
 /**
@@ -80,14 +92,25 @@ function print() {
 
 onUnmounted(done)
 
+/*
+ * money() rather than toFixed, and it is not a style preference.
+ *
+ * This read `valueIfAllSold.toFixed(2)`, and a backend that did not send that
+ * field made the computed THROW — during render, because the template asks for
+ * waLink to decide whether to show the button. One absent number took the whole
+ * sheet down, so the receipt did not render at all for any seller with a
+ * dialable phone. money() is the same helper the table above uses, it formats
+ * an absent number as 0.00 instead of exploding, and one screen should not
+ * carry two ways of writing an amount anyway.
+ */
 const waLink = computed(() => {
   // Not merely present: a number we cannot place sends this handover receipt,
   // naming books and their value, to whoever owns that number elsewhere.
-  if (!isDialable(r.value?.agent.phone)) return null
+  if (!isDialable(r.value?.agent?.phone)) return null
   const list = r.value.books.map(b => `${b.book} (${b.firstTicket}-${b.lastTicket})`).join(', ')
   const text = `${r.value.org}\n${r.value.event}\n\nBooks given to ${r.value.agent.name}:\n${list}\n\n` +
     `${r.value.bookCount} books, ${r.value.ticketCount} tickets, worth ` +
-    `${r.value.currency} ${r.value.valueIfAllSold.toFixed(2)} if they all sell.\n` +
+    `${money(r.value.valueIfAllSold, r.value.currency)} if they all sell.\n` +
     `Please bring back unsold tickets and the money by ${date(r.value.books[0].due)}. Thank you!`
   return `https://wa.me/${waNumber(r.value.agent.phone)}?text=${encodeURIComponent(text)}`
 })

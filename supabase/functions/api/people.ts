@@ -542,8 +542,22 @@ export async function setActiveTickets(p: Record<string, unknown>, user: AppUser
 /**
  * The paper trail for handing books over: what went out, to whom, and by when.
  * A read, so it needs no guards of its own beyond the registry's.
+ *
+ * THE NAMES HERE ARE THE SCREEN'S NAMES, and that is the whole point. This
+ * handler is a port of the Apps Script one, and the port quietly renamed half
+ * the payload — org became orgName, generatedAt became issuedAt — and dropped
+ * ticketCount, valueIfAllSold, issuedBy and the per-book ticket count outright.
+ * Receipt.vue reads the original spellings, so on this backend the receipt
+ * headed itself "undefined", stamped every first print as a reprint (an invalid
+ * date never equals the day the books went out), and then threw on
+ * valueIfAllSold.toFixed — taking the whole sheet down for any seller with a
+ * phone number worth sending to.
+ *
+ * Nothing caught it because the parity test asks whether SOME backend builds
+ * each key, and the Apps Script one builds them all. A receipt that works on
+ * the backend nobody is running is not a working receipt.
  */
-export async function handoverReceipt(p: Record<string, unknown>, _u: AppUser, ctx: Ctx) {
+export async function handoverReceipt(p: Record<string, unknown>, u: AppUser, ctx: Ctx) {
   const agentId = String(p.agentId ?? '').trim()
   if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller?')
 
@@ -566,24 +580,41 @@ export async function handoverReceipt(p: Record<string, unknown>, _u: AppUser, c
   const perBook = new Map((counted ?? []).map((b: { number: string; counted_sold: number }) =>
     [b.number, Number(b.counted_sold ?? 0)]))
 
+  /*
+   * Counted off the book's own first and last ticket, not from TICKETS_PER_BOOK.
+   * The last book of a raffle is routinely short, and a receipt that promises
+   * ten tickets in a book holding four is the one piece of paper a seller can
+   * hold up later and be right about.
+   */
+  const span = (b: Record<string, unknown>) => {
+    const first = parseInt(String(b.first_ticket ?? '').replace(/\D/g, ''), 10)
+    const last = parseInt(String(b.last_ticket ?? '').replace(/\D/g, ''), 10)
+    return (isNaN(first) || isNaN(last) || last < first) ? 0 : last - first + 1
+  }
+
   const list = (books ?? []).map((b: Record<string, unknown>) => ({
     book: b.number,
     firstTicket: b.first_ticket,
     lastTicket: b.last_ticket,
+    tickets: span(b),
     issued: b.issued_at,
     due: b.due_at,
     soldSoFar: perBook.get(String(b.number)) ?? 0,
   }))
 
+  const ticketCount = list.reduce((n: number, b: { tickets: number }) => n + b.tickets, 0)
+
   return {
+    org: cfg.ORG_NAME ?? '',
+    event: cfg.EVENT_NAME ?? '',
+    currency: cfg.CURRENCY ?? 'RM',
     agent: { id: agent.agent_id, name: agent.name, phone: agent.phone, zone: agent.zone },
     books: list,
     bookCount: list.length,
-    ticketPrice: price,
-    currency: cfg.CURRENCY ?? 'RM',
-    eventName: cfg.EVENT_NAME ?? '',
-    orgName: cfg.ORG_NAME ?? '',
-    issuedAt: new Date().toISOString(),
+    ticketCount,
+    valueIfAllSold: ticketCount * price,
+    issuedBy: u.name || u.email,
+    generatedAt: new Date().toISOString(),
   }
 }
 
