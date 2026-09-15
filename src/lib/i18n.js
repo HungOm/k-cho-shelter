@@ -136,8 +136,15 @@ export const MY = {
   'In the office': 'ရုံးတွင် ရှိသည်',
   'With a seller': 'ရောင်းသူထံ ရောက်နေသည်',
   'Brought back': 'ပြန်ရောက်ပြီး',
-  'Finished': 'ပြီးဆုံးပြီး',
+  // A settled book is not merely 'finished' — the money in it has been
+  // counted and reconciled. The gloss says the thing that actually
+  // happened, which is what a gloss is for; the English stays short
+  // because it is a label on a grid square.
+  'Finished': 'ငွေစာရင်းရှင်းပြီး',
   'Lost': 'ပျောက်ဆုံး',
+  // Restock, said as what it does rather than as a word. A label long
+  // enough to explain itself stops being a label.
+  'Put unsold tickets back': 'မရောင်းရသေးသော လက်မှတ်များ ပြန်ထည့်ရန်',
   'Late': 'နောက်ကျနေသည်',
 
   // --- who people are ---
