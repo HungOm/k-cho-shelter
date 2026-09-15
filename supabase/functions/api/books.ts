@@ -13,7 +13,9 @@
  * ticket-to-buyer link the draw depends on.
  */
 import { ApiError, type AppUser } from './gate.ts'
-import { configDate, defaultDueDate, noteReportFromSettle } from './deadlines.ts'
+import {
+  checkInRound, configDate, defaultDueDate, noteReportFromSettle,
+} from './deadlines.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -253,6 +255,136 @@ export async function transferBooks(p: Record<string, unknown>, user: AppUser, c
   await audit(ctx, 'TRANSFER_BOOKS',
     { count: idxs.length, to: toAgent, books: (books ?? []).map((b: { number: string }) => b.number) }, user.email)
   return { transferred: idxs.length, books: (books ?? []).map((b: { number: string }) => b.number), agent: agent.name }
+}
+
+/**
+ * What a seller said came back, against what an organiser actually counted in.
+ *
+ * TWO RECORDS OF THE SAME EVENT THAT NOBODY EVER PUT SIDE BY SIDE. A seller
+ * declares "five books are coming back" in their check-in; an organiser later
+ * takes books off them and records the returns. Both are stored, both are
+ * trusted, and until now nothing compared them — so a seller who declared five
+ * and handed over three looked, on every screen, exactly like a seller who
+ * declared five and handed over five. The gap is the whole point of asking
+ * them to declare in the first place.
+ *
+ * VERIFIED MEANS AN ORGANISER TOUCHED IT. `book_history` already carries that:
+ * a return writes a row with the organiser's email in by_user, and so does a
+ * settlement, which is a return that was counted on the spot. There is no new
+ * column here and there does not need to be — "who verified this" has been in
+ * the record all along, unread. What was missing was the question.
+ *
+ * THE WINDOW IS THE ROUND, and its edge is the previous round's due date, read
+ * off the check_in_reports rows for that round — the date it was at the time,
+ * which is exactly why that column exists. With no previous round there is no
+ * edge and the answer is all time, which is correct for round 1 rather than a
+ * fallback: nothing has closed yet, so everything counts.
+ *
+ * A DECLARATION IS NOT AN ACCUSATION. A seller who has brought nothing back yet
+ * and said so is not the same as one who said five and brought three, and the
+ * reply distinguishes them: `declared` is null when they have not reported at
+ * all, and the gap is only meaningful once they have.
+ */
+export async function returnCheck(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const own = String(user.agentId ?? '').trim()
+  const asked = String(p.agentId ?? '').trim()
+  if (own && asked && asked !== own && !user.isAdmin && user.role !== 'recorder') {
+    throw new ApiError('NOT_YOURS', 'That is somebody else\'s check-in.')
+  }
+  const only = user.isAdmin || user.role === 'recorder' ? (asked ? [asked] : null) : [own || '\u0000']
+
+  const round = Number(p.round ?? 0) > 0 ? Number(p.round) : await checkInRound(ctx)
+
+  // The edge of this round: the date the PREVIOUS one was due, as it stood then.
+  let since: string | null = null
+  if (round > 1) {
+    const { data: prev } = await ctx.supabaseAdmin
+      .from('check_in_reports').select('due_at').eq('round', round - 1).limit(1)
+    since = (prev ?? [])[0]?.due_at ?? null
+  }
+
+  let rq = ctx.supabaseAdmin
+    .from('check_in_reports').select('agent_id,books_back,reported_at,note').eq('round', round)
+  if (only) rq = rq.in('agent_id', only)
+  const { data: reports, error: rErr } = await rq
+  if (rErr) throw new ApiError('QUERY_FAILED', rErr.message)
+  const said = new Map((reports ?? []).map((r: Record<string, unknown>) =>
+    [String(r.agent_id), r]))
+
+  let aq = ctx.supabaseAdmin.from('agents').select('agent_id,name,phone').eq('active', true)
+  if (only) aq = aq.in('agent_id', only)
+  const { data: agents } = await aq
+
+  // Every book that has ever been with these sellers, so a return can be
+  // attributed to whoever was holding it rather than to whoever holds it now.
+  let hq = ctx.supabaseAdmin
+    .from('book_history').select('book_idx,from_agent,to_agent,action,by_user,at')
+    .in('action', ['return', 'settle'])
+  if (since) hq = hq.gte('at', since)
+  const { data: history, error: hErr } = await hq
+  if (hErr) throw new ApiError('QUERY_FAILED', hErr.message)
+
+  const bookIdxs = [...new Set((history ?? []).map((h: { book_idx: number }) => Number(h.book_idx)))]
+  const { data: bookRows } = bookIdxs.length
+    ? await ctx.supabaseAdmin.from('books').select('idx,number').in('idx', bookIdxs)
+    : { data: [] }
+  const numberOf = new Map((bookRows ?? []).map((b: Record<string, unknown>) =>
+    [Number(b.idx), String(b.number)]))
+
+  // One book counted once, however many times it was handled.
+  const seen = new Map<string, Map<number, Record<string, unknown>>>()
+  for (const h of (history ?? []) as Array<Record<string, unknown>>) {
+    const who = String(h.from_agent ?? '')
+    if (!who) continue
+    if (only && !only.includes(who)) continue
+    if (!seen.has(who)) seen.set(who, new Map())
+    seen.get(who)!.set(Number(h.book_idx), h)
+  }
+
+  let oq = ctx.supabaseAdmin.from('books').select('number,held_by_agent').eq('status', 'Out')
+  if (only) oq = oq.in('held_by_agent', only)
+  const { data: stillOut } = await oq
+  const outBy = new Map<string, string[]>()
+  for (const b of (stillOut ?? []) as Array<Record<string, unknown>>) {
+    const who = String(b.held_by_agent ?? '')
+    if (!outBy.has(who)) outBy.set(who, [])
+    outBy.get(who)!.push(String(b.number))
+  }
+
+  const lines = (agents ?? []).map((a: Record<string, unknown>) => {
+    const id = String(a.agent_id)
+    const report = said.get(id) as Record<string, unknown> | undefined
+    const counted = [...(seen.get(id) ?? new Map()).entries()].map(([idx, h]) => ({
+      book: numberOf.get(idx) ?? String(idx),
+      verifiedBy: String((h as Record<string, unknown>).by_user ?? ''),
+      at: (h as Record<string, unknown>).at,
+      how: (h as Record<string, unknown>).action === 'settle' ? 'counted in' : 'taken back',
+    })).sort((x, y) => (x.book < y.book ? -1 : 1))
+
+    const declared = report ? Number(report.books_back ?? 0) : null
+    return {
+      agentId: id,
+      name: String(a.name ?? '') || id,
+      phone: String(a.phone ?? ''),
+      reported: !!report,
+      reportedAt: report?.reported_at ?? null,
+      declared,
+      verified: counted.length,
+      // Only meaningful once they have said something. Positive means books
+      // they said were coming that nobody has counted in yet.
+      shortBy: declared === null ? null : declared - counted.length,
+      books: counted,
+      stillOut: (outBy.get(id) ?? []).sort(),
+    }
+  }).filter((l) => l.reported || l.verified > 0 || l.stillOut.length > 0)
+
+  return {
+    round,
+    since,
+    lines: lines.sort((a, b) => (b.shortBy ?? -1) - (a.shortBy ?? -1)),
+    // The one number an organiser is looking for.
+    unaccounted: lines.reduce((n, l) => n + Math.max(0, l.shortBy ?? 0), 0),
+  }
 }
 
 export async function returnBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {

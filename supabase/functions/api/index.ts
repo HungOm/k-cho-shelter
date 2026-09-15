@@ -147,6 +147,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   handover_receipt: { group: 'Books', label: 'Print a handover receipt' },
   acknowledge_books: { group: 'Books', label: 'Confirm you received books' },
   acknowledged_books: { group: 'Books', label: 'See which books were confirmed' },
+  return_check: { group: 'Books', label: 'What came back against what was promised' },
   expand_tickets: { group: 'Books', label: 'Make more tickets', danger: true },
   set_active_tickets: { group: 'Books', label: 'Change how many tickets are in play', danger: true },
   set_ticket_ceiling: { group: 'Books', label: 'Change the planned size of the raffle' },
@@ -247,6 +248,9 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // word again, which is the gap it was written to close.
   acknowledge_books: { roles: null, kind: 'write', fn: people.acknowledgeBooks },
   acknowledged_books: { roles: null, kind: 'read', fn: people.acknowledgedBooks },
+  // A seller may see their own line; the handler scopes it. An organiser
+  // gets everybody, which is the list they work from at a check-in.
+  return_check: { roles: null, kind: 'read', fn: books.returnCheck },
   expand_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.expandTickets },
   set_ticket_ceiling: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setTicketCeiling },
 

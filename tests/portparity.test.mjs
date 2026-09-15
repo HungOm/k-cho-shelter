@@ -85,6 +85,11 @@ console.log('every Apps Script action is either ported or listed as not ported')
     // editable row, which is the distinction the feature exists to make.
     ['acknowledge_books', 'a sheet cannot tell the seller\'s own word from somebody typing it for them'],
     ['acknowledged_books', 'reads what acknowledge_books writes, which Apps Script does not have'],
+    // The comparison needs both halves in one query: the seller's declaration
+    // and every return an organiser recorded, windowed by the round. Apps
+    // Script has the rows in two tabs and no way to join them without reading
+    // both in full, which is the habit the migration exists to end.
+    ['return_check', 'joins the declaration to the returns, which a spreadsheet cannot do without reading both tabs whole'],
   ])
   const extra = [...supabase].filter(a => !appsScript.has(a) && !SUPABASE_ONLY.has(a)).sort()
   ok(extra.length === 0,
