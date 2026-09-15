@@ -314,8 +314,13 @@ good: rounds are numbered, dates derived, silence survives the roll.
     Supabase's linter flags `config_readable` and `tickets_readable` as
     security-definer views. `config_readable` can become `security_invoker`
     with a column grant on `config(key, value)`; `tickets_readable` must stay
-    definer, because `tickets_read` does not mask `buyer_phone` and a grant on
-    the base table would reopen the hole closed in `0974416`. Both belong in a
+    definer. Stated precisely, because the loose version invites the wrong
+    test: the view's own CASE keeps masking even as an invoker view, so
+    checking the view alone suggests the conversion is safe. The leak is that
+    an invoker view *requires* a grant on `tickets`, and `tickets_read` does
+    not mask `buyer_phone` — a viewer would then read all 60 of 60 real
+    numbers off the base table, reopening the hole closed in `0974416`.
+    Measured by a peer session, both paths. Both belong in a
     migration, not in the hand-applied file (item 6).
 
 ---
