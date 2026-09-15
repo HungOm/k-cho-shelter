@@ -115,7 +115,7 @@ export const BOOK_WORDS = {
  * which sounds like a bigger Organiser rather than a different kind of one.
  */
 export const ROLE_WORDS = {
-  superadmin: 'Owner',
+  superadmin: 'System Admin',
   admin: 'Organiser',
   recorder: 'Helper',
   agent: 'Seller who signs in',

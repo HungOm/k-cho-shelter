@@ -130,6 +130,7 @@ export const MY = {
   'Due by {when}.': '{when} တွင် ပြန်အပ်ရန်။',
   'Due by {when}. Bring them back, or write down which tickets sold.': '{when} တွင် ပြန်အပ်ရန်။ ရောင်းပြီးသော လက်မှတ်များကို မှတ်သားပါ။',
   'See the books': 'စာအုပ်များ ကြည့်ရန်',
+  'Ask the System Admin': 'စီစဉ်သူထံ တောင်းခံရန်',
   'Ask the owner': 'စီစဉ်သူထံ တောင်းခံရန်',
   // Kept: older strings may still be in a cached build on a phone.
   'Ask the organiser': 'စီစဉ်သူထံ တောင်းခံရန်',
@@ -165,6 +166,7 @@ export const MY = {
   // --- who people are ---
   'Organiser': 'စီစဉ်သူ',
   'Everything': 'အားလုံး',
+  'System Admin': 'အဓိက စီမံခန့်ခွဲသူ',
   'Owner': 'အဓိက စီမံခန့်ခွဲသူ',
   'Super admin': 'အဓိက စီမံခန့်ခွဲသူ',
   'Helper': 'ကူညီသူ',
