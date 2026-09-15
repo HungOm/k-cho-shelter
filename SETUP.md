@@ -73,9 +73,14 @@ This is what lets people prove who they are. It is the fiddliest step; take it s
 > application*), both origins are registered, and the client ID is already filled into
 > `index.html`. Nothing to do here unless you are setting up a second copy.
 
-**Google also hands you a "client secret" and offers a JSON download. This app never uses it.**
-This sign-in flow has no secret — do not put that file in the repository, and do not paste its
-contents anywhere. Note the client ID and delete the download.
+**Google also hands you a "client secret" and offers a JSON download. Nothing in this repository
+uses it.** The browser sign-in has no secret — do not put that file in the repository, and do not
+paste its contents anywhere.
+
+One place does need it, and it is not this one: the Supabase project's Google provider, where it is
+stored server-side in the dashboard and never reaches a browser. That is only for the
+`?signin=redirect` route; the ordinary sign-in is the token exchange, which has no secret at all.
+If you are setting up a second copy, paste the secret into the dashboard, then delete the download.
 
 **This client ID is not a secret.** It is meant to be public and it is safe in the repo. What
 protects it is the *Authorized JavaScript origins* list you just filled in: a sign-in token carrying
