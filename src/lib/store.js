@@ -60,6 +60,10 @@ export const state = reactive({
   problems: [],
   needsSetup: false,
 
+  // Books out and running late, from read_version. Scoped by the server: a
+  // seller gets their own, everybody else gets all of them.
+  returns: { late: 0, dueSoon: 0, by: '', scope: 'all' },
+
   // How many requests are waiting on a second person. Null until something has
   // said — so refresh() can tell "nobody is waiting" from "nothing has told me
   // yet", and only pay for the extra call in the second case.
@@ -303,10 +307,28 @@ export async function loadDelta() {
  * that told them. Pushing a red banner every thirty seconds because a phone
  * went through a tunnel is how people learn to ignore banners.
  */
+/**
+ * The return-date counts, from whichever call carried them.
+ *
+ * Read in one place because read_version is fetched from two — the poll and
+ * the first load — and a banner that only appears after a full refresh is a
+ * banner the seller who needs it never sees.
+ */
+function takeReturns(v) {
+  if (v.booksLate === undefined && v.booksDueSoon === undefined) return
+  state.returns = {
+    late: Number(v.booksLate) || 0,
+    dueSoon: Number(v.booksDueSoon) || 0,
+    by: v.dueSoonBy || '',
+    scope: v.scope === 'mine' ? 'mine' : 'all',
+  }
+}
+
 export async function poll() {
   try {
     const v = await api('read_version', {})
     if (v.approvalsWaiting !== undefined) state.pendingApprovals = v.approvalsWaiting
+    takeReturns(v)
     if (v.tickets !== undefined && v.tickets !== state.ticketVersion) await loadDelta()
     else if (v.serverTime) state.lastSync = v.serverTime
   } catch { /* not news */ }
@@ -378,6 +400,7 @@ export async function refresh() {
       // Rides along on a call that already happens, so a waiting request is
       // known without a second round trip.
       if (v.approvalsWaiting !== undefined) state.pendingApprovals = v.approvalsWaiting
+      takeReturns(v)
       if (v.tickets === state.ticketVersion) {
         state.lastSync = v.serverTime || state.lastSync
         return
