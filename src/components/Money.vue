@@ -4,7 +4,7 @@
  * last column and the only one in colour.
  */
 import { ref, onMounted, computed } from 'vue'
-import { state, api, toast, agentMap } from '../lib/store.js'
+import { state, api, toast } from '../lib/store.js'
 import { money, moneyShort, date } from '../lib/format.js'
 import { waNumber } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
@@ -17,33 +17,10 @@ onMounted(load)
 async function load() {
   try {
     const r = await api('report_outstanding', {})
-    rows.value = (r.agents || []).map(normalise)
+    rows.value = r.agents || []
   } catch (err) {
     toast(err.message, 'bad', err.code)
     rows.value = []
-  }
-}
-
-/*
- * The two backends describe this report differently, so read both.
- *
- * Apps Script sends name / booksOut / ticketsSold / overdueBooks; the Supabase
- * port sends agentName / books (an array) / sold, and no overdue count. The
- * client reads the Apps Script names, so on the deployed default the seller,
- * books and sold columns were BLANK — a table of amounts owed by nobody, which
- * is precisely the question it exists to answer.
- *
- * Temporary. The port should return the shape it promised and then this goes:
- * two spellings of one fact in the client is the thing that has gone wrong six
- * times in this repository, and carrying it is a stopgap, not a design.
- */
-function normalise(a) {
-  const books = Array.isArray(a.books) ? a.books.length : a.booksOut
-  return {
-    ...a,
-    name: a.name || a.agentName || agentMap.value[a.agentId]?.name || a.agentId,
-    booksOut: books ?? 0,
-    ticketsSold: a.ticketsSold ?? a.sold ?? 0,
   }
 }
 
@@ -54,22 +31,31 @@ function toggle(id) { open.value = open.value === id ? '' : id }
 function ticketsFor(agentId) {
   return state.tickets
     .filter(t => t.agent === agentId && ['Sold', 'Donated'].includes(t.status))
-    .sort((a, b) => String(a.number).localeCompare(String(b.number)))
+    .sort((x, y) => String(x.number).localeCompare(String(y.number)))
 }
 
 /** Paid is the ticket's own record, not a guess from the seller's total. */
 const isPaid = t => /paid|received|in/i.test(String(t.payment || ''))
 
-function phoneOf(agentId) {
-  return agentMap.value[agentId]?.phone || ''
+/*
+ * The number comes with the report, not from the seller list.
+ *
+ * It used to fall back to agentMap, which worked and was still wrong: a chase
+ * list that cannot produce the number it is telling you to ring has not
+ * answered its own question, and the fallback hid that for as long as some
+ * other screen happened to have loaded the sellers first.
+ */
+/** Shown as written down; dialled with the spaces and dashes taken out. */
+function telHref(phone) {
+  return 'tel:' + String(phone).replace(/[^\d+]/g, '')
 }
+
 function waLink(a) {
-  const ph = phoneOf(a.agentId)
-  if (!ph) return ''
+  if (!a.phone) return ''
   const msg = `Hello ${a.name}, the raffle shows ${money(a.outstanding, currency.value)} ` +
     `still to come in from ${a.ticketsSold} ticket${a.ticketsSold === 1 ? '' : 's'}. ` +
     `Could you let us know when you can hand it in? Thank you.`
-  return `https://wa.me/${waNumber(ph)}?text=${encodeURIComponent(msg)}`
+  return `https://wa.me/${waNumber(a.phone)}?text=${encodeURIComponent(msg)}`
 }
 </script>
 
@@ -111,7 +97,7 @@ function waLink(a) {
               <tr :class="{ openrow: open === a.agentId }" @click="toggle(a.agentId)">
                 <td>
                   <span class="chev">{{ open === a.agentId ? '▾' : '▸' }}</span>
-                  {{ a.name }}
+                  {{ a.name || a.agentId }}
                   <span v-if="a.overdueBooks" class="pill bad">{{ a.overdueBooks }} late</span>
                 </td>
                 <td class="num">{{ a.booksOut }}</td>
@@ -134,10 +120,23 @@ function waLink(a) {
                   <div class="row wrap gap" style="margin-bottom:10px">
                     <a v-if="waLink(a)" class="btn sm" :href="waLink(a)"
                        target="_blank" rel="noopener">Message on WhatsApp</a>
-                    <a v-if="phoneOf(a.agentId)" class="btn sm ghost"
-                       :href="`tel:${phoneOf(a.agentId)}`">{{ phoneOf(a.agentId) }}</a>
+                    <a v-if="a.phone" class="btn sm ghost"
+                       :href="telHref(a.phone)">{{ a.phone }}</a>
                     <span v-else class="tiny muted">No phone number on file for this seller.</span>
                   </div>
+
+                  <!-- Books out now means books actually out; until the port was
+                       fixed it counted every book the seller had ever touched,
+                       so nought was unreachable and this sentence impossible.
+                       It is the one case the Books column reads as innocent:
+                       nothing held, money still owed. -->
+                  <p v-if="a.outstanding > 0 && !a.booksOut" class="tiny">
+                    Every book is back<template v-if="a.booksSettled">
+                    — {{ a.booksSettled }} settled</template>. Only the money is outstanding.
+                  </p>
+                  <p v-else-if="a.booksSettled" class="tiny muted">
+                    {{ a.booksOut }} still out · {{ a.booksSettled }} settled
+                  </p>
 
                   <div v-if="!ticketsFor(a.agentId).length" class="tiny muted">
                     No tickets are written down against this seller yet — the money
