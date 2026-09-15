@@ -28,6 +28,7 @@
  * worse than no instrument because it trains you to ignore it.
  */
 import { readFileSync } from 'node:fs'
+import { cut } from './source.mjs'
 const read = p => readFileSync(new URL(p, import.meta.url), 'utf8')
 const src = read('../src/components/Money.vue')
 const gs = read('../apps_script/Reports.gs')
@@ -130,7 +131,10 @@ console.log('the chase button uses the number the report carries')
 
 console.log('which tickets, read from what the device already has')
 {
-  const body = src.slice(src.indexOf('const isPaid'), src.indexOf('/*\n * The number comes'))
+  // Code at both ends. This ended at the comment above telHref, so rewording
+  // that prose would have silently changed the region — and a missing marker
+  // slices to the end of the file rather than failing.
+  const body = cut(src, 'const isPaid', 'function telHref', 'the paid test')
   const isPaid = new Function(`${body}; return isPaid`)()
   /*
    * TIGHTENED, because the loose version was the bug.

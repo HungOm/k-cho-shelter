@@ -18,6 +18,7 @@
  * marked lost would have rendered as the word "lost" in a trail that otherwise
  * speaks in sentences. So the list is checked against the source.
  */
+import { cut } from './source.mjs'
 import { readFileSync } from 'node:fs'
 import { renderScreen, visibleText, setupOf } from './screen.mjs'
 
@@ -169,7 +170,10 @@ console.log('every movement the server can record has words for it')
   ok(verbs.size >= 8, `found ${verbs.size} movements the server can write`)
 
   const vue = read('src/components/modals/History.vue')
-  const table = vue.slice(vue.indexOf('const WORDS'), vue.indexOf('/** Unknown verbs'))
+  // Code at both ends: this ended at the comment above words(), so rewording
+  // that prose moves the marker, indexOf returns -1, and the slice runs to the
+  // end of the file — scraping the whole component as if it were the table.
+  const table = cut(vue, 'const WORDS', 'function words(', 'the verb table')
   const known = new Set([...table.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]))
 
   const untranslated = [...verbs].filter((v) => !known.has(v))
