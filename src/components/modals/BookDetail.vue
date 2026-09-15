@@ -12,6 +12,20 @@ const currency = computed(() => state.cfg?.currency || '')
 const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status))
 
 /**
+ * Present tense only while it is true.
+ *
+ * held_by_agent survives Returned and Settled on purpose — settlement has to
+ * know whose money it is — so the name is still there after the book is back.
+ * Saying "who HAS it" then contradicts the status directly above.
+ */
+const holderLabel = computed(() => ({
+  Out: 'Who has it',
+  Returned: 'Brought back by',
+  Settled: 'Was with',
+  Lost: 'Last with',
+}[props.book.status] || 'Who has it'))
+
+/**
  * Reprinting a lost handover paper starts here. It used to be chained behind
  * "Count it in" as a v-else-if, which meant it never appeared: a receipt only
  * lists books that are Out, and an Out book can always be counted in. The
@@ -36,8 +50,25 @@ const showHistory = ref(false)
   <Sheet :title="book.book" :subtitle="`${book.firstTicket} – ${book.lastTicket}`" @close="emit('close')">
     <div class="facts">
       <div class="f"><span>Where it is</span><StatusPill :status="book.status" kind="book" /></div>
-      <div class="f"><span>Who has it</span><b>{{ book.agentName || 'nobody' }}</b></div>
-      <div v-if="book.due" class="f"><span>Due back</span>
+
+      <!-- THE LABEL FOLLOWS THE STATE, because it was contradicting the row
+           above it. A book that is Brought back said "Who has it: JOHN" — the
+           screen telling a volunteer, in two consecutive lines, that the book is
+           here and that JOHN has it. held_by_agent is deliberately kept through
+           Returned and Settled so settlement knows whose money it is, which is
+           right; reading it as present tense afterwards is what was wrong.
+
+           And the row is dropped entirely when nobody holds it. "In the office"
+           followed by "Who has it: nobody" is the same fact twice, and the
+           second one is phrased as if something were missing. -->
+      <div v-if="book.agentName" class="f">
+        <span>{{ holderLabel }}</span><b>{{ book.agentName }}</b>
+      </div>
+
+      <!-- Only while it is actually out. A due date on a book already back is an
+           obligation that no longer exists, sitting in the middle of the facts
+           as though it did. -->
+      <div v-if="book.due && book.status === 'Out'" class="f"><span>Due back</span>
         <b :style="book.daysOverdue > 0 ? 'color:var(--bad)' : ''">
           {{ date(book.due) }}<template v-if="book.daysOverdue > 0"> — {{ book.daysOverdue }} days late</template>
         </b>
@@ -62,13 +93,20 @@ const showHistory = ref(false)
            refuse after they have committed to the action. Disabled with the
            reason on it is the only one of the three that tells them anything. -->
       <button v-if="book.available" class="btn" :disabled="!!blocked"
-              :title="blocked ? `Cannot sell — ${blocked}` : ''"
+              :title="blocked ? `Cannot sell — ${blocked}` : undefined"
               @click="emit('sell-book', book)">
         Sell it whole
       </button>
       <button v-if="canPrintReceipt" class="btn" @click="emit('receipt', book.agentId)">Receipt</button>
       <button v-if="isAdmin && canSettle" class="btn primary" @click="emit('settle', book)">Count it in</button>
-      <button v-else class="btn" @click="emit('close')">Close</button>
+
+      <!-- GHOST, not another button. Four controls of identical weight is a row
+           with no answer to "what am I meant to do here", and the browser's
+           focus ring lands on the last one — so Close, the only control that
+           does nothing, was the one that looked chosen. Closing is always
+           available from the × as well; this is the second way out, not an
+           action, and it should not compete with three that are. -->
+      <button class="btn ghost" @click="emit('close')">Close</button>
     </template>
 
     <!-- Later in the DOM than this sheet, which is fixed at z-index 60, so it

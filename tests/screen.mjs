@@ -138,15 +138,32 @@ export async function renderScreen(componentPath, storeStub, { props = {}, drive
   const { renderToString } = await import('vue/server-renderer')
   const { out, cleanup } = build(componentPath, storeStub, true)
   const real = (await import('file://' + out)).default
+  /*
+   * THE PROPS DECLARATION IS CARRIED THROUGH, and it has to be.
+   *
+   * setup() reads its first argument, so passing props there was enough for the
+   * script half — but a TEMPLATE reads `$props`, which comes from the instance,
+   * and an instance with no declared props has none. The symptom is
+   * "Cannot read properties of undefined", which reads as a broken component
+   * rather than a mis-wired harness. Same trap as the slot/prop asymmetry above,
+   * one layer along: the script saw the props and the template did not.
+   */
   const driven = {
+    // DECLARED FROM WHAT IS PASSED. compileScript turns defineProps into
+    // __props and does not leave a `props` field on the default export, so
+    // relying on real.props left them undeclared — and an undeclared prop falls
+    // through to ATTRS, which SSR renders into the markup. The symptom is the
+    // prop object stringified into the HTML, which looks like a broken
+    // component rather than an undeclared prop.
+    props: Object.keys(props),
     render: real.render,
-    async setup() {
-      const b = real.setup(props, { attrs: {}, slots: {}, emit() {}, expose() {} })
+    async setup(p) {
+      const b = real.setup(p ?? props, { attrs: {}, slots: {}, emit() {}, expose() {} })
       if (drive) await drive(b)
       return b
     },
   }
-  const html = await renderToString(createSSRApp(driven))
+  const html = await renderToString(createSSRApp(driven, props))
   cleanup()
   return html
 }
