@@ -25,86 +25,26 @@
  * correct — they fail for different reasons, and one file covering both would
  * not tell you which.
  */
-import { readFileSync, writeFileSync, mkdtempSync, cpSync, rmSync, symlinkSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { parse, compileScript, compileTemplate } from 'vue/compiler-sfc'
-import { createSSRApp } from 'vue'
-import { renderToString } from 'vue/server-renderer'
+import { renderScreen } from './screen.mjs'
 import { setConfig, state } from '../src/lib/store.js'
 
 const ROOT = new URL('..', import.meta.url).pathname
-const ESBUILD = join(ROOT, 'node_modules/.bin/esbuild')
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
 /**
- * Compile a screen's script AND template, bundle it against a stubbed store,
- * and hand back something renderToString can mount.
+ * What a person reads, with the markup and every attribute taken out.
  *
- * The script half follows screencalls.test.mjs. The template half is the
- * addition: without it, a binding the template alone reaches is invisible.
+ * Asserting on raw HTML matches things nobody can see. The seller's name is in
+ * the WhatsApp link as well as in the table, so `/JOHN/` on the HTML stayed
+ * green after the name was deleted from the row — satisfied by a URL. Third
+ * over-match of this kind in two days, and the first one where the pattern was
+ * matching something genuinely invisible.
  */
-async function screen(componentPath, storeStub, drive) {
-  const dir = mkdtempSync(join(tmpdir(), 'render-'))
-  cpSync(join(ROOT, 'src'), join(dir, 'src'), { recursive: true })
-  writeFileSync(join(dir, 'src/lib/store.js'), storeStub)
-
-  const sfc = readFileSync(join(ROOT, componentPath), 'utf8')
-  const { descriptor } = parse(sfc, { filename: componentPath })
-  const script = compileScript(descriptor, { id: 'r', inlineTemplate: false })
-  // bindingMetadata is what tells the template that `rows` and `Empty` come
-  // from the script block. Without it the render function looks them up on the
-  // instance, finds nothing, and every binding reads as undefined — which looks
-  // like a broken component rather than a mis-wired test.
-  const tpl = compileTemplate({
-    source: descriptor.template.content, id: 'r', filename: componentPath,
-    compilerOptions: { bindingMetadata: script.bindings }
-  })
-
-  const name = componentPath.split('/').pop().replace('.vue', '')
-  const probe = join(dir, 'src/components', `__${name}.js`)
-  writeFileSync(probe,
-    script.content.replace(/from '(.*)\.vue'/g, "from './__stubvue.js'")
-      .replace('export default', 'const __c =') + '\n' +
-    tpl.code.replace(/from '(.*)\.vue'/g, "from './__stubvue.js'") + '\n' +
-    'export default { ...__c, render }\n')
-  // Children render as an empty span: this is about THIS screen's output.
-  for (const p of ['src/components/__stubvue.js', 'src/components/ui/__stubvue.js']) {
-    writeFileSync(join(dir, p), 'export default { render: () => null }\n')
-  }
-
-  const out = join(dir, 'bundle.mjs')
-  execFileSync(ESBUILD, [probe, '--bundle', '--format=esm', '--platform=neutral',
-    '--external:vue', '--log-level=error', '--outfile=' + out])
-  symlinkSync(join(ROOT, 'node_modules'), join(dir, 'node_modules'))
-  const mod = await import('file://' + out)
-  const real = mod.default
-
-  /*
-   * Driven, because server rendering never fires onMounted and this screen
-   * fetches there — and because the row has to be OPENED before the per-ticket
-   * breakdown exists at all. A rendered but unopened table would assert the
-   * skeleton and call it proof.
-   *
-   * No jsdom: adding a DOM library to click one row is a dependency this
-   * project would carry forever for one test. Calling the component's own
-   * setup and then rendering with the bindings it returned reaches the same
-   * state, and reaches it through the component's real code.
-   */
-  const driven = {
-    render: real.render,
-    async setup() {
-      const b = real.setup({}, { attrs: {}, slots: {}, emit() {}, expose() {} })
-      if (drive) await drive(b)
-      return b
-    }
-  }
-  const html = await renderToString(createSSRApp(driven))
-  rmSync(dir, { recursive: true, force: true })
-  return html
-}
+const textOf = h => h.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ')
 
 /* ---------- the Money screen actually asks, per ticket ---------- */
 
@@ -121,31 +61,67 @@ const moneyStore = `
 import { reactive, ref, computed } from 'vue'
 export const state = reactive({
   cfg: { currency: 'RM' }, totals: {}, user: { role: 'admin' },
-  tickets: ${JSON.stringify(tickets)}
+  tickets: __TICKETS__
 })
-export const api = async () => ({ agents: ${JSON.stringify([row])}, currency: 'RM' })
+export const api = async () => ({ agents: __ROWS__, currency: 'RM' })
 export const toast = () => {}
 export const agentMap = computed(() => ({}))
 export const isSuper = computed(() => true)
 export const go = () => {}
 `
 
-const html = await screen('src/components/Money.vue', moneyStore, async b => {
-  await b.load()            // what onMounted would have done
-  b.toggle('A1')            // what a finger would have done
+const money = (tickets_, rows_) => moneyStore
+  .replace('__TICKETS__', JSON.stringify(tickets_))
+  .replace('__ROWS__', JSON.stringify(rows_))
+
+const html = await renderScreen('src/components/Money.vue', money(tickets, [row]), {
+  drive: async b => {
+    await b.load()          // what onMounted would have done
+    b.toggle('A1')          // what a finger would have done
+  }
 })
 
 console.log('one ticket paid, one not — and the screen says so')
-ok(/not in/.test(html), 'a ticket with no payment recorded reads "not in"')
+ok(/not in/.test(textOf(html)), 'a ticket with no payment recorded reads "not in"')
 ok((html.match(/>\s*in\s*</g) || []).length >= 1, 'and the paid one reads "in"')
 // The mutant that survived everything else: hardcoding the pill to 'in'. It
 // does not break the screen, it just tells somebody the money arrived.
-ok((html.match(/not in/g) || []).length === 1,
+ok((textOf(html).match(/not in/g) || []).length === 1,
    'exactly one ticket of the two is unpaid — not all of them, and not none')
 ok(/KS-00001/.test(html) && /KS-00002/.test(html), 'both tickets are listed')
-ok(/Buyer One/.test(html) && /0125550002/.test(html), 'with who bought them and how to ring them')
-ok(/JOHN/.test(html), 'under the seller who owes')
+ok(/Buyer One/.test(textOf(html)) && /0125550002/.test(textOf(html)),
+   'with who bought them and how to ring them')
+ok(/JOHN/.test(textOf(html)), 'under the seller who owes — read from the table, not from a link')
 ok(/wa\.me/.test(html), 'and a way to chase them')
+
+console.log('the branches one render cannot reach — each is a sentence somebody reads')
+{
+  // A render shows ONE branch per pass. 18 measured the cost of that on a
+  // screen with three: replacing a counted check with a render turned a caught
+  // mutant into an uncaught one. Here the answer is more renders rather than
+  // fewer assertions, because each of these is a different thing to be told.
+  const nothingOut = await renderScreen('src/components/Money.vue', money([], []), {
+    drive: b => b.load()
+  })
+  // The child stub passes SLOTS through and drops props, so the assertion is on
+  // the slot sentence rather than on Empty's title attribute. Worth stating:
+  // a stub decides what survives, and an assertion aimed at what it drops fails
+  // in a way that looks like the screen is broken.
+  ok(/what they owe shows up here/.test(nothingOut),
+     'a raffle with no books out explains itself, rather than showing an empty table')
+  ok(!/not in/.test(nothingOut), 'and claims nothing about money either way')
+
+  const owesButNoTickets = await renderScreen('src/components/Money.vue',
+    money([], [{ ...row, ticketsSold: 0, expected: 10, collected: 0, outstanding: 10 }]),
+    { drive: async b => { await b.load(); b.toggle('A1') } })
+  ok(/money\s+owed comes from a book counted in/.test(owesButNoTickets.replace(/\s+/g, ' ')),
+     'a seller who owes with no tickets recorded gets the explanation, not a blank panel')
+  ok(/JOHN/.test(textOf(owesButNoTickets)), 'and is still named on the row itself')
+
+  const loading = await renderScreen('src/components/Money.vue', money(tickets, [row]))
+  ok(/skel/.test(loading), 'before the report arrives the screen shows it is working')
+  ok(!/not in/.test(loading), 'and does not report on money it has not got yet')
+}
 
 /* ---------- config is one door, and it applies the colour ---------- */
 
