@@ -117,6 +117,40 @@ export async function listAgents(p: Record<string, unknown>, user: AppUser, ctx:
     }
   }
 
+  /*
+   * TWO SELLERS WHO CANNOT BE TOLD APART.
+   *
+   * This raffle has two active sellers both called JOHN sharing one telephone
+   * number, and KUI and Thang ling sharing another. Neither is necessarily a
+   * mistake — a household can share a handset, and two people can be called
+   * JOHN — but the app was presenting them as if the name were an identity.
+   *
+   * What that costs, in order of when it hurts: the outstanding list shows two
+   * JOHNs and you cannot tell whose debt you are chasing; the chase button
+   * reaches whoever answers that handset; and at the draw a winning ticket
+   * resolves to "JOHN" with no way to say which one sold it.
+   *
+   * Not resolved here, and deliberately not. Whether those two rows are one
+   * person entered twice or two people is a question about the world, and
+   * merging them would destroy a distinction somebody may have meant. The app's
+   * job is to stop showing an ambiguity as a fact — so each row says what it
+   * shares with another, and a screen can say so beside the name.
+   *
+   * Computed over ACTIVE sellers only: a retired duplicate is history, not a
+   * confusion, and flagging it would train people to ignore the flag.
+   */
+  const live = (data ?? []).filter((a: Record<string, unknown>) => a.active !== false)
+  const tally = (key: (a: Record<string, unknown>) => string) => {
+    const m = new Map<string, number>()
+    for (const a of live) {
+      const k = key(a)
+      if (k) m.set(k, (m.get(k) ?? 0) + 1)
+    }
+    return m
+  }
+  const byName = tally((a) => String(a.name ?? '').trim().toLowerCase())
+  const byPhone = tally((a) => String(a.phone ?? '').replace(/\D/g, ''))
+
   const rows = (data ?? [])
     .filter((a: Record<string, unknown>) => !activeOnly || a.active !== false)
     .map((a: Record<string, unknown>) => ({
@@ -131,6 +165,11 @@ export async function listAgents(p: Record<string, unknown>, user: AppUser, ctx:
       active: a.active !== false,
       booksOut: held.get(String(a.agent_id ?? '').trim()) ?? 0,
       notes: a.notes ?? '',
+      // What this row shares with another active seller, so a screen can say
+      // "JOHN (Saremban)" rather than "JOHN" twice. Empty when unambiguous.
+      sharesName: (byName.get(String(a.name ?? '').trim().toLowerCase()) ?? 0) > 1,
+      sharesPhone: String(a.phone ?? '').replace(/\D/g, '') !== '' &&
+                   (byPhone.get(String(a.phone ?? '').replace(/\D/g, '')) ?? 0) > 1,
       ...reportFields(String(a.agent_id ?? '').trim()),
     }))
 

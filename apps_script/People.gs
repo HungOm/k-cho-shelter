@@ -94,6 +94,36 @@ function handleListAgents(payload, user) {
   var thisRoundClosed = !!(checkIn && daysBetween_(checkIn, now) > grace);
   var roundsClosed = round - 1 + (thisRoundClosed ? 1 : 0);
 
+  /*
+   * TWO SELLERS WHO CANNOT BE TOLD APART.
+   *
+   * This raffle has two active sellers both called JOHN sharing one telephone
+   * number, and KUI and Thang ling sharing another. Neither is necessarily a
+   * mistake — a household can share a handset, and two people can be called
+   * JOHN — but the app was presenting the name as if it were an identity.
+   *
+   * The cost, in the order it hurts: the outstanding list shows two JOHNs and
+   * you cannot tell whose debt you are chasing; the chase button reaches
+   * whoever answers that handset; and at the draw a winning ticket resolves to
+   * "JOHN" with no way to say which one sold it.
+   *
+   * Not resolved here, deliberately. Whether two rows are one person entered
+   * twice or two people is a question about the world, and merging them would
+   * destroy a distinction somebody may have meant. The app's job is to stop
+   * showing an ambiguity as a fact.
+   *
+   * Over ACTIVE sellers only: a retired duplicate is history rather than a
+   * confusion, and flagging it would train people to ignore the flag.
+   */
+  var nameCount = {}, phoneCount = {};
+  for (var t = 0; t < agents.length; t++) {
+    if (!isTrue_(agents[t].Active)) continue;
+    var nk = String(agents[t].Name || '').trim().toLowerCase();
+    var pk = String(agents[t].Phone || '').replace(/\D/g, '');
+    if (nk) nameCount[nk] = (nameCount[nk] || 0) + 1;
+    if (pk) phoneCount[pk] = (phoneCount[pk] || 0) + 1;
+  }
+
   var out = [];
   for (var i = 0; i < agents.length; i++) {
     var a = agents[i];
@@ -114,6 +144,11 @@ function handleListAgents(payload, user) {
       active: isTrue_(a.Active),
       booksOut: booksOut,
       notes: a.Notes,
+      // What this row shares with another ACTIVE seller, so a screen can say
+      // "JOHN (Saremban)" rather than "JOHN" twice. False when unambiguous.
+      sharesName: (nameCount[String(a.Name || '').trim().toLowerCase()] || 0) > 1,
+      sharesPhone: String(a.Phone || '').replace(/\D/g, '') !== '' &&
+                   (phoneCount[String(a.Phone || '').replace(/\D/g, '')] || 0) > 1,
       reportState: reportState_({
         booksOut: booksOut, reported: !!reportedAt,
         checkIn: checkIn, grace: grace, now: now
