@@ -32,7 +32,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { setupOf, renderScreen } from './screen.mjs'
+import { setupOf, renderScreen, visibleText } from './screen.mjs'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -191,12 +191,21 @@ console.log('and the rendered button is actually disabled, not merely gated in s
    * the advice is right to stay. What distinguishes them is whether the screen
    * says the sale CANNOT happen or merely that it is unwise.
    */
-  ok(/cannot be sold from this screen/.test(refused),
+  // VISIBLE TEXT, not raw HTML. Asserting on the markup passed while the seller's
+  // name was deleted from the sentence a volunteer reads, because the same name
+  // also sits in the sheet's subtitle attribute. Rendering gets what the browser
+  // builds; stripping gets what a person sees, and the second is the claim.
+  const seen = visibleText(refused)
+  const seenOk = visibleText(allowedHtml)
+
+  ok(/cannot be sold from this screen/.test(seen),
      'a refused ticket says it cannot be sold here')
-  ok(!/cannot be sold from this screen/.test(allowedHtml),
+  ok(!/cannot be sold from this screen/.test(seenOk),
      'and an allowed one does not')
-  ok(/Check with them before selling/.test(allowedHtml),
+  ok(/Check with them before selling/.test(seenOk),
      'while the older advice survives for a book that is merely out')
+  ok(/This one is with Daw Hla/.test(seen),
+     'and the refusal names who has it, in words on the screen')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
