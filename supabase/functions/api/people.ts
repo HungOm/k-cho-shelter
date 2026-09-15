@@ -844,3 +844,193 @@ export async function setTicketCeiling(p: Record<string, unknown>, user: AppUser
   })
   return { ticketCeiling: target, generated }
 }
+
+/*
+ * WHOSE WORD IT IS.
+ *
+ * Every handover is recorded by the person giving the books away. The trail
+ * says an organiser gave JOHN books 31 to 35; nothing anywhere says JOHN
+ * agreed he received them. When JOHN says months later that he only ever got
+ * three, the system has one person's word written down twice — in `books` and
+ * in `book_history` — and calls it a record. Both rows came from the same
+ * hand.
+ *
+ * THE TWO KINDS MUST NOT BE THE SAME KIND, and that is the whole of this.
+ *
+ *   'app'   — the seller signed in and tapped it themselves. Their word, in
+ *             their own session, and nobody else can produce it.
+ *   'paper' — the seller signed the printed receipt and an organiser is
+ *             recording that they saw it. Better than nothing and weaker than
+ *             the first, because it is still the organiser typing.
+ *
+ * Collapsing those into one "acknowledged" flag would be worse than having
+ * none: it would let an organiser produce, with one tap, a record that reads
+ * exactly like the seller's own confirmation. The flag would say the seller
+ * agreed, the row would have been made by the person the seller might be
+ * disagreeing with, and nothing on the screen would tell them apart. So the
+ * method is recorded, it is derived from WHO IS ASKING rather than from
+ * anything the caller sends, and a paper acknowledgement always names the
+ * witness.
+ *
+ * NO NEW TABLE. `book_history` already holds one row per thing that happened
+ * to a book, `action` is free text, and an acknowledgement is exactly that —
+ * a thing that happened to a book, in the same order as the issue it answers.
+ */
+const ACK_METHODS = ['app', 'paper'] as const
+// The kind lives in the ACTION, not in the wording of a note. A reader deciding
+// whose word a row is must not be parsing prose to find out — and a note is
+// free text somebody will one day translate, trim or prefix.
+const ACK_ACTION = { app: 'acknowledge', paper: 'acknowledge_paper' } as const
+
+export async function acknowledgeBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const asked = String(p.agentId ?? '').trim()
+
+  /*
+   * THE METHOD IS NOT A PARAMETER. It follows from who is signed in, because a
+   * caller who could choose it could choose 'app' — which is to say, could
+   * manufacture the seller's own confirmation.
+   */
+  const own = String(user.agentId ?? '').trim()
+  const agentId = own && (!asked || asked === own) ? own : asked
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller?')
+
+  const isSelf = !!own && agentId === own
+  const method: typeof ACK_METHODS[number] = isSelf ? 'app' : 'paper'
+
+  // A seller may confirm their own books and nobody else's. This is the line
+  // that stops one agent acknowledging on another's behalf.
+  if (!isSelf && !user.isAdmin && user.role !== 'recorder') {
+    throw new ApiError(
+      'NOT_YOURS',
+      'You can confirm the books you are holding. Somebody else confirming for you is ' +
+      'something an organiser records, with their name on it.',
+    )
+  }
+
+  const { data: agent } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name').eq('agent_id', agentId).maybeSingle()
+  if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${agentId}".`, null, 404)
+
+  /*
+   * Only what they are holding RIGHT NOW, and named one book at a time.
+   *
+   * "I received these" against a count would be a confirmation of a number
+   * somebody else chose. Against a list of book numbers it is a confirmation
+   * of the same specific things the receipt printed, which is what makes it
+   * worth anything in the disagreement it exists for.
+   */
+  const { data: books } = await ctx.supabaseAdmin
+    .from('books').select('idx,number').eq('held_by_agent', agentId).eq('status', 'Out').order('idx')
+
+  const holding = (books ?? []) as Array<{ idx: number; number: string }>
+  if (!holding.length) {
+    throw new ApiError(
+      'NOTHING_TO_CONFIRM',
+      `${agent.name} is not holding any books, so there is nothing to confirm receiving.`,
+    )
+  }
+
+  // Confirming a subset is normal: five went out, four arrived, and saying so
+  // is the point. Unknown numbers are named rather than ignored.
+  const wanted = Array.isArray(p.books)
+    ? (p.books as unknown[]).map((b) => String(b).trim()).filter(Boolean)
+    : null
+  let rows = holding
+  const unknown: string[] = []
+  if (wanted) {
+    const byNumber = new Map(holding.map((b) => [b.number, b]))
+    rows = []
+    for (const n of wanted) {
+      const hit = byNumber.get(n)
+      if (hit) rows.push(hit)
+      else unknown.push(n)
+    }
+    if (!rows.length) {
+      throw new ApiError(
+        'NOT_HELD',
+        `None of those books are out with ${agent.name}.`,
+        { unknown },
+      )
+    }
+  }
+
+  // Already confirmed once is not an error and not a second row: the seller
+  // tapping twice on a slow connection must not read later as two handovers.
+  const { data: already } = await ctx.supabaseAdmin
+    .from('book_history').select('book_idx')
+    .in('action', Object.values(ACK_ACTION)).in('book_idx', rows.map((b) => b.idx))
+  const seen = new Set((already ?? []).map((r: { book_idx: number }) => Number(r.book_idx)))
+  const fresh = rows.filter((b) => !seen.has(Number(b.idx)))
+
+  const note = String(p.note ?? '').trim()
+  if (fresh.length) {
+    const { error } = await ctx.supabaseAdmin.from('book_history').insert(
+      fresh.map((b) => ({
+        book_idx: b.idx,
+        to_agent: agentId,
+        action: ACK_ACTION[method],
+        by_user: user.email,
+        // The method is in the row, not only in the audit log, because the
+        // book's own trail is where somebody will be reading it.
+        note: [method === 'app' ? 'Confirmed by the seller' : `Signed paper, witnessed by ${user.name || user.email}`,
+               note].filter(Boolean).join(' — '),
+      })))
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
+  }
+
+  await audit(ctx, 'ACKNOWLEDGE_BOOKS', {
+    agent: agentId, method, books: fresh.map((b) => b.number),
+    alreadyConfirmed: rows.length - fresh.length, unknown: unknown.length ? unknown : undefined,
+  }, user.email)
+
+  return {
+    agent: { id: agent.agent_id, name: agent.name },
+    method,
+    confirmed: fresh.map((b) => b.number),
+    alreadyConfirmed: rows.filter((b) => seen.has(Number(b.idx))).map((b) => b.number),
+    unknown,
+    by: user.name || user.email,
+    at: new Date().toISOString(),
+  }
+}
+
+/** What a seller has and has not confirmed receiving. */
+export async function acknowledgedBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const own = String(user.agentId ?? '').trim()
+  const agentId = String(p.agentId ?? '').trim() || own
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller?')
+  if (own && agentId !== own && !user.isAdmin && user.role !== 'recorder') {
+    throw new ApiError('NOT_YOURS', 'That is somebody else\'s handover.')
+  }
+
+  const { data: books } = await ctx.supabaseAdmin
+    .from('books').select('idx,number,issued_at').eq('held_by_agent', agentId)
+    .eq('status', 'Out').order('idx')
+  const holding = (books ?? []) as Array<{ idx: number; number: string; issued_at: string }>
+
+  const { data: acks } = await ctx.supabaseAdmin
+    .from('book_history').select('book_idx,at,by_user,note,action')
+    .in('action', Object.values(ACK_ACTION)).in('book_idx', holding.map((b) => b.idx))
+  const byBook = new Map((acks ?? []).map((r: Record<string, unknown>) => [Number(r.book_idx), r]))
+
+  const lines = holding.map((b) => {
+    const a = byBook.get(Number(b.idx)) as Record<string, unknown> | undefined
+    return {
+      book: b.number,
+      issued: b.issued_at,
+      confirmed: !!a,
+      // Read off the action, which is the field that cannot be reworded.
+      method: a ? (a.action === ACK_ACTION.app ? 'app' : 'paper') : null,
+      at: a?.at ?? null,
+      by: a?.by_user ?? null,
+    }
+  })
+
+  return {
+    agentId,
+    books: lines,
+    held: lines.length,
+    confirmed: lines.filter((l) => l.confirmed).length,
+    unconfirmed: lines.filter((l) => !l.confirmed).map((l) => l.book),
+  }
+}

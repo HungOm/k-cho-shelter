@@ -31,6 +31,7 @@ const WRITES = new Set([
   'set_ticket_ceiling', 'roll_check_in', 'set_final_deadline', 'record_check_in',
   'upload_logo', 'set_brand_color',
   'record_payment', 'reverse_payment',
+  'acknowledge_books',
 ])
 
 let functionUrl = ''

@@ -144,6 +144,8 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   restock_books: { group: 'Books', label: 'Put unsold tickets back', danger: true },
   book_history: { group: 'Books', label: 'See where a book has been' },
   handover_receipt: { group: 'Books', label: 'Print a handover receipt' },
+  acknowledge_books: { group: 'Books', label: 'Confirm you received books' },
+  acknowledged_books: { group: 'Books', label: 'See which books were confirmed' },
   expand_tickets: { group: 'Books', label: 'Make more tickets', danger: true },
   set_active_tickets: { group: 'Books', label: 'Change how many tickets are in play', danger: true },
   set_ticket_ceiling: { group: 'Books', label: 'Change the planned size of the raffle' },
@@ -236,6 +238,12 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // --- how much of the raffle is live ---
   set_active_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setActiveTickets },
   handover_receipt: { roles: ADMIN_ONLY, kind: 'report', fn: people.handoverReceipt },
+  // Any signed-in person: a SELLER confirming their own books is the whole
+  // point, and the handler decides what their word is worth from who they
+  // are. Restricting it to organisers would leave only the organiser's own
+  // word again, which is the gap it was written to close.
+  acknowledge_books: { roles: null, kind: 'write', fn: people.acknowledgeBooks },
+  acknowledged_books: { roles: null, kind: 'read', fn: people.acknowledgedBooks },
   expand_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.expandTickets },
   set_ticket_ceiling: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setTicketCeiling },
 

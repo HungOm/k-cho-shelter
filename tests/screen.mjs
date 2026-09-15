@@ -109,7 +109,19 @@ function build(componentPath, storeStub, withTemplate) {
 
   const out = join(dir, 'bundle.mjs')
   execFileSync(ESBUILD, [probe, '--bundle', '--format=esm', '--platform=neutral',
-    '--external:vue', '--log-level=error', '--outfile=' + out])
+    '--external:vue',
+    /*
+     * The Supabase client is external for a different reason from vue's.
+     *
+     * supabaseAuth.js reaches it through a dynamic `await import()` inside a
+     * function nothing here ever calls — but esbuild resolves a dynamic import
+     * at build time all the same, and it runs in a temp directory whose
+     * node_modules link is not made until afterwards. So the first screen to
+     * import backend.js, however indirectly, fails to BUILD, with a resolver
+     * error that says nothing about the screen.
+     */
+    '--external:@supabase/supabase-js',
+    '--log-level=error', '--outfile=' + out])
   // vue stays external and resolves from the project's own copy, so the screen
   // runs against the reactivity it actually ships with.
   symlinkSync(join(ROOT, 'node_modules'), join(dir, 'node_modules'))

@@ -78,6 +78,13 @@ console.log('every Apps Script action is either ported or listed as not ported')
     // give the same name to a figure anybody could retype — which is the one
     // thing the snapshot exists to stop being true.
     ['round_snapshot', 'no append-only storage in a spreadsheet to freeze a round into'],
+    // A seller confirming receipt is only worth recording if the record can
+    // say WHOSE word it is — their own tap, or an organiser typing that they
+    // saw a signed paper. Apps Script has one identity at the gate and a Sheet
+    // anybody with the link can edit, so both kinds would land as the same
+    // editable row, which is the distinction the feature exists to make.
+    ['acknowledge_books', 'a sheet cannot tell the seller\'s own word from somebody typing it for them'],
+    ['acknowledged_books', 'reads what acknowledge_books writes, which Apps Script does not have'],
   ])
   const extra = [...supabase].filter(a => !appsScript.has(a) && !SUPABASE_ONLY.has(a)).sort()
   ok(extra.length === 0,

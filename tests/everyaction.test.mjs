@@ -90,6 +90,8 @@ const CALLS = {
   list_approvals: {}, list_permissions: {}, read_audit: {},
   deadline_status: {}, book_history: { bookNumber: 'Book-001' },
   handover_receipt: { agentId: 'A001' },
+  acknowledge_books: { agentId: 'A001' },
+  acknowledged_books: { agentId: 'A001' },
   report_outstanding: {}, report_overdue: {}, report_missing_contact: {},
   report_draw_ready: {}, agent_statement: { agentId: 'A001' }, export_entries: {},
 

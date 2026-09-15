@@ -136,7 +136,17 @@ console.log('and the fixture speaks the handler\'s language, not mine')
 console.log('nothing closes itself any more')
 {
   const src = readFileSync(new URL('../src/components/modals/Receipt.vue', import.meta.url), 'utf8')
-  const mounted = src.slice(src.indexOf('async function load'), src.indexOf('const givenOn'))
+  // ANCHORED ON THE DECLARATION, NOT ON A PREFIX OF IT. 'async function load'
+  // also matches 'async function loadAck', and the first one in the file wins
+  // — which silently moved the start of this slice backwards over the comment
+  // explaining the bug, a comment that quotes emit('close') in prose. The
+  // guard then failed on a file that was correct. Same trap as anchoring a
+  // slice on a comment: the marker has to be something only the thing itself
+  // can be.
+  const from = src.indexOf('async function load(')
+  const to = src.indexOf('const givenOn')
+  ok(from > 0 && to > from, 'the load function is where this guard thinks it is')
+  const mounted = src.slice(from, to)
   ok(!/emit\('close'\)/.test(mounted),
      'the load path never dismisses the sheet — that is what was reported as a bug')
 }
