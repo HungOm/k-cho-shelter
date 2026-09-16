@@ -250,9 +250,24 @@ console.log('a scope nobody has written yet is shown no money at all')
    * the server scopes state.totals independently — which is precisely what
    * makes it worth pinning. A guard that holds only because a different guard
    * holds fails silently the day somebody edits the other one.
+   *
+   * THE ROWS ARRAY IS POPULATED ON PURPOSE, and that is the whole strength of
+   * this case. report_outstanding sends `agents: []` to any scope
+   * showsSellerNames refuses, so a fixture that passes [] asserts nothing: it
+   * passes whether the screen WITHHOLDS the table or is merely relying on the
+   * server to withhold the rows. Handing it a real seller and requiring it to
+   * withhold anyway is the only version that tells those two apart — and when
+   * this fixture was changed from [] to [row] it failed immediately, because
+   * the table's arm was the last in the chain and caught everything the named
+   * arms did not. A fall-through is "everything except the ones I thought of"
+   * written as a template rather than as a `!==`.
+   *
+   * Both guards are pinned separately: dropping the seller-table gate fails
+   * "no seller is named", restoring the negated money guard fails "nor what is
+   * outstanding". Neither mutant is caught by the other's assertion.
    */
   const unknown = await renderScreen('src/components/Money.vue',
-    money(tickets, [], { scope: 'added-next-year', user: { role: 'treasurer', email: 't@x.com' } }),
+    money(tickets, [row], { scope: 'added-next-year', user: { role: 'treasurer', email: 't@x.com' } }),
     { drive: b => b.load() })
   const said = visibleText(unknown)
 

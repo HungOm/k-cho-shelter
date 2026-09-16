@@ -181,6 +181,23 @@ const myTally = computed(() => {
  */
 const showsRaffleMoney = computed(() => ['all', 'mine', 'totals'].includes(scope.value))
 
+/*
+ * WHO GETS THE SELLER TABLE — the client's hand-kept copy of showsSellerNames.
+ *
+ * The table branch was `v-else-if="rows.length"`, the last arm of the chain,
+ * so it caught everything the named arms did not. That is the same negation in
+ * a different costume: not a `!==` anywhere, just a fall-through, which is what
+ * "everything except the ones I thought of" looks like in a template.
+ *
+ * It did not leak, because report_outstanding sends `agents: []` to any scope
+ * showsSellerNames refuses, so rows.length was 0 and the arm never fired. Hand
+ * the screen rows anyway and it renders every seller — which is what the test
+ * below now does, because a test that asserts against an empty array cannot
+ * tell a screen that WITHHOLDS from one that is merely relying on the server
+ * to. Credit to the round report for making that distinction first.
+ */
+const showsSellerLines = computed(() => ['all', 'mine'].includes(scope.value))
+
 // The same cap, for the same reason: a busy desk is hundreds of rows.
 const showAllMine = ref(false)
 const mineShown = computed(() => showAllMine.value ? mine.value : mine.value.slice(0, CAP))
@@ -330,7 +347,7 @@ function waLink(a) {
         behind it.
       </div>
 
-      <div v-else-if="rows.length" class="tablewrap" style="margin-top:8px">
+      <div v-else-if="showsSellerLines && rows.length" class="tablewrap" style="margin-top:8px">
         <table>
           <thead>
             <tr>
