@@ -31,7 +31,9 @@
 # WHAT TO SET UP, once, by somebody with repository admin:
 #
 #   1. Make a key pair on a machine that is NOT this one and keep the private
-#      half off the internet:
+#      half off the internet. `bash supabase/backup-key.sh` does it and prints
+#      the rest of this list back to you with the values filled in; by hand it
+#      is:
 #        gpg --quick-generate-key "K'Cho raffle backups" default default never
 #        gpg --armor --export "K'Cho raffle backups" > backup-key.pub
 #   2. Repository secrets (Settings → Secrets and variables → Actions):
