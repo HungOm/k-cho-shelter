@@ -729,19 +729,34 @@ guard, or a fixture describing data the database would refuse.
    reading `book_ledger` where load order had been quietly deciding which of
    the two definitions they got. `test-functions.sh` 157 passed,
    `test-rls.sh` 52 passed.
-2. **Four migrations are unapplied, and a decision is needed first.**
-   `supabase db push` would also apply two migrations belonging to another
-   session that are not committed —
-   `20260916140000_ticket_history_append_only` and
-   `20260916160000_check_in_report`. The first sorts BEFORE the four below, so
-   it goes first whatever anybody intends. Whether they should go too is not a
-   question the repository can answer.
+2. ~~Four migrations are unapplied.~~ **Applied 2026-09-16**, to the hosted
+   project, after a backup — six of them, because the organiser decided the
+   other session's two should go too: `ticket_history_append_only`,
+   `round_snapshots`, `check_in_report`, `settlement_payment_in_rpc`,
+   `write_off_adjustments`, `agent_money_view`. The `api` function was
+   redeployed from HEAD rather than from the working tree, so no uncommitted
+   work travelled with it.
 
-   The four:: `20260916150000_round_snapshots`,
-   `20260916170000_settlement_payment_in_rpc`,
-   `20260916190000_write_off_adjustments`, `20260916210000_agent_money_view`.
-   Each was rehearsed twice on a database built from the committed schema. Take
-   a backup first; the section M verification still applies.
+   Verified afterwards rather than trusting the exit code: `round_snapshots`,
+   `agent_money` and `check_in_dates` present; `payments.source` admits
+   `writeoff`; the settlement index is no longer unique; `settle_book` writes
+   its own ledger row; append-only triggers on `ticket_history` and
+   `round_snapshots`; and 20,000 tickets, 2,000 books, 5 agents and 10
+   ticket-history rows all still there. `agent_money` agrees exactly with the
+   same sums worked out independently, over real data.
+
+   **A seventh, `20260916230000_ledger_protocol`, was NOT applied.** It appeared
+   after the decision was made, and that decision names six. It belongs to the
+   other session and makes `payments` append-only; nothing in this repository
+   updates or deletes that table any more, so it should be safe — but it is not
+   mine to wave through.
+
+   Two things the connection taught us, worth keeping. The direct host
+   `db.<ref>.supabase.co` refuses connections on 5432; the **session pooler** is
+   the path, over IPv4, with the project ref in the username
+   (`postgres.<ref>`). And `supabase db push --db-url` failed to authenticate
+   where `psql` succeeded with the same string — `SUPABASE_DB_PASSWORD` with
+   `--linked` is what works.
 3. **The backup workflow fails every week until its secrets exist.**
    `BACKUP_GPG_PUBLIC_KEY`, `SUPABASE_DB_URL`, `SUPABASE_URL`,
    `SUPABASE_SECRET_KEY`. That is deliberate — a backup nobody has finished
@@ -786,3 +801,5 @@ Overall:                8/10   The conditions in section A are closed in the rep
                                They are not closed in production until the four
                                migrations are applied and the backup secrets set.
 ```
+
+---
