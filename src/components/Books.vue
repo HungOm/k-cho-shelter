@@ -9,8 +9,12 @@ import { BOOK_WORDS, money, relative } from '../lib/format.js'
 import BookGrid from './ui/BookGrid.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
+import History from './modals/History.vue'
 
 const emit = defineEmits(['issue', 'transfer', 'return-books', 'mark', 'open-book', 'sell-book'])
+
+/* The book whose trail is open, or null. */
+const showHistory = ref(null)
 
 const status = ref('')
 const agent = ref('')
@@ -65,7 +69,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
     <h3 class="mt">{{ shown.length }} {{ shown.length === 1 ? 'book' : 'books' }}</h3>
     <div class="card flush">
       <TransitionGroup v-if="shown.length" name="list" tag="ul" class="list">
-        <li v-for="b in shown.slice(0, 200)" :key="b.book">
+        <li v-for="b in shown.slice(0, 200)" :key="b.book" class="rowpair">
           <button class="item" @click="emit('open-book', b)">
             <span class="grow">
               <span class="lead">{{ b.book }}</span>
@@ -79,6 +83,11 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
             <StatusPill :status="b.status" kind="book" />
             <span class="chev">›</span>
           </button>
+          <!-- The same question from the book side, and the same answer: its
+               own control on the row, rather than two taps down inside a sheet
+               that also gives books out. -->
+          <button class="rowhist" :title="`Where ${b.book} has been`"
+                  :aria-label="`Where ${b.book} has been`" @click="showHistory = b.book">🕘</button>
         </li>
       </TransitionGroup>
       <Empty v-else art="📚" :title="status ? `No books ${BOOK_WORDS[status].toLowerCase()}` : 'No books'"
@@ -86,6 +95,9 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
         Nothing here with those filters.
       </Empty>
     </div>
+
+    <!-- On top of the list, so closing it puts you back where you were. -->
+    <History v-if="showHistory" :book="showHistory" @close="showHistory = null" />
   </div>
 </template>
 

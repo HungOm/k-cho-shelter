@@ -23,6 +23,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { api, state, agentMap, isSold } from '../../lib/store.js'
 import { dateTime, money, plainName, isSellerContact } from '../../lib/format.js'
+import { isDialable, waNumber } from '../../lib/search.js'
 import Sheet from '../ui/Sheet.vue'
 import StatusPill from '../ui/StatusPill.vue'
 
@@ -93,6 +94,46 @@ function movement(h) {
 }
 
 /**
+ * WHO HAD IT, WITH WHERE THEY ARE FROM.
+ *
+ * "Josh" is not enough to act on — there are two sellers called JOHN in this
+ * raffle, and the one somebody means is the one from their own church. The zone
+ * is how people refer to each other here anyway, so the screen says it the same
+ * way: Josh (CCFM).
+ *
+ * The name alone when there is no zone, rather than an empty bracket, which
+ * reads as a missing fact instead of an absent one.
+ */
+function personWords(who) {
+  if (!who) return ''
+  return who.zone ? `${who.name} (${who.zone})` : who.name
+}
+
+/**
+ * AND WHETHER IT IS SOMETHING YOU MAY RING.
+ *
+ * The server decides: it fills the number in for an organiser and the system
+ * admin, and leaves it empty for everybody else. So this asks whether there is
+ * a number rather than asking who is reading — one rule, decided once, on the
+ * side that can enforce it. A seller taking a book on still sees who had it
+ * before them; they do not get a directory of everybody's telephone number as a
+ * side effect of looking at a history.
+ */
+function canContact(who) {
+  return !!(who && who.phone && isDialable(who.phone))
+}
+
+function contactLink(who) {
+  // The refusal is HERE, not only in the v-if that calls it. A guard in the
+  // template is a guard in one caller; the next caller writes its own, and one
+  // of them gets it wrong. This is the shape contactpoints.test.mjs insists on
+  // across every wa.me in the app, after exactly that happened on the Money
+  // screen.
+  if (!isDialable(who?.phone)) return ''
+  return `https://wa.me/${waNumber(who.phone)}`
+}
+
+/**
  * The ticket's own sale, as one step in the same list.
  *
  * Only when it HAPPENED. An unsold ticket has no sale to show, and a row saying
@@ -127,6 +168,9 @@ const sale = computed(() => {
 const steps = computed(() => {
   const list = (trail.value?.history || []).map(h => ({
     kind: 'move', at: h.at, title: words(h.action), detail: movement(h),
+    // The same movement as structured people, so the names can carry their
+    // zone and be rung. `detail` stays for anything that has no people in it.
+    from: h.fromWho || null, to: h.toWho || null,
     by: h.by, note: h.note,
   }))
   if (sale.value) list.push({ kind: 'sale', at: sale.value.at })
@@ -191,7 +235,30 @@ const nothingRecorded = computed(() => !!trail.value && steps.value.length === 0
 
         <template v-else>
           <div class="when">{{ dateTime(s.at) }}</div>
-          <div class="what"><b>{{ s.title }}</b> {{ s.detail }}</div>
+          <!-- WHO HAD IT, NAMED AND PLACED. A movement with people in it
+               renders them one at a time so the zone can travel with the name
+               and an organiser can ring them; anything else keeps the plain
+               sentence it always had. -->
+          <div class="what">
+            <b>{{ s.title }}</b>
+            <template v-if="s.from || s.to">
+              <template v-if="s.from">
+                from
+                <a v-if="canContact(s.from)" class="person" :href="contactLink(s.from)"
+                   target="_blank" rel="noopener"
+                   :title="`Message ${s.from.name} on WhatsApp`">{{ personWords(s.from) }}</a>
+                <span v-else class="person plain">{{ personWords(s.from) }}</span>
+              </template>
+              <template v-if="s.to">
+                to
+                <a v-if="canContact(s.to)" class="person" :href="contactLink(s.to)"
+                   target="_blank" rel="noopener"
+                   :title="`Message ${s.to.name} on WhatsApp`">{{ personWords(s.to) }}</a>
+                <span v-else class="person plain">{{ personWords(s.to) }}</span>
+              </template>
+            </template>
+            <template v-else>{{ s.detail }}</template>
+          </div>
           <div v-if="s.by" class="who">by {{ s.by }}</div>
           <div v-if="s.note" class="note-line">{{ s.note }}</div>
         </template>
@@ -213,6 +280,13 @@ const nothingRecorded = computed(() => !!trail.value && steps.value.length === 0
 </template>
 
 <style scoped>
+/* A contactable name looks like something you can act on; one you cannot ring
+   looks like plain text, because an underline that does nothing is a promise
+   the screen does not keep. */
+.person { font-weight: 600; }
+a.person { color: var(--brand); text-decoration: underline; }
+.person.plain { color: inherit; text-decoration: none; }
+
 .trail { list-style: none; margin: 0; padding: 0; }
 
 .step {

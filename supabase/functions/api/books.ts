@@ -686,10 +686,15 @@ export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx
   const ids: string[] = [...new Set((data ?? []).flatMap((h: { from_agent: string; to_agent: string }) =>
     [h.from_agent, h.to_agent].filter(Boolean)))]
   const { data: agents } = ids.length
-    ? await ctx.supabaseAdmin.from('agents').select('agent_id,name').in('agent_id', ids)
+    ? await ctx.supabaseAdmin.from('agents').select('agent_id,name,zone,phone').in('agent_id', ids)
     : { data: [] }
+  type Seller = { name: string; zone: string; phone: string }
+  const info = new Map<string, Seller>((agents ?? []).map(
+    (a: Record<string, unknown>) => [String(a.agent_id), {
+      name: String(a.name ?? ''), zone: String(a.zone ?? ''), phone: String(a.phone ?? ''),
+    }]))
   const names = new Map<string, string>(
-    (agents ?? []).map((a: { agent_id: string; name: string }) => [a.agent_id, a.name]))
+    [...info].map(([id, a]) => [id, a.name]))
 
   /*
    * AND EVERY CHANGE TO A TICKET IN IT, from the trigger-written trail.
@@ -710,11 +715,45 @@ export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx
   const extra = ids.filter((id) => !names.has(id))
   if (extra.length) {
     const { data: more } = await ctx.supabaseAdmin
-      .from('agents').select('agent_id,name').in('agent_id', [...new Set(extra)])
-    for (const a of (more ?? []) as Array<{ agent_id: string; name: string }>) names.set(a.agent_id, a.name)
+      .from('agents').select('agent_id,name,zone,phone').in('agent_id', [...new Set(extra)])
+    for (const a of (more ?? []) as Array<Record<string, unknown>>) {
+      const id = String(a.agent_id)
+      info.set(id, { name: String(a.name ?? ''), zone: String(a.zone ?? ''), phone: String(a.phone ?? '') })
+      names.set(id, String(a.name ?? ''))
+    }
   }
   const showBuyer = !!user.isAdmin
   const who = (id: unknown) => (id ? (names.get(String(id)) ?? String(id)) : null)
+
+  /*
+   * WHO HAD IT, AS A PERSON RATHER THAN A NAME.
+   *
+   * A name on its own is not enough to act on. Two sellers are called JOHN, and
+   * the one a volunteer means is the JOHN from their own church — so the zone
+   * travels with the name and the screen can say "Josh (CCFM)", which is how
+   * people refer to each other here anyway.
+   *
+   * THE TELEPHONE NUMBER IS NOT FOR EVERYBODY. Whoever is holding the book next
+   * should know who had it before them; they should not be handed a directory
+   * of every seller's number as a side effect of looking at a history. So the
+   * number is filled in for an organiser and the system admin — the people
+   * whose job is chasing — and left empty for everyone else, and the screen
+   * makes the name contactable only when there is something to contact.
+   *
+   * ADDED BESIDE `from`/`to` RATHER THAN REPLACING THEM. The bare names are
+   * what the existing trail renders, and a shape change here would break that
+   * screen at the same moment this one starts using it.
+   */
+  const person = (id: unknown) => {
+    if (!id) return null
+    const a = info.get(String(id))
+    return {
+      id: String(id),
+      name: a?.name ?? String(id),
+      zone: a?.zone ?? '',
+      phone: user.isAdmin ? (a?.phone ?? '') : '',
+    }
+  }
 
   return {
     book: { number: book.number, status: book.status },
@@ -723,6 +762,8 @@ export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx
       action: h.action,
       from: h.from_agent ? (names.get(String(h.from_agent)) ?? h.from_agent) : null,
       to: h.to_agent ? (names.get(String(h.to_agent)) ?? h.to_agent) : null,
+      fromWho: person(h.from_agent),
+      toWho: person(h.to_agent),
       by: h.by_user,
       note: h.note || '',
     })),
@@ -733,6 +774,8 @@ export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx
       toStatus: h.to_status ?? '',
       fromSeller: who(h.from_agent),
       toSeller: who(h.to_agent),
+      fromSellerWho: person(h.from_agent),
+      toSellerWho: person(h.to_agent),
       fromBuyer: showBuyer ? (h.from_buyer ?? '') : '',
       toBuyer: showBuyer ? (h.to_buyer ?? '') : '',
       fromPhone: showBuyer ? (h.from_phone ?? '') : '',

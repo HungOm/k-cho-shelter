@@ -8,9 +8,16 @@ import { state, searchResults, agentMap, whereIs, isSold } from '../lib/store.js
 import { STATUS_WORDS } from '../lib/format.js'
 import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
+import History from './modals/History.vue'
 
 const emit = defineEmits(['open'])
 const box = ref(null)
+
+/*
+ * The ticket whose trail is open, or null. Held here rather than in the row so
+ * that closing it puts you back on the list exactly where you were.
+ */
+const showHistory = ref(null)
 
 const examples = computed(() => {
   const c = state.cfg
@@ -129,7 +136,7 @@ function place(t) {
 
       <!-- results -->
       <TransitionGroup v-else-if="searchResults.results.length" name="list" tag="ul" class="list">
-        <li v-for="t in searchResults.results" :key="t.number">
+        <li v-for="t in searchResults.results" :key="t.number" class="rowpair">
           <button class="item" @click="emit('open', t)">
             <span class="grow">
               <span class="lead">{{ t.number }}</span>
@@ -141,6 +148,14 @@ function place(t) {
             <StatusPill :status="t.status" />
             <span class="chev">›</span>
           </button>
+          <!-- WHERE IT HAS BEEN, FROM THE LIST ITSELF.
+               It used to be two taps down, inside the sell sheet — so the one
+               question you ask about a ticket somebody hands you across a table
+               ("who had this before?") cost you opening a form that can record
+               a sale. Its own control, with its own label, because a row that
+               does two things from one tap does the wrong one eventually. -->
+          <button class="rowhist" :title="`Where ${t.number} has been`"
+                  :aria-label="`Where ${t.number} has been`" @click="showHistory = t">🕘</button>
         </li>
       </TransitionGroup>
 
@@ -155,6 +170,9 @@ function place(t) {
         or a phone number written any way you like.
       </Empty>
     </div>
+
+    <!-- On top of the list, not instead of it. -->
+    <History v-if="showHistory" :ticket="showHistory" @close="showHistory = null" />
   </div>
 </template>
 
