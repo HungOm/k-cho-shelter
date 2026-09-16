@@ -137,6 +137,37 @@ console.log('whose name may I see is not whose money is in my total')
      'and a helper counts nothing, because they are carrying nothing')
 }
 
+console.log('a role nobody has written yet lands on the floor, not the ceiling')
+{
+  /*
+   * THE SAME READING QUESTION, ASKED OF A ROLE RATHER THAN A SCOPE.
+   *
+   * Every function here ends in an arm that catches whatever the named ones
+   * did not — moneyScope's final ternary, and the `own ? [own] : []` that both
+   * agent lists end on. A sixth role in app_users lands in those arms, and the
+   * only thing standing between "lands there" and "reachable" is a CHECK
+   * constraint in schema.sql. None of this code says it depends on that.
+   *
+   * The answers are already the safe ones. Nothing pinned them, which is the
+   * whole point: reorder the ternary to `role === 'recorder' ? 'recorded' :
+   * 'totals'` — a change that reads like tidying — and an unrecognised role is
+   * handed the raffle's figures instead of its own empty desk record.
+   *
+   * 'recorded' is the FLOOR for money, not a middle. It shows what this person
+   * wrote down and nothing of the raffle: no totals, no names, no debts. For
+   * somebody who has written nothing down, it is an empty screen, which is the
+   * correct amount to tell a role the system does not know.
+   */
+  const sixth = { ...users.recorder, email: 't@x.com', role: 'treasurer' }
+
+  eq(money.moneyScope(sixth), 'recorded', 'an unrecognised role gets the floor')
+  ok(money.moneyScope(sixth) !== 'totals',
+     'and specifically NOT the raffle-wide figures, which is the arm next door')
+  eq(JSON.stringify(money.totalsAgents(sixth)), '[]', 'none of the raffle\'s money is theirs')
+  eq(JSON.stringify(money.visibleAgents(sixth)), '[]', 'and no seller may be named to them')
+  ok(!money.showsSellerNames(money.moneyScope(sixth)), 'so no debt table either')
+}
+
 console.log('the debt table goes to two people, and a fourth scope did not change that')
 {
   ok(money.showsSellerNames('all'), 'an organiser gets the rows')

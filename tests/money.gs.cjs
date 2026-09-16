@@ -108,6 +108,22 @@ console.log('the scope rule, stated once');
   ok(!showsSellerNames_('totals') && !showsSellerNames_('recorded'), 'and to neither of the others');
   ok(!showsSellerNames_('added-later'),
      'an unrecognised scope is refused, so a fifth one cannot leak the table');
+
+  /*
+   * AND AN UNRECOGNISED ROLE LANDS ON THE FLOOR, on this backend too.
+   *
+   * moneyScope_ ends in a ternary that catches every role the named arms did
+   * not. The answer is already the safe one; nothing pinned it. Reorder it to
+   * `role === RECORDER ? 'recorded' : 'totals'` — which reads like tidying and
+   * keeps all four known roles correct — and a sixth role is handed the
+   * raffle's figures. Every assertion above still passes under that change.
+   * This is the only one that does not.
+   */
+  var sixth = { email: 't@x.com', name: 'T', role: 'treasurer', isAdmin: false, agentId: null };
+  eq(moneyScope_(sixth), 'recorded', 'an unrecognised role gets the floor');
+  ok(moneyScope_(sixth) !== 'totals', 'not the raffle-wide figures, which is the arm next door');
+  eq(JSON.stringify(totalsAgents_(sixth)), '[]', 'and none of the raffle\'s money is theirs');
+  ok(!showsSellerNames_(moneyScope_(sixth)), 'so no debt table either');
 }
 
 console.log('and the report obeys it');
