@@ -234,6 +234,34 @@ console.log('a viewer is shown the money and none of the names')
   ok(/Who owes what is the organiser's to see/.test(said), 'with a sentence saying why')
 }
 
+console.log('a scope nobody has written yet is shown no money at all')
+{
+  /*
+   * THE ASSERTION THAT FAILS WHEN A FIFTH SCOPE ARRIVES, which is the only
+   * kind that can. Every other case here names one of the four we have, so all
+   * four could pass while an unrecognised value fell into whichever branch was
+   * written as a negation.
+   *
+   * It has happened three times in this codebase in one day. `scope !==
+   * 'totals'` decided who got the debt table and handed a helper every
+   * seller's line the moment a fourth scope existed; the round report repeated
+   * it and printed a heading over nothing; and this screen gated the raffle's
+   * own figures on `scope !== 'recorded'`. The last was not leaking, because
+   * the server scopes state.totals independently — which is precisely what
+   * makes it worth pinning. A guard that holds only because a different guard
+   * holds fails silently the day somebody edits the other one.
+   */
+  const unknown = await renderScreen('src/components/Money.vue',
+    money(tickets, [], { scope: 'added-next-year', user: { role: 'treasurer', email: 't@x.com' } }),
+    { drive: b => b.load() })
+  const said = visibleText(unknown)
+
+  ok(!/Should have/.test(said), "an unrecognised scope is shown none of the raffle's figures")
+  ok(!/Handed in/.test(said), 'nor what has come in')
+  ok(!/Still owed/.test(said), 'nor what is outstanding')
+  ok(!/JOHN/.test(said), 'and no seller is named')
+}
+
 /* ---------- config is one door, and it applies the colour ---------- */
 
 console.log('setConfig is the only way in, and it does both jobs')

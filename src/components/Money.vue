@@ -157,6 +157,30 @@ const myTally = computed(() => {
   return { count: list.length, value, paid, unpaid: Math.round((value - paid) * 100) / 100 }
 })
 
+/*
+ * WHO SEES THE RAFFLE'S OWN MONEY — named, not negated.
+ *
+ * This was `scope !== 'recorded'`, and it is the third time today this
+ * codebase has written "everything except the one I thought of". The other two
+ * were `scope !== 'totals'` deciding who got the debt table, which handed a
+ * helper every seller's line the moment a fourth scope existed, and
+ * `source <> 'settlement'` summing a write-off as cash arriving. Both were
+ * correct the day they were typed and wrong the day somebody added a value.
+ *
+ * IT WAS NOT LEAKING, and that is the reason to fix it rather than a reason
+ * not to. state.totals is scoped by totalsAgents on the server, so a scope
+ * nobody has written yet would show zeroes rather than the raffle's takings.
+ * A guard that is correct only because a different guard is correct is not a
+ * second layer — it is one layer and a coincidence, and the coincidence is
+ * what changes when somebody edits the other end.
+ *
+ * A HAND-KEPT COPY OF showsSellerNames()'s RULE, deliberately. The browser
+ * cannot import the edge function, so this cannot be spelled once; a copy that
+ * says it is a copy is the honest answer, and naming the three scopes that get
+ * the figures means a fourth has to be added here on purpose.
+ */
+const showsRaffleMoney = computed(() => ['all', 'mine', 'totals'].includes(scope.value))
+
 // The same cap, for the same reason: a busy desk is hundreds of rows.
 const showAllMine = ref(false)
 const mineShown = computed(() => showAllMine.value ? mine.value : mine.value.slice(0, CAP))
@@ -203,13 +227,14 @@ function waLink(a) {
     <h1>Money</h1>
     <p class="muted">The system records money — it never touches it. Cash is handled in person.</p>
 
-    <!-- THE RAFFLE'S MONEY, for everyone it belongs to in some part.
-         Hidden from a helper only: those figures are the whole raffle's
+    <!-- THE RAFFLE'S MONEY, for the three scopes it belongs to in some part.
+         A helper is not one of them: those figures are the whole raffle's
          takings, from transactions that were not theirs, and showing them
-         zeroed instead would be honest and still pointless. A VIEWER now keeps
-         them — the condition used to be `scope !== 'totals'`, which hid the
-         figures from the one role that exists to check them. -->
-    <div v-if="o && scope !== 'recorded'" class="stats" style="margin-bottom:16px">
+         zeroed instead would be honest and still pointless. A VIEWER is one —
+         this once read `scope !== 'totals'`, which hid the figures from the
+         one role that exists to check them. Named rather than negated; see
+         showsRaffleMoney. -->
+    <div v-if="o && showsRaffleMoney" class="stats" style="margin-bottom:16px">
       <div class="stat"><div class="n">{{ moneyShort(o.expected, currency) }}</div><div class="l">Should have</div></div>
       <div class="stat"><div class="n">{{ moneyShort(o.collected, currency) }}</div><div class="l">Handed in</div></div>
       <div class="stat" :class="{ accent: o.outstanding > 0 }">
