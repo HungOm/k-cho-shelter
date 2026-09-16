@@ -720,12 +720,24 @@ guard, or a fixture describing data the database would refuse.
 
 **Nothing here has been run against production, and two things need a person.**
 
-1. **`supabase/test-functions.sh` has not been run.** Docker was unavailable for
-   the whole of this work. Every SQL case added to it — the append-only
-   triggers, the settlement ledger arithmetic, `agent_money` — was instead
-   reproduced statement for statement against a local Postgres and matched, and
-   that is what the commits record. Run the script before deploying.
-2. **Four migrations are unapplied**: `20260916150000_round_snapshots`,
+1. ~~`supabase/test-functions.sh` has not been run.~~ **Done.** Both SQL scripts
+   exited 0 without Docker, which is what a green suite looks like, so every
+   machine without it concluded the SQL had been checked. They now fall back to
+   a local Postgres and report a run that cannot happen as a failure. The first
+   real run found three wrong things — cases naming a book the fixture never
+   creates, cases asserting on a view the script never applied, and eight
+   reading `book_ledger` where load order had been quietly deciding which of
+   the two definitions they got. `test-functions.sh` 157 passed,
+   `test-rls.sh` 52 passed.
+2. **Four migrations are unapplied, and a decision is needed first.**
+   `supabase db push` would also apply two migrations belonging to another
+   session that are not committed —
+   `20260916140000_ticket_history_append_only` and
+   `20260916160000_check_in_report`. The first sorts BEFORE the four below, so
+   it goes first whatever anybody intends. Whether they should go too is not a
+   question the repository can answer.
+
+   The four:: `20260916150000_round_snapshots`,
    `20260916170000_settlement_payment_in_rpc`,
    `20260916190000_write_off_adjustments`, `20260916210000_agent_money_view`.
    Each was rehearsed twice on a database built from the committed schema. Take
@@ -735,11 +747,24 @@ guard, or a fixture describing data the database would refuse.
    `SUPABASE_SECRET_KEY`. That is deliberate — a backup nobody has finished
    setting up should be loud — but it is a red cross on the repository until
    somebody does it. The two `gpg` commands are at the top of the workflow.
-4. **The receipt's acknowledgement UI is written and not committed.** The
-   server half of P4.2 is in; the screen that lets a seller tap "I received
-   these" is held back because `clientcoverage` forbids a screen calling an
-   action Apps Script does not have, and the exemption mechanism was another
-   session's uncommitted work. Land it once that bar has moved.
+4. ~~The receipt's acknowledgement UI is written and not committed.~~ **Done**
+   (`294fe4c`). The exemption mechanism was written here rather than waited
+   for: a screen may call a Supabase-only action if it is listed with a reason
+   AND reads `isSupabase`, asserted rather than promised. Expect a conflict
+   with the other session's version of the same relaxation, which is more
+   general; the two lists should become one.
+
+5. **The backup needed a pg_dump it could not have.** Supabase upgrades the
+   hosted server and nobody upgrades their laptop, so `pg_dump` — which refuses
+   to be older than what it dumps — could not run, and `supabase db dump`
+   reaches for Docker to get a matching one. `backup.sh` now falls back to
+   copying every table out with psql, which has no such rule, and says plainly
+   that a fallback backup has no schema in it. Proven by round-trip rather than
+   by reading: out to CSV, into a fresh database, counts equal.
+
+6. **`supabase/backup-key.sh`** makes the gpg pair for item 3 and prints the
+   four `gh secret set` commands. It deliberately uploads nothing: the private
+   half must never be on the machine that takes the backups.
 
 ### One deliberate divergence, recorded
 
