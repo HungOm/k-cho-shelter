@@ -11,38 +11,63 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-if ! docker info >/dev/null 2>&1; then
-  echo "Docker is not running — skipping."
-  exit 0
+# The same two ways in as test-functions.sh, and for the same reason: this used
+# to exit 0 when Docker was absent, and exit 0 is what a green suite looks like.
+# A machine without Docker checked none of the row security and said nothing.
+if docker info >/dev/null 2>&1; then
+  MODE=docker
+elif command -v psql >/dev/null 2>&1 && psql -d postgres -tAc "select 1" >/dev/null 2>&1; then
+  MODE=local
+else
+  echo "NOT RUN: no Docker and no local Postgres to fall back on." >&2
+  echo "This is the only place row security is exercised as the browser's own" >&2
+  echo "roles, so a run that cannot happen is a failure, not a pass." >&2
+  exit 1
 fi
 
 NAME=kcho-rlstest
 pass=0; fail=0
 ok() { if [ "$1" = "$2" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "  FAIL $3"; echo "    got:  $1"; echo "    want: $2"; fi; }
 
-cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
-cleanup
+DB=kcho_rlstest_$$
+if [ "$MODE" = docker ]; then
+  cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+  trap cleanup EXIT
+  cleanup
+  echo "Starting Postgres (docker)…"
+  docker run -d --name "$NAME" -e POSTGRES_PASSWORD=t -e POSTGRES_DB=kcho -p 55435:5432 postgres:16 >/dev/null
+  for _ in $(seq 1 60); do DB_ -c "select 1" >/dev/null 2>&1 && break; sleep 1; done
+  DB_() { DB_ "$@"; }
+  APPLY() { docker cp "$1" "$NAME":/tmp/f.sql >/dev/null && \
+            DB_ -q -v ON_ERROR_STOP=1 -f /tmp/f.sql; }
+else
+  cleanup() { psql -d postgres -q -c "drop database if exists $DB" >/dev/null 2>&1 || true; }
+  trap cleanup EXIT
+  cleanup
+  echo "Starting Postgres (local, server $(psql -d postgres -tAc 'show server_version' 2>/dev/null))…"
+  psql -d postgres -q -c "create database $DB" >/dev/null
+  DB_() { psql -d "$DB" "$@"; }
+  APPLY() { psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$1"; }
+fi
 
-echo "Starting Postgres…"
-docker run -d --name "$NAME" -e POSTGRES_PASSWORD=t -e POSTGRES_DB=kcho -p 55435:5432 postgres:16 >/dev/null
-for _ in $(seq 1 60); do docker exec "$NAME" psql -U postgres -d kcho -c "select 1" >/dev/null 2>&1 && break; sleep 1; done
-
-for f in schema.sql functions.sql rls.sql; do docker cp "supabase/$f" "$NAME":/tmp/ >/dev/null; done
-docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/schema.sql    >/dev/null 2>&1 || { echo "schema failed"; exit 1; }
-docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/functions.sql >/dev/null 2>&1 || { echo "functions failed"; exit 1; }
-docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/rls.sql       >/dev/null 2>&1 || { echo "rls failed"; exit 1; }
+# `anon` is created by Supabase; rls.sql revokes from it, so it has to exist.
+DB_ -q -c "do \$\$ begin
+    if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+  end \$\$;" >/dev/null 2>&1 || true
+APPLY supabase/schema.sql    >/dev/null 2>&1 || { echo "schema failed"; exit 1; }
+APPLY supabase/functions.sql >/dev/null 2>&1 || { echo "functions failed"; exit 1; }
+APPLY supabase/rls.sql       >/dev/null 2>&1 || { echo "rls failed"; exit 1; }
 
 # PostgREST connects as a role called `authenticated`; recreate that here so the
 # policies are exercised as they will be in production rather than as superuser,
 # who bypasses row security entirely and would make every test pass.
-docker exec "$NAME" psql -U postgres -d kcho -q -c "
+DB_ -q -c "
   create role authenticated nologin;
   grant usage on schema public to authenticated;
   grant select on tickets_readable, book_ledger, agents_readable, config_readable to authenticated;
   grant execute on all functions in schema public to authenticated;" >/dev/null 2>&1
 
-docker exec "$NAME" psql -U postgres -d kcho -q -c "
+DB_ -q -c "
   insert into config(key,value) values
     ('TOTAL_TICKETS','60'),('TICKETS_PER_BOOK','10'),('TICKET_PRICE','10'),('ACTIVE_TICKETS','30');
   insert into agents(agent_id,name,phone) values ('A001','Pa Thang','0125551111'),('A002','Ma Nu','0125552222');
@@ -63,7 +88,7 @@ docker exec "$NAME" psql -U postgres -d kcho -q -c "
 AS() {
   local email="$1" sql="$2" claims
   if [ -z "$email" ]; then claims='{}'; else claims="{\"email\":\"$email\"}"; fi
-  docker exec "$NAME" psql -U postgres -d kcho -tAc \
+  DB_ -tAc \
     "begin;
      select set_config('request.jwt.claims', '$claims', true);
      set local role authenticated;
@@ -91,15 +116,15 @@ AS() {
 # whose revocation is under test. Asserting the fixture is non-empty catches all
 # of them, so it is asserted here rather than assumed everywhere.
 echo "the fixture loaded at all"
-ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc 'select count(*) from app_users')" "4" "four accounts to test as"
-ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc 'select count(*) from tickets')"   "60" "sixty tickets to be refused"
-ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc 'select count(*) from books')"     "6"  "six books"
-ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc 'select count(*) from agents')"    "2"  "two sellers"
+ok "$(DB_ -tAc 'select count(*) from app_users')" "4" "four accounts to test as"
+ok "$(DB_ -tAc 'select count(*) from tickets')"   "60" "sixty tickets to be refused"
+ok "$(DB_ -tAc 'select count(*) from books')"     "6"  "six books"
+ok "$(DB_ -tAc 'select count(*) from agents')"    "2"  "two sellers"
 # And that the seed wrote what the HANDLERS write. app_users.active is generated
 # from status, so a fixture writing `active` directly does not merely differ from
 # production — it fails, and takes the evidence with it.
-ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc "select active from app_users where email='admin@x.com'")" "t" "an active account reads as active"
-ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc "select active from app_users where email='off@x.com'")"   "f" "and a suspended one does not"
+ok "$(DB_ -tAc "select active from app_users where email='admin@x.com'")" "t" "an active account reads as active"
+ok "$(DB_ -tAc "select active from app_users where email='off@x.com'")"   "f" "and a suspended one does not"
 
 echo "nobody signed in sees nothing"
 ok "$(AS '' 'select count(*) from tickets_readable')" "0" "no session, no tickets"
@@ -159,7 +184,7 @@ denied() {
   # and "SET" to stdout, and the two do not arrive in a guaranteed order
   # through a pipe. Reading only the tail made a refusal look like a success.
   local out
-  out="$(docker exec "$NAME" psql -U postgres -d kcho -tAc \
+  out="$(DB_ -tAc \
     "begin;
      select set_config('request.jwt.claims', '{\"email\":\"$1\"}', true);
      set local role authenticated;
@@ -175,13 +200,13 @@ echo "a superadmin row is an admin to every policy"
 # leaked through as a fifth value, every policy comparing against the four tiers
 # would take a branch nobody wrote — and the one that decides whether a phone
 # number is masked is among them.
-docker exec "$NAME" psql -U postgres -d kcho -tAc \
+DB_ -tAc \
   "insert into app_users(email,name,role,status) values ('super2@x.com','Second','superadmin','active')" >/dev/null
 ok "$(AS 'super2@x.com' 'select app_role()')" "admin" "app_role resolves superadmin to admin"
 ok "$(AS 'super2@x.com' 'select count(*) from tickets_readable')" "30" "and they see every ticket in play"
 ok "$(AS 'super2@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "0125550101" "with phone numbers unmasked, as an admin"
 ok "$(AS 'super2@x.com' 'select count(*) from book_ledger')" "3" "and every book in play"
-docker exec "$NAME" psql -U postgres -d kcho -tAc \
+DB_ -tAc \
   "delete from app_users where email='super2@x.com'" >/dev/null
 
 echo "the base tables are not reachable at all"
@@ -204,10 +229,10 @@ denied 'admin@x.com' "update tickets set buyer_name='hacked' where idx=1" "an ad
 denied 'admin@x.com' "delete from tickets where idx=1"                    "an admin could delete directly"
 denied 'admin@x.com' "insert into tickets(idx,number,book_idx) values (999,'X',1)" "an admin could insert directly"
 denied 'admin@x.com' "update config set value='99' where key='ACTIVE_TICKETS'" "an admin could change config directly"
-ok "$(docker exec "$NAME" psql -U postgres -d kcho -tAc "select buyer_name from tickets where idx=1")" "Buyer 1" "and the row is untouched"
+ok "$(DB_ -tAc "select buyer_name from tickets where idx=1")" "Buyer 1" "and the row is untouched"
 
 echo "releasing more tickets widens what is readable"
-docker exec "$NAME" psql -U postgres -d kcho -q -c "update config set value='60' where key='ACTIVE_TICKETS'" >/dev/null
+DB_ -q -c "update config set value='60' where key='ACTIVE_TICKETS'" >/dev/null
 ok "$(AS 'admin@x.com' 'select count(*) from tickets_readable')" "60" "the whole raffle once released"
 
 echo
@@ -224,7 +249,7 @@ echo "each view keeps the security property it was given"
 # off the base table. That is the hole 0974416 closed, and most of those numbers
 # belong to refugees. If somebody "fixes" that lint, this file says so.
 viewopt() {
-  docker exec "$NAME" psql -U postgres -d kcho -tAc \
+  DB_ -tAc \
     "select coalesce(reloptions::text, '{}') from pg_class where relname='$1'"
 }
 ok "$(viewopt tickets_readable)" "{security_invoker=false}" \

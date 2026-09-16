@@ -16,35 +16,90 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-if ! docker info >/dev/null 2>&1; then
-  echo "Docker is not running — skipping. These are integration tests; the rest"
-  echo "of the suite (./tests/run.sh) does not need it."
-  exit 0
-fi
-
 NAME=kcho-sqltest
 PORT=55434
 pass=0; fail=0
 ok()  { if [ "$1" = "$2" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "  FAIL $3"; echo "    got:  $1"; echo "    want: $2"; fi; }
 has() { if grep -q "$2" <<<"$1"; then pass=$((pass+1)); else fail=$((fail+1)); echo "  FAIL $3"; echo "    got: $1"; fi; }
 
-cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
+# ---------------------------------------------------------------------------
+# TWO WAYS TO GET A POSTGRES, because "skipped" was being read as "passed".
+#
+# This used to exit 0 when Docker was absent. Exit 0 is what a green suite
+# looks like, so a machine without Docker ran the whole of tests/run.sh, saw
+# nothing red, and concluded the SQL had been checked. It had not. That is
+# the failure this file exists to prevent, wearing the file's own clothes —
+# and it went on for the entire time a set of new cases was being added to it.
+#
+# A local server is used when there is one. It has to be a REAL Postgres of
+# the right major version: these tests are about triggers, partial indexes,
+# generated columns and plpgsql, none of which can be approximated.
+# ---------------------------------------------------------------------------
+MODE=""
+if docker info >/dev/null 2>&1; then
+  MODE=docker
+elif command -v psql >/dev/null 2>&1 && psql -d postgres -tAc "select 1" >/dev/null 2>&1; then
+  MODE=local
+  SERVER_MAJOR=$(psql -d postgres -tAc "show server_version_num" 2>/dev/null | cut -c1-2)
+  if [ "${SERVER_MAJOR:-0}" -lt 14 ]; then
+    echo "The local Postgres is older than 14. These tests need the version the"
+    echo "project runs on; start Docker instead." >&2
+    exit 1
+  fi
+else
+  echo "NOT RUN: no Docker and no local Postgres to fall back on." >&2
+  echo "These are the only tests that exercise the SQL — triggers, constraints" >&2
+  echo "and plpgsql — so a run that cannot happen is reported as a failure" >&2
+  echo "rather than as a pass. Start Docker, or run a local Postgres 14+." >&2
+  exit 1
+fi
 
-echo "Starting Postgres…"
-cleanup
-docker run -d --name "$NAME" -e POSTGRES_PASSWORD=t -e POSTGRES_DB=kcho -p $PORT:5432 postgres:16 >/dev/null
-for _ in $(seq 1 60); do
-  docker exec "$NAME" psql -U postgres -d kcho -c "select 1" >/dev/null 2>&1 && break
-  sleep 1
-done
+DB=kcho_sqltest_$$
+if [ "$MODE" = docker ]; then
+  cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+  trap cleanup EXIT
+  echo "Starting Postgres (docker)…"
+  cleanup
+  docker run -d --name "$NAME" -e POSTGRES_PASSWORD=t -e POSTGRES_DB=kcho -p $PORT:5432 postgres:16 >/dev/null
+  for _ in $(seq 1 60); do
+    docker exec "$NAME" psql -U postgres -d kcho -c "select 1" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  P() { docker exec "$NAME" psql -U postgres -d kcho -tAc "$1" 2>&1; }
+  APPLY() { docker cp "$1" "$NAME":/tmp/f.sql >/dev/null &&             docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/f.sql; }
+  # Supabase creates these; a bare Postgres does not, and rls.sql grants to them.
+  P "do \$\$ begin
+       if not exists (select 1 from pg_roles where rolname='anon') then create role anon; end if;
+       if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
+     end \$\$;" >/dev/null
+else
+  # A throwaway database named after this process, dropped on the way out, so a
+  # run can never touch anything that was already on the machine.
+  cleanup() { psql -d postgres -q -c "drop database if exists $DB" >/dev/null 2>&1 || true; }
+  trap cleanup EXIT
+  echo "Starting Postgres (local, server $(psql -d postgres -tAc 'show server_version' 2>/dev/null))…"
+  cleanup
+  psql -d postgres -q -c "create database $DB" >/dev/null
+  # rls.sql is not applied here, but schema.sql may still mention the browser
+  # roles; create them so a grant is a grant rather than an error.
+  psql -d "$DB" -q -c "do \$\$ begin
+      if not exists (select 1 from pg_roles where rolname='anon') then create role anon; end if;
+      if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
+    end \$\$;" >/dev/null 2>&1 || true
+  P() { psql -d "$DB" -tAc "$1" 2>&1; }
+  APPLY() { psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$1"; }
+fi
 
-P() { docker exec "$NAME" psql -U postgres -d kcho -tAc "$1" 2>&1; }
-
-docker cp supabase/schema.sql    "$NAME":/tmp/ >/dev/null
-docker cp supabase/functions.sql "$NAME":/tmp/ >/dev/null
-docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/schema.sql    >/dev/null 2>&1 || { echo "schema.sql failed"; exit 1; }
-docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/functions.sql >/dev/null 2>&1 || { echo "functions.sql failed"; exit 1; }
+APPLY supabase/schema.sql    >/dev/null 2>&1 || { echo "schema.sql failed"; exit 1; }
+APPLY supabase/functions.sql >/dev/null 2>&1 || { echo "functions.sql failed"; exit 1; }
+# AND rls.sql, because the VIEWS are in it. book_ledger_all and agent_money are
+# where the money arithmetic actually lives, and a suite that applies only the
+# tables and the functions cannot see either — which is how cases asserting on
+# agent_money came to be written against a database that never had it. What
+# this file does NOT test is the row security itself: it runs as the owner,
+# which bypasses every policy. test-rls.sh is where that is checked, as the
+# browser's own roles.
+APPLY supabase/rls.sql >/dev/null 2>&1 || { echo "rls.sql failed"; exit 1; }
 
 # 5 books of 10. Books 1-3 with A001, 4-5 with A002.
 P "insert into config(key,value) values
@@ -238,7 +293,13 @@ P "update books set status='Out', declared_sold=null, amount_due=null, amount_pa
    update tickets set status='Available' where book_idx=5" >/dev/null
 r=$(P "select settle_book('Book-0005','[]'::jsonb,40,false,null,false,'me@x.com','paid part')")
 has "$r" '"variance": -60' "ten sold, forty paid, sixty still owed"
-ok "$(P "select round(counted_expected-counted_collected) from book_ledger where idx=5")" "60" "and the ledger says so"
+# book_ledger_all, NOT book_ledger, and the difference is not cosmetic.
+# schema.sql defines an unfiltered `book_ledger`; rls.sql then REPLACES it with
+# the browser-facing one, whose first line is `where app_role() is not null`.
+# Applied in that order — which is the order production has — it returns
+# nothing to a connection with no signed-in user, which is exactly what this
+# script is. These cases read the unfiltered view they always meant.
+ok "$(P "select round(counted_expected-counted_collected) from book_ledger_all where idx=5")" "60" "and the ledger says so"
 # Refusing a short payment would mean the agent who handed in RM 40 has no
 # record of having handed in anything at all.
 
@@ -318,20 +379,20 @@ P "update books set status='Out', held_by_agent='A001', declared_sold=null, amou
    update tickets set status='Available', buyer_name='', buyer_phone='', source='', sold_by_agent=null, amount=null, payment_status='' where book_idx=2;
    update tickets set status='Sold', buyer_name='Ma Aye', buyer_phone='0125550777', amount=10, sold_by_agent='A001',
      payment_status='Paid', sold_at=now(), source='app' where number in ('KS-00011','KS-00012','KS-00013')" >/dev/null
-ok "$(P "select round(counted_expected) from book_ledger where idx=2")" "30" "three sold: RM 30 expected while the book is out"
+ok "$(P "select round(counted_expected) from book_ledger_all where idx=2")" "30" "three sold: RM 30 expected while the book is out"
 P "update books set status='Lost', notes='seller says lost' where idx=2" >/dev/null
-ok "$(P "select round(counted_expected) from book_ledger where idx=2")" "30" "still RM 30 once it is marked lost — the sales did not stop existing"
-ok "$(P "select counted_sold from book_ledger where idx=2")" "3" "and the three sales are still counted"
-ok "$(P "select unidentified_sold from book_ledger where idx=2")" "0" "with nothing unidentified, because nothing was declared"
+ok "$(P "select round(counted_expected) from book_ledger_all where idx=2")" "30" "still RM 30 once it is marked lost — the sales did not stop existing"
+ok "$(P "select counted_sold from book_ledger_all where idx=2")" "3" "and the three sales are still counted"
+ok "$(P "select unidentified_sold from book_ledger_all where idx=2")" "0" "with nothing unidentified, because nothing was declared"
 
 echo "sold by count with no numbers is money, and the ledger says how many cannot be drawn"
 P "update books set status='Out', held_by_agent='A002', declared_sold=null, amount_due=null, amount_paid=null where idx=4;
    update tickets set status='Available', buyer_name='', buyer_phone='', source='', sold_by_agent=null, amount=null, payment_status='' where book_idx=4" >/dev/null
 r=$(P "select settle_book('Book-0004','[]'::jsonb,60,true,6,false,'me@x.com','stubs lost')")
 has "$r" '"declaredSold": 6' "six declared"
-ok "$(P "select unidentified_sold from book_ledger where idx=4")" "6" "none of them identified"
-ok "$(P "select round(unidentified_amount) from book_ledger where idx=4")" "60" "worth RM 60 the draw cannot include"
-ok "$(P "select round(counted_expected) from book_ledger where idx=4")" "60" "and still expected in full — the money is real"
+ok "$(P "select unidentified_sold from book_ledger_all where idx=4")" "6" "none of them identified"
+ok "$(P "select round(unidentified_amount) from book_ledger_all where idx=4")" "60" "worth RM 60 the draw cannot include"
+ok "$(P "select round(counted_expected) from book_ledger_all where idx=4")" "60" "and still expected in full — the money is real"
 
 echo "counting a book in does not erase a buyer"
 P "update books set status='Out', held_by_agent='A001', declared_sold=null, amount_due=null, amount_paid=null where idx=2;
@@ -427,7 +488,7 @@ P "insert into agents(agent_id,name,phone) values ('SET','Settle Seller','012555
    update books set status='Out', held_by_agent='SET', declared_sold=null, amount_due=null, amount_paid=null,
                     settled_at=null, settled_by='' where idx=2;
    delete from payments where book_idx=2" >/dev/null
-P "select settle_book('Book-002','[]'::jsonb,120,false,null,false,'me@x.com','')" >/dev/null
+P "select settle_book('Book-0002','[]'::jsonb,120,false,null,false,'me@x.com','')" >/dev/null
 ok "$(P "select count(*)||'/'||sum(amount) from payments where book_idx=2 and source='settlement'")" "1/120.00" "one row, for what was handed over"
 ok "$(P "select (select coalesce(sum(amount),0) from payments where book_idx=2) = (select amount_paid from books where idx=2)")" "t" "and it equals what the book says"
 
@@ -435,7 +496,7 @@ ok "$(P "select (select coalesce(sum(amount),0) from payments where book_idx=2) 
 # row when the second count came to nothing, destroys the only evidence that the
 # first figure was ever claimed — and a correction whose evidence is gone cannot
 # be told from a figure that was always right.
-P "select settle_book('Book-002','[]'::jsonb,90,false,null,true,'me@x.com','')" >/dev/null
+P "select settle_book('Book-0002','[]'::jsonb,90,false,null,true,'me@x.com','')" >/dev/null
 ok "$(P "select count(*) from payments where book_idx=2")" "3" "the first row, its reversal, and the new one"
 ok "$(P "select amount from payments where book_idx=2 and reverses is not null")" "-120.00" "the reversal is the negative of what it undoes"
 ok "$(P "select count(*) from payments where book_idx=2 and abs(amount)=120")" "2" "and RM120 is still readable as having been claimed"
@@ -443,7 +504,7 @@ ok "$(P "select (select sum(amount) from payments where book_idx=2) = (select am
 
 # ZERO IS NOT A ROW. payments refuses amount = 0, so settling for nothing leaves
 # the reversal and no replacement — which reads correctly: claimed, then taken back.
-P "select settle_book('Book-002','[]'::jsonb,0,false,null,true,'me@x.com','')" >/dev/null
+P "select settle_book('Book-0002','[]'::jsonb,0,false,null,true,'me@x.com','')" >/dev/null
 ok "$(P "select coalesce(sum(amount),0) from payments where book_idx=2")" "0.00" "settling for nothing leaves nothing owed to the ledger"
 ok "$(P "select count(*) from payments where book_idx=2 and amount=0")" "0" "and writes no zero row for somebody to interpret"
 ok "$(P "select (select coalesce(sum(amount),0) from payments where book_idx=2) = (select amount_paid from books where idx=2)")" "t" "book and ledger agree at zero too"
