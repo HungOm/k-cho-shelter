@@ -484,30 +484,40 @@ has "$r" "violates foreign key" "and the seller cannot be erased out from under 
 # What is asserted here is the arithmetic the dropped unique index used to gesture
 # at: the settlement rows for a book add up to what the book says was paid.
 echo "the cash counted in at settlement is in the ledger, and adds up"
+# A BOOK OF ITS OWN, because the ledger cannot be cleared between cases.
+#
+# This used to reset book 2 and delete its payment rows. The ledger refuses a
+# delete outright now — it is append only, and rightly so — and book 2 has been
+# settled twice by earlier cases, so what these assertions actually saw was a
+# reversal of somebody else's settlement sitting in front of their own. A test
+# that needs to destroy evidence in order to count something is testing the
+# wrong thing; one that needs a clean book should ask for a clean book.
 P "insert into agents(agent_id,name,phone) values ('SET','Settle Seller','0125559999') on conflict do nothing;
-   update books set status='Out', held_by_agent='SET', declared_sold=null, amount_due=null, amount_paid=null,
-                    settled_at=null, settled_by='' where idx=2;
-   delete from payments where book_idx=2" >/dev/null
-P "select settle_book('Book-0002','[]'::jsonb,120,false,null,false,'me@x.com','')" >/dev/null
-ok "$(P "select count(*)||'/'||sum(amount) from payments where book_idx=2 and source='settlement'")" "1/120.00" "one row, for what was handed over"
-ok "$(P "select (select coalesce(sum(amount),0) from payments where book_idx=2) = (select amount_paid from books where idx=2)")" "t" "and it equals what the book says"
+   insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
+     values (6,'Book-0006','KS-00051','KS-00060','Out','SET') on conflict (idx) do nothing;
+   insert into tickets(idx,number,book_idx,status)
+     select i,'KS-'||lpad(i::text,5,'0'),6,'Available' from generate_series(51,60) i
+     on conflict (idx) do nothing" >/dev/null
+P "select settle_book('Book-0006','[]'::jsonb,120,false,null,false,'me@x.com','')" >/dev/null
+ok "$(P "select count(*)||'/'||sum(amount) from payments where book_idx=6 and source='settlement'")" "1/120.00" "one row, for what was handed over"
+ok "$(P "select (select coalesce(sum(amount),0) from payments where book_idx=6) = (select amount_paid from books where idx=6)")" "t" "and it equals what the book says"
 
 # A RE-SETTLE IS A REVERSAL AND A NEW ROW. Updating in place, or deleting the
 # row when the second count came to nothing, destroys the only evidence that the
 # first figure was ever claimed — and a correction whose evidence is gone cannot
 # be told from a figure that was always right.
-P "select settle_book('Book-0002','[]'::jsonb,90,false,null,true,'me@x.com','')" >/dev/null
-ok "$(P "select count(*) from payments where book_idx=2")" "3" "the first row, its reversal, and the new one"
-ok "$(P "select amount from payments where book_idx=2 and reverses is not null")" "-120.00" "the reversal is the negative of what it undoes"
-ok "$(P "select count(*) from payments where book_idx=2 and abs(amount)=120")" "2" "and RM120 is still readable as having been claimed"
-ok "$(P "select (select sum(amount) from payments where book_idx=2) = (select amount_paid from books where idx=2)")" "t" "the ledger still equals the book"
+P "select settle_book('Book-0006','[]'::jsonb,90,false,null,true,'me@x.com','')" >/dev/null
+ok "$(P "select count(*) from payments where book_idx=6")" "3" "the first row, its reversal, and the new one"
+ok "$(P "select amount from payments where book_idx=6 and reverses is not null")" "-120.00" "the reversal is the negative of what it undoes"
+ok "$(P "select count(*) from payments where book_idx=6 and abs(amount)=120")" "2" "and RM120 is still readable as having been claimed"
+ok "$(P "select (select sum(amount) from payments where book_idx=6) = (select amount_paid from books where idx=6)")" "t" "the ledger still equals the book"
 
 # ZERO IS NOT A ROW. payments refuses amount = 0, so settling for nothing leaves
 # the reversal and no replacement — which reads correctly: claimed, then taken back.
-P "select settle_book('Book-0002','[]'::jsonb,0,false,null,true,'me@x.com','')" >/dev/null
-ok "$(P "select coalesce(sum(amount),0) from payments where book_idx=2")" "0.00" "settling for nothing leaves nothing owed to the ledger"
-ok "$(P "select count(*) from payments where book_idx=2 and amount=0")" "0" "and writes no zero row for somebody to interpret"
-ok "$(P "select (select coalesce(sum(amount),0) from payments where book_idx=2) = (select amount_paid from books where idx=2)")" "t" "book and ledger agree at zero too"
+P "select settle_book('Book-0006','[]'::jsonb,0,false,null,true,'me@x.com','')" >/dev/null
+ok "$(P "select coalesce(sum(amount),0) from payments where book_idx=6")" "0.00" "settling for nothing leaves nothing owed to the ledger"
+ok "$(P "select count(*) from payments where book_idx=6 and amount=0")" "0" "and writes no zero row for somebody to interpret"
+ok "$(P "select (select coalesce(sum(amount),0) from payments where book_idx=6) = (select amount_paid from books where idx=6)")" "t" "book and ledger agree at zero too"
 
 # The index that used to be unique. Uniqueness would have refused the third row
 # above; the race it guarded is now held off by the row lock settle_book takes.
