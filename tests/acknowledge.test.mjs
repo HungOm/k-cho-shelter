@@ -22,8 +22,10 @@
  * acknowledgement, that the method is never taken from the request, and that
  * one seller cannot acknowledge for another.
  */
+import { readFileSync } from 'node:fs'
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
 import { fakeDb, baseConfig, users, codeOf } from './fakedb.mjs'
+import { renderScreen, visibleText } from './screen.mjs'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -247,6 +249,103 @@ const unconfirmedAck = {
   agentId: 'A001', held: 2, confirmed: 0, unconfirmed: ['Book-031', 'Book-032'],
   books: [{ book: 'Book-031', confirmed: false, method: null, at: null, by: null },
           { book: 'Book-032', confirmed: false, method: null, at: null, by: null }],
+}
+
+/*
+ * DRIVEN BY SETTING `ack` RATHER THAN BY LOADING IT, and the reason is the
+ * backend flag. A screen compiled by this harness believes it is on Apps
+ * Script unless told otherwise, `loadAck` returns early there on purpose, and a
+ * render that quietly produced no panel would let every assertion below pass
+ * over an empty document. So the panel's own state is set, and the fact that
+ * it is NOT fetched on the other backend is asserted separately, below, where
+ * the default build makes it the real question rather than an accident.
+ */
+const render = (user, ack) => renderScreen('src/components/modals/Receipt.vue',
+  receiptStore({ user, receipt, ack }),
+  { props: { agentId: 'A001' },
+    drive: async (c) => { await c.load(); c.ack.value = ack } })
+
+console.log('14. the seller is told it is their own word')
+{
+  const text = visibleText(await render({ role: 'agent', agentId: 'A001' }, unconfirmedAck))
+  ok(/2 of 2 not yet confirmed received/.test(text), 'it says how many are outstanding')
+  ok(/Book-031, Book-032/.test(text), 'and names them')
+  ok(/received them/.test(text) && /only you can give/.test(text),
+    'the sentence says it is their own confirmation, which only they can give')
+  ok(!/watched them sign/.test(text), 'and says nothing about witnessing somebody else')
+}
+
+console.log('15. an organiser is told it is only a witnessed paper')
+{
+  const text = visibleText(await render({ role: 'admin', agentId: null, isAdmin: true }, unconfirmedAck))
+  ok(/watched them sign/.test(text), 'the sentence says what the tap actually means')
+  ok(/witnessed by you, not by them/.test(text),
+    'and names the weakness outright, because that is the whole difference')
+  ok(!/only you can give/.test(text), 'it never claims to be the seller\'s own')
+}
+
+console.log('16. once confirmed, it says which kind each one was')
+{
+  const done = {
+    agentId: 'A001', held: 2, confirmed: 2, unconfirmed: [],
+    books: [{ book: 'Book-031', confirmed: true, method: 'app', at: '2026-09-10', by: 'hla@x.com' },
+            { book: 'Book-032', confirmed: true, method: 'paper', at: '2026-09-11', by: 'admin@x.com' }],
+  }
+  const text = visibleText(await render({ role: 'admin', agentId: null, isAdmin: true }, done))
+  ok(/All 2 confirmed received/.test(text), 'it says they are all in')
+  ok(/confirmed by the seller/.test(text), 'the seller\'s own is named as theirs')
+  ok(/signed paper/.test(text), 'and the witnessed one as paper — never merged into one word')
+}
+
+console.log('17. the confirmation is the record, not the paper')
+{
+  const html = await render({ role: 'agent', agentId: 'A001' }, unconfirmedAck)
+  ok(/class="noprint ackbox"/.test(html),
+    'the panel is marked noprint — the printed sheet is the copy, this is the record')
+  ok(/Seller.s signature/.test(visibleText(html)),
+    'and the paper keeps its signature lines, which is what somebody signs')
+}
+
+console.log('18. on the spreadsheet backend it does not ask at all')
+{
+  /*
+   * Apps Script has no such action and cannot have one. Asking anyway shows a
+   * volunteer an unknown-action error, which reads as the app being broken
+   * rather than as a feature the other backend does not have. This harness
+   * compiles as Apps Script by default, which is what makes this the one case
+   * here that needs no flag to be the real question.
+   */
+  const html = await renderScreen('src/components/modals/Receipt.vue',
+    receiptStore({ user: { role: 'agent', agentId: 'A001' }, receipt, ack: unconfirmedAck }),
+    { props: { agentId: 'A001' },
+      drive: async (c) => {
+        await c.load()
+        await c.loadAck()
+        ok(c.ack.value === null, 'loadAck fetched nothing on a backend that has no such action')
+        await c.confirm()
+        ok(c.acking.value === false, 'and confirming is a no-op rather than an error')
+      } })
+  const text = visibleText(html)
+  ok(!/not yet confirmed received|confirmed received/.test(text), 'so no panel is shown')
+  ok(/Print \/ Save as PDF/.test(text), 'and the receipt is the paper it always was')
+}
+
+console.log('19. the two taps are never given the same words')
+{
+  /*
+   * Read off the source rather than rendered, because the button only exists
+   * where isSupabase is true and this harness builds the other backend. The
+   * property is worth pinning anyway: one label for both is exactly what a
+   * single "acknowledged" flag would produce, and it would let an organiser
+   * tap "I received these" and believe they recorded the seller's word.
+   */
+  const src = readFileSync(new URL('../src/components/modals/Receipt.vue', import.meta.url), 'utf8')
+  const button = src.slice(src.indexOf('v-if="canConfirm"'), src.indexOf('Print / Save as PDF'))
+  ok(/isTheSeller \?/.test(button), 'the label is chosen by who is tapping')
+  ok(/I received these/.test(button) && /They signed for these/.test(button),
+    'and there are two different labels, not one')
+  const sellerFirst = button.indexOf('I received these') < button.indexOf('They signed for these')
+  ok(sellerFirst, 'the seller\'s own wording is the one behind isTheSeller')
 }
 
 cleanup()

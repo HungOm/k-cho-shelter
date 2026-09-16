@@ -9,6 +9,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api, toast, state } from '../../lib/store.js'
 import { money, date } from '../../lib/format.js'
 import { waNumber, isDialable } from '../../lib/search.js'
+import { isSupabase } from '../../lib/backend.js'
 import Sheet from '../ui/Sheet.vue'
 import Logo from '../ui/Logo.vue'
 
@@ -16,6 +17,57 @@ const props = defineProps({ agentId: String })
 const emit = defineEmits(['close'])
 const r = ref(null)
 const nothing = ref('')
+const ack = ref(null)
+const acking = ref(false)
+
+/**
+ * WHOSE WORD THIS PIECE OF PAPER IS.
+ *
+ * The receipt has always had two signature lines on it, which is the right
+ * idea on paper and nothing at all in the record: the printed sheet goes in a
+ * drawer, and what the system holds is still only the organiser saying they
+ * gave the books out. "I never got those books" is an argument you cannot win
+ * with a document you printed yourself.
+ *
+ * Two ways to close that, and they are NOT the same strength, so the screen
+ * must not let them look the same:
+ *
+ *   the seller, signed in, taps it       — their own word, and only they can give it
+ *   an organiser records a signed paper  — better than nothing, still the organiser typing
+ *
+ * Which one this tap produces is decided by the server from who is asking, not
+ * by anything sent from here. This component only has to be honest about which
+ * one it is about to make, so nobody taps "confirm" believing they are
+ * recording something stronger than they are.
+ */
+const isTheSeller = computed(() => !!state.user?.agentId && state.user.agentId === props.agentId)
+const unconfirmed = computed(() => ack.value?.unconfirmed ?? [])
+const canConfirm = computed(() =>
+  isSupabase && !!ack.value && unconfirmed.value.length > 0 && !nothing.value)
+
+async function loadAck() {
+  // Apps Script has no such action, and it cannot: recording WHOSE word a
+  // confirmation is needs a row nobody can edit afterwards, which a sheet
+  // anybody with the link can open has nowhere to put. Asking anyway would
+  // show a volunteer an unknown-action error and read as the app being broken,
+  // so on that backend the receipt is the paper it always was.
+  if (!isSupabase) return
+  try { ack.value = await api('acknowledged_books', { agentId: props.agentId }) } catch { ack.value = null }
+}
+
+async function confirm() {
+  if (acking.value || !isSupabase) return
+  acking.value = true
+  try {
+    const got = await api('acknowledge_books', { agentId: props.agentId })
+    toast(got.method === 'app'
+      ? `You confirmed ${got.confirmed.length} ${got.confirmed.length === 1 ? 'book' : 'books'}`
+      : `Recorded: ${r.value?.agent?.name || 'the seller'} signed for ${got.confirmed.length}`, 'ok')
+    await loadAck()
+  } catch (e) {
+    toast(e.message, 'bad', e.code)
+  } finally { acking.value = false }
+}
 
 /*
  * A sheet that closes itself is the worst answer to "why is there no receipt".
@@ -29,7 +81,7 @@ const nothing = ref('')
  * things: nothing to print is a fact about the seller, and a failed call is a
  * reason to try again.
  */
-onMounted(load)
+onMounted(async () => { await load(); await loadAck() })
 
 async function load() {
   try {
@@ -168,6 +220,31 @@ const waLink = computed(() => {
       </div>
     </div>
 
+    <!-- Not printed: this is the record, and the paper above is the copy. -->
+    <div v-if="ack && !nothing" class="noprint ackbox">
+      <div v-if="!unconfirmed.length" class="note ok">
+        <b>All {{ ack.confirmed }} confirmed received.</b>
+        <div v-for="b in ack.books.filter(x => x.confirmed)" :key="b.book" class="tiny">
+          {{ b.book }} — {{ b.method === 'app' ? 'confirmed by the seller' : 'signed paper' }}
+          <template v-if="b.at">· {{ date(b.at) }}</template>
+        </div>
+      </div>
+      <div v-else class="note warn">
+        <b>{{ unconfirmed.length }} of {{ ack.held }} not yet confirmed received</b>
+        <div class="tiny">{{ unconfirmed.join(', ') }}</div>
+        <p class="tiny" style="margin-top:6px">
+          <template v-if="isTheSeller">
+            Tapping below records that <b>you</b> received them — your own confirmation,
+            which only you can give.
+          </template>
+          <template v-else>
+            Tapping below records that you <b>watched them sign</b> the paper above. It is
+            witnessed by you, not by them, and it says so.
+          </template>
+        </p>
+      </div>
+    </div>
+
     <template #actions>
       <button class="btn" @click="emit('close')">Close</button>
       <!-- Nothing to send and nothing to print when there is no receipt. Two
@@ -176,6 +253,9 @@ const waLink = computed(() => {
       <a v-if="waLink && !nothing" class="btn" :href="waLink" target="_blank" rel="noopener">
         Send on WhatsApp
       </a>
+      <button v-if="canConfirm" class="btn" :disabled="acking" @click="confirm">
+        {{ acking ? 'Saving…' : (isTheSeller ? 'I received these' : 'They signed for these') }}
+      </button>
       <button v-if="!nothing" class="btn primary" @click="print()">Print / Save as PDF</button>
     </template>
   </Sheet>
