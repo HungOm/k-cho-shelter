@@ -78,8 +78,10 @@ console.log('1. the scope rule, stated once')
   eq(M.moneyScope(users.boss), 'all', 'an organiser sees every seller')
   eq(M.moneyScope(users.agent), 'mine', 'a seller sees their own line')
   eq(M.moneyScope(sellerHelper), 'mine', 'so does a helper who also carries books')
-  eq(M.moneyScope(helper), 'totals', 'a helper carrying nothing gets totals, not names')
-  eq(M.moneyScope(viewer), 'totals', 'and so does a viewer')
+  eq(M.moneyScope(helper), 'recorded', 'a helper carrying nothing gets their own record')
+  eq(M.moneyScope(viewer), 'totals', 'and a viewer gets the raffle without the names')
+  ok(M.moneyScope(helper) !== M.moneyScope(viewer),
+     'and those are DIFFERENT screens — one scope for both is the bug this split')
 
   eq(M.visibleAgents(users.boss), null, 'null means everybody')
   eq(JSON.stringify(M.visibleAgents(users.agent)), '["A001"]', 'a seller: only themselves')
@@ -99,11 +101,25 @@ console.log('2. and the report obeys it')
 
   const desk = await reports.reportOutstanding({}, helper, w.ctx)
   eq(desk.agents.length, 0, 'a helper holding nothing sees no names')
-  eq(desk.scope, 'totals', 'and is told why')
+  eq(desk.scope, 'recorded', 'and is told why')
+  eq(desk.totalExpected, 0, 'and none of the raffle\'s money is in their totals either')
 
+  /*
+   * A VIEWER'S TOTALS ARE THE RAFFLE'S, and this assertion used to be
+   * `totalOutstanding >= 0` — which 0 satisfies. It passed for as long as the
+   * bug lasted: visibleAgents returned [] for a viewer, every sum came out at
+   * nought, and the Money screen read Should have 0 / Handed in 0 / Still owed
+   * 0 to the one role whose whole purpose is checking those figures. A test
+   * that cannot tell "the raffle's money" from "no money" is not testing the
+   * thing it is named after. Pinned against the organiser's own numbers.
+   */
   const vw = await reports.reportOutstanding({}, viewer, w.ctx)
-  eq(vw.agents.length, 0, 'nor does a viewer')
-  ok(Number(vw.totalOutstanding) >= 0, 'but the totals still come back')
+  eq(vw.agents.length, 0, 'a viewer gets no names')
+  eq(vw.scope, 'totals', 'and is told so')
+  eq(vw.totalExpected, all.totalExpected, 'but the money is the whole raffle, as the organiser sees it')
+  eq(vw.totalCollected, all.totalCollected, 'handed in, likewise')
+  eq(vw.totalOutstanding, all.totalOutstanding, 'and still owed, likewise')
+  ok(Number(all.totalExpected) > 0, 'with a raffle that actually has money in it, or none of the above bites')
 }
 
 // ============ 2. recording cash ============

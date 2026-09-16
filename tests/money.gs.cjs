@@ -89,11 +89,25 @@ console.log('the scope rule, stated once');
   eq(moneyScope_(boss), 'all', 'an organiser sees every seller');
   eq(moneyScope_(seller), 'mine', 'a seller sees their own line');
   eq(moneyScope_(sellerH), 'mine', 'so does a helper who also carries books');
-  eq(moneyScope_(helper), 'totals', 'a helper carrying nothing gets totals, not names');
-  eq(moneyScope_(viewer), 'totals', 'and so does a viewer');
+  eq(moneyScope_(viewer), 'totals', 'a viewer gets the figures and no names');
+  eq(moneyScope_(helper), 'recorded', 'a helper carrying nothing gets their own record');
+  ok(moneyScope_(viewer) !== moneyScope_(helper),
+     'and those are DIFFERENT screens — one scope for both is the bug this split');
   eq(visibleAgents_(boss), null, 'null means everybody');
   eq(JSON.stringify(visibleAgents_(seller)), '["A001"]', 'a seller: only themselves');
   eq(JSON.stringify(visibleAgents_(helper)), '[]', 'a helper with no books: nobody');
+
+  // WHOSE NAME versus WHOSE MONEY. They agree on everybody except a viewer,
+  // which is exactly why one function did for both until a viewer's Money
+  // screen read nought.
+  eq(totalsAgents_(viewer), null, 'a viewer counts the whole raffle');
+  eq(JSON.stringify(visibleAgents_(viewer)), '[]', 'and is still told no names');
+  eq(JSON.stringify(totalsAgents_(helper)), '[]', 'a helper counts nothing, carrying nothing');
+
+  ok(showsSellerNames_('all') && showsSellerNames_('mine'), 'the table goes to two scopes');
+  ok(!showsSellerNames_('totals') && !showsSellerNames_('recorded'), 'and to neither of the others');
+  ok(!showsSellerNames_('added-later'),
+     'an unrecognised scope is refused, so a fifth one cannot leak the table');
 }
 
 console.log('and the report obeys it');
@@ -103,9 +117,25 @@ console.log('and the report obeys it');
   const mine = handleReportOutstanding({}, seller);
   eq(mine.agents.length, 1, 'a seller sees one line');
   eq(mine.agents[0].agentId, 'A001', 'their own');
-  eq(handleReportOutstanding({}, helper).agents.length, 0, 'a helper holding nothing sees no names');
-  eq(handleReportOutstanding({}, viewer).agents.length, 0, 'nor does a viewer');
-  eq(handleReportOutstanding({}, viewer).scope, 'totals', 'and is told why');
+  const desk = handleReportOutstanding({}, helper);
+  eq(desk.agents.length, 0, 'a helper holding nothing sees no names');
+  eq(desk.scope, 'recorded', 'and is told why');
+  eq(desk.totalExpected, 0, 'with none of the raffle\'s money in their totals either');
+
+  /*
+   * A VIEWER'S TOTALS ARE THE RAFFLE'S. This asserted only that the rows were
+   * empty, which stayed true while every figure beside them was nought —
+   * the honest half of a screen that told an auditor the raffle had taken
+   * nothing. Pinned against the organiser's own numbers, on both backends.
+   */
+  const all = handleReportOutstanding({}, boss);
+  const vw = handleReportOutstanding({}, viewer);
+  eq(vw.agents.length, 0, 'a viewer sees no names');
+  eq(vw.scope, 'totals', 'and is told so');
+  eq(vw.totalExpected, all.totalExpected, 'but the money is the whole raffle');
+  eq(vw.totalCollected, all.totalCollected, 'handed in, likewise');
+  eq(vw.totalOutstanding, all.totalOutstanding, 'and still owed, likewise');
+  ok(Number(all.totalExpected) > 0, 'with a raffle that has money in it, or none of the above bites');
 }
 
 console.log('money can be handed in without closing a book');

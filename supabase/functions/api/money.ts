@@ -23,25 +23,85 @@ import { ApiError, type AppUser } from './gate.ts'
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
 /**
- * Which sellers this person may be told about.
+ * Which sellers this person may be told about BY NAME.
  *
  * Returns null for "everybody" and a list otherwise, so a caller can put the
- * decision in one place instead of re-deriving it per report. A viewer gets an
- * empty list: they are trusted with the totals and not with who owes them.
+ * decision in one place instead of re-deriving it per report.
  */
 export function visibleAgents(user: AppUser): string[] | null {
   if (user.isAdmin) return null
   // An agent, or a helper who also carries books, sees their own line. A helper
   // with no agent record sees none, which is the true answer rather than a
-  // refusal — they are not holding anybody's money.
+  // refusal — they are not holding anybody's money. A viewer sees none either:
+  // oversight is about the shape of the raffle, not about who is behind.
   const own = String(user.agentId ?? '').trim()
   return own ? [own] : []
 }
 
-/** 'all' for an organiser, 'mine' for somebody with books, 'totals' otherwise. */
-export function moneyScope(user: AppUser): 'all' | 'mine' | 'totals' {
+/**
+ * Whose money counts toward the TOTALS this person is shown.
+ *
+ * TWO DIFFERENT QUESTIONS WERE BEING ANSWERED BY ONE VALUE, which is the same
+ * mistake as the empty-list guard below, one level up. "Whose name may I see"
+ * and "whose money is in my total" are not the same question, and a VIEWER is
+ * exactly the person for whom the answers differ: no names at all, and the
+ * whole raffle's money — oversight is the entire point of the role.
+ *
+ * visibleAgents said [] for them, so the totals summed nothing and a viewer's
+ * Money screen read Should have 0, Handed in 0, Still owed 0. Before the empty
+ * list was fixed it read 0, everything, minus-everything. Neither was the
+ * number somebody checking on the raffle is there to see, and the comment on
+ * visibleAgents claimed the opposite of what its return value did.
+ *
+ * A helper holding no books still gets [], and that is not an oversight: they
+ * are not carrying anybody's money and nothing about the raffle's balance is
+ * answerable from what they did at a desk for an afternoon.
+ */
+export function totalsAgents(user: AppUser): string[] | null {
+  if (user.isAdmin || user.role === 'viewer') return null
+  const own = String(user.agentId ?? '').trim()
+  return own ? [own] : []
+}
+
+/**
+ * Which money screen this person gets.
+ *
+ *   all       an organiser: every seller, by name
+ *   mine      a seller, or a helper who also carries books: their own line
+ *   totals    a viewer: the raffle's figures, nobody's name
+ *   recorded  a helper carrying nothing: the sales THEY wrote down
+ *
+ * 'totals' used to mean the last three at once, so the screen could not tell an
+ * auditor from a volunteer at a desk and said the same unhelpful thing to both.
+ *
+ * THE FOURTH IS NOT 'none', AND THE DIFFERENCE IS THE WHOLE POINT. A helper
+ * holding no books owes nothing and is owed nothing, so every figure on the
+ * old screen was somebody else's — but they did spend an afternoon writing
+ * sales down, and that is theirs. Hiding the screen answered the privacy
+ * question by taking away the one record they have of their own work.
+ *
+ * What 'recorded' scopes to is NOT a share of the raffle's money. It is the
+ * tickets carrying their email in recorded_by: how many they wrote down, what
+ * those came to, how many buyers had paid at the desk. Nothing about what
+ * anybody owes, because a helper never does.
+ */
+export function moneyScope(user: AppUser): 'all' | 'mine' | 'totals' | 'recorded' {
   if (user.isAdmin) return 'all'
-  return String(user.agentId ?? '').trim() ? 'mine' : 'totals'
+  if (String(user.agentId ?? '').trim()) return 'mine'
+  return user.role === 'viewer' ? 'totals' : 'recorded'
+}
+
+/**
+ * Whether a scope carries the WHO-OWES-WHAT table. Spelled once.
+ *
+ * Deliberately not `scope !== 'totals'`, which is what the two screens each
+ * wrote for themselves and what broke the moment a fourth scope existed: a
+ * helper would have fallen through to the table branch and been handed the
+ * rows the split was made to keep from them. A list of debts is released to
+ * exactly two people — the organiser, and the seller whose debt it is.
+ */
+export function showsSellerNames(scope: string): boolean {
+  return scope === 'all' || scope === 'mine'
 }
 
 /**

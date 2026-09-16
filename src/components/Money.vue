@@ -4,7 +4,7 @@
  * last column and the only one in colour.
  */
 import { ref, onMounted, computed } from 'vue'
-import { state, api, toast, canWrite } from '../lib/store.js'
+import { state, api, toast, canWrite, isSold } from '../lib/store.js'
 import { money, moneyShort, date } from '../lib/format.js'
 import { waNumber, isDialable } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
@@ -17,14 +17,22 @@ const o = computed(() => state.totals)
 /*
  * WHO SEES WHOSE, decided by the server and merely rendered here.
  *
- *   all     an organiser: every seller
- *   mine    a seller, or a helper who also carries books: their own line
- *   totals  a viewer, or a helper carrying nothing: the shape of the raffle
- *           without who is behind on what
+ *   all       an organiser: every seller
+ *   mine      a seller, or a helper who also carries books: their own line
+ *   totals    a viewer: the raffle's figures, nobody's name
+ *   recorded  a helper carrying nothing: the sales THEY wrote down
  *
- * The screen never filters — it would be a second opinion about a question the
- * report has already answered, and the two would disagree the first time one
- * of them changed.
+ * 'totals' used to cover the last two, and they want opposite screens. A viewer
+ * is here to check that the raffle's money is healthy, so they need the figures
+ * and none of the names. A helper is not carrying any of it, so the figures are
+ * not theirs to read at all — but the afternoon they spent writing sales down
+ * is, and that is the one thing the old screen could not show them.
+ *
+ * The screen never filters the SELLER table — it would be a second opinion
+ * about a question the report has already answered, and the two would disagree
+ * the first time one of them changed. What it does assemble locally is the
+ * helper's own record, which is not a narrowing of that table: it is the
+ * tickets already on this device carrying their name, and no money at all.
  */
 const emit = defineEmits(['record-payment'])
 
@@ -56,7 +64,7 @@ function toggle(id) {
 
 function ticketsFor(agentId) {
   return state.tickets
-    .filter(t => t.agent === agentId && ['Sold', 'Donated'].includes(t.status))
+    .filter(t => t.agent === agentId && isSold(t))
     .sort((x, y) => String(x.number).localeCompare(String(y.number)))
 }
 
@@ -86,6 +94,74 @@ async function loadPayments(agentId) {
 }
 
 /*
+ * WHAT THIS PERSON WROTE DOWN — the 'recorded' scope, assembled here rather
+ * than fetched.
+ *
+ * NOT A NARROWED report_outstanding, and it must not become one. That report
+ * answers "who owes what", and a helper is in none of its rows by design:
+ * money follows custody, so a sale a helper records is credited to whoever
+ * holds the book and the helper owes nothing, ever. Filtering a debt table
+ * down to them would correctly produce nothing, which is exactly the blank
+ * screen this is fixing.
+ *
+ * What is theirs is the RECORD: the tickets carrying their email in
+ * recorded_by. Those rows are already on the device — the snapshot carries
+ * Recorded_By, and a helper is the one role whose own sales come back
+ * unmasked — so this is a filter over what the app already has, not a new
+ * report and not a new permission.
+ *
+ * The email guard is load-bearing. Before the user is known, `me` is '' and an
+ * unguarded comparison would match every ticket nobody recorded — the whole
+ * desk's sales, shown to a helper, which is the class of bug this screen was
+ * being fixed for in the first place.
+ *
+ * WHY IT SITS ABOVE isPaid, WHICH IT CALLS. moneyowed.test.mjs evaluates the
+ * rest of this script in three spans — isPaid to telHref, telHref to waLink,
+ * and waLink to the closing script tag — which between them cover every line
+ * below. Those evals have no Vue in scope, so a `computed` dropped into any of
+ * them is a ReferenceError in a test about payment chips. Everything under
+ * isPaid is a small pure helper the tests run on its own; this is data
+ * derivation and belongs up here with the rest of it. The forward reference is
+ * safe: a computed's getter does not run until the first render, by which time
+ * every const in this module has been initialised, and copying the paid test
+ * instead would put the one rule this screen has already got wrong once into
+ * two places again.
+ *
+ * That last span's marker is NAMED rather than written out above, and it has
+ * to be: spelled literally, the closing tag ends the span early, because the
+ * slice runs to the first match in the file — which would be the sentence
+ * describing it. A comment about a marker is indistinguishable from the
+ * marker, the same trap as a file that explains a rule reading as the rule.
+ */
+const mine = computed(() => {
+  const me = String(state.user?.email || '')
+  if (!me) return []
+  return state.tickets
+    .filter(t => isSold(t) && String(t.by || '') === me)
+    .sort((x, y) => String(x.number).localeCompare(String(y.number)))
+})
+
+/*
+ * THE FOUR NUMBERS A VOLUNTEER ACTUALLY WANTS at the end of an afternoon.
+ *
+ * None of them is money owed, and none of them is the raffle's. "What they came
+ * to" is the face value of what this person wrote down; "buyers paid" is the
+ * ticket's own payment_status, which is the buyer paying the seller at the desk
+ * — the other money event this screen has always had to keep apart.
+ */
+const myTally = computed(() => {
+  const list = mine.value
+  const sum = ts => ts.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+  const value = sum(list)
+  const paid = sum(list.filter(isPaid))
+  return { count: list.length, value, paid, unpaid: Math.round((value - paid) * 100) / 100 }
+})
+
+// The same cap, for the same reason: a busy desk is hundreds of rows.
+const showAllMine = ref(false)
+const mineShown = computed(() => showAllMine.value ? mine.value : mine.value.slice(0, CAP))
+
+/*
  * WHETHER THE BUYER PAID THE SELLER — which is NOT whether the seller has
  * handed it in, and conflating the two is what made this column meaningless.
  *
@@ -110,6 +186,7 @@ function telHref(phone) {
   return 'tel:' + String(phone).replace(/[^\d+]/g, '')
 }
 
+
 function waLink(a) {
   // Not just "is there a number". A number we cannot place is a link to a
   // stranger, and it looks exactly like a link that works.
@@ -126,12 +203,13 @@ function waLink(a) {
     <h1>Money</h1>
     <p class="muted">The system records money — it never touches it. Cash is handled in person.</p>
 
-    <!-- Not shown to somebody with no money of their own and no oversight role.
-         The figures were the whole raffle's takings, from transactions that were
-         not theirs; showing them zeroed instead would be honest and still
-         pointless. This screen is reachable at all only for a helper who also
-         carries books, and then it is their own line. -->
-    <div v-if="o && scope !== 'totals'" class="stats" style="margin-bottom:16px">
+    <!-- THE RAFFLE'S MONEY, for everyone it belongs to in some part.
+         Hidden from a helper only: those figures are the whole raffle's
+         takings, from transactions that were not theirs, and showing them
+         zeroed instead would be honest and still pointless. A VIEWER now keeps
+         them — the condition used to be `scope !== 'totals'`, which hid the
+         figures from the one role that exists to check them. -->
+    <div v-if="o && scope !== 'recorded'" class="stats" style="margin-bottom:16px">
       <div class="stat"><div class="n">{{ moneyShort(o.expected, currency) }}</div><div class="l">Should have</div></div>
       <div class="stat"><div class="n">{{ moneyShort(o.collected, currency) }}</div><div class="l">Handed in</div></div>
       <div class="stat" :class="{ accent: o.outstanding > 0 }">
@@ -143,18 +221,88 @@ function waLink(a) {
       <div class="stat"><div class="n">{{ (o.ticketsSold || 0).toLocaleString() }}</div><div class="l">Tickets sold</div></div>
     </div>
 
+    <!-- A HELPER'S OWN FOUR NUMBERS. Not a share of the raffle's: what they
+         wrote down, what it came to, and how much of it the buyers had paid
+         over by the time they wrote it. -->
+    <div v-else-if="scope === 'recorded'" class="stats" style="margin-bottom:16px">
+      <div class="stat"><div class="n">{{ myTally.count.toLocaleString() }}</div><div class="l">You wrote down</div></div>
+      <div class="stat"><div class="n">{{ moneyShort(myTally.value, currency) }}</div><div class="l">What they came to</div></div>
+      <div class="stat"><div class="n">{{ moneyShort(myTally.paid, currency) }}</div><div class="l">Buyers paid</div></div>
+      <div class="stat" :class="{ accent: myTally.unpaid > 0 }">
+        <div class="n" :style="myTally.unpaid > 0 ? 'color:var(--warn)' : ''">
+          {{ moneyShort(myTally.unpaid, currency) }}
+        </div>
+        <div class="l">Not paid yet</div>
+      </div>
+    </div>
+
     <div class="card">
-      <h3>What each seller owes</h3>
-      <p class="muted small">Tickets written down as sold, minus the cash handed in.</p>
+      <h3>{{ scope === 'recorded' ? 'What you wrote down' : 'What each seller owes' }}</h3>
+      <p v-if="scope === 'recorded'" class="muted small">
+        Every sale recorded under your name, and whether the buyer had paid when
+        you wrote it down.
+      </p>
+      <p v-else class="muted small">Tickets written down as sold, minus the cash handed in.</p>
 
       <div v-if="rows === null" class="col" style="gap:12px;margin-top:14px">
         <div v-for="i in 4" :key="i" class="skel"></div>
       </div>
 
+      <!--
+        A HELPER'S OWN RECORD.
+        Placed before the 'totals' branch because the two used to be one scope
+        and said the same unhelpful thing to both. A helper owes nothing, so
+        there is no line for them in the table above — but the afternoon they
+        spent at the desk is a real record and it is theirs.
+      -->
+      <template v-else-if="scope === 'recorded'">
+        <div class="note info" style="margin-top:12px">
+          The cash goes to the organiser and every sale is credited to whoever
+          holds the book, so none of the raffle's money is owed by you or to
+          you. This is the record of what you wrote down.
+        </div>
+
+        <div v-if="!mine.length" class="tiny muted" style="margin-top:12px">
+          Nothing yet. Sales you record on the Sell screen show up here, with
+          what each one came to.
+        </div>
+
+        <div v-else class="tablewrap" style="margin-top:12px">
+          <table>
+            <thead>
+              <!-- "Buyer paid", the same distinction the seller table makes:
+                   whether the buyer handed the money over is not whether it has
+                   reached the organiser, and this person did neither. -->
+              <tr><th>Ticket</th><th>Book</th><th>Bought by</th>
+                  <th class="num">Amount</th><th>Buyer paid</th><th>When</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="t in mineShown" :key="t.number">
+                <td><b>{{ t.number }}</b></td>
+                <td>{{ t.book }}</td>
+                <td>{{ t.name || '—' }}<template v-if="t.phone"> · {{ t.phone }}</template></td>
+                <td class="num">{{ money(t.amount) }}</td>
+                <td>
+                  <span :class="['pill', isPaid(t) ? 'ok' : 'bad']">
+                    {{ isPaid(t) ? 'paid' : 'not paid' }}
+                  </span>
+                </td>
+                <td class="tiny muted">{{ t.saleDate ? date(t.saleDate) : '' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p v-if="mine.length > mineShown.length" class="tiny muted" style="margin-top:8px">
+          Showing {{ mineShown.length }} of {{ mine.length }}.
+          <button class="linkish" @click="showAllMine = true">Show them all</button>
+        </p>
+      </template>
+
       <div v-else-if="scope === 'totals'" class="note info" style="margin-top:12px">
-        Money is kept by the organiser. You are not holding any, so there is
-        nothing here for you — what you record as sold shows up on the Sell
-        screen and on the book it came from.
+        The figures above are the raffle's. Who owes what is the organiser's to
+        see — this screen shows you whether the money is healthy, not the people
+        behind it.
       </div>
 
       <div v-else-if="rows.length" class="tablewrap" style="margin-top:8px">

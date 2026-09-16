@@ -33,6 +33,10 @@ const read = p => readFileSync(new URL(p, import.meta.url), 'utf8')
 const src = read('../src/components/Money.vue')
 const gs = read('../apps_script/Reports.gs')
 const ts = read('../supabase/functions/api/reports.ts')
+// The Supabase side splits the decision out of the report; Apps Script keeps
+// both in Reports.gs. So "defined once per backend" is asserted against the
+// file that DEFINES it, and "used" against the report that calls it.
+const tsMoney = read('../supabase/functions/api/money.ts')
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -86,13 +90,37 @@ console.log('the per-seller scoping the port dropped')
  * handlers as each role. A grep cannot tell you a rule holds; it can only tell
  * you a string is present.
  */
-ok(/visibleAgents_\(user\)/.test(gs),
-   'Apps Script decides who may be told about whom in one place')
-ok(/visibleAgents\(user\)/.test(ts),
+/*
+ * TWO DECISIONS NOW, NOT ONE, and that is the repair rather than a wrinkle.
+ * "Whose name may I see" and "whose money is in my total" have different
+ * answers for exactly one role — a viewer, who is trusted with the raffle's
+ * figures and not with who is behind on them. One list cannot say both, and
+ * while it tried, a viewer's Money screen read nought across the board.
+ *
+ * So what is asserted is that EACH question is answered in one place per
+ * backend, and that the report sums by the totals one. Pointing the second at
+ * the first would restore the bug and reads, in a diff, like removing a
+ * duplicate.
+ */
+ok(/function totalsAgents_\(/.test(gs) && /function visibleAgents_\(/.test(gs),
+   'Apps Script answers both questions, each in one place')
+ok(/export function totalsAgents\(/.test(tsMoney) && /export function visibleAgents\(/.test(tsMoney),
    'and so does Supabase — what one seller owes is not another seller\'s business')
+ok(!/function (totalsAgents|visibleAgents)\(/.test(ts),
+   'and the report does not keep a second opinion of its own')
+ok(/var only = totalsAgents_\(user\)/.test(gs) && /const only = totalsAgents\(user\)/.test(ts),
+   'and the outstanding report sums by whose money it is, not by whose name may be printed')
 ok(/only && only\.indexOf\(r\.agentId\) === -1/.test(gs) &&
    /only && !only\.includes\(key\)/.test(ts),
    'and both actually filter the rows by it')
+// The table of debts is released by an allow-list on both sides. `!== 'totals'`
+// was correct until a fourth scope existed, and then handed a helper every
+// seller's line.
+ok(/function showsSellerNames_\(/.test(gs) && /export function showsSellerNames\(/.test(tsMoney),
+   'and who gets the ROWS is its own decision, spelled once per backend')
+ok(/showsSellerNames_\(scope\) \? list : \[\]/.test(gs) &&
+   /showsSellerNames\(scope\) \? rows : \[\]/.test(ts),
+   'and both reports release the table through it, rather than testing the scope by hand')
 
 console.log('the stopgap is gone, not merely unused')
 ok(!/normalise/.test(src), 'no second spelling of the wire shape in the client')
@@ -153,7 +181,17 @@ console.log('which tickets, read from what the device already has')
   ok(!isPaid({ payment: '' }) && !isPaid({}), 'blank reads as not paid, never as paid')
 }
 ok(/t\.agent === agentId/.test(src), 'the breakdown is the seller\'s own tickets')
-ok(/\['Sold', 'Donated'\]\.includes\(t\.status\)/.test(src), 'sold and donated only')
+/*
+ * MOVED TO isSold, which is where the two statuses live.
+ *
+ * This asserted the inline pair, so it pinned the one file allowed to spell it
+ * out — soldlock.test.mjs carries Money.vue as its single exception for the
+ * same reason. A donated ticket is as sold as a sold one, and the whole point
+ * of the store's helper is that no screen gets to re-decide that. Asserting the
+ * call keeps the rule; asserting the literal kept the exception.
+ */
+ok(/isSold\(t\)/.test(src), 'sold and donated only, from the one place that spells them')
+ok(!/\['Sold', 'Donated'\]/.test(src), 'and not spelled out a second time here')
 ok(/isPaid\(t\)/.test(src), 'each ticket says whether ITS money came in, not the seller\'s total')
 ok(/state\.tickets/.test(src), 'read from tickets already on the device — no extra round trip')
 

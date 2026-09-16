@@ -258,18 +258,31 @@ console.log('12. a closed round is scoped exactly as the money screen is')
   eq(mine.totals.then.outstanding, 30, 'and their own total')
 
   /*
-   * A viewer gets nothing here YET, and that is deliberate rather than
-   * finished. money.ts is midway through separating "whose names may I see"
-   * from "whose money is in my totals"; this reads the first for both, so a
-   * viewer is shown no lines and empty totals instead of somebody else's
-   * figures. The safe half of the split — widen it when the other half exists,
-   * and this assertion is where to change it.
+   * WIDENED, NOW THAT THE OTHER HALF EXISTS.
+   *
+   * This asserted that a viewer got no lines AND no figures — the safe half of
+   * a split money.ts had not finished making, with a note saying this was
+   * where to change it. totalsAgents now answers "whose money is in my
+   * totals" separately from "whose names may I see", and a viewer is the one
+   * role for whom those differ: every seller's money, nobody's name.
+   *
+   * Pinned against the ORGANISER'S own figures rather than against a number
+   * typed in here. The bug this replaces was that every sum came out at
+   * nought, and an assertion like `outstanding >= 0` — or a literal that
+   * happens to match — cannot tell "the raffle's money" from "no money".
    */
   const viewer = { ...users.admin, role: 'viewer', isAdmin: false, agentId: null }
+  const all = await D.readRoundSnapshot({ round: 3 }, users.admin, w.ctx)
   const seen = await D.readRoundSnapshot({ round: 3 }, viewer, w.ctx)
   eq(seen.lines.length, 0, 'a viewer gets no names')
-  eq(seen.totals.then.outstanding, 0, 'and, for now, no figures either')
-  eq(seen.totals.sellers, 0, 'rather than somebody else\'s')
+  eq(seen.scope, 'totals', 'and is told which screen they are on')
+  eq(seen.totals.sellers, all.totals.sellers, 'but the round is counted whole')
+  eq(seen.totals.then.outstanding, all.totals.then.outstanding,
+     'what was owed when the round closed, as the organiser sees it')
+  eq(seen.totals.now.outstanding, all.totals.now.outstanding,
+     'and what is owed now, which is the comparison the screen exists for')
+  ok(Number(all.totals.then.outstanding) > 0,
+     'with a round that actually had money owed in it, or none of the above bites')
 
   // A helper carrying no books: neither. They never owed anything, so a closed
   // round has nothing to say about them.

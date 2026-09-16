@@ -50,10 +50,10 @@ const row = { agentId: 'A1', name: 'JOHN', phone: '0125550011', booksOut: 1, boo
 const moneyStore = `
 import { reactive, ref, computed } from 'vue'
 export const state = reactive({
-  cfg: { currency: 'RM' }, totals: {}, user: { role: 'admin' },
+  cfg: { currency: 'RM' }, totals: {}, user: __USER__,
   tickets: __TICKETS__
 })
-export const api = async () => ({ agents: __ROWS__, currency: 'RM' })
+export const api = async () => ({ agents: __ROWS__, scope: __SCOPE__, currency: 'RM' })
 export const toast = () => {}
 export const agentMap = computed(() => ({}))
 export const isSuper = computed(() => true)
@@ -62,11 +62,23 @@ export const isSuper = computed(() => true)
 // than as a stub one field behind.
 export const canWrite = computed(() => true)
 export const go = () => {}
+// The real one is the single place the two sold statuses are spelled; this is
+// a stub of its BEHAVIOUR, and soldlock.test.mjs walks src/ only, so the
+// duplicate here is not the drift that rule exists to stop.
+export const isSold = t => /^(Sold|Donated)$/.test(String(t?.status || ''))
 `
 
-const money = (tickets_, rows_) => moneyStore
+/*
+ * `scope` now travels with the report, because the screen has four of them and
+ * three are only reachable by saying which. It defaults to 'all' — the shape
+ * every assertion below was written against — so adding the argument changed
+ * no existing render.
+ */
+const money = (tickets_, rows_, opts = {}) => moneyStore
   .replace('__TICKETS__', JSON.stringify(tickets_))
   .replace('__ROWS__', JSON.stringify(rows_))
+  .replace('__SCOPE__', JSON.stringify(opts.scope ?? 'all'))
+  .replace('__USER__', JSON.stringify(opts.user ?? { role: 'admin' }))
 
 const html = await renderScreen('src/components/Money.vue', money(tickets, [row]), {
   drive: async b => {
@@ -153,6 +165,73 @@ console.log('the branches one render cannot reach — each is a sentence somebod
   const loading = await renderScreen('src/components/Money.vue', money(tickets, [row]))
   ok(/skel/.test(loading), 'before the report arrives the screen shows it is working')
   ok(!/not paid/.test(loading), 'and does not report on money it has not got yet')
+}
+
+/* ---------- the same screen, for the three people who are not the organiser ---------- */
+
+console.log('a helper is shown what THEY wrote down, and none of the raffle\'s money')
+{
+  /*
+   * REPORTED FROM A SCREENSHOT TWICE, in opposite directions. First a Helper
+   * was shown the whole raffle's cash — Should have 0, Handed in 120, Still
+   * owed -120 — because the money queries read an empty scope as "no filter".
+   * Then the screen was taken away from them altogether, and the reply was
+   * that the sales they had spent the afternoon writing down had gone too.
+   *
+   * Both are the same missing distinction: a helper owes nothing and is owed
+   * nothing, so there is no line for them in a table of debts — but the
+   * RECORD of what they wrote down is theirs, and it is not a narrowed version
+   * of that table. It is the tickets already on the device carrying their name.
+   */
+  const desk = [
+    { number: 'KS-00001', book: 'B1', agent: 'A1', status: 'Sold', amount: 10, payment: 'Paid',
+      name: 'Buyer One', phone: '0125550001', saleDate: '2026-09-10', by: 'rec@x.com' },
+    { number: 'KS-00002', book: 'B1', agent: 'A1', status: 'Donated', amount: 10, payment: 'Unpaid',
+      name: 'Buyer Two', phone: '0125550002', saleDate: '2026-09-10', by: 'rec@x.com' },
+    { number: 'KS-00003', book: 'B2', agent: 'A2', status: 'Sold', amount: 10, payment: 'Paid',
+      name: 'Somebody Else', phone: '0125550003', saleDate: '2026-09-10', by: 'other@x.com' },
+  ]
+  const helper = await renderScreen('src/components/Money.vue',
+    money(desk, [], { scope: 'recorded', user: { role: 'recorder', email: 'rec@x.com' } }),
+    { drive: b => b.load() })
+  const said = visibleText(helper)
+
+  ok(/What you wrote down/.test(said), 'the screen is about their own afternoon')
+  ok(/KS-00001/.test(said), 'the sale they recorded is listed')
+  // A DONATED ticket is as recorded as a sold one, and dropping it is the
+  // half-of-the-fact mistake isSold exists to stop.
+  ok(/KS-00002/.test(said), 'and so is the donated one')
+  ok(/Buyer One/.test(said), 'with the buyer, whom a helper may see on their own rows')
+
+  ok(!/KS-00003/.test(said), 'nothing somebody else recorded')
+  ok(!/Somebody Else/.test(said), 'and not that buyer either')
+
+  ok(!/Should have/.test(said), "none of the raffle's figures — a helper is carrying none of it")
+  ok(!/Still owed/.test(said), 'nothing about what anybody owes')
+  ok(!/What each seller owes/.test(said), "and no table of other people's debts")
+  ok(/none of the raffle's money is owed by you/.test(said),
+     'the screen says why, rather than leaving a volunteer to wonder')
+}
+
+console.log('a viewer is shown the money and none of the names')
+{
+  /*
+   * THE OTHER HALF OF THE SAME SPLIT. A viewer and a helper shared the scope
+   * 'totals', so whatever was decided for one was decided for both — and what
+   * was decided was blank. A viewer exists to check that the raffle's money is
+   * healthy; showing them nothing is the one thing the role cannot do its job
+   * without.
+   */
+  const seen = await renderScreen('src/components/Money.vue',
+    money(tickets, [], { scope: 'totals', user: { role: 'viewer', email: 'v@x.com' } }),
+    { drive: b => b.load() })
+  const said = visibleText(seen)
+
+  ok(/Should have/.test(said), "the raffle's figures are shown")
+  ok(/Still owed/.test(said), 'including what is outstanding, which is the point of looking')
+  ok(!/JOHN/.test(said), 'and no seller is named')
+  ok(!/What you wrote down/.test(said), 'this is not a helper: they have written nothing down')
+  ok(/Who owes what is the organiser's to see/.test(said), 'with a sentence saying why')
 }
 
 /* ---------- config is one door, and it applies the colour ---------- */

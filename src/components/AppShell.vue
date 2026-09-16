@@ -20,26 +20,25 @@ const SCREENS = [
   { id: 'sell',   icon: 'ticket', label: 'Sell',    roles: ['admin', 'recorder', 'agent'] },
   { id: 'books',  icon: 'books', label: 'Books',   roles: ['admin', 'recorder'] },
   { id: 'agents', icon: 'people', label: 'Sellers', roles: ['admin', 'recorder'] },
-  // A seller can now open this and see THEIR OWN line — what they have handed
-  // in and what is still owed. The report scopes it; before, a seller had
-  // nowhere in the app to find out what they owed.
   /*
-   * MONEY IS FOR WHOEVER IS CARRYING SOME.
+   * EVERY ROLE HAS A MONEY SCREEN; THEY ARE FOUR DIFFERENT SCREENS.
    *
-   * A helper records sales; they do not hold a seller's cash and do not settle
-   * a book. The screen was showing them the whole raffle's takings — money from
-   * transactions that were not theirs and that they can do nothing about — and
-   * `moneyScope` already had a name for that case, 'totals', which nobody had
-   * asked whether it should exist.
+   * The tab was taken away from a helper because what it showed them was the
+   * whole raffle's takings — money from transactions that were not theirs and
+   * that they can do nothing about. Removing the tab fixed the leak and threw
+   * away the true answer with it: a helper spent the afternoon writing sales
+   * down, and those are theirs to look at.
    *
-   * An agent keeps it: they see their own line, which is what they owe.
-   * A viewer keeps it: read-only oversight is the whole point of the role.
-   * A helper without a seller record has neither a line of their own nor any
-   * business with everybody else's.
+   * An organiser sees every seller. A seller, or a helper who also carries
+   * books, sees their own line — what they owe. A viewer sees the raffle's
+   * figures and no names, because oversight is the whole point of the role. A
+   * helper carrying nothing sees what THEY recorded, which is not money anybody
+   * owes and so is not a narrowed version of the other three.
+   *
+   * `moneyScope` on the server decides which of the four; this tab only decides
+   * whether there is a screen to open, and now there always is.
    */
-  { id: 'money',  icon: 'money', label: 'Money',   roles: ['admin', 'viewer', 'agent'],
-    // A helper who ALSO carries books has a line of their own and keeps it.
-    alsoIf: (u) => u?.role === 'recorder' && !!u?.agentId },
+  { id: 'money',  icon: 'money', label: 'Money',   roles: ['admin', 'viewer', 'agent', 'recorder'] },
   { id: 'draw',   icon: 'trophy', label: 'Draw',    roles: ['admin', 'recorder', 'viewer'] },
   { id: 'admin',  icon: 'gear', label: 'Setup',   roles: ['admin'] },
   // Super admin only, so it is filtered by more than role — see `visible`.
@@ -48,7 +47,7 @@ const SCREENS = [
 ]
 
 const visible = computed(() => SCREENS.filter(s =>
-  (s.roles.includes(state.user?.role) || s.alsoIf?.(state.user)) &&
+  s.roles.includes(state.user?.role) &&
   (!s.sup || state.user?.isSuperAdmin)))
 
 /**

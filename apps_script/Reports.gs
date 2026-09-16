@@ -158,17 +158,63 @@ function buildBookLedger_() {
  * would disagree with itself the first time somebody was both.
  */
 
-/** Which sellers this person may be told about; null means everybody. */
+/** Which sellers this person may be told about BY NAME; null means everybody. */
 function visibleAgents_(user) {
   if (user && user.isAdmin) return null;
   var own = String((user && user.agentId) || '').trim();
   return own ? [own] : [];
 }
 
-/** 'all' for an organiser, 'mine' for somebody with books, 'totals' otherwise. */
+/**
+ * Whose money counts toward the TOTALS this person is shown.
+ *
+ * THE SAME LIST WAS ANSWERING TWO QUESTIONS, and a viewer is where that came
+ * apart: no names at all, and the whole raffle's money, because oversight is
+ * the entire point of the role. visibleAgents_ said [] for them, so every sum
+ * came out at nought and the Money screen read Should have 0, Handed in 0,
+ * Still owed 0 to the one person there to check those figures.
+ *
+ * A helper holding no books still gets [] here, and that is not an oversight:
+ * they are carrying nobody's money, so none of the raffle's balance is
+ * answerable from what they did at a desk for an afternoon.
+ */
+function totalsAgents_(user) {
+  if (user && (user.isAdmin || user.role === ROLES.VIEWER)) return null;
+  var own = String((user && user.agentId) || '').trim();
+  return own ? [own] : [];
+}
+
+/**
+ * Which money screen this person gets.
+ *
+ *   all       an organiser: every seller, by name
+ *   mine      a seller, or a helper who also carries books: their own line
+ *   totals    a viewer: the raffle's figures, nobody's name
+ *   recorded  a helper carrying nothing: the sales THEY wrote down
+ *
+ * 'totals' used to mean the last three at once, so the screen could not tell an
+ * auditor from a volunteer at a desk and said the same unhelpful thing to both.
+ * The fourth is deliberately not 'none': a helper owes nothing and is owed
+ * nothing, but they did spend an afternoon writing sales down, and that record
+ * is theirs. The client assembles it from the tickets carrying their email in
+ * Recorded_By, so nothing here has to hand it to them.
+ */
 function moneyScope_(user) {
   if (user && user.isAdmin) return 'all';
-  return String((user && user.agentId) || '').trim() ? 'mine' : 'totals';
+  if (String((user && user.agentId) || '').trim()) return 'mine';
+  return (user && user.role === ROLES.VIEWER) ? 'totals' : 'recorded';
+}
+
+/**
+ * Whether a scope carries the WHO-OWES-WHAT table. Spelled once.
+ *
+ * Deliberately an allow-list rather than `scope !== 'totals'`, which is what
+ * was written by hand and was correct for exactly as long as there were three
+ * scopes: the moment a fourth existed a helper fell through to the table and
+ * was handed every seller's debts. An unknown scope is refused, not admitted.
+ */
+function showsSellerNames_(scope) {
+  return scope === 'all' || scope === 'mine';
 }
 
 function ensurePaymentsSheet_() {
@@ -438,8 +484,15 @@ function handleReportOutstanding(payload, user) {
    * desk has no reason to carry the whole raffle's ledger. A viewer is trusted
    * with the totals and not with who owes them, so they get no rows at all
    * rather than a filtered list that hints at what is missing.
+   *
+   * TWO DECISIONS, AND THEY ARE NOT THE SAME ONE. `only` is whose money is in
+   * the sum; `scope` is who gets the rows. A viewer is the person for whom the
+   * answers differ — the whole raffle's money, and nobody's name — which no
+   * single list can express. So the rows are built and summed over everyone
+   * this person's TOTALS may include, and then released or withheld by name at
+   * the bottom.
    */
-  var only = visibleAgents_(user);
+  var only = totalsAgents_(user);
   var scope = moneyScope_(user);
 
   var ledger = buildBookLedger_();
@@ -494,10 +547,11 @@ function handleReportOutstanding(payload, user) {
   for (var k = 0; k < list.length; k++) totalOutstanding += list[k].outstanding;
 
   // A viewer gets the shape without the names: enough to see the raffle is
-  // healthy, nothing about who is behind on what.
+  // healthy, nothing about who is behind on what. Summed BEFORE the rows are
+  // withheld, which is the whole reason the two decisions are separate.
   return {
     currency: ledger.currency,
-    agents: scope === 'totals' ? [] : list,
+    agents: showsSellerNames_(scope) ? list : [],
     scope: scope,
     totalExpected: Math.round(totalExpected * 100) / 100,
     totalCollected: Math.round(totalCollected * 100) / 100,
@@ -585,8 +639,15 @@ function handleReportDrawReady(payload, user) {
    * needs to feel part of it. What narrows is the money: a helper holding no
    * books has no business carrying the whole raffle's outstanding balance, and
    * a seller's figure should be their own.
+   *
+   * SCOPED BY totalsAgents_, NOT visibleAgents_, and the difference is a
+   * viewer. This is what fills state.totals, so it is the money on the HOME
+   * screen as well as the Money one — and a viewer was reading "0 raised" on
+   * the landing page of a raffle that had taken thousands, because the list
+   * that decides whose NAME may be printed was being asked whose money to
+   * count.
    */
-  var onlyMoney = visibleAgents_(user);
+  var onlyMoney = totalsAgents_(user);
 
   var ledger = buildBookLedger_();
   var cfg = getConfig();

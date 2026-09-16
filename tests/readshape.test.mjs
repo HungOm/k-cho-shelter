@@ -166,13 +166,23 @@ console.log('the two backends agree about report_outstanding')
    * WIDENED, and the real proof moved somewhere it is RUN.
    *
    * This pinned one spelling of the scope check. The rule now covers more than
-   * agents — a helper sees their own line, a viewer gets totals and no names —
-   * so it is decided in one helper rather than inline, and a grep for the old
-   * expression went red when the rule got STRONGER. money.test.mjs calls the
-   * handler as each role and asserts what actually comes back.
+   * agents — a helper sees what they wrote down, a viewer gets the raffle's
+   * figures and no names — so it is decided in one helper rather than inline,
+   * and a grep for the old expression went red when the rule got STRONGER.
+   * money.test.mjs calls the handler as each role and asserts what actually
+   * comes back.
+   *
+   * IT IS totalsAgents HERE, NOT visibleAgents, and the swap is the fix rather
+   * than a rename. This report sums the rows it builds, so the list it filters
+   * by has to be whose MONEY counts, not whose NAME may be printed. Asking the
+   * name question gave a viewer an empty list, a table with nothing in it, and
+   * totals of nought — on the one screen their role exists to read. Who gets
+   * the rows is decided separately, below, by showsSellerNames.
    */
-  ok(/visibleAgents\(user\)/.test(block),
-     'and who may be told about whom is decided in one place')
+  ok(/totalsAgents\(user\)/.test(block),
+     'and whose money is in the sum is decided in one place')
+  ok(/showsSellerNames\(scope\)/.test(block),
+     'and who may be told about whom in another, because a viewer answers them differently')
   ok(/only && !only\.includes\(key\)/.test(block),
      'and the rows are actually filtered by it')
 }

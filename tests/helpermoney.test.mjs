@@ -96,13 +96,63 @@ console.log('the two sentinels are genuinely different, which is the whole point
   eq(empty, 0, 'and empty is the one that means none')
 }
 
-console.log('scope names the three cases, and a helper with no books is the third')
+const viewer = { ...users.recorder, email: 'v@x.com', role: 'viewer' }
+
+console.log('scope names FOUR cases, because three of them were sharing a name')
 {
   eq(money.moneyScope(users.admin), 'all', 'an organiser sees the raffle')
   eq(money.moneyScope(users.agent), 'mine', 'a seller sees their own line')
-  eq(money.moneyScope(users.recorder), 'totals', 'a helper with no books is neither')
   eq(money.moneyScope({ ...users.recorder, agentId: 'A001' }), 'mine',
-     'but a helper who also carries books has a line of their own')
+     'a helper who also carries books has a line of their own')
+  eq(money.moneyScope(viewer), 'totals', 'a viewer sees the figures and no names')
+  eq(money.moneyScope(users.recorder), 'recorded', 'a helper with no books sees what THEY wrote down')
+
+  /*
+   * THE ASSERTION THE OLD SHAPE COULD NOT MAKE. 'totals' was returned for a
+   * viewer and for a helper alike, so one value drove two screens that want
+   * opposite things — an auditor needs the raffle's money and no names, a
+   * volunteer at a desk needs neither and is owed a record of their own
+   * afternoon. Collapsing them again would restore a bug that reads as tidying.
+   */
+  ok(money.moneyScope(viewer) !== money.moneyScope(users.recorder),
+     'a viewer and a helper are not the same screen')
+}
+
+console.log('whose name may I see is not whose money is in my total')
+{
+  /*
+   * visibleAgents and totalsAgents AGREE on everybody except a viewer, which
+   * is why one function did for both until a viewer's Money screen read zero.
+   * Asserted as a disagreement rather than as two values, so a refactor that
+   * points one at the other fails here rather than in front of an auditor.
+   */
+  eq(JSON.stringify(money.visibleAgents(viewer)), '[]', 'a viewer is told no names')
+  eq(money.totalsAgents(viewer), null, 'and counts the whole raffle')
+  ok(JSON.stringify(money.visibleAgents(viewer)) !== JSON.stringify(money.totalsAgents(viewer)),
+     'the two questions have different answers for a viewer — that is the point of both')
+
+  eq(money.totalsAgents(users.admin), null, 'an organiser counts everything')
+  eq(JSON.stringify(money.totalsAgents(users.agent)), '["A001"]', 'a seller counts their own')
+  eq(JSON.stringify(money.totalsAgents(users.recorder)), '[]',
+     'and a helper counts nothing, because they are carrying nothing')
+}
+
+console.log('the debt table goes to two people, and a fourth scope did not change that')
+{
+  ok(money.showsSellerNames('all'), 'an organiser gets the rows')
+  ok(money.showsSellerNames('mine'), 'and a seller gets their own')
+  ok(!money.showsSellerNames('totals'), 'a viewer does not')
+  ok(!money.showsSellerNames('recorded'), 'and neither does a helper')
+
+  /*
+   * SPELLED AS AN ALLOW-LIST, NOT AS `!== 'totals'`. Both screens wrote the
+   * negative form by hand, and it was correct for exactly as long as there
+   * were three scopes: the moment a fourth existed, a helper fell through to
+   * the table branch and was handed every seller's debts. An unknown scope
+   * must therefore be refused, not admitted.
+   */
+  ok(!money.showsSellerNames('something-added-later'),
+     'an unrecognised scope is refused, so adding one cannot leak the table')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -21,7 +21,7 @@
  * and nobody able to explain why.
  */
 import { ApiError, requireSuperAdmin, type AppUser } from './gate.ts'
-import { collectedByAgent, moneyScope, round2, visibleAgents } from './money.ts'
+import { collectedByAgent, moneyScope, round2, showsSellerNames, totalsAgents } from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -804,17 +804,26 @@ export async function snapshotRound(ctx: Ctx, round: number, takenBy: string) {
  * anybody carrying no books sees neither — a closed round has nothing to say
  * about somebody who never owed anything.
  *
- * A VIEWER CURRENTLY SEES NOTHING HERE, which is the conservative half of a
- * split money.ts has not finished making. `visibleAgents` answers "whose names
- * may I see" and is being separated from "whose money is in my totals"; until
- * the second one exists, this uses the first for both, so a viewer gets no
- * lines and empty totals rather than somebody else's figures. Wrong in the
- * harmless direction, and one line to widen once the split lands.
+ * A VIEWER SEES THE ROUND'S FIGURES AND NOBODY'S NAME, which is the split
+ * money.ts has since finished making. This used `visibleAgents` for both
+ * halves while there was only one function — deliberately, and wrong in the
+ * harmless direction: a viewer got no lines and empty totals rather than
+ * somebody else's figures.
+ *
+ * `totalsAgents` answers the other half, so the rows are now built and summed
+ * over everyone this person's TOTALS may include, and the NAMES are withheld
+ * at the bottom instead. A viewer is the only role for whom those two answers
+ * differ, and a closed round is exactly the kind of thing oversight is for:
+ * what was owed then, what is owed now, and whether the gap is closing.
+ *
+ * A helper carrying no books still gets nothing, and that is not the same
+ * conservatism — a closed round has nothing to say about somebody who never
+ * owed anything.
  */
 export async function readRoundSnapshot(
   p: Record<string, unknown>, user: AppUser, ctx: Ctx,
 ) {
-  const only = visibleAgents(user)
+  const only = totalsAgents(user)
   const scope = moneyScope(user)
 
   const { data: taken, error: takenErr } = await ctx.supabaseAdmin
@@ -891,15 +900,17 @@ export async function readRoundSnapshot(
   }
 
   /*
-   * The names go to exactly two people, the same two the debt table goes to.
+   * The names go to exactly two people, the same two the debt table goes to —
+   * and that is money.ts's sentence to say, not this file's.
    *
-   * SPELLED AS WHAT IT IS, not as `scope !== 'totals'`. The negative form is
-   * what the money screens each wrote for themselves and it broke the moment a
-   * fourth scope existed — a helper fell through to the table branch and was
-   * handed the rows the split was made to keep from them. Naming the two that
-   * may see them cannot fail that way when a fifth arrives.
+   * IT WAS SPELLED OUT HERE, correctly, as `scope === 'all' || scope === 'mine'`.
+   * Correct and still a second copy: the rule already exists as
+   * showsSellerNames precisely because the negative form each money screen
+   * wrote for itself broke the moment a fourth scope existed — a helper fell
+   * through to the table branch and was handed the rows the split was made to
+   * keep from them. Two right copies are how the third one goes wrong.
    */
-  const named = scope === 'all' || scope === 'mine'
+  const named = showsSellerNames(scope)
   return {
     round, rounds, scope, totals,
     lines: named ? lines : [],

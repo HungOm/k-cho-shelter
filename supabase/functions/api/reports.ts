@@ -17,7 +17,8 @@ import {
   checkInRound, configDate, configNum, reportedIn, reportState, today,
 } from './deadlines.ts'
 import {
-  collectedByAgent, deskMoney, moneyScope, round2, visibleAgents, writtenOffByAgent,
+  collectedByAgent, deskMoney, moneyScope, round2, showsSellerNames, totalsAgents,
+  visibleAgents, writtenOffByAgent,
 } from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
@@ -56,15 +57,24 @@ async function currency(ctx: Ctx): Promise<string> {
  */
 export async function reportOutstanding(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   /*
-   * WHO MAY BE TOLD ABOUT WHOM, decided once, here.
+   * TWO DECISIONS, AND THEY ARE NOT THE SAME ONE.
    *
-   * An organiser sees every seller. Anybody else sees their own line and no
-   * other — a seller's debt is not another seller's business, and a helper at a
-   * desk has no reason to hold the whole raffle's ledger on their phone. A
-   * viewer is trusted with the totals and not with who owes them, so they get
-   * no rows at all rather than a filtered list that hints at what is missing.
+   * WHOSE MONEY IS IN THE SUM is `only`, and WHO GETS THE ROWS is `scope`. This
+   * function used one value for both and a viewer is where that came apart:
+   * they are trusted with the raffle's figures and not with who owes them, so
+   * the right answer is every seller's money and nobody's name — which no
+   * single list can express. Narrowing them to [] gave the honest half and a
+   * Money screen reading Should have 0, Handed in 0, Still owed 0, to the one
+   * role whose entire purpose is checking that those numbers are healthy.
+   *
+   * So the rows are built over everyone a person's TOTALS may include, summed,
+   * and then released or withheld by name at the bottom. An organiser sees
+   * every seller; a seller sees their own line and no other, because one
+   * seller's debt is not another's business; a viewer sees the totals those
+   * rows add up to and no table; a helper at a desk is carrying nothing and
+   * gets neither.
    */
-  const only = visibleAgents(user)
+  const only = totalsAgents(user)
   const scope = moneyScope(user)
 
   const { data, error } = await ctx.supabaseAdmin
@@ -162,12 +172,13 @@ export async function reportOutstanding(_p: Record<string, unknown>, user: AppUs
     .sort((x, y) => y.outstanding - x.outstanding)
 
   // A viewer gets the shape without the names: enough to see the raffle is
-  // healthy, nothing about who is behind on what.
+  // healthy, nothing about who is behind on what. Summed BEFORE the rows are
+  // withheld, which is the whole reason the two decisions are separate.
   const totalExpected = round2(rows.reduce((s, a) => s + a.expected, 0))
   const totalCollected = round2(rows.reduce((s, a) => s + a.collected, 0))
 
   return {
-    agents: scope === 'totals' ? [] : rows,
+    agents: showsSellerNames(scope) ? rows : [],
     scope,
     totalExpected,
     totalCollected,
@@ -395,8 +406,14 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
    * needs to feel part of it. What narrows is the money: a helper holding no
    * books has no business carrying the whole raffle's outstanding balance on
    * their phone, and a seller's figure should be their own.
+   *
+   * SCOPED BY totalsAgents, NOT visibleAgents, and the difference is a viewer.
+   * This is what fills state.totals, so it is the money on the HOME screen as
+   * well as the Money one — and a viewer was reading "RM 0 raised" on the
+   * landing page of a raffle that had taken thousands, because the list that
+   * decides whose name may be printed was being asked whose money to count.
    */
-  const only = visibleAgents(user)
+  const only = totalsAgents(user)
   const active = Number((await ctx.supabaseAdmin.rpc('active_tickets', {})).data ?? 0)
 
   const count = async (build: (q: any) => any) => {
