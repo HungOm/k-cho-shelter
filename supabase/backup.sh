@@ -27,6 +27,19 @@ cd "$(dirname "$0")/.."
 # SUPABASE_DB_URL and the REST credentials come from the environment. The
 # difference is confined to these few lines; everything below is the same
 # backup either way, including the refusal at the end.
+# READ FIRST, BEFORE ANYTHING ASKS FOR A VALUE THAT LIVES IN IT.
+#
+# This used to be sourced two thirds of the way down, just before the CSV that
+# needs the API keys — which was fine while that was the only thing it
+# supplied. The moment the connection string came from here too, the check for
+# it ran against an environment that had not been loaded yet, and a correctly
+# configured machine was told it had no database. Loading it late is loading it
+# after somebody has already decided what it says.
+#
+# A missing .env.local is not an error: on a runner there is none, and every
+# value comes from the environment instead.
+if [ -f supabase/.env.local ]; then set -a; . supabase/.env.local; set +a; fi
+
 DB_URL="${SUPABASE_DB_URL:-}"
 REF="${SUPABASE_PROJECT_REF:-$(cat supabase/.temp/project-ref 2>/dev/null || true)}"
 if [ -z "$DB_URL" ] && [ -z "$REF" ]; then
@@ -136,9 +149,6 @@ fi
 # If everything else fails, this is the file that still lets somebody telephone
 # the winner — openable in Excel on any machine, by anybody.
 echo "  entries (csv)..."
-# Local keys if they are there, otherwise whatever the runner was given. A
-# missing .env.local is not an error here — on a runner it is the normal case.
-if [ -f supabase/.env.local ]; then set -a; . supabase/.env.local; set +a; fi
 if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SECRET_KEY:-}" ]; then
   echo "No SUPABASE_URL / SUPABASE_SECRET_KEY — cannot write the CSV." >&2
   exit 1
