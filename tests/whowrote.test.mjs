@@ -170,7 +170,13 @@ console.log('4c. and so do the screens that show who took money')
    * harness stubs child components, so a <Who> inside the Money screen comes
    * back empty and an assertion aimed at the name would pass on the stub.
    */
-  const money = read('src/components/Money.vue')
+  /*
+   * THE PANEL MOVED INTO A SHEET, and these facts moved with it. It was a row
+   * that grew inside the seller table; every other detail view in this app is a
+   * sheet, and a statement nested in the table it belongs to pushed every other
+   * seller off the screen.
+   */
+  const money = read('src/components/modals/SellerMoney.vue')
   ok(/<Who v-if="p\.receivedBy" :email="p\.receivedBy" \/>/.test(money),
      'the payments ledger names who took each one')
   ok(/<Who :email="e\.by" \/>/.test(money), "and the seller's statement names who took it")
@@ -180,7 +186,7 @@ console.log('4c. and so do the screens that show who took money')
   ok(/<Who :email="book\.settledBy" \/>/.test(sheet),
      'and the book sheet names who counted the money in')
 
-  for (const f of ['src/components/Money.vue', 'src/components/modals/BookDetail.vue']) {
+  for (const f of ['src/components/modals/SellerMoney.vue', 'src/components/modals/BookDetail.vue']) {
     ok(/import Who from/.test(read(f)), `${f} imports it rather than printing an address`)
   }
 }
@@ -203,7 +209,9 @@ console.log('5. the names ride along with sign-in, not with every ticket')
 console.log('6. the desk line is not a person, and stops pretending to be one')
 {
   const money = read('src/components/Money.vue')
-  ok(/@click="a\.agentId && toggle\(a\.agentId\)"/.test(money),
+  // The press opens a sheet now rather than growing the row; the guard is the
+  // same one and it is the guard this line is about.
+  ok(/@click="a\.agentId && \(openSeller = a\)"/.test(money),
      'a row with nobody behind it does not respond to a press')
   ok(/v-if="a\.agentId" class="chev"/.test(money),
      'and shows no chevron, which is what invited the press')

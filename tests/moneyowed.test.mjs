@@ -188,10 +188,23 @@ console.log('which tickets — the helper\'s own, read from what the device alre
  * not softened here, it is reversed — with the reason written down, because a
  * test that flips without one reads as a test somebody found inconvenient.
  */
-ok(/api\('agent_statement'/.test(src),
-   "a seller's detail is fetched when their line is opened")
-ok(/if \(statements\.value\[agentId\]\) return/.test(src),
-   'and once per seller — reopening a line does not ask again')
+/*
+ * AND THE REQUEST MOVED WITH THE PANEL. The detail is a sheet now rather than a
+ * row that grows — every other detail view in this app is one, and a statement
+ * nested inside the table it belongs to pushed every other seller off the
+ * screen. So the fetch lives where the panel lives, and "when somebody opens a
+ * line" is now literally "when the component mounts": it cannot be built before
+ * somebody opens it, which is a stronger guarantee than a call guarded by a
+ * flag. The caching that went with the old guard went too, and deliberately —
+ * a sheet that is closed and reopened should show the money as it is now, not
+ * as it was the first time somebody looked at it this afternoon.
+ */
+const sheet = read('../src/components/modals/SellerMoney.vue')
+ok(/api\('agent_statement'/.test(sheet),
+   "a seller's detail is fetched by the sheet that shows it")
+ok(/onMounted\(/.test(sheet), 'when it opens, and not before')
+ok(!/api\('agent_statement'/.test(src),
+   'and the screen behind it does not fetch anybody\'s')
 ok(!/state\.tickets[\s\S]{0,200}t\.agent === agentId/.test(src),
    'and it is no longer assembled by walking every ticket on the device')
 /*
@@ -210,7 +223,7 @@ ok(/state\.tickets/.test(src),
    "the helper's own record still comes from the device — it is their own rows, already here")
 
 console.log('and the case the Books column reads as innocent')
-ok(/a\.outstanding > 0 && !a\.booksOut/.test(src),
+ok(/agent\.outstanding > 0 && !agent\.booksOut/.test(sheet),
    'every book back and money still owed is called out — only true now booksOut counts books that are out')
 
 console.log(`\n${pass} passed, ${fail} failed`)

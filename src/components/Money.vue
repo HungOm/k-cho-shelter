@@ -5,11 +5,10 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { state, api, toast, canWrite, isSold } from '../lib/store.js'
-import { money, moneyShort, date, COUNTED_IN_HELP } from '../lib/format.js'
+import { money, moneyShort, date } from '../lib/format.js'
 import { waNumber, isDialable } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
-import History from './modals/History.vue'
-import Who from './ui/Who.vue'
+import SellerMoney from './modals/SellerMoney.vue'
 
 const rows = ref(null)
 const scope = ref('all')
@@ -57,81 +56,27 @@ async function load() {
   }
 }
 
-/** Which tickets make up the debt — who bought them, and what came in. */
-const open = ref('')
-function toggle(id) {
-  open.value = open.value === id ? '' : id
-  audit.value = ''
-  if (open.value) loadStatement(id)
-}
+/*
+ * THE SELLER WHOSE MONEY IS OPEN, or null.
+ *
+ * This used to be a row that grew: a statement, an audit trail and three
+ * actions nested inside the row they belonged to, pushing every other seller
+ * off the screen. On a phone it was a column of numbers inside a column of
+ * numbers, and the reader had lost the list they were comparing against. It is
+ * a sheet now, like every other detail view in this app — and the statement is
+ * fetched by that sheet when it mounts, which is to say when somebody asks for
+ * it, rather than by this screen for everybody up front.
+ */
+const openSeller = ref(null)
 
 /*
- * A CAP, because a seller with sixty books has six hundred tickets.
- *
- * This list is read to settle an argument about a particular ticket, not to be
- * scrolled end to end, and rendering every row of a raffle this size is how the
- * screen locks up on the phone of the person trying to use it. The count is
- * always stated, so a cap never reads as "that is all of them".
+ * A CAP on the helper's own list of sales, because an afternoon at the desk is
+ * hundreds of tickets. It is read to settle an argument about one of them, not
+ * scrolled end to end, and rendering every row is how the screen locks up on
+ * the phone of the person trying to use it. The count is always stated, so a
+ * cap never reads as "that is all of them".
  */
 const CAP = 50
-/**
- * ONE SELLER'S STATEMENT, FETCHED WHEN SOMEBODY ASKS FOR IT.
- *
- * The screen holds one line per seller and nothing else until a line is opened.
- * That is the whole scalability story here and it is deliberate: a raffle with
- * two hundred sellers is two hundred rows, and the detail behind any one of
- * them — every book, every payment, a running balance — is a request that
- * happens when a person decides they want it. Loading all of it up front is how
- * a page that works for five sellers stops working for two hundred, and it
- * fails on the phone of whoever is standing at the desk.
- *
- * Cached per seller for the life of the screen, because the common motion is
- * open, read, close, open again while comparing two people.
- */
-const statements = ref({})
-async function loadStatement(agentId) {
-  if (statements.value[agentId]) return
-  statements.value = { ...statements.value, [agentId]: { loading: true } }
-  try {
-    const r = await api('agent_statement', { agentId })
-    statements.value = { ...statements.value, [agentId]: { loading: false, data: r } }
-  } catch (err) {
-    statements.value = { ...statements.value, [agentId]: { loading: false, error: err.message } }
-  }
-}
-const statementOf = (id) => statements.value[id] || {}
-
-/**
- * THE AUDIT TRAIL, which is a different question from the statement.
- *
- * The statement shows the lines that make up the debt. This shows every row in
- * the payments ledger, including the settlement rows that a re-settle reverses
- * and rewrites — the ones that used to be the entire detail panel, six of them,
- * netting to nothing. They are not noise in the right context: "why does this
- * book say RM100 when I remember RM90" is answered here and nowhere else. So
- * they keep a home, one click further in, labelled for what they are.
- */
-const payments = ref({})
-const audit = ref('')
-async function loadPayments(agentId) {
-  if (payments.value[agentId]) return
-  try {
-    const r = await api('list_payments', { agentId })
-    payments.value = { ...payments.value, [agentId]: r.payments || [] }
-  } catch { payments.value = { ...payments.value, [agentId]: [] } }
-}
-function toggleAudit(agentId) {
-  audit.value = audit.value === agentId ? '' : agentId
-  if (audit.value) loadPayments(agentId)
-}
-
-/*
- * The book whose trail is open, or null. On top of this screen rather than
- * instead of it: a treasurer checks a book and comes back to the row they were
- * chasing, and losing the seller they had open to read it is how a screen stops
- * being worth opening.
- */
-const showHistory = ref(null)
 
 /** Column totals for the seller table, rounded once at the end. */
 function totalOf(field) {
@@ -139,14 +84,6 @@ function totalOf(field) {
   return Math.round(n * 100) / 100
 }
 
-/** A statement line's own word for itself, so the table reads without a key. */
-const KINDS = {
-  sale: 'Tickets sold',
-  settlement: 'Book counted in',
-  'settlement-cash': 'Cash with count-in',
-  hand: 'Handed in',
-  writeoff: 'Written off',
-}
 
 /*
  * WHAT THIS PERSON WROTE DOWN — the 'recorded' scope, assembled here rather
@@ -420,10 +357,10 @@ function waLink(a) {
                 which reads as a screen that has stopped responding. It says
                 what it is instead.
               -->
-              <tr :class="{ openrow: open === a.agentId, deskrow: !a.agentId }"
-                  @click="a.agentId && toggle(a.agentId)">
+              <tr :class="{ deskrow: !a.agentId }"
+                  @click="a.agentId && (openSeller = a)">
                 <td>
-                  <span v-if="a.agentId" class="chev">{{ open === a.agentId ? '▾' : '▸' }}</span>
+                  <span v-if="a.agentId" class="chev">›</span>
                   {{ a.name || a.agentId }}
                   <span v-if="a.overdueBooks" class="pill bad">{{ a.overdueBooks }} late</span>
                   <span v-if="!a.agentId" class="tiny muted deskwhy">
@@ -442,229 +379,6 @@ function waLink(a) {
                 </td>
               </tr>
 
-              <!-- WHICH tickets. The total answers "how much"; chasing it needs
-                   "which ones, sold to whom, and what has already come in" —
-                   otherwise the conversation with the seller starts by both
-                   sides trying to reconstruct the same list from memory. -->
-              <tr v-if="open === a.agentId" class="detail">
-                <td colspan="6">
-                  <div class="row wrap gap" style="margin-bottom:10px">
-                    <a v-if="waLink(a)" class="btn sm" :href="waLink(a)"
-                       target="_blank" rel="noopener">Message on WhatsApp</a>
-                    <a v-if="isDialable(a.phone)" class="btn sm ghost"
-                       :href="telHref(a.phone)">{{ a.phone }}</a>
-                    <!-- Three states, not two. A number nobody can ring is not
-                         the same as no number, and hiding the difference is how
-                         somebody presses a button that reaches a stranger. The
-                         digits are shown so whoever can fix the record sees
-                         what is actually stored. -->
-                    <span v-else-if="a.phone" class="tiny">
-                      The number on file — <b>{{ a.phone }}</b> — cannot be dialled.
-                      It looks incomplete; check it against the seller list.
-                    </span>
-                    <span v-else class="tiny muted">No phone number on file for this seller.</span>
-                  </div>
-
-                  <!--
-                    RECORDING CASH IS A SEPARATE ACT FROM SETTLING A BOOK.
-                    Settling counts a book and declares its figures; this only
-                    says money arrived. A seller bringing part of it had no way
-                    to be recorded at all before, so the organiser either waited
-                    or closed a book nobody had counted.
-                  -->
-                  <div v-if="canRecord" class="row wrap gap" style="margin-bottom:10px">
-                    <button class="btn sm primary" @click.stop="emit('record-payment', a)">
-                      Record money handed in
-                    </button>
-                  </div>
-
-                  <!--
-                    THE STATEMENT, which is what this panel should have been.
-
-                    What it replaced was a list of payment rows in the order the
-                    database returned them, each one a figure and a phrase with
-                    no column of its own — including the settlement rows a
-                    re-settle reverses, so a seller who owed RM90 was shown
-                    three minus-hundreds and three hundreds and no arithmetic
-                    that led anywhere. Every number on the screen was true and
-                    the screen was unreadable.
-
-                    A statement of account is the ordinary answer and it is
-                    ordinary on purpose: dated lines, what was charged, what
-                    came in, what is left after each one. Nobody has to be
-                    taught it.
-                  -->
-                  <div v-if="statementOf(a.agentId).loading" class="tiny muted">Loading the statement…</div>
-                  <div v-else-if="statementOf(a.agentId).error" class="note bad">
-                    <b>The statement could not be loaded.</b>
-                    {{ statementOf(a.agentId).error }}
-                  </div>
-                  <template v-else-if="statementOf(a.agentId).data">
-                    <!--
-                      The identity this screen is accountable for, written out
-                      rather than implied: charged, less what came in, less what
-                      was forgiven, is what is left. A reader who checks one
-                      thing should be able to check that.
-                    -->
-                    <div class="recon">
-                      <span><i>Charged</i><b>{{ money(statementOf(a.agentId).data.expected, currency) }}</b></span>
-                      <span class="op">−</span>
-                      <span><i>Received</i><b>{{ money(statementOf(a.agentId).data.collected, currency) }}</b></span>
-                      <template v-if="statementOf(a.agentId).data.writtenOff">
-                        <span class="op">−</span>
-                        <span><i>Written off</i><b>{{ money(statementOf(a.agentId).data.writtenOff, currency) }}</b></span>
-                      </template>
-                      <span class="op">=</span>
-                      <span><i>Balance due</i><b :class="statementOf(a.agentId).data.outstanding > 0 ? 'owed' : ''">
-                        {{ money(statementOf(a.agentId).data.outstanding, currency) }}</b></span>
-                    </div>
-
-                    <!--
-                      A statement that disagrees with the line it expands is
-                      worse than none: it is an audit trail that cannot be
-                      trusted and looks like one that can. The server checks its
-                      own arithmetic against the figure this table reads, and
-                      when they differ the screen says so instead of showing two
-                      numbers and letting the reader choose.
-                    -->
-                    <div v-if="statementOf(a.agentId).data.reconciles === false" class="note bad">
-                      <b>These lines do not add up to the balance above.</b>
-                      The lines come to
-                      {{ money(statementOf(a.agentId).data.ledgerBalance, currency) }} and the
-                      account says {{ money(statementOf(a.agentId).data.outstanding, currency) }}.
-                      Do not chase this figure until somebody has looked — send this screen to
-                      whoever keeps the books.
-                    </div>
-
-                    <!--
-                      The page and the function deploy separately, so for a
-                      minute after a release one can be older than the other. An
-                      older function answers without entries at all, and a
-                      statement that throws is a money screen that is simply
-                      gone. It says "nothing yet" for that minute instead.
-                    -->
-                    <div v-if="!(statementOf(a.agentId).data.entries || []).length" class="tiny muted">
-                      Nothing has been charged to this seller and nothing has come in.
-                    </div>
-                    <div v-else class="tablewrap">
-                      <table class="inner statement">
-                        <thead>
-                          <tr>
-                            <th>When</th><th>What</th><th>Reference</th>
-                            <th class="num">Charged</th><th class="num">Received</th><th class="num">Balance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr v-for="(e, i) in (statementOf(a.agentId).data.entries || [])" :key="i"
-                              :class="{ writeoff: e.kind === 'writeoff' }">
-                            <td class="tiny muted">{{ e.at ? date(e.at) : '—' }}</td>
-                            <!-- "Counted in" is this app's word for the last step
-                                 of a book, and a statement is exactly where somebody
-                                 meets it without context: their debt is one line and
-                                 the line is a phrase they have not been taught. -->
-                            <td :class="{ helpword: String(e.kind).startsWith('settlement') }"
-                                :title="String(e.kind).startsWith('settlement') ? COUNTED_IN_HELP : undefined">
-                              {{ KINDS[e.kind] || e.kind }}
-                            </td>
-                            <!--
-                              ONE FETCH PER CLICK, and only when somebody clicks.
-                              The book is the drill-down, not the ticket: a
-                              statement line says "Book-230, ten sold, RM100",
-                              and which ten is a question about that book, which
-                              the history sheet already answers in one
-                              permissioned call. The alternative — the list this
-                              panel used to build — walked every ticket the
-                              browser had in memory, which is fine at fifty and
-                              is the whole page at ten thousand.
-                            -->
-                            <td class="tiny">
-                              <button v-if="e.ref && !e.ref.startsWith('#')" class="linkish"
-                                      @click.stop="showHistory = e.ref">{{ e.ref }}</button>
-                              <template v-else>{{ e.ref }}</template>
-                              <template v-if="e.description"> · {{ e.description }}</template>
-                              <!-- Who the money went to, on the line that says
-                                   it moved. A sale has no counterparty and
-                                   carries none; a hand-over and a count-in both
-                                   do, and this statement named neither. -->
-                              <div v-if="e.by" class="muted">to <Who :email="e.by" /></div>
-                            </td>
-                            <td class="num">{{ e.charge ? money(e.charge, currency) : '' }}</td>
-                            <td class="num">{{ e.credit ? money(e.credit, currency) : '' }}</td>
-                            <td class="num bal">{{ money(e.balance, currency) }}</td>
-                          </tr>
-                        </tbody>
-                        <tfoot>
-                          <!-- The closing balance repeated where the eye ends up,
-                               because a running balance is read down the right
-                               and the last line is the answer. -->
-                          <tr>
-                            <td colspan="3"><b>Balance due</b></td>
-                            <td class="num"></td><td class="num"></td>
-                            <td class="num bal"><b>{{ money(statementOf(a.agentId).data.outstanding, currency) }}</b></td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-
-                    <p class="tiny muted" style="margin-top:8px">
-                      <button class="linkish" @click.stop="toggleAudit(a.agentId)">
-                        {{ audit === a.agentId ? 'Hide' : 'Show' }} every payment row
-                      </button>
-                      · the full ledger, including rows a re-count reversed
-                    </p>
-
-                    <div v-if="audit === a.agentId" class="tablewrap">
-                      <table class="inner">
-                        <thead>
-                          <tr><th>When</th><th class="num">Amount</th><th>How</th><th>Taken by</th><th>Note</th></tr>
-                        </thead>
-                        <tbody>
-                          <tr v-for="p in (payments[a.agentId] || [])" :key="p.id">
-                            <td class="tiny muted">{{ p.receivedAt ? date(p.receivedAt) : '' }}</td>
-                            <td class="num" :class="p.amount < 0 ? 'bad' : ''">{{ money(p.amount, currency) }}</td>
-                            <!-- A settlement row and a hand-over row are the same money
-                                 arriving by different routes, and only one of them has a
-                                 name a volunteer has to be taught. -->
-                            <td :class="{ helpword: p.source === 'settlement' }"
-                                :title="p.source === 'settlement' ? COUNTED_IN_HELP : undefined">
-                              {{ p.source === 'settlement' ? 'counted in with a book' : (p.source || 'handed in') }}
-                            </td>
-                            <!-- A→B. Every row here is cash moving from a seller
-                                 to somebody who took it, and the ledger named
-                                 only the seller. received_by has reached the
-                                 browser since this panel was written and was
-                                 printed nowhere; a treasurer querying a figure
-                                 had to ask who it had been given to. -->
-                            <td class="tiny"><Who v-if="p.receivedBy" :email="p.receivedBy" /></td>
-                            <td class="tiny muted">{{ p.note || '' }}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      <p v-if="!(payments[a.agentId] || []).length" class="tiny muted">
-                        No payment rows at all for this seller.
-                      </p>
-                    </div>
-                  </template>
-
-                  <!-- Books out now means books actually out; until the port was
-                       fixed it counted every book the seller had ever touched,
-                       so nought was unreachable and this sentence impossible.
-                       It is the one case the Books column reads as innocent:
-                       nothing held, money still owed. -->
-                  <p v-if="a.outstanding > 0 && !a.booksOut" class="tiny">
-                    Every book is back<template v-if="a.booksSettled">
-                    — {{ a.booksSettled }} settled</template>. Only the money is outstanding.
-                  </p>
-                  <p v-else-if="a.booksSettled" class="tiny muted">
-                    {{ a.booksOut }} still out · {{ a.booksSettled }} settled
-                  </p>
-
-                  <p class="tiny muted" style="margin-top:6px">
-                    Every line above opens the book it came from — who has had it,
-                    and which tickets went out of it.
-                  </p>
-                </td>
-              </tr>
             </template>
           </tbody>
           <!--
@@ -692,8 +406,14 @@ function waLink(a) {
       </Empty>
     </div>
 
-    <!-- On top of the table, so closing it puts you back on the same seller. -->
-    <History v-if="showHistory" :book="showHistory" @close="showHistory = null" />
+    <!-- One seller, on its own, fetched when it opens. The links are built here
+         because this screen already holds the rule for whether a number can be
+         dialled at all, and that judgement should live in one place. -->
+    <SellerMoney v-if="openSeller" :agent="openSeller"
+                 :wa="waLink(openSeller)"
+                 :tel="isDialable(openSeller.phone) ? telHref(openSeller.phone) : ''"
+                 @close="openSeller = null"
+                 @record-payment="a => emit('record-payment', a)" />
   </div>
 </template>
 

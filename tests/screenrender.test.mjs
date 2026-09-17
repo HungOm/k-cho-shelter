@@ -26,6 +26,8 @@
  * not tell you which.
  */
 import { readFileSync } from 'node:fs'
+/** Source, for the handful of facts a stubbed child cannot render. */
+const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { renderScreen, visibleText } from './screen.mjs'
@@ -96,57 +98,77 @@ const money = (tickets_, rows_, opts = {}) => moneyStore
   .replace('__SCOPE__', JSON.stringify(opts.scope ?? 'all'))
   .replace('__USER__', JSON.stringify(opts.user ?? { role: 'admin' }))
 
-const html = await renderScreen('src/components/Money.vue', money(tickets, [row]), {
-  drive: async b => {
-    await b.load()          // what onMounted would have done
-    b.toggle('A1')          // what a finger would have done
-  }
-})
+/*
+ * THE PANEL IS A SHEET NOW, so it is rendered as one.
+ *
+ * It used to be a row that grew inside the seller table, and these assertions
+ * drove Money.vue and read the expanded row. A statement, an audit trail and
+ * three actions nested inside the row they belong to pushed every other seller
+ * off the screen — on a phone, a column of numbers inside a column of numbers.
+ * Every other detail view in this app is a sheet.
+ *
+ * Nothing here is softened. The same facts are asserted about the same markup;
+ * what changed is which component is asked to draw it, and the render harness
+ * stubs children, so asking Money.vue would now assert an empty stub and pass.
+ */
+const sheet = await renderScreen('src/components/modals/SellerMoney.vue',
+  money(tickets, [row]),
+  { props: { agent: row, wa: 'https://wa.me/60125550011?text=hello', tel: 'tel:0125550011' },
+    drive: async b => { await b.load() } })   // what mounting would have done
 
 console.log('opening a seller asks the server for their statement, and renders it')
 /*
- * WHAT THIS BLOCK USED TO ASSERT, and why it changed rather than being deleted.
- *
- * It checked that opening a seller listed their tickets with buyer names,
- * phone numbers and a paid/not-paid chip per row, built by filtering the ticket
- * snapshot in the browser. Those assertions were right about a screen that no
- * longer exists: the raffle runs at thousands of tickets across hundreds of
- * sellers, and a panel that walked every ticket in memory to draw one seller
- * was the reason the money screen had to be rebuilt.
- *
- * The detail is a request now — one per seller, when somebody opens their line
- * — and what comes back is a statement of account rather than a ticket dump.
- * So the assertions follow it: the request is made, the lines are drawn, and
- * the arithmetic the reader can check is on the screen. The paid/unpaid
- * distinction those old lines protected has not been dropped; it lives on the
- * helper's own record, which is still assembled locally, and is asserted there.
- */
-/*
  * The statement below can only be on the screen if the request was made: none
  * of it is in the ticket snapshot the stub hands the component, which carries
- * no books, no charges and no balance. Whether the call is made once per seller
- * and cached is asserted in moneyowed.test.mjs, against the source.
+ * no books, no charges and no balance. That the request happens on MOUNT — so
+ * it cannot happen before somebody opens the sheet — is asserted in
+ * moneyowed.test.mjs, against the source.
  */
-ok(/Book-001/.test(visibleText(html)),
+ok(/Book-001/.test(visibleText(sheet)),
    'opening a line draws what the server returned for that seller')
-ok(/Counted in/.test(visibleText(html)), 'and what the line is')
-ok(/Balance due/.test(visibleText(html)), 'with the closing balance spelled out')
+ok(/Counted in/.test(visibleText(sheet)), 'and what the line is')
+ok(/Balance due/.test(visibleText(sheet)), 'with the closing balance spelled out')
 // The reconciliation the reader is invited to check: charged, less received,
 // less written off, is what is left. A money screen that shows four figures
 // which do not visibly relate is a screen people stop trusting.
-ok(/Charged/i.test(visibleText(html)) && /Received/i.test(visibleText(html)),
+ok(/Charged/i.test(visibleText(sheet)) && /Received/i.test(visibleText(sheet)),
    'the identity behind the balance is on the screen, not implied')
-ok(/JOHN/.test(visibleText(html)), 'under the seller who owes — read from the table, not from a link')
-ok(/wa\.me/.test(html), 'and a way to chase them')
+/*
+ * THE NAME IS THE SHEET'S TITLE, and this harness drops the props it passes to
+ * child components — Sheet renders its slots and not its title. So the
+ * assertion is on the binding rather than on the pixels, which is the honest
+ * version of it: aiming at a prop through a stub fails looking exactly like a
+ * screen that does not show the name.
+ */
+ok(/:title="agent\.name \|\| agent\.agentId"/.test(read('../src/components/modals/SellerMoney.vue')),
+   'under the seller who owes — named on the sheet itself')
+ok(/wa\.me/.test(sheet), 'and a way to chase them')
+
+console.log('and the table behind it opens that sheet')
+{
+  // The sheet is a child component, which this harness stubs — so what can be
+  // asserted from the screen is that pressing a row asks for it, and that the
+  // component is there to be asked. A dead control is what emits.test and
+  // modalwiring.test exist for; this is the same check one layer in.
+  const table = await renderScreen('src/components/Money.vue', money(tickets, [row]),
+    { drive: async b => { await b.load() } })
+  ok(/JOHN/.test(visibleText(table)), 'the seller is on the table')
+  const src2 = read('../src/components/Money.vue')
+  ok(/openSeller = a/.test(src2), 'and pressing their row opens them')
+  ok(/<SellerMoney/.test(src2) && /import SellerMoney/.test(src2), 'into the sheet that shows the money')
+  ok(!/class="detail"/.test(src2), 'rather than into a row that grows inside the table')
+}
 
 console.log('a number nobody can ring is not the same as no number')
 {
-  // The live raffle's state, rendered: a seller whose leading zero was lost.
-  // Before this, the screen offered a WhatsApp button that reached a stranger
-  // and was indistinguishable from one that worked.
-  const broken = await renderScreen('src/components/Money.vue',
-    money(tickets, [{ ...row, phone: '123367462' }]),
-    { drive: async b => { await b.load(); b.toggle('A1') } })
+  // The live raffle's state: a seller whose leading zero was lost. The links
+  // are built by the screen, which asks isDialable before building either —
+  // so an unusable number arrives here as no link at all, and the sheet says
+  // which of the two it is.
+  const broken = await renderScreen('src/components/modals/SellerMoney.vue',
+    money(tickets, [row]),
+    { props: { agent: { ...row, phone: '123367462' }, wa: '', tel: '' },
+      drive: async b => { await b.load() } })
   const said = visibleText(broken)
   ok(!/wa\.me/.test(broken), 'no WhatsApp link is offered for a number we cannot place')
   ok(!/href="tel:/.test(broken), 'and nothing to ring either')
@@ -158,9 +180,9 @@ console.log('a number nobody can ring is not the same as no number')
   ok(!/No phone number on file/.test(said),
      'without claiming there is no number — there is one, and that is the problem')
 
-  const none = await renderScreen('src/components/Money.vue',
-    money(tickets, [{ ...row, phone: '' }]),
-    { drive: async b => { await b.load(); b.toggle('A1') } })
+  const none = await renderScreen('src/components/modals/SellerMoney.vue',
+    money(tickets, [row]), { props: { agent: { ...row, phone: '' }, wa: '', tel: '' },
+      drive: async b => { await b.load() } })
   ok(/No phone number on file/.test(visibleText(none)), 'an absent number keeps its own sentence')
   ok(!/cannot be dialled/.test(visibleText(none)), 'and is not confused with an unusable one')
 }
@@ -182,9 +204,12 @@ console.log('the branches one render cannot reach — each is a sentence somebod
      'a raffle with no books out explains itself, rather than showing an empty table')
   ok(!/not paid/.test(nothingOut), 'and claims nothing about money either way')
 
-  const owesButNoTickets = await renderScreen('src/components/Money.vue',
-    money([], [{ ...row, ticketsSold: 0, expected: 10, collected: 0, outstanding: 10 }]),
-    { drive: async b => { await b.load(); b.toggle('A1') } })
+  // Rendered as the sheet it now is; the seller's name is the sheet's title,
+  // which a stubbed child drops, so it is asserted against the binding above.
+  const owesRow = { ...row, ticketsSold: 0, expected: 10, collected: 0, outstanding: 10 }
+  const owesButNoTickets = await renderScreen('src/components/modals/SellerMoney.vue',
+    money([], [owesRow]),
+    { props: { agent: owesRow, wa: '', tel: '' }, drive: async b => { await b.load() } })
   /*
    * READ AS VISIBLE TEXT, not as raw HTML.
    *
@@ -209,7 +234,7 @@ console.log('the branches one render cannot reach — each is a sentence somebod
   ok(/Book counted in/.test(owesText),
      'a seller who owes with no tickets of their own is told the debt came from a book')
   ok(/Balance due/.test(owesText), 'and what is left after it')
-  ok(/JOHN/.test(visibleText(owesButNoTickets)), 'and is still named on the row itself')
+  ok(/10\.00/.test(owesText), 'and the figure it comes to')
 
   // And the term explains itself on hover, rather than assuming the reader
   // knows that a sold-out book can still owe money.
