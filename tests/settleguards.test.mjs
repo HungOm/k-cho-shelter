@@ -41,8 +41,15 @@ console.log('a real ticket from another book is refused')
 ok(/const wrongBook = computed/.test(src), 'wrong-book numbers are detected')
 ok(/state\.byNumber\[x\.num\]\.book !== props\.book\.book/.test(src),
    'by comparing the ticket\'s own book, not by guessing from the number')
-ok(/wrongBook\.length/.test(src) && /:disabled="busy \|\| unresolved\.length \|\| wrongBook\.length"/.test(src),
-   'and they block the save, like an unresolvable number already did')
+// Matched as a SET rather than as one exact string: the list of things that
+// block the save grows, and pinning its spelling makes every addition look like
+// a regression. What matters is that each one is in there.
+{
+  const disabled = (src.match(/:disabled="busy[^"]*"/) || [''])[0]
+  for (const guard of ['unresolved.length', 'wrongBook.length', 'alreadySold.length']) {
+    ok(disabled.includes(guard), `${guard} blocks the save (${disabled})`)
+  }
+}
 ok(/Not in \{\{ book\.book \}\}/.test(src), 'the warning names the book it is not in')
 
 console.log('the existing guard is untouched')

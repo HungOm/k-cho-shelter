@@ -40,11 +40,22 @@ const eq = (g, w, what) => {
  * reported from. Book-507 holds three tickets — the tail of a part-released
  * run, which is the case TICKETS_PER_BOOK gets wrong.
  */
-const ticket = (n, book) => ({ number: 'KS-0' + n, book, status: 'Available' })
+const ticket = (n, book, over = {}) =>
+  ({ number: 'KS-0' + n, book, status: 'Available', name: '', phone: '', source: '', ...over })
 const TICKETS = [
   ...Array.from({ length: 10 }, (_, i) => ticket(5051 + i, 'Book-506')),
   ...Array.from({ length: 3 }, (_, i) => ticket(5061 + i, 'Book-507')),
 ]
+// 5055 sold last week, to somebody with a name on it. Nothing below may quietly
+// claim it came back.
+Object.assign(TICKETS.find((t) => t.number === 'KS-05055'),
+              { status: 'Sold', name: 'Ma Nu', phone: '0125550100' })
+// 5056 is a PLACEHOLDER an earlier count-in wrote — sold by number only, with
+// nobody's name on it. The server lets a forced re-settle name these, so the
+// screen must not block them. Sitting in the same fixture as 5055 means one
+// assertion proves both halves: the buyer is caught, the placeholder is not.
+Object.assign(TICKETS.find((t) => t.number === 'KS-05056'),
+              { status: 'Sold', source: 'settlement' })
 
 const store = `
 import { reactive, computed } from 'vue'
@@ -54,6 +65,10 @@ export const state = reactive({
   tickets: ${JSON.stringify(TICKETS)},
   byNumber: ${JSON.stringify(Object.fromEntries(TICKETS.map((t) => [t.number, t])))},
 })
+// The real one, not a stub of it. "Sold" and "Donated" are both spoken for, and
+// a stub that only knew the first would let this suite pass a screen that gives
+// a donated ticket away twice.
+export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
 export const api = async () => ({ declaredSold: 0, variance: 0 })
 export const toast = () => {}
 export const refresh = async () => {}
@@ -157,6 +172,86 @@ console.log('7. a lost-leftovers count is still whatever was typed')
   ctx.lost.value = true
   ctx.soldCount.value = '7'
   eq(ctx.sold.value, 7, 'the declared figure stands on its own; no ticket is marked')
+  cleanup()
+}
+
+console.log('a run can be typed instead of every number in it')
+{
+  /*
+   * The screen's own hint says "This book holds 5051–5060" and the box refused
+   * exactly that, with an EN DASH, as "not a ticket in this raffle". It was
+   * showing a format it would not accept.
+   */
+  const { ctx, cleanup } = await counting('5051–5060')
+  eq(ctx.unresolved.value.length, 0, 'the range the hint prints is accepted')
+  eq(ctx.returned.value.length, 10, 'and names all ten tickets')
+  eq(ctx.sold.value, 0, 'so nothing counts as sold')
+  eq(ctx.due.value, 0, 'and nothing is owed')
+  cleanup()
+}
+
+console.log('a run mixes with single numbers and repeats')
+{
+  const { ctx, cleanup } = await counting('5051–5053, 5057, 5052')
+  eq(ctx.returned.value.length, 4, '5051–5053 plus 5057, with the repeated 5052 counted once')
+  eq(ctx.sold.value, 6, 'leaving six sold')
+  ok(ctx.repeated.value.length > 0, 'and the repeat is still reported rather than silently dropped')
+  cleanup()
+}
+
+console.log('A RUN IS NEVER TRIMMED TO THE PART THAT FITS')
+{
+  /*
+   * THE CASE THAT COSTS MONEY. 5051–5070 runs past this book. Accepting the
+   * part that fits would count the rest as sold and charge them to the seller;
+   * the whole range is refused and shown back instead.
+   */
+  const { ctx, cleanup } = await counting('5051–5070')
+  eq(ctx.returned.value.length, 0, 'nothing is taken from a range that overruns what is in play')
+  eq(ctx.unresolved.value.join(','), '5051–5070', 'and the range is shown back whole, as typed')
+  ok(ctx.unresolved.value.length === 1, 'once, not twenty times')
+  cleanup()
+}
+
+console.log('a run that crosses into the next book is named as the range')
+{
+  const { ctx, cleanup } = await counting('5051–5062')
+  ok(ctx.wrongBook.value.length > 0, 'the strays are reported')
+  eq(ctx.wrongBook.value.length, 1, 'once for the range, not once per ticket in it')
+  ok(/5051–5062/.test(ctx.wrongBook.value[0]),
+     `named as what was typed (${ctx.wrongBook.value[0]})`)
+  ok(/Book-507/.test(ctx.wrongBook.value[0]), 'and says which book they are really in')
+  cleanup()
+}
+
+console.log('a ticket already recorded as sold cannot be claimed back')
+{
+  /*
+   * The server refuses this — SOLD_TICKET_NAMED_UNSOLD — because counting a
+   * book in must not erase a buyer's name as a side effect. The screen has to
+   * say so FIRST, which is the same complaint it already makes about a number
+   * from another book: otherwise the organiser finds out having committed,
+   * with the seller standing there.
+   *
+   * It matters far more with ranges. Ten numbers nobody reads out one at a time
+   * can quietly claim a sale that happened last week.
+   */
+  const { ctx, cleanup } = await counting('5051–5060')
+  ok(ctx.alreadySold.value.length === 1, 'the sold ticket inside the range is caught')
+  ok(/5055/.test(ctx.alreadySold.value[0]), `and named (${ctx.alreadySold.value[0]})`)
+  ok(/Ma Nu/.test(ctx.alreadySold.value[0]), 'with the buyer, so it is obvious what would be erased')
+  cleanup()
+}
+
+console.log('and a placeholder from an earlier count-in is not a buyer')
+{
+  // 5056 is Sold too, but written by a settlement rather than by somebody
+  // recording a sale. The server allows a forced re-settle to name it, so the
+  // screen must not refuse it — the two rules have to agree or one blocks what
+  // the other would take.
+  const { ctx, cleanup } = await counting('5056')
+  eq(ctx.alreadySold.value.length, 0, 'a settlement placeholder is not flagged as a buyer')
+  eq(ctx.unresolved.value.length, 0, 'and it resolves perfectly well')
   cleanup()
 }
 

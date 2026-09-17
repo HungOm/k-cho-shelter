@@ -30,6 +30,7 @@
  * defined once, and nowhere else may spell it out.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { codeOf } from './source.mjs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renderScreen, visibleText } from './screen.mjs'
@@ -74,7 +75,17 @@ console.log('and nowhere else spells it out')
   for (const f of files) {
     if (rel(f) === 'src/lib/store.js') continue
     if (OWNED_ELSEWHERE.includes(rel(f))) continue
-    const src = readFileSync(f, 'utf8')
+
+    /*
+     * CODE ONLY. A file that explains this rule contains every phrase the rule
+     * does — store.js's own comment quotes `['Sold', 'Donated']` while naming
+     * the one place it is allowed to live, and would read as the offender it
+     * exists to prevent. That file is excluded below for a different reason, so
+     * the collision is latent rather than live: any file that gains a comment
+     * mentioning the pattern becomes a false offender, and a check that cries
+     * wolf about prose is one people start skipping.
+     */
+    const src = codeOf(readFileSync(f, 'utf8'))
 
     // The inline pair, in either order and either bracket style.
     if (/\[\s*'(Sold|Donated)'\s*,\s*'(Sold|Donated)'\s*\]/.test(src)) {

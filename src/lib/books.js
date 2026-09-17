@@ -59,6 +59,79 @@ export function resolveTicketNumber(raw) {
   return hits.length === 1 ? hits[0].number : null
 }
 
+/**
+ * A typed range of ticket numbers, expanded into the tickets it names.
+ *
+ * WHY THIS EXISTS. The settlement screen tells you, in its own hint, that "this
+ * book holds 3291–3300" — and then refused 3291–3300 as "not a ticket in this
+ * raffle". It was showing a format it would not accept, which reads as the app
+ * being broken rather than as a syntax it never had.
+ *
+ * WHAT COUNTS AS A SEPARATOR. A hyphen, an en dash, an em dash, or the word
+ * "to". The en dash matters most: every range this app PRINTS uses one — see
+ * `runsOf` below and the hint on the settle screen — so somebody copying the
+ * format they were shown types an en dash, not a hyphen.
+ *
+ * THE TRAP, AND WHY THIS LOOKS HARDER THAN IT IS. The ticket prefix ends in a
+ * hyphen. `KS-03291-KS-03300` therefore has three of them and only the middle
+ * one is the range. So rather than guessing which character is the separator,
+ * every candidate is TRIED and the first split whose two halves are both real
+ * tickets wins. "KS" is not a ticket, so the first hyphen is discarded on its
+ * own merits instead of by a rule about where prefixes end.
+ *
+ * REFUSED RATHER THAN TRIMMED when any number between the ends is not a ticket
+ * in play. A range that quietly returned only the parts that exist would drop
+ * the rest onto the SOLD side of a settlement and charge them to a volunteer,
+ * which is the exact failure `resolveTicketNumber` was written to prevent. The
+ * caller gets null and shows the range back unresolved.
+ *
+ * Returns the ticket numbers in order, or null if this is not a range at all.
+ */
+export function expandTicketRange(raw) {
+  const cfg = state.cfg
+  if (!cfg) return null
+  const text = String(raw ?? '').trim()
+  if (!text) return null
+
+  const pre = cfg.ticketPrefix || ''
+  const width = cfg.ticketDigits || 5
+
+  for (const m of text.matchAll(/\s*(?:[-\u2010-\u2015]|\bto\b)\s*/gi)) {
+    const left = text.slice(0, m.index).trim()
+    const right = text.slice(m.index + m[0].length).trim()
+    if (!left || !right) continue
+
+    const a = resolveTicketNumber(left)
+    const b = resolveTicketNumber(right)
+    if (!a || !b) continue
+
+    let lo = parseInt(a.slice(pre.length), 10)
+    let hi = parseInt(b.slice(pre.length), 10)
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) continue
+    // Typed backwards is still a clear intention, so it is read rather than
+    // refused — nobody means an empty range by "3300-3291".
+    if (lo > hi) [lo, hi] = [hi, lo]
+
+    /*
+     * A CAP, because a slipped digit is the realistic input. "3291-33000" is
+     * one keystroke away from a legitimate range and would otherwise build
+     * thirty thousand entries, hang the screen and then fail anyway.
+     */
+    if (hi - lo + 1 > 1000) return null
+
+    const out = []
+    for (let n = lo; n <= hi; n++) {
+      const number = pre + String(n).padStart(width, '0')
+      // Held-back tickets are not loaded, so this is also what stops a range
+      // running off the end of what is actually in play.
+      if (!state.byNumber[number]) return null
+      out.push(number)
+    }
+    return out
+  }
+  return null
+}
+
 /** Turns [1,2,3,7,8] into "1–3 and 7–8" — a list of numbers is unreadable. */
 export function describeRuns(numbers) {
   if (!numbers.length) return ''

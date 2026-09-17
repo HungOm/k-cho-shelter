@@ -15,9 +15,9 @@
  * them looking for somebody who went home, so the words follow the book.
  */
 import { ref, computed } from 'vue'
-import { state, api, toast, refresh, loadDelta } from '../../lib/store.js'
+import { state, api, toast, refresh, loadDelta, isSold } from '../../lib/store.js'
 import { money } from '../../lib/format.js'
-import { resolveTicketNumber } from '../../lib/books.js'
+import { resolveTicketNumber, expandTicketRange } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ book: Object })
@@ -39,9 +39,21 @@ const handedBack = computed(() => props.book.status === 'Returned')
 const unsoldList = computed(() =>
   unsold.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))
 
-/** Each entry with the ticket it resolves to, so nothing below resolves twice. */
+/**
+ * Each entry with the ticket it resolves to, so nothing below resolves twice.
+ *
+ * A RANGE BECOMES ITS TICKETS, one entry each, and every one of them keeps the
+ * range as its `raw`. That is what makes the checks below work unchanged: a
+ * range that strays into the next book is reported by the not-in-this-book
+ * check exactly as a single stray number would be, and named as the range the
+ * person typed rather than as a number they never wrote down.
+ */
 const entries = computed(() =>
-  unsoldList.value.map(raw => ({ raw, num: resolveTicketNumber(raw) })))
+  unsoldList.value.flatMap(raw => {
+    const spread = expandTicketRange(raw)
+    if (spread) return spread.map(num => ({ raw, num }))
+    return [{ raw, num: resolveTicketNumber(raw) }]
+  }))
 
 /**
  * THE SAME NUMBER TYPED TWICE IS ONE TICKET.
@@ -96,7 +108,37 @@ const paidNum = computed(() => parseFloat(paid.value) || 0)
 const diff = computed(() => paidNum.value - due.value)
 
 /** Anything that does not resolve is shown back, not silently sent. */
-const unresolved = computed(() => entries.value.filter(e => !e.num).map(e => e.raw))
+const unresolved = computed(() =>
+  [...new Set(entries.value.filter(e => !e.num).map(e => e.raw))])
+
+/**
+ * TYPED A TICKET THAT IS ALREADY RECORDED AS SOLD.
+ *
+ * The server refuses this — SOLD_TICKET_NAMED_UNSOLD — because counting a book
+ * in must not erase a buyer's name and telephone number as a side effect. But
+ * it refuses AFTER the button, which is the same complaint this screen already
+ * makes about numbers from another book: the organiser finds out having already
+ * committed, with a seller standing there.
+ *
+ * It matters more with ranges than it ever did by hand. "3291-3300" is ten
+ * tickets nobody reads out one at a time, and if three of them sold last week
+ * the range quietly claims they came back.
+ *
+ * Placeholders a previous settlement wrote (source 'settlement') are not buyers
+ * anybody recorded, and the server allows a forced re-settle to name them, so
+ * they are not flagged here either. The two rules have to agree or the screen
+ * blocks something the server would have accepted.
+ */
+const alreadySold = computed(() =>
+  [...new Set(entries.value
+    .filter(e => e.num)
+    .map(e => state.byNumber[e.num])
+    // isSold, not a comparison spelled out again here. "Sold" and "Donated" are
+    // both spoken for, and a screen that remembers only the first gives a
+    // donated ticket away twice — which is why soldlock.test.mjs refuses a
+    // second copy of the rule anywhere in the client.
+    .filter(t => t && isSold(t) && t.source !== 'settlement')
+    .map(t => `${short(t.number)}${t.name ? ` (${t.name})` : ''}`))])
 
 /**
  * The numbers this book actually contains.
@@ -166,10 +208,12 @@ const allBack = computed(() =>
  * books end up describing the same ticket differently.
  */
 const wrongBook = computed(() =>
-  entries.value
+  [...new Set(entries.value
     .filter(x => x.num && state.byNumber[x.num]?.book &&
                  state.byNumber[x.num].book !== props.book.book)
-    .map(x => `${x.raw} (${state.byNumber[x.num].book})`))
+    // Deduplicated: a ten-ticket range that overruns this book would otherwise
+    // report the same sentence ten times.
+    .map(x => `${x.raw} (${state.byNumber[x.num].book})`))])
 
 async function settle() {
   if (paid.value === '') return toast('How much money did they hand in?', 'bad')
@@ -191,6 +235,17 @@ async function settle() {
   if (!lost.value && (unresolved.value.length || wrongBook.value.length)) {
     return toast('Some of those numbers are not tickets in this book. Fix them first ' +
                  '— as they stand they would count as sold.', 'bad')
+  }
+  /*
+   * And the opposite mistake: a ticket already recorded as sold, named as one
+   * that came back. The server refuses it by name; stopping here means the
+   * organiser is told while the seller is still standing there, rather than
+   * after the settlement appears to have been taken.
+   */
+  if (!lost.value && alreadySold.value.length) {
+    return toast('Some of those tickets are recorded as sold. Correct or void the sale ' +
+                 'first, so the record says why — counting a book in does not erase a buyer.',
+                 'bad')
   }
   busy.value = true
   try {
@@ -241,7 +296,9 @@ async function settle() {
             This book holds <b>{{ range.first }}–{{ range.last }}</b>.
             Only those numbers belong here.<br>
           </template>
-          Separate with commas or spaces. Leave empty if the whole book sold.
+          Separate with commas or spaces, or type a run as
+          <b v-if="range">{{ range.first }}–{{ range.last }}</b><b v-else>911–920</b>.
+          Leave empty if the whole book sold.
         </p>
       </div>
     </template>
@@ -267,6 +324,14 @@ async function settle() {
          Anything NOT on this list counts as sold and is charged to the agent,
          so one that fails to match moves a ticket to the sold side and adds its
          price to what that volunteer owes. -->
+    <div v-if="alreadySold.length" class="note bad">
+      <b>Already recorded as sold:</b> {{ alreadySold.join(', ') }}
+      <div class="small" style="margin-top:4px">
+        Counting the book in does not erase a buyer. If that sale was wrong, correct or
+        void it first so the record says why.
+      </div>
+    </div>
+
     <div v-if="unresolved.length" class="note bad">
       <b>Not a ticket in this raffle:</b> {{ unresolved.join(', ') }}
       <div class="small">Check the number. Until it is right, these would be counted as sold.</div>
@@ -308,7 +373,7 @@ async function settle() {
 
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
-      <button class="btn primary" :disabled="busy || unresolved.length || wrongBook.length"
+      <button class="btn primary" :disabled="busy || unresolved.length || wrongBook.length || alreadySold.length"
               @click="settle">
         {{ busy ? 'Saving…' : 'Finish this book' }}
       </button>
