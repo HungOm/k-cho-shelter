@@ -807,6 +807,56 @@ ok "$(P "select count(*) from ticket_movements where kind='correction'")" "1" "b
 
 ok "$(P "select has_table_privilege('anon','ticket_movements','select')")" "f" "and the browser cannot read it at all"
 
+echo "a ticket moves as a row, and the column follows it"
+# PHASE 1. Custody stops being `update books set held_by_agent` and becomes a
+# movement per ticket, with tickets.holder as a cache of the latest one. The
+# whole point is that the cache can be re-derived: ticket_custody replays the
+# ledger, and a disagreement between the two is the thing to look for.
+P "insert into agents(agent_id,name,active) values ('MA','Mover A',true),('MB','Mover B',true)" >/dev/null
+P "insert into books(idx,number,first_ticket,last_ticket,status) values (20,'Book-0020','KS-00191','KS-00200','Unassigned')" >/dev/null
+P "insert into tickets(idx,number,book_idx,status) select i,'KS-'||lpad(i::text,5,'0'),20,'Available' from generate_series(191,200) i" >/dev/null
+P "update config set value='200' where key='TOTAL_TICKETS'" >/dev/null
+
+r=$(P "select move_tickets(array(select idx from tickets where book_idx=20),'desk','MA','issue','admin@x.com','')")
+has "$r" '"moved": 10' "ten tickets move in one batch"
+ok "$(P "select count(*) from ticket_movements where to_holder='MA'")" "10" "ten movements written, one per ticket"
+ok "$(P "select count(distinct batch_id) from ticket_movements where to_holder='MA'")" "1" "sharing one batch, because it was one act"
+ok "$(P "select count(*) from tickets where book_idx=20 and holder='MA'")" "10" "and the column followed"
+ok "$(P "select count(*) from ticket_custody where idx between 191 and 200 and disagrees")" "0" "the ledger and the column agree"
+
+echo "and a book can be split, which is the thing the old model could not say"
+# A keeps four, six come back, three go out again to somebody else. Under
+# books.held_by_agent this is unrepresentable: the book has ONE holder, so the
+# only way to give three tickets to MB was to restock the whole book.
+P "select move_tickets(array(select idx from tickets where book_idx=20 and idx>194),'MA','desk','return','admin@x.com','')" >/dev/null
+P "select move_tickets(array[195,196,197],'desk','MB','issue','admin@x.com','')" >/dev/null
+ok "$(P "select count(*) from tickets where book_idx=20 and holder='MA'")" "4" "four stayed with the first seller"
+ok "$(P "select count(*) from tickets where book_idx=20 and holder='MB'")" "3" "three went out to the second"
+ok "$(P "select count(*) from tickets where book_idx=20 and holder='desk'")" "3" "three are on the desk"
+ok "$(P "select count(*) from ticket_custody where idx between 191 and 200 and disagrees")" "0" "and every one of them can be replayed from its movements"
+# No ticket is in two places: the replay returns exactly one holder per ticket.
+ok "$(P "select count(*) from (select ticket_idx from ticket_movements where ticket_idx between 191 and 200 group by ticket_idx) x")" "10" "ten tickets have a trail, and each has exactly one current holder"
+
+echo "a movement whose premise is wrong is refused, and says which tickets"
+# Not "skip the ones that are not there": a batch that is wrong about one ticket
+# is a batch somebody has misread, and moving the other nine hides it.
+r=$(P "select move_tickets(array[191,195],'MA','MB','transfer','admin@x.com','')")
+has "$r" "NOT_THERE" "the batch is refused"
+has "$r" "KS-00195" "naming the ticket that is not where the caller thinks"
+ok "$(P "select count(*) from tickets where idx=191 and holder='MA'")" "1" "and nothing moved — not even the ticket that was where it should be"
+
+echo "the same submission twice is one movement, not two"
+# The thing a volunteer does on a bad connection.
+r1=$(P "select move_tickets(array[198],'desk','MB','issue','admin@x.com','','once-only')")
+r2=$(P "select move_tickets(array[198],'desk','MB','issue','admin@x.com','','once-only')")
+has "$r2" '"replayed": true' "the second press is recognised as a replay"
+# Count the REPLAYED batch, not the ticket's whole trail: 198 has moved twice
+# already in the cases above, and asserting on its total would have been a test
+# that passed for the wrong reason the first time somebody reordered these.
+ok "$(P "select count(*) from ticket_movements where client_key='once-only'")" "1" "and wrote no second movement"
+ok "$(P "select count(*) from tickets where idx=198 and holder='MB'")" "1" "the ticket moved exactly once"
+P "update config set value='50' where key='TOTAL_TICKETS'" >/dev/null
+
 echo "the ledger cannot be edited or erased"
 P "insert into payments(agent_id,amount,received_by,note) values ('A001',50,'me@x.com','cash at the desk')" >/dev/null
 n0=$(P "select count(*) from payments")
