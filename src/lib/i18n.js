@@ -183,6 +183,13 @@ export const MY = {
   // because it is a label on a grid square.
   'Finished': 'ငွေစာရင်းရှင်းပြီး',
   'Lost': 'ပျောက်ဆုံး',
+  // The two marks the grid draws ON TOP of the custody colour. They answer a
+  // different question from the five above — not where the book is, but how
+  // much of it has gone — so the Burmese says "sold", not "finished": a book
+  // can be sold out and still have its money uncounted, which is precisely the
+  // state these marks exist to make visible.
+  'Every ticket sold': 'လက်မှတ်အားလုံး ရောင်းပြီး',
+  'Some sold': 'တစ်ချို့ ရောင်းပြီး',
   // Restock, said as what it does rather than as a word. A label long
   // enough to explain itself stops being a label.
   'Put unsold tickets back': 'မရောင်းရသေးသော လက်မှတ်များ ပြန်ထည့်ရန်',

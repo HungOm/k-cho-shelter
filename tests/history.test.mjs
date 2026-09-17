@@ -18,7 +18,7 @@
  * marked lost would have rendered as the word "lost" in a trail that otherwise
  * speaks in sentences. So the list is checked against the source.
  */
-import { cut } from './source.mjs'
+import { cut, codeOf } from './source.mjs'
 import { readFileSync } from 'node:fs'
 import { renderScreen, visibleText, setupOf } from './screen.mjs'
 
@@ -130,6 +130,37 @@ console.log('a book that has never moved says so')
   ok(/has not been given out/.test(said), 'and says why there is nothing to show')
 }
 
+console.log('a book that has moved, with nothing recorded, does not claim otherwise')
+{
+  /*
+   * REPORTED FROM PRODUCTION. Book-001 had been given to a seller and brought
+   * back; its own panel said so, by name, one sheet behind this one. This panel
+   * said "It has not been given out, so there is nowhere for it to have been."
+   *
+   * Both halves were empty for an ordinary reason — the raffle ran on a
+   * spreadsheet first, and books that moved before the move have no rows — but
+   * the sentence did not say that. It asserted the opposite of what the book
+   * itself said, which teaches the reader that the trail cannot be trusted.
+   */
+  const moved = "return { book: { number: 'Book-001', status: 'Returned' }, history: [], tickets: [] }"
+  const html = await renderScreen('src/components/modals/History.vue', storeFor(moved), {
+    props: { book: 'Book-001' }, drive: (b) => b.load(),
+  })
+  const said = visibleText(html)
+  ok(!/has not been given out/.test(said),
+     'it does not tell somebody a book was never given out while the book says it was')
+  ok(/before the system started keeping them/.test(said),
+     'and says what an empty trail on a moved book actually means')
+
+  // The other half still has to work: a book in the office with no trail HAS
+  // never moved, and saying so is the useful answer.
+  const never = "return { book: { number: 'Book-900', status: 'Unassigned' }, history: [], tickets: [] }"
+  const still = visibleText(await renderScreen('src/components/modals/History.vue', storeFor(never), {
+    props: { book: 'Book-900' }, drive: (b) => b.load(),
+  }))
+  ok(/has not been given out/.test(still), 'a book that truly has not moved still says so')
+}
+
 console.log('a call that failed keeps the sheet open')
 {
   const fails = "throw Object.assign(new Error('The server did not answer.'), { code: 'TIMEOUT' })"
@@ -139,8 +170,13 @@ console.log('a call that failed keeps the sheet open')
   ok(/did not answer/.test(ctx.problem.value), 'it says what went wrong')
   cleanup()
 
-  const src = read('src/components/modals/History.vue')
-  const load = src.slice(src.indexOf('async function load'), src.indexOf('const WORDS'))
+  // The same fix as the verb table below, which 12ae61 caught one slice above
+  // this one and I left here: indexOf returning -1 makes slice(start, -1) run to
+  // the end of the file, and this region would then be the whole component —
+  // which DOES contain emit('close'), twice, in the template. The assertion
+  // would fail while naming a region it was not looking at.
+  const load = cut(read('src/components/modals/History.vue'),
+                   'async function load', 'const WORDS', 'the load function')
   ok(!/emit\('close'\)/.test(load),
      'and never dismisses itself — that is what the receipt was reported for')
 }
@@ -194,6 +230,135 @@ console.log('a verb nobody planned for still appears')
     props: { book: 'Book-031' }, drive: (b) => b.load(),
   })
   ok(/Reissued/.test(visibleText(html)), 'an unknown movement still renders, capitalised')
+}
+
+/*
+ * ============ THE TICKET'S OWN RECORD ============
+ *
+ * Everything above this line was written when a ticket had no history and the
+ * screen said so in as many words. It has one now — ticket_history, filled by a
+ * trigger before each overwrite and refused any update or delete by another —
+ * and the value of keeping it is entirely in whether it can be read back. The
+ * first version of this feature returned it to organisers only, so a seller
+ * holding the book was shown the buyer on the ticket and a blank in its record.
+ *
+ * These are the cases that decide whether the screen tells the truth about a
+ * correction: that the earlier name is still there, that the sale is not
+ * printed twice when the record already holds it, and that a step the reader
+ * may not see says so rather than rendering as a change that did nothing.
+ */
+
+const CORRECTED = `return {
+  book: { number: 'Book-031', status: 'Out' },
+  history: [
+    { at: '2026-08-01T09:00:00Z', action: 'issue', from: null, to: 'MARY',
+      by: 'organiser@example.org', note: '' },
+  ],
+  tickets: [
+    { at: '2026-08-20T08:00:00Z', ticket: 'KS-00305', fromStatus: 'Available', toStatus: 'Sold',
+      fromSeller: null, toSeller: 'MARY', fromBuyer: '', toBuyer: 'Pa Thang',
+      fromPhone: '', toPhone: '0123456789', fromAmount: null, toAmount: 10,
+      fromPayment: '', toPayment: 'Unpaid', source: 'app', by: 'recorder@example.org', note: '' },
+    { at: '2026-09-01T08:00:00Z', ticket: 'KS-00305', fromStatus: 'Sold', toStatus: 'Sold',
+      fromSeller: 'MARY', toSeller: 'MARY', fromBuyer: 'Pa Thang', toBuyer: 'Pa Thaung',
+      fromPhone: '0123456789', toPhone: '0123456789', fromAmount: 10, toAmount: 10,
+      fromPayment: 'Unpaid', toPayment: 'Paid', source: 'app', by: 'organiser@example.org', note: '' },
+  ],
+}`
+
+console.log('a corrected sale still shows the name that was on it')
+{
+  const html = await renderScreen('src/components/modals/History.vue', storeFor(CORRECTED), {
+    props: { ticket: { ...SOLD_TICKET, name: 'Pa Thaung' } }, drive: (b) => b.load(),
+  })
+  const said = visibleText(html)
+
+  ok(/Pa Thaung/.test(said), 'the name on it now')
+  ok(/was Pa Thang/.test(said), 'and the name it was corrected FROM — the whole reason to keep a record')
+  ok(/Corrected/.test(said), 'a change that moved no status is headed as a correction')
+  ok(/Marked paid/.test(said), 'money state is a change too, and the step would otherwise be blank')
+  ok(/recorder@example\.org/.test(said) && /organiser@example\.org/.test(said),
+     'each change is signed by whoever made it — two different people here')
+
+  const at = (x) => said.indexOf(x)
+  ok(at('Given out') < at('Pa Thang'), 'the book was handed out before the sale')
+  ok(at('Pa Thang') < at('Pa Thaung'), 'and the sale before the correction to it')
+
+  /*
+   * NOT TWICE. The sale block below the trail draws the ticket's CURRENT state,
+   * which is the same event the first recorded change already is. Printed both
+   * ways it reads as two sales a fortnight apart, which on this screen is the
+   * one mistake that costs somebody real money.
+   */
+  ok(!/To Pa Thaung/.test(said), 'the sale is not drawn a second time from the ticket row')
+}
+
+console.log('a sale older than the record is still shown')
+{
+  // Two cases at once: a book sold before the trigger existed, and the Apps
+  // Script backend, which has no such table and returns no `tickets` at all.
+  // The ticket row is the only record of the sale either way.
+  const other = `return { book: { number: 'Book-031', status: 'Out' }, history: [],
+    tickets: [{ at: '2026-09-01T08:00:00Z', ticket: 'KS-00300', fromStatus: 'Available', toStatus: 'Sold',
+      fromSeller: null, toSeller: 'MARY', fromBuyer: '', toBuyer: 'Somebody Else',
+      fromPhone: '', toPhone: '0111111111', fromAmount: null, toAmount: 10,
+      fromPayment: '', toPayment: 'Paid', source: 'app', by: 'x@y.z', note: '' }] }`
+  const html = await renderScreen('src/components/modals/History.vue', storeFor(other), {
+    props: { ticket: SOLD_TICKET }, drive: (b) => b.load(),
+  })
+  const said = visibleText(html)
+  ok(/To Pa Thang/.test(said), 'the sale on the ticket row is shown, because nothing else holds it')
+  ok(!/Somebody Else/.test(said), 'and another ticket\'s record is not mixed into this one')
+}
+
+console.log('a step whose details are not for this reader says so')
+{
+  // What the server sends a seller who is not carrying the book: the movement,
+  // and blanks where the buyer was. A step with nothing under it reads as a
+  // change that did nothing, which is the opposite of what happened.
+  const masked = `return { book: { number: 'Book-031', status: 'Out' }, history: [],
+    tickets: [{ at: '2026-09-01T08:00:00Z', ticket: 'KS-00305', fromStatus: 'Sold', toStatus: 'Sold',
+      fromSeller: 'MARY', toSeller: 'MARY', fromBuyer: '', toBuyer: '', fromPhone: '', toPhone: '',
+      fromAmount: 10, toAmount: 10, fromPayment: 'Paid', toPayment: 'Paid',
+      source: 'app', by: 'organiser@example.org', note: '' }] }`
+  const html = await renderScreen('src/components/modals/History.vue', storeFor(masked), {
+    props: { ticket: SOLD_TICKET }, drive: (b) => b.load(),
+  })
+  const said = visibleText(html)
+  ok(/Corrected/.test(said), 'the change is on the list — a gap would read as nothing having happened')
+  ok(/not shown them/.test(said), 'and says plainly that the detail is withheld, rather than showing an empty step')
+
+  // And the other way round for the reader who may see it: the note IS the
+  // change, and a step printing it must not also claim it is being withheld.
+  const noted = masked.replace("note: '' }", "note: 'lives behind the market' }")
+  const mine = visibleText(await renderScreen('src/components/modals/History.vue', storeFor(noted), {
+    props: { ticket: SOLD_TICKET }, drive: (b) => b.load(),
+  }))
+  ok(/lives behind the market/.test(mine), 'the note somebody typed about the buyer is shown to whoever may read it')
+  ok(!/not shown them/.test(mine), 'and the step does not contradict itself by calling it withheld')
+}
+
+console.log('a book\'s history names the ticket each change was to')
+{
+  const html = await renderScreen('src/components/modals/History.vue', storeFor(CORRECTED), {
+    props: { book: 'Book-031' }, drive: (b) => b.load(),
+  })
+  const said = visibleText(html)
+  ok(/KS-00305/.test(said), 'opened on the book, every ticket change is named')
+  ok(/Given out/.test(said), 'alongside the book\'s own movements, in one order')
+}
+
+console.log('the screen no longer claims the earlier name is gone')
+{
+  // WITHOUT ITS COMMENTS, which is what codeOf exists for. The docblock above
+  // the component quotes the retired sentence in order to say it was retired,
+  // and a scan of the raw file reads that quote as the sentence still being on
+  // the screen — the exact failure codeOf was written after.
+  const shown = codeOf(read('src/components/modals/History.vue'))
+  ok(!/earlier name is not kept/.test(shown),
+     'that sentence was true when it was written and stopped being true when the trail landed')
+  ok(/Nothing here can be edited or removed/.test(shown),
+     'and says what is true now: the record is append only')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

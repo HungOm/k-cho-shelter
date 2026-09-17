@@ -12,17 +12,29 @@
  * holding the clipboard, not an organiser. Nothing in the app had ever called
  * it. This is its first reader.
  *
- * A TICKET HAS NO TRAIL OF ITS OWN, and the honest thing is to say so rather
- * than invent one. The tickets table keeps the LATEST state with an author and
- * a time — sold_by_agent, sold_at, recorded_by, source — and a correction
- * overwrites it, so a previous buyer is genuinely gone. What a ticket does have
- * is the custody of the book it lives in, which is most of what people are
- * asking about. So a ticket's history is its own sale merged into its book's
- * movements, in one order, and the sale is marked as the single point it is.
+ * A TICKET NOW HAS A TRAIL OF ITS OWN, and this screen was written before it
+ * did. The tickets table still keeps only the LATEST state — a correction
+ * overwrites the buyer — but every material change is copied into
+ * ticket_history by a database trigger BEFORE the overwrite, append only and
+ * enforced as such, and book_history hands it back beside the book's movements.
+ * So the sentence this screen used to end on, that an earlier name is not kept,
+ * was true when it was written and is not true now.
+ *
+ * WHO SEES WHAT IS THE SERVER'S DECISION, and it is the same one it makes about
+ * the live ticket: a seller sees the buyers in the books they are carrying, a
+ * helper the sales they wrote down, an organiser everybody, a viewer everybody
+ * with the telephone number shortened. Nothing is decided here. A step whose
+ * buyer is not for this reader still appears, saying that a detail is withheld
+ * — a trail with silent gaps in it is worse than one that admits to them,
+ * because the gaps read as nothing having happened.
+ *
+ * So a ticket's history is its own recorded changes AND the custody of the book
+ * it lives in, in one order, because the question is nearly always about the
+ * relationship between the two.
  */
 import { ref, computed, onMounted } from 'vue'
 import { api, state, agentMap, isSold } from '../../lib/store.js'
-import { dateTime, money, plainName, isSellerContact } from '../../lib/format.js'
+import { dateTime, money, plainName, isSellerContact, STATUS_WORDS } from '../../lib/format.js'
 import { isDialable, waNumber } from '../../lib/search.js'
 import Sheet from '../ui/Sheet.vue'
 import StatusPill from '../ui/StatusPill.vue'
@@ -158,12 +170,98 @@ const sale = computed(() => {
 })
 
 /**
- * Book movements and the sale in ONE order, oldest first.
+ * EVERY RECORDED CHANGE TO THE TICKET, from the server's append-only trail.
  *
- * Merged rather than shown as two lists, because the question is nearly always
- * about the relationship between them — was it sold before or after the book
- * came back? Two lists side by side make the reader do that join in their head,
- * and that is exactly where somebody gets it wrong.
+ * Absent on the Apps Script backend, which has no such table: an empty list
+ * rather than a crash, and the book's movements still read as they always did.
+ *
+ * A book's trail carries every ticket in the book — which is what somebody
+ * asking about the BOOK wants — so a ticket narrows it to its own.
+ */
+const changes = computed(() => {
+  const rows = trail.value?.tickets || []
+  return props.ticket ? rows.filter(c => c.ticket === props.ticket.number) : rows
+})
+
+/** The five words the pill on the ticket uses, not a sixth set written here. */
+const statusWord = (s) => STATUS_WORDS[s] || s || ''
+
+/** The bare name, with the settlement's marker said in words rather than shown. */
+function buyerWords(name) {
+  if (!name) return ''
+  return isSellerContact(name) ? `${plainName(name)} — the seller's own contact` : plainName(name)
+}
+
+/**
+ * One recorded change, as something a volunteer reads.
+ *
+ * The substance goes in `lines` rather than into the heading, the same shape as
+ * the sale below it: the heading says what the ticket BECAME, the lines say
+ * what was on it before. A correction that moved no status is headed as one.
+ *
+ * `hidden` is the case that has to be got right. When every field that changed
+ * is one this reader may not see, the step would otherwise render as a time and
+ * a word with nothing under it, and read as a change that did nothing. It says
+ * instead that something was changed and is not being shown.
+ */
+function changeStep(c) {
+  const moved = c.toStatus !== c.fromStatus
+  const lines = []
+
+  // Available → Sold is the ordinary path and needs no saying. Sold → anything
+  // is the one somebody came to this screen to find.
+  if (moved && c.fromStatus && c.fromStatus !== 'Available') lines.push(`Was ${statusWord(c.fromStatus)}`)
+
+  if (c.toSeller !== c.fromSeller) {
+    lines.push(c.toSeller
+      ? `Credited to ${c.toSeller}${c.fromSeller ? `, was ${c.fromSeller}` : ''}`
+      : `No longer credited to ${c.fromSeller}`)
+  }
+  if (c.toBuyer !== c.fromBuyer) {
+    lines.push(c.toBuyer
+      ? `Buyer ${buyerWords(c.toBuyer)}${c.fromBuyer ? `, was ${buyerWords(c.fromBuyer)}` : ''}`
+      : `${buyerWords(c.fromBuyer)} taken off it`)
+  }
+  if (c.toPhone !== c.fromPhone) {
+    lines.push(c.toPhone
+      ? `Telephone ${c.toPhone}${c.fromPhone ? `, was ${c.fromPhone}` : ''}`
+      : 'Telephone number taken off it')
+  }
+  if (Number(c.toAmount ?? 0) !== Number(c.fromAmount ?? 0)) {
+    lines.push(`${money(c.toAmount, currency.value)}${
+      c.fromAmount != null ? `, was ${money(c.fromAmount, currency.value)}` : ''}`)
+  }
+  if (c.toPayment !== c.fromPayment && c.toPayment) lines.push(`Marked ${c.toPayment.toLowerCase()}`)
+
+  return {
+    kind: 'change', at: c.at, title: moved ? statusWord(c.toStatus) : 'Corrected',
+    // Named only where the reader did not arrive holding one ticket.
+    ticket: props.ticket ? '' : c.ticket,
+    lines, by: c.by, note: c.note,
+    // A note this reader may see IS the visible change — saying the details are
+    // withheld while printing one of them contradicts itself on the same step.
+    hidden: lines.length === 0 && !c.note,
+  }
+}
+
+/**
+ * The sale is in the trail already, when the trail was there to record it.
+ *
+ * Books sold before the trigger existed have no step for it and the ticket row
+ * itself is the only record, so the sale block below stays. Where both exist,
+ * showing both puts the same sale on the screen twice a minute apart, which
+ * reads as two sales.
+ */
+const trailHasTheSale = computed(() => changes.value.some(c => isSold({ status: c.toStatus })))
+
+/**
+ * Book movements, ticket changes and the sale in ONE order, oldest first.
+ *
+ * Merged rather than shown as separate lists, because the question is nearly
+ * always about the relationship between them — was it sold before or after the
+ * book came back, was the buyer changed before or after it was counted in? Lists
+ * side by side make the reader do that join in their head, and that is exactly
+ * where somebody gets it wrong.
  */
 const steps = computed(() => {
   const list = (trail.value?.history || []).map(h => ({
@@ -173,7 +271,8 @@ const steps = computed(() => {
     from: h.fromWho || null, to: h.toWho || null,
     by: h.by, note: h.note,
   }))
-  if (sale.value) list.push({ kind: 'sale', at: sale.value.at })
+  for (const c of changes.value) list.push(changeStep(c))
+  if (sale.value && !trailHasTheSale.value) list.push({ kind: 'sale', at: sale.value.at })
 
   // Undated entries sort last rather than to 1970: an unknown time is not the
   // beginning of the raffle, and putting it there tells a story that is wrong.
@@ -186,6 +285,25 @@ const steps = computed(() => {
 
 const currency = computed(() => state.cfg?.currency || '')
 const nothingRecorded = computed(() => !!trail.value && steps.value.length === 0)
+
+/**
+ * A book with no trail that has plainly been somewhere.
+ *
+ * `Unassigned` is the one status that agrees with an empty history: the book is
+ * in the office and has never left it. Every other status is the book itself
+ * saying it has moved, and an empty trail beside it means the movements were
+ * not recorded here rather than that they did not happen.
+ *
+ * The distinction is not academic. This app is the second home of a raffle that
+ * ran on a spreadsheet: books issued and brought back before the move have no
+ * rows, and telling the person holding one that it "has not been given out"
+ * teaches them that the trail is unreliable — which is the exact opposite of
+ * what a record is for.
+ */
+const movedAlready = computed(() => {
+  const status = trail.value?.book?.status || ''
+  return !!status && status !== 'Unassigned'
+})
 </script>
 
 <template>
@@ -200,11 +318,23 @@ const nothingRecorded = computed(() => !!trail.value && steps.value.length === 0
     </div>
 
     <!-- Recorded and empty is a real answer, and a different one from a book
-         that never existed. A book sitting in the office has simply never
-         moved, and saying so beats an empty panel that reads as a failure. -->
+         that never existed. But it is TWO answers, and this said only one of
+         them: a book that has never moved, and a book that moved before this
+         system was keeping the record. Told the second one, it said "it has not
+         been given out" about a book whose own panel, one sheet behind, named
+         the seller who brought it back. A screen that contradicts the screen
+         under it is worse than one that admits it does not know. -->
     <p v-else-if="nothingRecorded" class="note">
-      Nothing has been recorded against {{ bookNumber }} yet. It has not been
-      given out, so there is nowhere for it to have been.
+      <template v-if="movedAlready">
+        Nothing is recorded against {{ bookNumber }} here. It has clearly moved —
+        it is {{ (trail.book.status || '').toLowerCase() }} — so this is a book
+        whose comings and goings happened before the system started keeping them,
+        or somewhere other than this app. Everything from here on is kept.
+      </template>
+      <template v-else>
+        Nothing has been recorded against {{ bookNumber }} yet. It has not been
+        given out, so there is nowhere for it to have been.
+      </template>
     </p>
 
     <ol v-else class="trail">
@@ -231,6 +361,20 @@ const nothingRecorded = computed(() => !!trail.value && steps.value.length === 0
             at the time.
           </div>
           <div v-if="sale.by" class="who">Written down by {{ sale.by }}</div>
+        </template>
+
+        <template v-else-if="s.kind === 'change'">
+          <div class="when">{{ dateTime(s.at) }}</div>
+          <div class="what">
+            <b>{{ s.title }}</b>
+            <span v-if="s.ticket" class="muted">{{ s.ticket }}</span>
+          </div>
+          <div v-for="(line, j) in s.lines" :key="j" class="who">{{ line }}</div>
+          <div v-if="s.hidden" class="who">
+            The buyer's details were changed. You are not shown them on this ticket.
+          </div>
+          <div v-if="s.by" class="who">Written down by {{ s.by }}</div>
+          <div v-if="s.note" class="note-line">{{ s.note }}</div>
         </template>
 
         <template v-else>
@@ -265,12 +409,14 @@ const nothingRecorded = computed(() => !!trail.value && steps.value.length === 0
       </li>
     </ol>
 
-    <!-- Said once, at the bottom, because somebody reading a trail and NOT
-         finding an old buyer in it should be told why rather than concluding
-         the record is incomplete. -->
-    <p v-if="ticket && trail && !problem" class="tiny muted mt">
-      A ticket keeps only its current buyer. If this sale was corrected, the
-      earlier name is not kept — the movements of the book above are.
+    <!-- Said once, at the bottom, because somebody reading a trail has to know
+         whether what they are looking at is all of it. It is: a correction is
+         added to this list, it never replaces what was there. What it is not is
+         everything for every reader — buyers are shown to whoever may see them
+         on the ticket itself, which is why a step can say a detail is withheld. -->
+    <p v-if="(ticket || changes.length) && trail && !problem" class="tiny muted mt">
+      Nothing here can be edited or removed. A correction is added to the end of
+      the list, and what it corrected stays above it.
     </p>
 
     <template #actions>
