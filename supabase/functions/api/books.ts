@@ -1117,13 +1117,50 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
   const byNumber = new Map((rows ?? []).map(
     (b: Record<string, unknown>) => [String(b.number), b]))
 
-  // Every book checked before any of them moves.
+  /*
+   * ALREADY DONE IS NOT A CONFLICT, and getting that wrong cost a real evening.
+   *
+   * This refused the whole report if any book was not still Out — which is
+   * right for a book that has gone somewhere ELSE, and wrong for one that is
+   * already where this report was trying to put it. The two were treated the
+   * same, and the combination is a trap:
+   *
+   *   this handler makes several writes and is not one transaction. A failure
+   *   part way through leaves some books moved and the request still Pending.
+   *   The organiser then cannot accept it — the moved books read as stale — and
+   *   declining leaves the books where the half-run left them. Reported from
+   *   the live raffle as "the book status was not preserved, it was mutated,
+   *   and after the report was rejected the seller cannot sell that book".
+   *
+   * So a book that is already SETTLED when the report asked for it to be
+   * counted in, or already RETURNED when the report asked for it to come back,
+   * is skipped and named in the result. Accepting the same report again
+   * finishes what is left, which is what somebody will try and what used to be
+   * impossible. A book that is Lost, Void, or with a different seller is still
+   * refused outright, and refuses the whole report with it.
+   */
   const wrong: string[] = []
-  for (const n of named) {
+  const done: string[] = []
+  const todo: Array<Record<string, unknown>> = []
+  for (const line of lines) {
+    const n = String(line.book ?? '').trim()
+    if (!n) continue
     const b = byNumber.get(n) as Record<string, unknown> | undefined
+    const want = String(line.action)
     if (!b) { wrong.push(`${n} does not exist`); continue }
+
+    const status = String(b.status)
+    // Where it already is what the report wanted, nothing is owed and nothing
+    // is wrong. held_by_agent survives both moves, so the book is still known
+    // to be theirs even though it is no longer Out.
+    if ((want === 'count' && status === 'Settled') ||
+        (want === 'return' && (status === 'Returned' || status === 'Settled'))) {
+      done.push(n)
+      continue
+    }
     if (String(b.held_by_agent ?? '') !== agentId) { wrong.push(`${n} is not with ${who}`); continue }
-    if (String(b.status) !== 'Out') wrong.push(`${n} is ${String(b.status).toLowerCase()} already`)
+    if (status !== 'Out') { wrong.push(`${n} is ${status.toLowerCase()} now`); continue }
+    todo.push(line)
   }
   if (wrong.length) {
     throw new ApiError(
@@ -1134,19 +1171,23 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
     )
   }
 
-  const returning = lines.filter((l) => String(l.action) === 'return').map((l) => String(l.book))
-  const counting = lines.filter((l) => String(l.action) === 'count')
+  const returning = todo.filter((l) => String(l.action) === 'return').map((l) => String(l.book))
+  const counting = todo.filter((l) => String(l.action) === 'count')
 
-  // 1. Onto the desk. Both kinds come back: counting a book in is something
-  //    that happens to a book that is here.
-  const coming = [...returning, ...counting.map((l) => String(l.book))]
-  if (coming.length) {
-    await returnBooks({ bookNumbers: coming, note: `Reported back by ${who}` }, user, ctx)
-  }
-
-  // 2. Counted in, one book at a time, with the stubs the seller listed. The
-  //    money is nought on every one of them: it arrives below as one hand-over,
-  //    which is how it was actually handed over.
+  /*
+   * 1. COUNTED IN FIRST, AND STRAIGHT FROM THE SELLER'S HANDS.
+   *
+   * This used to bring every book back and then count in the ones that needed
+   * it — two steps where one does, because settle_book has always accepted a
+   * book that is still Out. That is the ordinary count-in: a seller stands
+   * there with the book and the organiser counts it.
+   *
+   * The order is the difference between a half-run leaving a mess and a half-run
+   * leaving the rest alone. Each settle_book is one transaction in the database,
+   * so a book is either counted in or untouched; anything this loop has not
+   * reached is still Out with the seller, exactly as it was, and the report can
+   * be accepted again to finish it.
+   */
   const counted: Array<Record<string, unknown>> = []
   for (const line of counting) {
     const r = await settleBook({
@@ -1157,6 +1198,12 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
     }, user, ctx) as Record<string, unknown>
     counted.push({ book: String(line.book), sold: r.declaredSold, due: r.amountDue })
   }
+
+  // 2. And the rest come back to the desk, in one statement.
+  if (returning.length) {
+    await returnBooks({ bookNumbers: returning, note: `Reported back by ${who}` }, user, ctx)
+  }
+  const coming = [...returning, ...counting.map((l) => String(l.book)), ...done]
 
   // 3. The cash, as one hand-over against the seller. `record_payment` is the
   //    existing door for money that is not tied to one book, and it is the
@@ -1223,6 +1270,10 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
   return {
     agentId, agentName: who,
     returned: returning, counted, handed, payment,
+    // Named rather than silently folded in: an organiser who accepts a report
+    // and is told "3 books" when they handed over two wants to know which one
+    // the app had already dealt with.
+    alreadyDone: done,
     books: coming,
   }
 }

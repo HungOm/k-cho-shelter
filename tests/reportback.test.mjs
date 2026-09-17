@@ -23,6 +23,7 @@
  */
 import { setEnv, loadModule } from './loadts.mjs'
 import { fakeDb, baseConfig } from './fakedb.mjs'
+import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -224,7 +225,14 @@ console.log('5. accepting is what writes — all of it, at once, in the organise
   const one = w.db.tables.books.find((b) => b.idx === 1)
   const two = w.db.tables.books.find((b) => b.idx === 2)
   eq(two.status, 'Returned', 'the untouched book is simply back')
-  ok(one.status !== 'Out', 'and the counted one is off the seller too')
+  /*
+   * The counted book's own row is NOT asserted, and the reason is the fake:
+   * settle_book is modelled here only for its ledger half, so the row it would
+   * set to Settled in Postgres stays as it was. It is also no longer returned
+   * first — a book is counted in straight from the seller's hands, which is the
+   * ordinary count-in and one write instead of two.
+   */
+  eq(one.held_by_agent, 'A001', 'the counted book is still known to be hers')
 
   const result = decided.body.data.result
   eq(result.counted.length, 1, 'one book went through the count-in')
@@ -267,6 +275,52 @@ console.log('6. a report that no longer matches the books is refused whole')
   ok(/Book-001/.test(JSON.stringify(decided.body.error ?? {})), 'naming the book that moved')
   eq(w.db.tables.books.find((b) => b.idx === 2).status, 'Out',
      'and the book that was still fine did not move either')
+}
+
+console.log('6b. a book already where the report wanted it is finished, not a conflict')
+{
+  /*
+   * THE TRAP THIS REMOVES, reported from the live raffle. This handler makes
+   * several writes and is not one transaction, so a failure part way through
+   * left some books moved and the request still Pending. "Already moved" and
+   * "moved somewhere else" were treated alike, so the organiser could not
+   * accept the report — the moved books read as stale — and declining left the
+   * books where the half-run put them. The seller's book was settled, and a
+   * settled book cannot be sold from by anybody.
+   *
+   * So a book already in the state the report asked for is skipped and named.
+   * Accepting again finishes what is left, which is what somebody will try.
+   */
+  const w = withSales()
+  const asked = await call('request_approval', {
+    action: 'report_back',
+    payload: { books: [{ book: 'Book-001', action: 'count', unsold: [] },
+                       { book: 'Book-002', action: 'return' }], amountHanded: 0 },
+  }, 'seller@x.com', w)
+
+  // Book-002 was brought back by hand while the report sat in the queue.
+  Object.assign(w.db.tables.books.find((b) => b.idx === 2), { status: 'Returned' })
+
+  const decided = await call('decide_book_request',
+    { requestId: asked.body.data.requestId, approve: true }, 'org@x.com', w)
+  ok(decided.body.ok,
+     `accepting still works (${decided.body.error?.code ?? ''} ${decided.body.error?.message ?? ''})`)
+  eq(decided.body.data.result.alreadyDone.join(','), 'Book-002',
+     'and says which book was already dealt with')
+  eq(decided.body.data.result.counted.length, 1, 'while the rest of the report was carried out')
+
+  // A book that went somewhere ELSE is still refused, and refuses the whole
+  // report with it — that is a different fact and a different fix.
+  const w2 = withSales()
+  const a2 = await call('request_approval', {
+    action: 'report_back',
+    payload: { books: [{ book: 'Book-001', action: 'return' }], amountHanded: 0 },
+  }, 'seller@x.com', w2)
+  Object.assign(w2.db.tables.books.find((b) => b.idx === 1), { status: 'Lost' })
+  const d2 = await call('decide_book_request',
+    { requestId: a2.body.data.requestId, approve: true }, 'org@x.com', w2)
+  ok(!d2.body.ok, 'a book that is lost now is refused')
+  eq(d2.body.error.code, 'REPORT_STALE', 'by name')
 }
 
 console.log('7. an empty report is not a report')
@@ -320,6 +374,29 @@ console.log('8. and there is a way in — including for the seller who cannot us
   ok(/act: 'report-back'/.test(row), 'the "time to report" row opens the report itself')
   ok(/a\.act \? emit\(a\.act\) : go\(a\.go\)/.test(home),
      'and Home raises it rather than navigating')
+}
+
+console.log('9. the seller names the tickets that came back, rather than counting them')
+{
+  /*
+   * A COUNT CANNOT CARRY THE LINK, and the draw runs on the link.
+   *
+   * The screen asked "how many did not sell?" and sent the LAST N unsold
+   * numbers, on the assumption that a book is sold from the front. Somebody
+   * sells three from the middle to buyers who picked their own numbers, says
+   * seven did not sell, and seven tickets are marked sold — the wrong seven,
+   * with a stranger's name against a number somebody is holding. settle_book
+   * takes the numbers for exactly this reason; the screen was the half throwing
+   * them away.
+   */
+  const form = readFileSync(new URL('../src/components/modals/ReportBack.vue', import.meta.url), 'utf8')
+  ok(/new Set\(b\.unsoldNumbers\)/.test(form),
+     'every ticket not already written down as sold starts as one that came back')
+  ok(/unsold: b\.unsoldNumbers\.filter\(n => isUnsold\(b, n\)\)/.test(form),
+     'and what is sent is the numbers themselves, in the book\'s own order')
+  ok(!/slice\(-Math\.max/.test(form), 'the last-N guess is gone')
+  ok(/function toggle\(b, number\)/.test(form) && /aria-pressed/.test(form),
+     'they are tapped, which is the act the seller is already performing')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

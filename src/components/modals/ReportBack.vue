@@ -42,7 +42,20 @@ const busy = ref(false)
 
 /** What the seller says about each book: keep it, bring it back, count it in. */
 const choice = ref({})
-/** Per book, the stub numbers they are NOT handing in — the ones still unsold. */
+/**
+ * PER BOOK, THE TICKET NUMBERS THAT DID NOT SELL — the numbers, not a count.
+ *
+ * This asked "how many did not sell?" and then sent the LAST N unsold numbers,
+ * on the assumption that a book is sold from the front. That assumption is
+ * wrong often enough to matter: somebody sells three from the middle of a book
+ * to people who picked their own numbers, says seven did not sell, and seven
+ * tickets are marked sold — the wrong seven. The ticket-to-buyer link is what
+ * the draw runs on, and a count cannot carry it.
+ *
+ * So the seller taps the ones that came back. It is the same act they are
+ * performing with their hands, and a raffle ticket has a number on it precisely
+ * so that it can be named.
+ */
 const unsold = ref({})
 const handed = ref('')
 const note = ref('')
@@ -55,7 +68,9 @@ onMounted(async () => {
     draft.value = d
     for (const b of d.books) {
       choice.value[b.book] = b.suggest
-      unsold.value[b.book] = b.unsoldNumbers.length
+      // Everything not already written down as sold starts as unsold, which is
+      // what the book looks like if the seller recorded every sale as they went.
+      unsold.value[b.book] = new Set(b.unsoldNumbers)
     }
     // What the figures say they owe, as the starting amount. Typed over freely:
     // the seller knows what is in their hand and the screen does not.
@@ -75,8 +90,26 @@ const keeping = computed(() => lines.value.filter(b => choice.value[b.book] === 
  * be asked to do. Every ticket in a book they are counting in is either a stub
  * they are handing over or a ticket that did not sell.
  */
+const unsoldIn = (b) => unsold.value[b.book]?.size ?? 0
 const soldFromCounted = computed(() =>
-  counting.value.reduce((n, b) => n + Math.max(0, b.held - Number(unsold.value[b.book] ?? 0)), 0))
+  counting.value.reduce((n, b) => n + Math.max(0, b.held - unsoldIn(b)), 0))
+
+/** Tapping a ticket moves it between "came back" and "sold". */
+function toggle(b, number) {
+  const set = unsold.value[b.book]
+  if (!set) return
+  const next = new Set(set)
+  next.has(number) ? next.delete(number) : next.add(number)
+  unsold.value[b.book] = next
+}
+const isUnsold = (b, number) => !!unsold.value[b.book]?.has(number)
+
+/** "KS-00911" reads as 911 to somebody holding the ticket. */
+const ticketNo = (n) => String(n ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+
+/** The two ends of the range, because most books are all or nothing. */
+function allBack(b) { unsold.value[b.book] = new Set(b.unsoldNumbers) }
+function noneBack(b) { unsold.value[b.book] = new Set() }
 
 const dueNow = computed(() => soldFromCounted.value * (draft.value?.ticketPrice || 0))
 const handedNum = computed(() => parseFloat(handed.value) || 0)
@@ -85,11 +118,6 @@ const short = computed(() => Math.round((dueNow.value - handedNum.value) * 100) 
 const nothingToSend = computed(() =>
   !returning.value.length && !counting.value.length && handedNum.value <= 0)
 
-/** A number that is not a number of tickets in that book. */
-function clampUnsold(b) {
-  const n = Math.round(Number(unsold.value[b.book] ?? 0))
-  unsold.value[b.book] = Math.max(0, Math.min(b.held, isNaN(n) ? 0 : n))
-}
 
 async function send() {
   if (nothingToSend.value) {
@@ -116,7 +144,9 @@ async function send() {
       ...returning.value.map(b => ({ book: b.book, action: 'return' })),
       ...counting.value.map(b => ({
         book: b.book, action: 'count',
-        unsold: b.unsoldNumbers.slice(-Math.max(0, Number(unsold.value[b.book] ?? 0)))
+        // In the book's own order, which is how they will be read back at the
+        // table — not in the order somebody happened to tap them.
+        unsold: b.unsoldNumbers.filter(n => isUnsold(b, n))
       }))
     ]
 
@@ -126,8 +156,7 @@ async function send() {
         books,
         ticketsSold: soldFromCounted.value,
         stubsReturned: soldFromCounted.value,
-        unsoldReturned: counting.value.reduce(
-          (n, b) => n + Number(unsold.value[b.book] ?? 0), 0),
+        unsoldReturned: counting.value.reduce((n, b) => n + unsoldIn(b), 0),
         amountHanded: handedNum.value,
         note: note.value.trim()
       }
@@ -180,14 +209,32 @@ async function send() {
                     @click="choice[b.book] = opt.v">{{ opt.t }}</button>
           </div>
           <!-- Only where it changes anything. A book being kept or brought back
-               unopened has no stub count to argue about. -->
-          <div v-if="choice[b.book] === 'count'" class="field tight">
-            <label :for="'u' + b.book">How many tickets in it did not sell?</label>
-            <input :id="'u' + b.book" v-model.number="unsold[b.book]" type="number"
-                   inputmode="numeric" min="0" :max="b.held" @blur="clampUnsold(b)">
+               unopened has no stubs to argue about.
+
+               THE NUMBERS, TAPPED. Every ticket in the book that is not already
+               written down as sold is here; the ones still lit are the ones
+               coming back. It is the same act the seller is doing with their
+               hands, and it is the only way the right tickets end up marked
+               sold when a book was not sold from the front. -->
+          <div v-if="choice[b.book] === 'count'" class="stubs">
+            <div class="spread">
+              <label>Which ones came back?</label>
+              <span class="row">
+                <button type="button" class="btn sm ghost" @click="allBack(b)">All</button>
+                <button type="button" class="btn sm ghost" @click="noneBack(b)">None</button>
+              </span>
+            </div>
+            <div class="chips">
+              <button v-for="n in b.unsoldNumbers" :key="n" type="button"
+                      :class="['chip', { on: isUnsold(b, n) }]"
+                      :aria-pressed="isUnsold(b, n)" @click="toggle(b, n)">{{ ticketNo(n) }}</button>
+            </div>
             <p class="hint">
-              {{ Math.max(0, b.held - Number(unsold[b.book] || 0)) }} sold ·
-              the rest come back with the book.
+              <b>{{ Math.max(0, b.held - unsoldIn(b)) }}</b> sold ·
+              <b>{{ unsoldIn(b) }}</b> coming back
+              <template v-if="b.recordedSold">
+                · {{ b.recordedSold }} already written down as sold, which cannot be undone here
+              </template>
             </p>
           </div>
         </div>
@@ -243,6 +290,19 @@ async function send() {
 }
 .pick:hover { border-color: var(--brand); }
 .pick.on { border-color: var(--brand); background: var(--brand-soft); }
-.field.tight { margin-top: 10px; }
-.field.tight input { max-width: 140px; }
+.stubs { margin-top: 12px; }
+.stubs .spread { align-items: center; margin-bottom: 8px; }
+.stubs label { margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Big enough to hit with a thumb, on a phone, standing up, holding a book. */
+.chip {
+  min-width: 52px; padding: 10px 8px; border-radius: var(--r-sm);
+  border: 1.5px solid var(--border); background: var(--surface);
+  font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer;
+  color: var(--muted); transition: border-color .12s, background .12s, color .12s;
+}
+.chip:hover { border-color: var(--brand); }
+/* Lit means "came back". Unlit is a ticket this report says was sold, which is
+   the one that costs somebody money, so it is the state that looks spent. */
+.chip.on { border-color: var(--brand); background: var(--brand-soft); color: var(--text); }
 </style>
