@@ -75,10 +75,54 @@ pushes next. Use `git ls-tree -r HEAD`, never `git ls-files` — that reads the
 index, which drifts behind `HEAD` in a shared worktree and has already sent one
 session chasing a hazard a third the size they thought.
 
-## And the reset
+## And the reset, which has to come last and nearly did not run at all
 
-`supabase/reset.sql` deletes `book_history` before `books`, which still works,
-and it disables `book_history`'s triggers in the open alongside the four it
-already disabled. If the reset runbook deletes in a different order, or
-truncates, `20260917211000` will now refuse it. Worth reading that before the
-reset runs, not during.
+**Sequence: migrations, then function, then reset.** The reset clears
+`ticket_movements` and `money_entries`, and those tables do not exist in
+production — the pending migrations are what create them. Run the reset against
+today's database and it fails on a missing table.
+
+**A near miss worth recording, because it is the shape of the next one.**
+`20260917230000` gave `audit_log` the same append-only triggers the other
+ledgers have. `reset.sql` disables user triggers before deleting, and `audit_log`
+was not on that list — because when the list was written, it did not need to be.
+A scratch database built from schema + functions + rls + every pending migration
+raised:
+
+    ERROR: audit_log is append only — DELETE is not allowed on it
+
+at line 85. It rolls back cleanly, since the whole reset is inside one
+transaction, so nothing would have been half destroyed. The cost is that the
+reset simply would not have happened, discovered by whoever was running it.
+
+Fixed in `66d6549`: the disable and enable lists now carry `audit_log`,
+`ticket_movements` and `money_entries` alongside the six that were there.
+
+**THE RULE THAT FALLS OUT OF IT.** Every migration that makes a table
+append-only, and every migration that creates a table, puts `reset.sql` one step
+out of date — and nothing links the two files. The reset is the only thing in
+this repository that deletes rows wholesale, so it is the only thing those
+triggers refuse, and it is not exercised by any suite. Adding an append-only
+trigger means adding two lines to `reset.sql` in the same commit. Until
+something enforces that, it is a thing to check by hand before the reset runs:
+
+    guarded=$(grep -rhoE "create trigger [a-z_]+ before (update or delete|truncate) on [a-z_]+" \
+                supabase/schema.sql supabase/migrations/*.sql | awk '{print $NF}' | sort -u)
+    for t in $guarded; do
+      grep -qE "^\s*delete from $t;" supabase/reset.sql || continue
+      grep -qE "alter table $t\s+disable trigger user" supabase/reset.sql \
+        || echo "RESET WILL FAIL ON: $t"
+    done
+
+It reads the tables OUT OF THE TRIGGERS rather than out of the delete list, which
+is the difference between a check and a nuisance. The first version of it asked
+which deleted tables lack a guard, and named ten that have no append-only trigger
+and need none — a check that cries wolf is one nobody runs twice.
+
+It prints nothing today, and it prints `RESET WILL FAIL ON: audit_log` when the
+fix in `66d6549` is removed, which is the only way to know it works.
+
+`20260917211000` also changes `book_history`'s foreign key from `cascade` to
+`restrict`, so `books` can no longer be deleted while it has history rows.
+`reset.sql` deletes children before parents and still works. A runbook that
+deletes in a different order, or truncates, will be refused.
