@@ -206,17 +206,23 @@ console.log('list_books carries the counts the home screen reads')
    * reads b.book and the view column is `number`. Presence of the array told
    * us nothing about what was in it.
    *
-   * The expected keys are read out of handleListBooks in Books.gs rather than
-   * typed here. Apps Script builds that object explicitly and its screen has
-   * been correct throughout, so it is the definition of the shape — and a key
-   * added there tomorrow is asserted here the same day.
+   * WHERE THIS LIST CAME FROM. It was read out of `handleListBooks` in Books.gs,
+   * because Apps Script built that object explicitly and its screen had been
+   * correct throughout — so it was the definition of the shape, and a key added
+   * there was asserted here the same day.
+   *
+   * That backend is gone, so the list is written down instead, captured from it
+   * before it went. It is now a FROZEN CONTRACT rather than a mirror: the keys
+   * below are what BookGrid.vue and the books screen read, and adding one here
+   * is a deliberate act rather than a side effect of editing another file.
    */
-  const gs = readFileSync(new URL('../apps_script/Books.gs', import.meta.url), 'utf8')
-  const block = gs.slice(gs.indexOf('function handleListBooks'))
-  const push = block.slice(block.indexOf('books.push({'), block.indexOf('});'))
-  const expected = [...push.matchAll(/^\s{6}(\w+):/gm)].map((m) => m[1])
+  const expected = [
+    'book', 'firstTicket', 'lastTicket', 'status', 'agentId', 'agentName',
+    'due', 'daysOverdue', 'sold', 'available', 'expected', 'paid',
+    'variance', 'missingContact',
+  ]
 
-  ok(expected.length >= 12, `read ${expected.length} keys off the Apps Script handler`)
+  ok(expected.length >= 12, `the book row contract names ${expected.length} keys`)
   ok(Array.isArray(d.books) && d.books.length > 0, 'and some books came back')
 
   const row = d.books[0]
@@ -240,12 +246,14 @@ console.log('list_agents carries the seller picker the organiser uses')
   const d = await call('list_agents')
   ok(Array.isArray(d.agents) && d.agents.length > 0, 'agents come back')
 
-  // The keys read out of handleListAgents, not typed here.
-  const gs = readFileSync(new URL('../apps_script/People.gs', import.meta.url), 'utf8')
-  const block = gs.slice(gs.indexOf('function handleListAgents'))
-  const push = block.slice(block.indexOf('out.push({'), block.indexOf('});'))
-  const expected = [...push.matchAll(/^\s{6}(\w+):/gm)].map((m) => m[1])
-  ok(expected.length >= 6, `read ${expected.length} keys off the Apps Script handler`)
+  // Captured from `handleListAgents` in People.gs before that backend was
+  // deleted, and frozen here as the contract the seller picker reads.
+  const expected = [
+    'id', 'name', 'phone', 'zone', 'active', 'booksOut', 'notes',
+    'sharesName', 'sharesPhone', 'reportState', 'reportedAt', 'reportRound',
+    'missedRounds', 'daysLate',
+  ]
+  ok(expected.length >= 6, `the agent row contract names ${expected.length} keys`)
 
   const row = d.agents[0]
   for (const k of expected) ok(row[k] !== undefined, `each agent row carries ${k}`)
@@ -269,35 +277,27 @@ console.log('whoami carries what the app boots on')
 {
   const d = await call('whoami')
   /*
-   * Every config key the Apps Script whoami sends, read off that handler rather
-   * than listed here. Seven were missing, and the screen said so in the only
-   * way it could: "KS-undefined onwards" for the ticket numbering, and
-   * "10 — that makes books" with the count simply absent.
-   */
-  const gs = readFileSync(new URL('../apps_script/Api.gs', import.meta.url), 'utf8')
-  /*
-   * From the BUILDER, wherever it is, not from handleWhoami.
+   * EVERY CONFIG KEY THE APP BOOTS ON.
    *
-   * This sliced from `function handleWhoami` and looked for `config: {`. When
-   * that literal moved into whoamiConfig_() — so the branding handlers could
-   * return the same object rather than a second one shaped like it — it found
-   * nothing and reported zero keys, while the code was correct. Third assertion
-   * today coupled to a LOCATION when its claim is about a RULE.
+   * This list was read off the Apps Script whoami handler, because that one had
+   * been right throughout while the ported one was missing seven — and the
+   * screen said so in the only way it could: "KS-undefined onwards" for the
+   * ticket numbering, and "10 — that makes books" with the count simply absent.
    *
-   * It now finds the literal by its contents: the object containing
-   * ticketPrefix, wherever that lives.
+   * Captured from it before that backend went, and frozen here. It is the
+   * contract now, not a mirror of one: `configPayload` in config.ts builds this
+   * object and three separate actions return it, so a key silently dropped is a
+   * screen that renders "undefined" rather than anything that throws.
    */
-  const at = gs.indexOf('ticketPrefix:')
-  const open = gs.lastIndexOf('{', at)
-  let depth = 0, end = open
-  while (end < gs.length) {
-    if (gs[end] === '{') depth++
-    else if (gs[end] === '}' && --depth === 0) break
-    end++
-  }
-  const cfgBlock = gs.slice(open, end)
-  const keys = [...cfgBlock.matchAll(/^\s{2,8}(\w+):/gm)].map((m) => m[1])
-  ok(keys.length >= 15, `read ${keys.length} config keys off the Apps Script handler`)
+  const keys = [
+    'ticketPrefix', 'ticketDigits', 'ticketStart', 'totalTickets',
+    'generatedTickets', 'heldBackTickets', 'ticketCeiling', 'ticketsPerBook',
+    'bookPrefix', 'bookDigits', 'totalBooks', 'ticketPrice', 'currency',
+    'defaultDueDays', 'checkInDate', 'finalDeadline', 'salesCloseDate',
+    'eventName', 'orgName', 'orgLogo', 'orgLogoSmall', 'brandColor',
+    'projectCode', 'drawDate',
+  ]
+  ok(keys.length >= 15, `the boot config contract names ${keys.length} keys`)
 
   carries(d, ['email', 'role', 'isSuperAdmin'], 'whoami')
   for (const k of keys) ok(d.config[k] !== undefined, `config carries ${k}`)

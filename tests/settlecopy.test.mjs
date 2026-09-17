@@ -67,11 +67,30 @@ console.log('and says something true in each')
 
 console.log('and the server agrees a returned book can still be settled')
 {
-  const gs = read('apps_script/Books.gs')
-  const fn = gs.slice(gs.indexOf('function handleSettleBook'))
-  const body = fn.slice(0, fn.indexOf('\nfunction '))
-  ok(!/Status\s*!==\s*BOOK_STATUS\.OUT/.test(body),
-    'settling is not restricted to Out on the server, or the Returned branch is unreachable')
+  /*
+   * THE CLIENT SENTENCE ABOVE IS ONLY TRUE IF THE SERVER ALLOWS IT. The dialog
+   * offers a "handed back" branch that speaks to a book already returned; if
+   * settling were restricted to Out, that whole branch would be unreachable and
+   * the wording would be promising something the server refuses.
+   *
+   * This was asserted against `handleSettleBook` in Books.gs. The rule now lives
+   * in SQL — `settleBook` in books.ts is a thin wrapper over the `settle_book`
+   * function — so the claim is checked where the decision is actually made.
+   */
+  const sql = read('supabase/functions.sql')
+  const fn = sql.slice(sql.indexOf('create or replace function settle_book'))
+  const body = fn.slice(0, fn.indexOf('\n$$;') + 1 || undefined)
+  ok(body.length > 200, `found the settle_book body (${body.length} chars)`)
+
+  // Stated as the positive: the ONLY status it refuses on is one already
+  // settled. Written this way round because "not restricted to Out" is an
+  // everything-except-X claim, and those have gone wrong here before —
+  // supabase/AUDIT.md §X.
+  const refusals = [...body.matchAll(/b\.status\s*(?:=|<>|!=)\s*'(\w+)'/g)].map((m) => m[1])
+  ok(refusals.length > 0, `the function does test the status (${refusals.join(', ') || 'none'})`)
+  ok(refusals.every((st) => st === 'Settled'),
+     `settling is gated on 'Settled' alone, so a Returned book can still be counted in ` +
+     `(found: ${[...new Set(refusals)].join(', ')})`)
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

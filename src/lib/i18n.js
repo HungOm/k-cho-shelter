@@ -297,7 +297,43 @@ export const MY_ERRORS = {
   ABOVE_CEILING: 'စီစဉ်ထားသော အရေအတွက်ထက် ကျော်လွန်နေသည်',
   NUMBERING_CHANGED: 'လက်မှတ်နံပါတ် စနစ် ပြောင်းလဲထားသည် — မူလအတိုင်း ပြန်ထားပါ',
   NETWORK: 'အင်တာနက် ဆက်သွယ်မှု မရပါ',
-  SERVER_ERROR: 'စနစ်တွင် အမှားဖြစ်နေသည်'
+  SERVER_ERROR: 'စနစ်တွင် အမှားဖြစ်နေသည်',
+
+  /*
+   * REFUSALS THAT ONLY THE SUPABASE BACKEND MAKES, and which had no Burmese at
+   * all until the coverage test stopped measuring itself against the wrong
+   * backend. i18n.test.mjs read the error codes out of `apps_script/*.gs`, so
+   * the set a volunteer was guaranteed to be able to read was the set the
+   * SPREADSHEET could produce. Every one of these was already reachable on the
+   * live backend, and every one of them arrived in English.
+   *
+   * Short, like the rest: myError() puts the gloss above the server's own
+   * sentence rather than replacing it, so the detail is still there underneath.
+   */
+
+  // Signing in. Which state it is matters — somebody waiting to be let in and
+  // somebody who has been stopped need to do different things next.
+  ACCOUNT_PENDING: 'ဤအကောင့်ကို ခွင့်ပြုရန် စောင့်ဆိုင်းနေသည်',
+  ACCOUNT_SUSPENDED: 'ဤအကောင့်ကို ယာယီ ရပ်ဆိုင်းထားသည်',
+  ACCOUNT_BANNED: 'ဤအကောင့်ကို ပိတ်သိမ်းလိုက်ပြီ',
+
+  // Books moving between people.
+  NOT_HELD: 'ဤစာအုပ်များ ထိုသူ့ထံတွင် မရှိပါ',
+  NOTHING_TO_CONFIRM: 'အတည်ပြုစရာ စာအုပ် မရှိပါ',
+  BOOKS_CHANGED_MEANWHILE: 'ဤစာအုပ်များကို အခြားသူက ခုနက ထုတ်ပေးလိုက်ပြီ',
+  BOOK_HAS_SALES: 'ဤစာအုပ်တွင် အရောင်း မှတ်တမ်း ရှိနေသည် — အရင် ပြန်အပ်ပြီး ရှင်းပါ',
+
+  // Dates: when selling stops, and the reporting rounds between now and the end.
+  SALES_CLOSED: 'လက်မှတ် ရောင်းချချိန် ပြီးဆုံးသွားပါပြီ',
+  AFTER_THE_DRAW: 'မဲဖောက်ပြီးနောက် ရောင်းချချိန် သတ်မှတ်၍ မရပါ',
+  PAST_THE_WALL: 'နောက်ဆုံးရက် ကျော်လွန်၍ မရပါ',
+  NO_SUCH_ROUND: 'ဤအကြိမ် မရှိပါ',
+  OUT_OF_ORDER: 'အကြိမ်များ၏ ရက်စွဲ အစီအစဉ် မှားနေသည်',
+  ROUND_CLOSED: 'ဤအကြိမ်ကို ပိတ်ပြီးဖြစ်သည်',
+  ROUND_IS_LIVE: 'ဤအကြိမ်သည် လက်ရှိ အသုံးပြုနေဆဲ ဖြစ်သည်',
+
+  // Writing money off for more than is owed.
+  TOO_MUCH: 'ပမာဏ များလွန်းသည် — ကျန်ရှိငွေထက် ပိုနေသည်'
 }
 
 /**

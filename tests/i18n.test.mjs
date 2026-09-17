@@ -88,16 +88,34 @@ console.log('the untranslated-by-design list is honoured')
  * English at the exact moment something has gone wrong.
  */
 {
+  /*
+   * SCRAPED FROM THE EDGE FUNCTION, not from the Apps Script sources.
+   *
+   * It read `apps_script/*.gs` — the backend being deleted — so the set of codes
+   * a volunteer must be able to read in Burmese was the set the SPREADSHEET
+   * could produce. That was never quite the right question and is about to stop
+   * being a question at all.
+   *
+   * Re-pointing it turned out to ADD coverage rather than remove it: 81 codes
+   * here against 73 there, and 18 of them had no Burmese at all. Every one was a
+   * refusal a volunteer could already hit on the live backend.
+   *
+   * TWO PATTERNS, because the function raises codes two ways. Most are the first
+   * argument to `ApiError`. The sign-in refusals are pairs in a lookup — see the
+   * `said` map in gate.ts — so a code followed by a SENTENCE is taken too. The
+   * sentence is what tells a code pair apart from a list of config keys:
+   * `['TICKET_PRICE', 'CURRENCY', …]` is not an error, and 'CURRENCY' has no
+   * space in it.
+   */
   const fs = await import('node:fs')
   const path = await import('node:path')
-  const dir = new URL('../apps_script/', import.meta.url)
+  const dir = new URL('../supabase/functions/api/', import.meta.url)
   const codes = new Set()
-  for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.gs'))) {
+  for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.ts'))) {
     const src = fs.readFileSync(path.join(dir.pathname, f), 'utf8')
-    for (const m of src.matchAll(/new ApiError\(\s*'([A-Z_]+)'/g)) codes.add(m[1])
-    // Codes built from a variable are listed where they are defined instead.
-    for (const m of src.matchAll(/ERROR_CODES?\s*=\s*\{([\s\S]*?)\}/g)) {
-      for (const k of m[1].matchAll(/([A-Z_]{3,})\s*:/g)) codes.add(k[1])
+    for (const m of src.matchAll(/ApiError\(\s*'([A-Z_]{3,})'/g)) codes.add(m[1])
+    for (const m of src.matchAll(/\[\s*'([A-Z_]{3,})',\s*\n?\s*'[^'\n]*\s[^'\n]*'/g)) {
+      codes.add(m[1])
     }
   }
   /**
@@ -111,10 +129,15 @@ console.log('the untranslated-by-design list is honoured')
     'UNKNOWN_ACTION',      // the app asked for something this backend has no name for
     'PAYLOAD_TOO_LARGE',   // a request the client should have split
     'USE_SELL_ACTION',     // routing guidance aimed at the caller, not the user
-    'USE_VOID_ACTION'
+    'USE_VOID_ACTION',
+    // The three the Edge Function adds to that list, and for the same reason:
+    // each one means the system is wrong, not the person holding the phone.
+    'QUERY_FAILED',        // the database refused; the sentence under it is Postgres's
+    'SCHEMA_DRIFT',        // the tables disagree with the settings — nobody at a desk can fix it
+    'UPLOAD_FAILED'        // storage did not accept the file; trying again is the only move
   ])
 
-  ok(codes.size > 20, `found the server's error codes (${codes.size})`)
+  ok(codes.size > 60, `found the server's error codes (${codes.size})`)
   for (const c of INTERNAL) {
     ok(!MY_ERRORS[c], `${c} is deliberately left in English`)
   }
