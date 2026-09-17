@@ -621,36 +621,53 @@ ok "$(P "select has_table_privilege('authenticated','agent_money','select')")" "
 # Two fresh books, because every book in the fixture has been sold, settled or
 # restocked by the time this runs, and a test that reuses one would be asserting
 # about whatever the section above left behind.
+#
+# BOOK 6 IS NOT FREE, which is what these cases found out the hard way. The
+# settlement section above creates book 6 and settles it three times, so this
+# block's insert hit a duplicate key — and `psql -c "a; b; c"` is ONE implicit
+# transaction, so the failure took the TOTAL_TICKETS update and the ticket rows
+# down with it. What showed was four assertions failing about credit, none of
+# them mentioning a book that already existed: TICKET_NOT_RELEASED, because
+# TOTAL_TICKETS had rolled back to 50, and then `held_by_agent` reading 'SET'
+# — the settlement fixture's agent, still sitting on book 6.
+#
+# So: 7, 8 and 9, which are free, and the fixture now says so out loud before
+# anything is asserted about credit. A test whose SETUP fails should say the
+# setup failed. Four confusing failures downstream is how an afternoon goes.
 echo "a whole book sold out of the office is not charged to whoever brought it back"
-P "update config set value='70' where key='TOTAL_TICKETS';
+P "update config set value='80' where key='TOTAL_TICKETS';
    insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
-     values (6,'Book-0006','KS-00051','KS-00060','Returned','A002'),
-            (7,'Book-0007','KS-00061','KS-00070','Out','A002');
+     values (7,'Book-0007','KS-00061','KS-00070','Returned','A002'),
+            (8,'Book-0008','KS-00071','KS-00080','Out','A002');
    insert into tickets(idx,number,book_idx,status)
-     select i,'KS-'||lpad(i::text,5,'0'),ceil(i/10.0),'Available' from generate_series(51,70) i" >/dev/null
-r=$(P "select sell_books('Book-0006',null,null,'Desk Buyer','0125557777','',false,'me@x.com','admin',null)")
+     select i,'KS-'||lpad(i::text,5,'0'),ceil(i/10.0),'Available' from generate_series(61,80) i" >/dev/null
+ok "$(P "select count(*) from books where idx in (7,8) and held_by_agent='A002'")" "2" "the two fresh books this section needs are actually there"
+ok "$(P "select active_tickets()")" "80" "and their tickets are released, so a refusal here means what it says"
+
+r=$(P "select sell_books('Book-0007',null,null,'Desk Buyer','0125557777','',false,'me@x.com','admin',null)")
 has "$r" "sold" "a book brought back can still be sold whole at the desk"
-ok "$(P "select count(*) from tickets where book_idx=6 and status='Sold' and sold_by_agent is null")" "10" "with nobody named, it is the desk's — not the seller who handed the book in"
-ok "$(P "select count(*) from tickets where book_idx=6 and sold_by_agent='A002'")" "0" "nobody is charged for a sale they were not there for"
-ok "$(P "select held_by_agent from books where idx=6")" "A002" "while the book still remembers who brought it back"
+ok "$(P "select count(*) from tickets where book_idx=7 and status='Sold' and sold_by_agent is null")" "10" "with nobody named, it is the desk's — not the seller who handed the book in"
+ok "$(P "select count(*) from tickets where book_idx=7 and sold_by_agent='A002'")" "0" "nobody is charged for a sale they were not there for"
+ok "$(P "select held_by_agent from books where idx=7")" "A002" "while the book still remembers who brought it back"
 
 # WHO WAS ACTUALLY AT THE DESK. The helper taking the money is usually not the
 # seller who handed the book in, and until the last argument existed there was
 # no way to say so: the sale was either credited to the wrong person or to
 # nobody at all.
 P "insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
-     values (8,'Book-0008','KS-00071','KS-00080','Returned','A002');
+     values (9,'Book-0009','KS-00081','KS-00090','Returned','A002');
    insert into tickets(idx,number,book_idx,status)
-     select i,'KS-'||lpad(i::text,5,'0'),8,'Available' from generate_series(71,80) i;
-   update config set value='80' where key='TOTAL_TICKETS'" >/dev/null
-r=$(P "select sell_books('Book-0008',null,null,'Desk Buyer','0125557777','',false,'me@x.com','recorder',null,'A001')")
-ok "$(P "select count(*) from tickets where book_idx=8 and sold_by_agent='A001'")" "10" "the person at the desk is credited when they are named"
-ok "$(P "select count(*) from tickets where book_idx=8 and sold_by_agent='A002'")" "0" "and the seller who brought the book in still is not"
+     select i,'KS-'||lpad(i::text,5,'0'),9,'Available' from generate_series(81,90) i;
+   update config set value='90' where key='TOTAL_TICKETS'" >/dev/null
+ok "$(P "select count(*) from books where idx=9")" "1" "the third book is there too"
+r=$(P "select sell_books('Book-0009',null,null,'Desk Buyer','0125557777','',false,'me@x.com','recorder',null,'A001')")
+ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent='A001'")" "10" "the person at the desk is credited when they are named"
+ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent='A002'")" "0" "and the seller who brought the book in still is not"
 # The other half of the same rule, unchanged: a book genuinely out with somebody
 # is theirs, and the money lands on their balance where settlement checks it
 # against the stubs they hand back.
-r=$(P "select sell_books('Book-0007',null,null,'Another Buyer','0125558888','',false,'me@x.com','admin',null)")
-ok "$(P "select count(*) from tickets where book_idx=7 and status='Sold' and sold_by_agent='A002'")" "10" "a book out with a seller is still credited to them"
+r=$(P "select sell_books('Book-0008',null,null,'Another Buyer','0125558888','',false,'me@x.com','admin',null)")
+ok "$(P "select count(*) from tickets where book_idx=8 and status='Sold' and sold_by_agent='A002'")" "10" "a book out with a seller is still credited to them"
 
 echo "the ledger cannot be edited or erased"
 P "insert into payments(agent_id,amount,received_by,note) values ('A001',50,'me@x.com','cash at the desk')" >/dev/null
@@ -693,16 +710,31 @@ ok "$(P "select count(*) from payments where request_id='req-77'")" "1" "the led
 ok "$(P "select count(*) from audit_log where request_id='req-77'")" "1" "the log carries it"
 ok "$(P "select count(*) from book_history where request_id='req-77'")" "1" "and the book's custody line"
 
+# MEASURED AS A DELTA, not against a fixed total. desk_money() sums every sale
+# in the database that nobody is credited with, so it is not book 1's figure —
+# it is the whole office's, and any case above that sells a book across a desk
+# moves it. Asserting "expected is 100" made this section depend on the section
+# before it being broken: the desk-credit cases were failing on a fixture
+# collision, so their ten desk sales were never made, so the total happened to
+# be book 1's alone. Fixing them turned three green assertions red without
+# anything here changing.
+#
+# The question this section actually asks is what ONE book of desk sales adds.
+# So: empty book 1 out, read the desk, sell it at the desk, read again. The
+# difference is the answer, and it stays the answer however many desk sales
+# other cases make.
 echo "money taken at the desk is counted, paid or not"
 P "update config set value='' where key='ACTIVE_TICKETS';
    update books set status='Unassigned', held_by_agent=null, declared_sold=null, amount_due=null, amount_paid=null where idx=1;
-   update tickets set status='Sold', buyer_name='Desk '||idx, buyer_phone='0125550'||lpad(idx::text,3,'0'), amount=10,
+   update tickets set status='Available', buyer_name=null, buyer_phone=null, amount=null,
+     payment_status=null, sold_at=null, sold_by_agent=null where book_idx=1" >/dev/null
+before=$(P "select (desk_money()->>'sold')||'/'||(desk_money()->>'expected')||'/'||(desk_money()->>'collected')")
+P "update tickets set status='Sold', buyer_name='Desk '||idx, buyer_phone='0125550'||lpad(idx::text,3,'0'), amount=10,
      payment_status='Paid', sold_at=now(), source='app', sold_by_agent=null where book_idx=1;
    update tickets set payment_status='Unpaid' where number='KS-00001'" >/dev/null
-r=$(P "select desk_money()")
-has "$r" '"sold": 10' "ten sales out of a book nobody holds"
-has "$r" '"expected": 100' "worth RM 100"
-has "$r" '"collected": 90' "of which RM 90 was paid at the desk and RM 10 is owed by a named buyer"
+ok "$(P "select (desk_money()->>'sold')::int - ${before%%/*}")" "10" "ten sales out of a book nobody holds"
+ok "$(P "select round((desk_money()->>'expected')::numeric - $(echo "$before" | cut -d/ -f2), 2)")" "100.00" "worth RM 100"
+ok "$(P "select round((desk_money()->>'collected')::numeric - $(echo "$before" | cut -d/ -f3), 2)")" "90.00" "of which RM 90 was paid at the desk and RM 10 is owed by a named buyer"
 
 
 # ============ THE SCHEMA MUST ACCEPT THE WRITES THE HANDLERS MAKE ============
