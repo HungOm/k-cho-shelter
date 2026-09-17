@@ -24,13 +24,26 @@ const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
 const STORE = `
 import { reactive, computed } from 'vue'
-export const state = reactive({ cfg: { ticketsPerBook: 10, currency: 'RM' }, books: [], agents: [] })
+export const state = reactive({ cfg: { ticketsPerBook: 10, currency: 'RM' }, books: [], agents: [],
+  tickets: __TICKETS__, user: __USER__ })
 export const isAdmin = computed(() => false)
 export function go() {}
 export function bookBlock() { return null }
 export const agentMap = computed(() => ({}))
 export function toast() {}
+// Behaviour stub of the store's own helper; the real one is the single place
+// the two sold statuses are spelled.
+export const isSold = t => /^(Sold|Donated)$/.test(String(t?.status || ''))
 `
+
+/*
+ * The sheet now asks WHO WROTE THE SALES DOWN, so the stub has to carry
+ * tickets and a signed-in user. Defaults are an empty raffle and a user with no
+ * email, which is the state every assertion above was written against.
+ */
+const withStore = (over = {}) => STORE
+  .replace('__TICKETS__', JSON.stringify(over.tickets ?? []))
+  .replace('__USER__', JSON.stringify(over.user ?? { email: '' }))
 
 const BASE = {
   book: 'Book-070', firstTicket: 'KS-00691', lastTicket: 'KS-00700',
@@ -38,7 +51,7 @@ const BASE = {
   sold: 0, expected: 0, paid: 0, variance: 0, missingContact: 0, available: 10,
 }
 const sheet = async (over = {}) => {
-  const html = await renderScreen('src/components/modals/BookDetail.vue', STORE,
+  const html = await renderScreen('src/components/modals/BookDetail.vue', withStore(over.$store),
     { props: { book: { ...BASE, ...over } } })
   return { text: visibleText(html), html }
 }
@@ -114,7 +127,7 @@ console.log('"Count it in" says what counting in means, because the words do not
    * was on the panel, in figures, for a reader who already knew the two were
    * separate — which is the reader who did not need the panel.
    */
-  const ADMIN = STORE.replace('computed(() => false)', 'computed(() => true)')
+  const ADMIN = withStore().replace('computed(() => false)', 'computed(() => true)')
   const html = await renderScreen('src/components/modals/BookDetail.vue', ADMIN,
     { props: { book: { ...BASE, status: 'Returned', sold: 10, available: 0, expected: 100, paid: 0 } } })
 
@@ -124,6 +137,53 @@ console.log('"Count it in" says what counting in means, because the words do not
      'and hovering it explains what that means')
   ok(/sold out and still owe money/.test(html),
      'naming the case that prompted the question, rather than defining a term in the abstract')
+}
+
+console.log('there is nobody to collect from when you sold it yourself')
+{
+  /*
+   * REPORTED FROM FOUR REAL BOOKS, and the question was the right one: the book
+   * is back, every ticket in it is sold, so why is the screen still asking me
+   * to count it in?
+   *
+   * Because counting a book in is a transaction with a person on the other side
+   * of it — a seller hands back leftovers and cash. Book-001, 002, 003 and 116
+   * were sold whole at the office by the organiser two days after they came
+   * back, so the money went into the tin at the time and there is nobody to
+   * collect from. The button was inviting them to collect from themselves.
+   *
+   * ALL, NOT ANY, and this is the assertion that matters most. A book with one
+   * desk sale and nine a seller made still has that seller's cash to collect,
+   * and disabling it there would strand it — silently, because the button would
+   * simply look unavailable.
+   */
+  const ADMIN = (o) => withStore(o).replace('computed(() => false)', 'computed(() => true)')
+  const me = 'organiser@example.com'
+  const sheet2 = async (store, over = {}) => {
+    const html = await renderScreen('src/components/modals/BookDetail.vue', ADMIN(store),
+      { props: { book: { ...BASE, status: 'Returned', sold: 10, available: 0, expected: 100, paid: 0, ...over } } })
+    return html
+  }
+  const t = (n, by) => ({ number: 'KS-' + n, book: 'Book-070', status: 'Sold', by })
+
+  const mine = await sheet2({ user: { email: me }, tickets: [t(1, me), t(2, me)] })
+  ok(/Count it in/.test(visibleText(mine)), 'the button is still there, so the state is legible')
+  ok(/<button[^>]*disabled[^>]*>\s*Count it in/.test(mine)
+     || /Count it in[^<]*<\/button>/.test(mine) && /disabled/.test(mine),
+     'but greyed, because every sale in it was written down by the reader')
+  ok(/nobody to collect from here/.test(mine),
+     'and hovering says why, rather than leaving a dead button unexplained')
+
+  const theirs = await sheet2({ user: { email: me }, tickets: [t(1, 'someone@else.org'), t(2, 'someone@else.org')] })
+  ok(!/disabled/.test(theirs), 'a book somebody else wrote down is still countable')
+
+  const mixed = await sheet2({ user: { email: me }, tickets: [t(1, me), t(2, 'someone@else.org')] })
+  ok(!/disabled/.test(mixed),
+     'and ONE desk sale among a seller\'s nine does not strand the seller\'s money')
+
+  const loading = await sheet2({ user: { email: me }, tickets: [] })
+  ok(!/disabled/.test(loading),
+     'before the tickets have loaded it fails toward the button working, not away from it')
 }
 
 console.log('and the sentence is written once, for every place the phrase appears')

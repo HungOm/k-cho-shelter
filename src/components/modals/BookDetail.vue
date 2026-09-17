@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { state, isAdmin, go, bookBlock } from '../../lib/store.js'
+import { state, isAdmin, go, bookBlock, isSold } from '../../lib/store.js'
 import { money, date, BOOK_WORDS, COUNTED_IN_HELP } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import StatusPill from '../ui/StatusPill.vue'
@@ -10,6 +10,42 @@ const props = defineProps({ book: Object })
 const emit = defineEmits(['close', 'settle', 'receipt', 'see-tickets', 'sell-book'])
 const currency = computed(() => state.cfg?.currency || '')
 const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status))
+
+/**
+ * Every sale in this book was written down by the person reading the screen.
+ *
+ * YOU COUNT MONEY IN FROM SOMEBODY. Counting a book in is the moment a seller
+ * hands back the leftovers and the cash; it is a transaction with a person on
+ * the other side of it. When the sales were recorded at the office by whoever
+ * is looking at this sheet, there is nobody on the other side — the money went
+ * into the tin at the time, and "Count it in" is asking them to collect from
+ * themselves.
+ *
+ * REPORTED FROM FOUR REAL BOOKS. Book-001, 002, 003 and 116 came back, were
+ * sold whole at the desk two days later, and the sale was credited to whoever
+ * had been holding the book — so the sheet showed a volunteer owing RM100 for
+ * tickets the organiser had sold and already been paid for. The attribution is
+ * a separate repair; this stops the screen inviting the wrong action while it
+ * is still wrong.
+ *
+ * ALL, not any. A book with one desk sale and nine a seller made still has
+ * money to collect, and disabling it there would strand that seller's cash. It
+ * also fails toward the button WORKING: before the tickets have loaded there
+ * are no rows to judge, so the answer is false and nothing is taken away.
+ */
+const soldByMe = computed(() => {
+  const me = String(state.user?.email || '')
+  if (!me) return false
+  const inBook = state.tickets.filter(t => t.book === props.book.book && isSold(t))
+  return inBook.length > 0 && inBook.every(t => String(t.by || '') === me)
+})
+
+/** Why the button is greyed, said where somebody will read it. */
+const settleHelp = computed(() => soldByMe.value
+  ? 'Every sale in this book was written down by you, at the office, so the money '
+    + 'is already in. Counting a book in is collecting it from the person who was '
+    + 'holding it — there is nobody to collect from here.'
+  : COUNTED_IN_HELP)
 
 /**
  * Present tense only while it is true.
@@ -101,7 +137,8 @@ const showHistory = ref(false)
       <!-- The tooltip is the answer to a question that was actually asked:
            if the whole book is sold, why is this still here. Sold is about
            tickets; this is about money, and they are different facts. -->
-      <button v-if="isAdmin && canSettle" class="btn primary" :title="COUNTED_IN_HELP"
+      <button v-if="isAdmin && canSettle" class="btn primary"
+              :disabled="soldByMe" :title="settleHelp"
               @click="emit('settle', book)">Count it in</button>
 
       <!-- GHOST, not another button. Four controls of identical weight is a row
