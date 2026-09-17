@@ -732,7 +732,12 @@ begin
        )
     returning b.idx, b.number
   )
-  select array_agg(w.idx order by w.idx) into issued from written;
+  -- ALIASED, and the alias is the whole of it: this read `from written` while
+  -- selecting w.idx, so Postgres refused the statement with "missing
+  -- FROM-clause entry for table "w" — at RUN time, because a plpgsql body is
+  -- not planned until it executes. It created cleanly, deployed cleanly, and
+  -- broke giving books out, which is the most common act in the raffle.
+  select array_agg(w.idx order by w.idx) into issued from written w;
 
   if issued is null then
     return;                       -- nothing matched; the caller says so

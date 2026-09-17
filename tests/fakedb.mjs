@@ -21,6 +21,24 @@
  * refuse — supabase/test-rls.sh and test-functions.sh cover that half against
  * real Postgres. This covers the half those cannot reach: what the HANDLER
  * decides, in what order, and what it refuses.
+ *
+ * AND IT SAYS NOTHING WHATEVER ABOUT THE SQL FUNCTIONS. `rpc` below reimplements
+ * issue_books_tx, settle_book, restock_books and the rest in JavaScript. They
+ * are a model of what those functions are meant to do, written from the same
+ * understanding, and a green suite is not evidence that the plpgsql in
+ * supabase/functions.sql runs at all.
+ *
+ * IT HAS ALREADY COST A LIVE OUTAGE. issue_books_tx read `from written` while
+ * selecting `w.idx` — an alias nothing bound, invalid since the day it was
+ * written. A plpgsql body is not planned until it executes, so `create or
+ * replace function` accepted it, the migration applied cleanly, the deploy was
+ * clean, this suite was green, and giving books out — the commonest act in the
+ * raffle — failed for every volunteer with `missing FROM-clause entry for table
+ * "w"`. Nothing between the keyboard and the fundraiser looked at the body.
+ *
+ * So: the only evidence that a SQL function works is CALLING it against real
+ * Postgres. Do that after any deploy that touches one — issue a book, return
+ * it, count it in, inside a transaction you roll back.
  */
 
 /*
