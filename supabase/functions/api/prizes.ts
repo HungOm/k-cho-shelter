@@ -64,7 +64,7 @@ async function newId(base: string, table: string, col: string, ctx: Ctx) {
 export async function listPrizes(_p: Record<string, unknown>, _user: AppUser, ctx: Ctx) {
   const [{ data: prizes, error: pe }, { data: types, error: te }, { data: given, error: ge }] =
     await Promise.all([
-      ctx.supabaseAdmin.from('prizes').select('*').order('rank'),
+      ctx.supabaseAdmin.from('prizes').select('*').is('removed_at', null).order('rank'),
       ctx.supabaseAdmin.from('prize_types').select('*').order('sort'),
       ctx.supabaseAdmin.from('winners').select('prize_id,seq,forfeited_at'),
     ])
@@ -161,7 +161,7 @@ export async function upsertPrize(p: Record<string, unknown>, user: AppUser, ctx
   const existing = str(p.prizeId)
   if (existing) {
     const { data: was } = await ctx.supabaseAdmin
-      .from('prizes').select('*').eq('prize_id', existing).maybeSingle()
+      .from('prizes').select('*').eq('prize_id', existing).is('removed_at', null).maybeSingle()
     if (!was) throw new ApiError('NOT_FOUND', `There is no prize called "${existing}".`, null, 404)
 
     /*
@@ -248,7 +248,7 @@ export async function removePrize(p: Record<string, unknown>, user: AppUser, ctx
   if (!prizeId) throw new ApiError('MISSING_FIELD', 'Which prize?')
 
   const { data: prize } = await ctx.supabaseAdmin
-    .from('prizes').select('tier,name').eq('prize_id', prizeId).maybeSingle()
+    .from('prizes').select('tier,name').eq('prize_id', prizeId).is('removed_at', null).maybeSingle()
   if (!prize) throw new ApiError('NOT_FOUND', `There is no prize called "${prizeId}".`, null, 404)
 
   // Forfeited ones count HERE, unlike everywhere else: the row still names this
@@ -262,7 +262,24 @@ export async function removePrize(p: Record<string, unknown>, user: AppUser, ctx
       'Turn it off instead and it stays on the record.')
   }
 
-  const { error } = await ctx.supabaseAdmin.from('prizes').delete().eq('prize_id', prizeId)
+  /*
+  * TAKEN OFF THE SCHEDULE, not erased — and `removed_at` is a stronger thing
+  * than the `active` flag beside it. active false is "not on offer this
+  * raffle" and the organiser flips it back from the screen; this is the
+  * schedule losing the prize. The refusal above already tells an organiser
+  * "Turn it off instead and it stays on the record", which was advice the
+  * alternative did not honour: the row went, and with it any record that this
+  * raffle had once promised a Toyota Hilux.
+  *
+  * Nothing is re-used by accident. Prize ids come from newId(), so creating a
+  * prize never lands on a removed one's key, and every read here carries
+  * `removed_at is null`. winners.prize_id stays pointed at a row that still
+  * exists, which is what `on delete restrict` was protecting and what a
+  * forfeited winner's audit trail needs a year from now.
+  */
+  const { error } = await ctx.supabaseAdmin.from('prizes')
+    .update({ removed_at: new Date().toISOString(), removed_by: user.email })
+    .eq('prize_id', prizeId)
   if (error) throw refused(error)
   await log('REMOVE_PRIZE', { prize: prizeId, tier: prize.tier }, user, ctx)
   return { prizeId, removed: true }
@@ -414,6 +431,7 @@ async function log(action: string, details: Record<string, unknown>, user: AppUs
 export async function nextSeat(prizeId: string, ctx: Ctx) {
   const { data: prize } = await ctx.supabaseAdmin
     .from('prizes').select('quantity,tier,name,active,type_id,value_amount')
+    .is('removed_at', null)
     .eq('prize_id', prizeId).maybeSingle()
   if (!prize) throw new ApiError('NOT_FOUND', `There is no prize called "${prizeId}".`, null, 404)
   if (!prize.active) {

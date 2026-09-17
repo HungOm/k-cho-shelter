@@ -536,7 +536,17 @@ create table if not exists prizes (
   donor        text not null default '',
   active       boolean not null default true,
   created_by   text not null default '',
-  created_at   timestamptz not null default now()
+  created_at   timestamptz not null default now(),
+  /*
+   * STRONGER THAN `active`, and they are not the same thing. active false is
+   * "not on offer this raffle" and is reversible from the screen; removed_at is
+   * taking it off the schedule. remove_prize's own refusal says so — "Turn it
+   * off instead and it stays on the record" — and until this column existed
+   * that sentence was advice the alternative did not honour. Re-creating the
+   * same prize_id revives the row, so an id is never used up by a removal.
+   */
+  removed_at   timestamptz,
+  removed_by   text
 );
 create index if not exists prizes_rank_idx on prizes (rank);
 
@@ -680,6 +690,17 @@ create table if not exists check_in_reports (
   amount_paid  numeric(12,2) not null default 0 check (amount_paid >= 0),
   note         text not null default '',
   recorded_by  text not null default '',
+  /*
+   * TAKEN BACK, not erased. Recording a check-in against the wrong seller
+   * happens on a phone in a car park, and the undo has to put that person back
+   * on the chase list — but "somebody said she reported, and somebody took it
+   * back" is a fact about what people did, and the acknowledgement rule exists
+   * because whose word a confirmation is matters. Every read carries
+   * `undone_at is null`; re-recording the round revives the row rather than
+   * colliding with the (agent_id, round) key.
+   */
+  undone_at    timestamptz,
+  undone_by    text,
   primary key (agent_id, round)
 );
 -- "Who has answered this round" is the question asked on every seller list.
@@ -734,7 +755,11 @@ create table if not exists check_in_dates (
   due_at   date not null,
   note     text not null default '',
   set_by   text not null default '',
-  set_at   timestamptz not null default now()
+  set_at   timestamptz not null default now(),
+  -- Clearing a round's date withdraws what a dozen people were told to do.
+  -- Who withdrew it is the part worth keeping. Reads carry `cleared_at is null`.
+  cleared_at timestamptz,
+  cleared_by text
 );
 -- ============ A ROUND'S DATE, WHERE SOMEBODY MOVED IT (end) ============
 

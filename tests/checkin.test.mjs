@@ -195,14 +195,55 @@ console.log('5. what it refuses')
      'NOTHING_TO_DO', 'undoing what was never recorded says so')
 }
 
-console.log('6. undo removes the record rather than hiding it')
+/*
+ * THIS USED TO ASSERT THE ROW WAS GONE, and the row was gone, and that was the
+ * bug. Phase 0 said remove the three hard deletes; deleting answered "is she on
+ * the chase list" correctly and destroyed the only evidence that anybody had
+ * ever said otherwise — on a raffle whose acknowledgement rule exists precisely
+ * because whose word a confirmation is matters.
+ *
+ * So the assertion moved rather than relaxed. What it asks now is the thing the
+ * old one was USING the row count to approximate: she is back on the list. That
+ * goes through listAgents, which is what the screen reads, instead of counting
+ * rows in a table — and it would have caught a soft delete whose predicate was
+ * forgotten, which counting the raw table cannot.
+ */
+console.log('6. undoing a check-in puts them back on the list without erasing that it happened')
 {
-  const w = world()
+  const w = world({ checkIn: day(-9), grace: 3 })
   await D.recordCheckIn({ agentId: 'A001' }, users.admin, w.ctx)
   eq(w.table('check_in_reports').length, 1, 'recorded')
+  eq((await people.listAgents({}, users.admin, w.ctx)).agents.find((a) => a.id === 'A001').reportState,
+     'reported', 'and she is off the chase list')
+
   const u = await D.recordCheckIn({ agentId: 'A001', undo: true }, users.admin, w.ctx)
   eq(u.undone, true, 'undone')
-  eq(w.table('check_in_reports').length, 0, 'the row is gone, so they are back on the list')
+
+  // THE POINT OF THE UNDO, unchanged: she is chased again, immediately.
+  eq((await people.listAgents({}, users.admin, w.ctx)).agents.find((a) => a.id === 'A001').reportState,
+     'late', 'and she is back on it')
+
+  // AND THE POINT OF THE CHANGE: what happened is still readable.
+  eq(w.table('check_in_reports').length, 1, 'the row is still there')
+  const row = w.table('check_in_reports')[0]
+  ok(!!row.undone_at, 'marked with when it was taken back')
+  eq(row.undone_by, users.admin.email, 'and by whom, which is the part a delete threw away')
+
+  // Undoing twice reads, to the person asking, exactly like never recorded.
+  eq(await codeOf(() => D.recordCheckIn({ agentId: 'A001', undo: true }, users.admin, w.ctx)),
+     'NOTHING_TO_DO', 'undoing it again has nothing to undo')
+
+  /*
+   * AND RECORDING AGAIN REVIVES IT. The key is (agent_id, round), so a soft
+   * delete that did not clear the mark would either leave the new report
+   * invisible or collide on insert — and the seller would be unrecordable for
+   * the rest of the round, by the very act meant to correct a mistake.
+   */
+  await D.recordCheckIn({ agentId: 'A001', booksBack: 2 }, users.admin, w.ctx)
+  eq(w.table('check_in_reports').length, 1, 'still one row, not a second')
+  eq(w.table('check_in_reports')[0].undone_at, null, 'live again')
+  eq((await people.listAgents({}, users.admin, w.ctx)).agents.find((a) => a.id === 'A001').reportState,
+     'reported', 'and off the list again')
 }
 
 console.log('7. where each seller stands')

@@ -301,12 +301,14 @@ export async function returnCheck(p: Record<string, unknown>, user: AppUser, ctx
   let since: string | null = null
   if (round > 1) {
     const { data: prev } = await ctx.supabaseAdmin
-      .from('check_in_reports').select('due_at').eq('round', round - 1).limit(1)
+      .from('check_in_reports').select('due_at').eq('round', round - 1)
+      .is('undone_at', null).limit(1)
     since = (prev ?? [])[0]?.due_at ?? null
   }
 
   let rq = ctx.supabaseAdmin
     .from('check_in_reports').select('agent_id,books_back,reported_at,note').eq('round', round)
+    .is('undone_at', null)
   if (only) rq = rq.in('agent_id', only)
   const { data: reports, error: rErr } = await rq
   if (rErr) throw new ApiError('QUERY_FAILED', rErr.message)

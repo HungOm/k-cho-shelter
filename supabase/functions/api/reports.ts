@@ -537,7 +537,8 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
    * are the same as no prizes at all on the night.
    */
   const { count: prizeCount } = await ctx.supabaseAdmin
-    .from('prizes').select('prize_id', { count: 'exact', head: true }).eq('active', true)
+    .from('prizes').select('prize_id', { count: 'exact', head: true })
+    .eq('active', true).is('removed_at', null)
   const prizesOffered = Number(prizeCount ?? 0)
   if (!prizesOffered) {
     problems.push({

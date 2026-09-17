@@ -228,7 +228,7 @@ export function withOverrides(
 /** Dates an organiser has moved, by round. Empty is the behaviour this always had. */
 export async function checkInOverrides(ctx: Ctx): Promise<Map<number, string>> {
   const { data } = await ctx.supabaseAdmin
-    .from('check_in_dates').select('round,due_at,note').order('round')
+    .from('check_in_dates').select('round,due_at,note').is('cleared_at', null).order('round')
   const m = new Map<number, string>()
   for (const r of (data ?? []) as Array<Record<string, unknown>>) {
     const d = dayStart(r.due_at)
@@ -319,6 +319,7 @@ export function reportState(o: {
 export async function reportedIn(ctx: Ctx, round: number): Promise<Map<string, string>> {
   const { data } = await ctx.supabaseAdmin
     .from('check_in_reports').select('agent_id,reported_at').eq('round', round)
+    .is('undone_at', null)
   const m = new Map<string, string>()
   for (const r of (data ?? []) as Array<Record<string, unknown>>) {
     m.set(String(r.agent_id ?? ''), String(r.reported_at ?? ''))
@@ -337,6 +338,7 @@ export async function reportedIn(ctx: Ctx, round: number): Promise<Map<string, s
 export async function reportsBefore(ctx: Ctx, round: number): Promise<Map<string, number>> {
   const { data } = await ctx.supabaseAdmin
     .from('check_in_reports').select('agent_id').lt('round', round)
+    .is('undone_at', null)
   const m = new Map<string, number>()
   for (const r of (data ?? []) as Array<Record<string, unknown>>) {
     const id = String(r.agent_id ?? '')
@@ -521,11 +523,22 @@ export async function recordCheckIn(p: Record<string, unknown>, user: AppUser, c
   // put that person back on the chase list rather than leave them quietly
   // marked as having answered.
   if (p.undo) {
-    if (!existing) {
+    // Already undone reads the same as never recorded, to the person asking.
+    if (!existing || existing.undone_at) {
       throw new ApiError('NOTHING_TO_DO', `${name} has not been recorded as reporting this round.`)
     }
+    /*
+     * MARKED, NOT DELETED. Everything the comment above says about the chase
+     * list still happens — every read of this table carries `undone_at is null`,
+     * so she is back on it the instant this returns. What changes is that "a
+     * check-in was recorded against her and taken back" survives, which is the
+     * same reason the ledger reverses instead of editing: a correction whose
+     * evidence is gone cannot be told from a figure that was always right.
+     */
     const { error } = await ctx.supabaseAdmin
-      .from('check_in_reports').delete().eq('agent_id', agentId).eq('round', round)
+      .from('check_in_reports')
+      .update({ undone_at: new Date().toISOString(), undone_by: user.email })
+      .eq('agent_id', agentId).eq('round', round)
     if (error) throw new ApiError('QUERY_FAILED', error.message)
 
     await ctx.supabaseAdmin.from('audit_log').insert({
@@ -573,6 +586,11 @@ export async function recordCheckIn(p: Record<string, unknown>, user: AppUser, c
     note: String(p.note ?? '').trim(),
     recorded_by: user.email,
     reported_at: new Date().toISOString(),
+    // Recording revives a row that was undone. Without this the update below
+    // would leave undone_at set and the new report would be invisible, and the
+    // insert branch would collide with the (agent_id, round) key.
+    undone_at: null,
+    undone_by: null,
   }
 
   // Recorded twice is a seller who came back with more, not an error to refuse:
@@ -645,20 +663,30 @@ export async function noteReportFromSettle(
     if (!checkIn) return
     const round = await checkInRound(ctx)
 
+    // UNFILTERED ON PURPOSE. A row that was undone still occupies the
+    // (agent_id, round) key, so asking only for live rows and then inserting
+    // would collide. What is wanted is: live already, do nothing; undone,
+    // revive it, because settling a book IS reporting; absent, write it.
     const { data: existing, error: readFailed } = await ctx.supabaseAdmin
-      .from('check_in_reports').select('agent_id')
+      .from('check_in_reports').select('agent_id,undone_at')
       .eq('agent_id', id).eq('round', round).maybeSingle()
     if (readFailed) throw new Error(readFailed.message)
-    if (existing) return
+    if (existing && !existing.undone_at) return
 
-    const { error } = await ctx.supabaseAdmin.from('check_in_reports').insert({
+    const row = {
       agent_id: id,
       round,
       due_at: checkIn,
       note: `Reported by settling ${bookNumber}`,
       recorded_by: user.email,
       reported_at: new Date().toISOString(),
-    })
+      undone_at: null,
+      undone_by: null,
+    }
+    const { error } = existing
+      ? await ctx.supabaseAdmin.from('check_in_reports').update(row)
+          .eq('agent_id', id).eq('round', round)
+      : await ctx.supabaseAdmin.from('check_in_reports').insert(row)
     if (error) throw new Error(error.message)
   } catch (e) {
     // Caught and not rethrown — the money is already committed and must not be
@@ -1337,12 +1365,18 @@ export async function setCheckInDate(p: Record<string, unknown>, user: AppUser, 
   }
 
   if (clearing) {
-    const { error } = await ctx.supabaseAdmin.from('check_in_dates').delete().eq('round', round)
+    // Withdrawing what a dozen people were told to do. The row stays and every
+    // read carries `cleared_at is null`, so the schedule reads the same as it
+    // would have after a delete — and setting the round again below revives it.
+    const { error } = await ctx.supabaseAdmin.from('check_in_dates')
+      .update({ cleared_at: new Date().toISOString(), cleared_by: user.email })
+      .eq('round', round)
     if (error) throw new ApiError('QUERY_FAILED', error.message)
   } else {
     const { error } = await ctx.supabaseAdmin.from('check_in_dates').upsert({
       round, due_at: target, note: String(p.note ?? '').trim(), set_by: user.email,
       set_at: new Date().toISOString(),
+      cleared_at: null, cleared_by: null,
     }, { onConflict: 'round' })
     if (error) throw new ApiError('QUERY_FAILED', error.message)
   }
@@ -1436,7 +1470,7 @@ export async function checkInSheet(p: Record<string, unknown>, user: AppUser, ct
   // comparison with a running total a fair one.
   const { data: saidRows } = await ctx.supabaseAdmin
     .from('check_in_reports').select('*')
-    .eq('agent_id', agentId).lte('round', round).order('round')
+    .eq('agent_id', agentId).lte('round', round).is('undone_at', null).order('round')
   const history = (saidRows ?? []) as Array<Record<string, unknown>>
   const said = history.find((r) => Number(r.round) === round) ?? null
 
