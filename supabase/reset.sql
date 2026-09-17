@@ -168,16 +168,15 @@ insert into config (key, value, notes) values
   ('TICKET_DIGITS', '5', 'Zero padding, e.g. 5 gives KS-00001. LOCKED once tickets exist.'),
   ('TOTAL_TICKETS', '0', 'How many ticket rows EXIST. Raised only by the System Admin, and only upwards.'),
   ('TICKETS_PER_BOOK', '10', 'Tickets in one physical book. LOCKED once tickets exist.'),
-  -- FOUR, AND IT HAS TO BE. The books in volunteers' hands are labelled
-  -- Book-001, so three digits was the obvious choice to keep those labels
-  -- true -- but three digits cannot count to a thousand. lpad TRUNCATES, so
-  -- book 1000 becomes Book-100 and collides with book 100. Ten thousand
-  -- tickets in books of ten is a thousand books, so the numbering has to be
-  -- four wide and every book number gains a zero. See the check below, which
-  -- refuses the whole reset rather than letting this be discovered by a
-  -- duplicate key nine hundred rows in.
+  -- THREE, WHICH IS WHAT THE RAFFLE ALREADY USES AND WHAT THE PRINTED BOOKS
+  -- SAY. An earlier version of this file set four and explained at length that
+  -- three "cannot count to a thousand". That was a fact about SQL's lpad, which
+  -- this script was wrongly using, and not about the raffle: padStart pads to a
+  -- minimum and truncates nothing, so production runs two thousand books on
+  -- three digits -- Book-001 to Book-999, then Book-1000 to Book-2000. Keeping
+  -- three means every physical label in a volunteer's hands still matches.
   ('BOOK_PREFIX', 'Book-', 'Text before the book number. LOCKED once tickets exist.'),
-  ('BOOK_DIGITS', '4', 'Zero padding, e.g. 4 gives Book-0001. LOCKED once tickets exist.'),
+  ('BOOK_DIGITS', '3', 'Zero padding, e.g. 3 gives Book-001. LOCKED once tickets exist.'),
   ('TICKET_PRICE', '10', 'Price of one ticket. Can be changed later.'),
   ('CURRENCY', 'RM', 'Shown on reports and receipts.'),
   ('CHECK_IN_DATE', '', 'The one date every seller reports by this round. The SAME date for everybody.'),
@@ -192,14 +191,28 @@ insert into config (key, value, notes) values
   ('ORG_NAME', '', 'Who is running the raffle. Shown on receipts. Set this before selling.'),
   ('ORG_LOGO', '', 'URL of your logo. Blank shows no logo.'),
   ('ORG_LOGO_SMALL', '', 'Optional smaller version of the same logo.'),
-  ('ACTIVE_TICKETS', '10000', 'How many of the existing tickets are in play.');
+  -- MIRRORING PRODUCTION, where these three are not the same number and the
+  -- difference is the point: 20000 ticket ROWS exist, 10000 of them are in play,
+  -- and the ceiling is how far this raffle is ever planned to grow. Generating
+  -- 10000 rows because 10000 are active would quietly halve the raffle.
+  ('ACTIVE_TICKETS', '10000', 'How many of the existing tickets are in play. Raised as the raffle sells.'),
+  ('TICKET_CEILING', '20000', 'How far this raffle is planned to grow. expand_tickets refuses to pass it.');
+
+-- PADSTART, NOT LPAD. The one function every number in this raffle goes
+-- through, and the difference is not cosmetic: lpad TRUNCATES anything longer
+-- than the width, padStart does not. Reproduced here so a reset numbers books
+-- and tickets exactly as the app would, rather than nearly.
+create or replace function pg_temp.pad(v bigint, w integer) returns text as $f$
+  select case when length(v::text) >= w then v::text
+              else lpad(v::text, w, '0') end;
+$f$ language sql immutable;
 
 -- ---- 4. A FRESH SET OF TICKETS AND BOOKS ----------------------------------
 -- Built from the settings above rather than from literals, so the numbering can
 -- be changed in one place and this still agrees with it.
 do $$
 declare
-  total   integer := 10000;
+  total   integer := 20000;   -- ROWS to create; ACTIVE_TICKETS decides how many are in play
   per     integer := (select value::integer from config where key = 'TICKETS_PER_BOOK');
   t_pre   text    := (select value from config where key = 'TICKET_PREFIX');
   t_dig   integer := (select value::integer from config where key = 'TICKET_DIGITS');
@@ -213,17 +226,17 @@ begin
   end if;
   n_books := total / per;
 
-  -- THE PADDING MUST BE WIDE ENOUGH TO COUNT THAT HIGH, and this is checked
-  -- rather than assumed because lpad TRUNCATES: lpad('1000', 3, '0') is '100',
-  -- not '1000'. With three digits, book 1000 silently becomes Book-100 and
-  -- collides with book 100. The unique index does catch it, but it catches it
-  -- nine hundred rows in, with a message about a duplicate key that says
-  -- nothing about the cause. Fail here, where the reason can be written down.
-  if length(n_books::text) > b_dig then
-    raise exception
-      'BOOK_DIGITS is % but % books need % digits -- lpad would truncate and Book-% would collide with Book-%',
-      b_dig, n_books, length(n_books::text), n_books, lpad(n_books::text, b_dig, '0');
-  end if;
+  -- NO WIDTH CHECK, BECAUSE THE APP DOES NOT TRUNCATE AND NEITHER DOES THIS.
+  -- This script used SQL's lpad and refused to run when the count outgrew the
+  -- padding, on the reasoning that lpad('1000',3,'0') is '100' and book 1000
+  -- would collide with book 100. That was true of lpad and false of the raffle:
+  -- every number in this system is built by JavaScript's padStart (see
+  -- src/lib/books.js:17 and functions/api/people.ts:779), which pads to a
+  -- MINIMUM width and lets anything longer through untouched. Production proves
+  -- it -- Book-001 through Book-999, then Book-1000 through Book-2000, two
+  -- thousand books on three digits with no duplicate. So `pad` below is
+  -- padStart, not lpad, and a collision is not reachable: distinct integers
+  -- cannot produce the same string when nothing is cut off.
   if length((t_start + total - 1)::text) > t_dig then
     raise exception 'TICKET_DIGITS is % but the last ticket number needs %', t_dig, length((t_start + total - 1)::text);
   end if;
@@ -232,15 +245,15 @@ begin
   -- the tickets first fails on the very first row.
   insert into books (idx, number, first_ticket, last_ticket, status)
   select b,
-         b_pre || lpad(b::text, b_dig, '0'),
-         t_pre || lpad((t_start + (b - 1) * per)::text, t_dig, '0'),
-         t_pre || lpad((t_start + b * per - 1)::text, t_dig, '0'),
+         b_pre || pg_temp.pad(b, b_dig),
+         t_pre || pg_temp.pad(t_start + (b - 1) * per, t_dig),
+         t_pre || pg_temp.pad(t_start + b * per - 1, t_dig),
          'Unassigned'
     from generate_series(1, n_books) b;
 
   insert into tickets (idx, number, book_idx, status)
   select i,
-         t_pre || lpad((t_start + i - 1)::text, t_dig, '0'),
+         t_pre || pg_temp.pad(t_start + i - 1, t_dig),
          ((i - 1) / per) + 1,
          'Available'
     from generate_series(1, total) i;
@@ -267,8 +280,8 @@ alter table books           enable trigger user;
 do $$
 declare bad text := '';
 begin
-  if (select count(*) from tickets) <> 10000 then bad := bad || ' tickets<>10000'; end if;
-  if (select count(*) from books) <> 1000 then bad := bad || ' books<>1000'; end if;
+  if (select count(*) from tickets) <> 20000 then bad := bad || ' tickets<>20000'; end if;
+  if (select count(*) from books) <> 2000 then bad := bad || ' books<>2000'; end if;
   if (select count(*) from tickets where status <> 'Available') > 0 then bad := bad || ' a ticket is not Available'; end if;
   if (select count(*) from books where status <> 'Unassigned') > 0 then bad := bad || ' a book is not Unassigned'; end if;
   if (select count(*) from ticket_history) > 0 then bad := bad || ' ticket_history not empty'; end if;
@@ -279,7 +292,8 @@ begin
   if (select count(*) from app_users) <> 1 then bad := bad || ' app_users is not exactly the super admin'; end if;
   if (select count(*) from app_users where role = 'superadmin' and status = 'active') <> 1 then bad := bad || ' the surviving account is not an active superadmin'; end if;
   if (select count(*) from tickets where number = 'KS-00001') <> 1 then bad := bad || ' first ticket is not KS-00001'; end if;
-  if (select count(*) from books where number = 'Book-0001') <> 1 then bad := bad || ' first book is not Book-0001'; end if;
+  if (select count(*) from books where number = 'Book-001') <> 1 then bad := bad || ' first book is not Book-001'; end if;
+  if (select count(*) from books where number = 'Book-2000') <> 1 then bad := bad || ' last book is not Book-2000 -- padding truncated'; end if;
   -- THE GUARDS MUST ALL BE BACK ON, and this asks about every table rather
   -- than the three it used to name. Another session added book_history to the
   -- disable/enable pair above -- correctly, because it gains the append-only
@@ -302,7 +316,7 @@ begin
   if bad <> '' then
     raise exception 'RESET FAILED, rolling back everything:%', bad;
   end if;
-  raise notice 'verified: 10000 tickets, 1000 books, no history, no money, one account';
+  raise notice 'verified: 20000 tickets, 2000 books, no history, no money, one account';
 end $$;
 
 commit;
