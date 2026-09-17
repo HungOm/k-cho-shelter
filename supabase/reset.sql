@@ -65,6 +65,7 @@ select 'DESTROYING: '
 -- ---- 1. THE GUARDS COME OFF, IN THE OPEN ---------------------------------
 alter table payments        disable trigger user;
 alter table ticket_history  disable trigger user;
+alter table book_history    disable trigger user;
 alter table round_snapshots disable trigger user;
 alter table tickets         disable trigger user;
 alter table books           disable trigger user;
@@ -228,6 +229,7 @@ end $$;
 -- ---- 5. THE GUARDS GO BACK ON --------------------------------------------
 alter table payments        enable trigger user;
 alter table ticket_history  enable trigger user;
+alter table book_history    enable trigger user;
 alter table round_snapshots enable trigger user;
 alter table tickets         enable trigger user;
 alter table books           enable trigger user;
@@ -249,11 +251,24 @@ begin
   if (select count(*) from app_users where role = 'superadmin' and status = 'active') <> 1 then bad := bad || ' the surviving account is not an active superadmin'; end if;
   if (select count(*) from tickets where number = 'KS-00001') <> 1 then bad := bad || ' first ticket is not KS-00001'; end if;
   if (select count(*) from books where number = 'Book-0001') <> 1 then bad := bad || ' first book is not Book-0001'; end if;
-  -- The guards must be back on, or the reset has left the ledger editable.
-  if (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid
-       where c.relname in ('payments','ticket_history','round_snapshots')
-         and not t.tgisinternal and t.tgenabled = 'D') > 0 then
-    bad := bad || ' an append-only trigger is still disabled';
+  -- THE GUARDS MUST ALL BE BACK ON, and this asks about every table rather
+  -- than the three it used to name. Another session added book_history to the
+  -- disable/enable pair above -- correctly, because it gains the append-only
+  -- trigger pair in a migration still waiting to be committed -- and a check
+  -- that lists tables by hand would have gone on inspecting the old three,
+  -- leaving the newly-liftable table the one thing it could not see. The
+  -- invariant is not "those three are enabled", it is "this reset left nothing
+  -- switched off", and that is true of a table added next year as well.
+  if (select count(*) from pg_trigger t
+        join pg_class c on c.oid = t.tgrelid
+        join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and not t.tgisinternal and t.tgenabled = 'D') > 0 then
+    bad := bad || ' a trigger is still disabled: ' || (
+      select string_agg(c.relname || '.' || t.tgname, ', ')
+        from pg_trigger t
+        join pg_class c on c.oid = t.tgrelid
+        join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and not t.tgisinternal and t.tgenabled = 'D');
   end if;
   if bad <> '' then
     raise exception 'RESET FAILED, rolling back everything:%', bad;
