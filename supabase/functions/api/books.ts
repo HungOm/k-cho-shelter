@@ -134,17 +134,26 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
    * The status predicate makes the update itself the check: a book that
    * changed hands in between is simply not matched, and the reply says so
    * rather than counting it.
+   *
+   * IT IS ONE TRANSACTION NOW, which is the other half. The update and the
+   * history row were separate PostgREST calls, so a function killed at its time
+   * limit between them left a book saying it was with Josh and a trail that
+   * never saw it move. Both statements, and that predicate, are inside
+   * issue_books_tx; nothing about which books are eligible has changed.
    */
-  let write = ctx.supabaseAdmin
-    .from('books')
-    .update({
-      status: 'Out', held_by_agent: agentId,
-      issued_at: new Date().toISOString(), due_at: dueAt,
-      modified_by: user.email,
-    })
-    .in('idx', idxs)
-  if (!p.force) write = write.eq('status', 'Unassigned')
-  const { data: changed, error } = await write.select('idx,number')
+  const { data: changed, error } = await ctx.supabaseAdmin.rpc('issue_books_tx', {
+    p_idxs: idxs,
+    // A book brought back with nothing sold out of it is free to go again
+    // although its status says Returned. That judgement is being added
+    // separately; the function takes the list so landing it is a one-line
+    // change here rather than another rewrite of the write path.
+    p_empty_returned: [],
+    p_agent_id: agentId,
+    p_due_at: dueAt,
+    p_user: user.email,
+    p_note: String(p.note ?? ''),
+    p_force: !!p.force,
+  })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   const issuedIdx = new Set((changed ?? []).map((b: { idx: number }) => Number(b.idx)))
@@ -159,12 +168,6 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
       { blocked: skipped.map((book: string) => ({ book, status: 'taken meanwhile', agentId: '' })) },
     )
   }
-
-  await ctx.supabaseAdmin.from('book_history').insert(
-    [...issuedIdx].map((idx) => ({
-      book_idx: idx, to_agent: agentId, action: 'issue',
-      by_user: user.email, note: String(p.note ?? ''),
-    })))
 
   await audit(ctx, 'ISSUE_BOOKS',
     { count: issuedIdx.size, agent: agentId,
@@ -242,15 +245,14 @@ export async function transferBooks(p: Record<string, unknown>, user: AppUser, c
     )
   }
 
-  const history = (books ?? []).map((b: { idx: number; held_by_agent: string | null }) => ({
-    book_idx: b.idx, from_agent: b.held_by_agent, to_agent: toAgent,
-    action: 'transfer', by_user: user.email, note: String(p.note ?? ''),
-  }))
-
-  const { error } = await ctx.supabaseAdmin
-    .from('books').update({ held_by_agent: toAgent, modified_by: user.email }).in('idx', idxs)
+  // One transaction. The trail row names who the book came FROM, so it is
+  // written inside the function before the update overwrites that column —
+  // separately, a failure between the two loses who handed it over.
+  const { error } = await ctx.supabaseAdmin.rpc('transfer_books_tx', {
+    p_idxs: idxs, p_to_agent: toAgent, p_user: user.email, p_note: String(p.note ?? ''),
+  })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
-  await ctx.supabaseAdmin.from('book_history').insert(history)
+
 
   await audit(ctx, 'TRANSFER_BOOKS',
     { count: idxs.length, to: toAgent, books: (books ?? []).map((b: { number: string }) => b.number) }, user.email)
@@ -405,21 +407,17 @@ export async function returnBooks(p: Record<string, unknown>, user: AppUser, ctx
     )
   }
 
-  const { error } = await ctx.supabaseAdmin
-    .from('books').update({ status: 'Returned', modified_by: user.email }).in('idx', idxs)
+  /*
+   * One transaction: the book comes back, the tickets held in it go back on the
+   * shelf, and the trail records who brought it. Separately, the middle one
+   * could be the statement that did not run — leaving tickets reserved for
+   * buyers who never came, in a book sitting on the desk.
+   */
+  const { error } = await ctx.supabaseAdmin.rpc('return_books_tx', {
+    p_idxs: idxs, p_user: user.email, p_note: String(p.note ?? ''),
+  })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
-  // A reserved ticket in a returned book is a hold nobody is chasing any more.
-  await ctx.supabaseAdmin
-    .from('tickets')
-    .update({ status: 'Available', buyer_name: '', buyer_phone: '', recorded_by: user.email })
-    .in('book_idx', idxs).eq('status', 'Reserved')
-
-  await ctx.supabaseAdmin.from('book_history').insert(
-    (books ?? []).map((b: { idx: number; held_by_agent: string | null }) => ({
-      book_idx: b.idx, from_agent: b.held_by_agent, action: 'return',
-      by_user: user.email, note: String(p.note ?? ''),
-    })))
 
   await audit(ctx, 'RETURN_BOOKS',
     { count: idxs.length, books: (books ?? []).map((b: { number: string }) => b.number) }, user.email)
@@ -555,58 +553,23 @@ export async function restockBooks(p: Record<string, unknown>, user: AppUser, ct
    * correction whose evidence is gone cannot be told from a figure that was
    * always right.
    */
-  const { data: live } = await ctx.supabaseAdmin
-    .from('payments').select('id,agent_id,amount,book_idx,method')
-    .in('book_idx', ids).eq('source', 'settlement').is('reverses', null)
-
-  const already = new Set<number>()
-  const { data: undone } = await ctx.supabaseAdmin
-    .from('payments').select('reverses').in('book_idx', ids).not('reverses', 'is', null)
-  for (const r of (undone ?? []) as Array<{ reverses: number }>) already.add(Number(r.reverses))
-
-  const toReverse = ((live ?? []) as Array<Record<string, unknown>>)
-    .filter((r) => !already.has(Number(r.id)))
-  if (toReverse.length) {
-    const { error } = await ctx.supabaseAdmin.from('payments').insert(
-      toReverse.map((r) => ({
-        agent_id: r.agent_id, amount: -Number(r.amount), received_by: user.email,
-        method: r.method ?? 'cash', book_idx: r.book_idx, source: 'settlement',
-        reverses: r.id, note: 'Reversed: book put back on the shelf',
-      })))
-    if (error) throw new ApiError('QUERY_FAILED', error.message)
-  }
-
-  await ctx.supabaseAdmin.from('books').update({
-    status: 'Unassigned', held_by_agent: null,
-    issued_at: null, due_at: null,
-    declared_sold: null, amount_due: null, amount_paid: null,
-    // settled_by_agent goes with the rest of the settlement. It is filtered out
-    // today anyway — both the closed-book lateral in agent_money and
-    // desk_money's closed half also require status in ('Settled','Lost'), and
-    // restock sets Unassigned — so leaving it would not move a figure. Cleared
-    // because a row should not carry a claim that is no longer true: the next
-    // person to write a query over settled_by_agent without also checking
-    // status would find a settler on a book that has never been settled.
-    settled_at: null, settled_by: '', settled_by_agent: null, notes: '',
-    modified_by: user.email,
-  }).in('idx', ids)
-
-  // Tickets nobody bought go back into circulation. Sold and donated ones are
-  // left exactly as they are — the sale happened, and the buyer still has to be
-  // findable when their number comes up.
-  await ctx.supabaseAdmin.from('tickets').update({
-    status: 'Available', buyer_name: '', buyer_phone: '', buyer_zone: '',
-    sold_by_agent: null, amount: null, payment_status: '', sold_at: null,
-    source: '', recorded_by: user.email,
-  }).in('book_idx', ids).in('status', ['Available', 'Reserved'])
-
-  await ctx.supabaseAdmin.from('book_history').insert(
-    eligible.map((b: { idx: number; held_by_agent: string | null; declared_sold: number | null }) => ({
-      book_idx: b.idx, from_agent: b.held_by_agent, action: 'restock',
-      by_user: user.email,
-      note: String(p.note ?? '') ||
-        (b.declared_sold != null ? `Settlement of ${b.declared_sold} cleared.` : ''),
-    })))
+  /*
+   * ONE TRANSACTION, and this is the one with money in it.
+   *
+   * Five statements ran here: read the live settlement payments, read which
+   * were already reversed, write the reversals, clear the book, put its unsold
+   * tickets back. A failure anywhere in the middle leaves the ledger and the
+   * book disagreeing about the same cash — the reversal written and the figure
+   * still on the book, or the figure cleared and the money still counted.
+   *
+   * The "already reversed" check is now inside the insert rather than a read
+   * that happened first, so two restocks of the same book cannot both decide
+   * they are the one that has to reverse it.
+   */
+  const { error: restockErr } = await ctx.supabaseAdmin.rpc('restock_books_tx', {
+    p_idxs: ids, p_user: user.email, p_note: String(p.note ?? ''),
+  })
+  if (restockErr) throw new ApiError('QUERY_FAILED', restockErr.message)
 
   await audit(ctx, 'RESTOCK_BOOKS', { count: ids.length, note: p.note }, user.email)
   return {

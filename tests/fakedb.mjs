@@ -650,6 +650,123 @@ export function fakeDb(seed = {}) {
       if (fn === 'bulk_record_sales') {
         return Promise.resolve({ data: { recorded: 0, failed: [], amount: 0 }, error: null })
       }
+      /*
+       * MOVING BOOKS, which is now four SQL functions rather than four
+       * sequences of PostgREST calls.
+       *
+       * These ARE modelled rather than stubbed, because what the handlers are
+       * tested for is exactly what they write: a book changes hands, its trail
+       * gains a row, its held tickets go back on the shelf. A stub returning a
+       * count would let every one of those assertions pass against a database
+       * where nothing moved — the fake disproving the thing it is meant to
+       * check. The arithmetic and the transaction itself are proven against
+       * Postgres in supabase/test-functions.sh; what is mirrored here is which
+       * rows change and in which order.
+       */
+      if (fn === 'issue_books_tx') {
+        const idxs = args.p_idxs ?? []
+        const empty = new Set((args.p_empty_returned ?? []).map(Number))
+        const written = []
+        for (const b of db.tables.books ?? []) {
+          if (!idxs.includes(b.idx)) continue
+          const free = args.p_force
+            || (b.status === 'Unassigned' && !empty.has(Number(b.idx)))
+            || (b.status === 'Returned' && empty.has(Number(b.idx)))
+          if (!free) continue
+          Object.assign(b, {
+            status: 'Out', held_by_agent: args.p_agent_id,
+            issued_at: new Date().toISOString(), due_at: args.p_due_at,
+            modified_by: args.p_user,
+          })
+          written.push({ idx: b.idx, number: b.number })
+        }
+        for (const w of written) {
+          db.tables.book_history.push({
+            id: (db.tables.book_history.length + 1), at: new Date().toISOString(),
+            book_idx: w.idx, from_agent: null, to_agent: args.p_agent_id,
+            action: 'issue', by_user: args.p_user, note: args.p_note ?? '',
+          })
+        }
+        return Promise.resolve({ data: written, error: null })
+      }
+      if (fn === 'return_books_tx') {
+        const idxs = args.p_idxs ?? []
+        let moved = 0
+        for (const b of db.tables.books ?? []) {
+          if (!idxs.includes(b.idx)) continue
+          db.tables.book_history.push({
+            id: (db.tables.book_history.length + 1), at: new Date().toISOString(),
+            book_idx: b.idx, from_agent: b.held_by_agent ?? null, to_agent: null,
+            action: 'return', by_user: args.p_user, note: args.p_note ?? '',
+          })
+          b.status = 'Returned'
+          b.modified_by = args.p_user
+          moved++
+        }
+        for (const t of db.tables.tickets ?? []) {
+          if (idxs.includes(t.book_idx) && t.status === 'Reserved') {
+            Object.assign(t, { status: 'Available', buyer_name: '', buyer_phone: '', recorded_by: args.p_user })
+          }
+        }
+        return Promise.resolve({ data: moved, error: null })
+      }
+      if (fn === 'transfer_books_tx') {
+        const idxs = args.p_idxs ?? []
+        let moved = 0
+        for (const b of db.tables.books ?? []) {
+          if (!idxs.includes(b.idx)) continue
+          db.tables.book_history.push({
+            id: (db.tables.book_history.length + 1), at: new Date().toISOString(),
+            book_idx: b.idx, from_agent: b.held_by_agent ?? null, to_agent: args.p_to_agent,
+            action: 'transfer', by_user: args.p_user, note: args.p_note ?? '',
+          })
+          b.held_by_agent = args.p_to_agent
+          b.modified_by = args.p_user
+          moved++
+        }
+        return Promise.resolve({ data: moved, error: null })
+      }
+      if (fn === 'restock_books_tx') {
+        const idxs = args.p_idxs ?? []
+        const pays = db.tables.payments ?? []
+        const reversed = new Set(pays.filter((r) => r.reverses).map((r) => Number(r.reverses)))
+        for (const r of pays.filter((r) =>
+          idxs.includes(r.book_idx) && r.source === 'settlement' && !r.reverses && !reversed.has(Number(r.id)))) {
+          pays.push({
+            id: pays.length + 1, agent_id: r.agent_id, amount: -Number(r.amount),
+            received_by: args.p_user, method: r.method ?? 'cash', book_idx: r.book_idx,
+            source: 'settlement', reverses: r.id, received_at: new Date().toISOString(),
+            note: 'Reversed: book put back on the shelf',
+          })
+        }
+        let moved = 0
+        for (const b of db.tables.books ?? []) {
+          if (!idxs.includes(b.idx)) continue
+          db.tables.book_history.push({
+            id: (db.tables.book_history.length + 1), at: new Date().toISOString(),
+            book_idx: b.idx, from_agent: b.held_by_agent ?? null, to_agent: null,
+            action: 'restock', by_user: args.p_user,
+            note: args.p_note || (b.declared_sold != null ? `Settlement of ${b.declared_sold} cleared.` : ''),
+          })
+          Object.assign(b, {
+            status: 'Unassigned', held_by_agent: null, issued_at: null, due_at: null,
+            declared_sold: null, amount_due: null, amount_paid: null,
+            settled_at: null, settled_by: '', settled_by_agent: null, notes: '',
+            modified_by: args.p_user,
+          })
+          moved++
+        }
+        for (const t of db.tables.tickets ?? []) {
+          if (idxs.includes(t.book_idx) && (t.status === 'Available' || t.status === 'Reserved')) {
+            Object.assign(t, {
+              status: 'Available', buyer_name: '', buyer_phone: '', buyer_zone: '',
+              sold_by_agent: null, amount: null, payment_status: '', sold_at: null,
+              source: '', recorded_by: args.p_user,
+            })
+          }
+        }
+        return Promise.resolve({ data: moved, error: null })
+      }
       if (fn === 'active_books') return Promise.resolve({ data: 0, error: null })
 
       return Promise.resolve({ data: null, error: { message: `unknown function ${fn}` } })

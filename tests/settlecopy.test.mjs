@@ -78,8 +78,24 @@ console.log('and the server agrees a returned book can still be settled')
    * function — so the claim is checked where the decision is actually made.
    */
   const sql = read('supabase/functions.sql')
+  /*
+   * CUT AT THE FUNCTION'S OWN END, not at the end of the file.
+   *
+   * This looked for '\n$$;' — a terminator functions.sql does not use, it ends
+   * every function with `end $$ language plpgsql;` — so the fallback took
+   * everything from settle_book to EOF. That was harmless only while settle_book
+   * happened to be the last thing in the file. The moment another function was
+   * appended, its status tests were read as settle_book's and the assertion
+   * below reported a gate this function does not have.
+   *
+   * A slice that silently runs to EOF is the same class of bug as a regex that
+   * matches more than it means: it passes for years and then reports on code it
+   * was never pointed at.
+   */
   const fn = sql.slice(sql.indexOf('create or replace function settle_book'))
-  const body = fn.slice(0, fn.indexOf('\n$$;') + 1 || undefined)
+  const stop = fn.indexOf('end $$ language plpgsql;')
+  ok(stop > 0, 'the settle_book body has a terminator to cut at')
+  const body = fn.slice(0, stop + 'end $$ language plpgsql;'.length)
   ok(body.length > 200, `found the settle_book body (${body.length} chars)`)
 
   // Stated as the positive: the ONLY status it refuses on is one already

@@ -69,22 +69,27 @@ console.log('1. a book with sales recorded on it goes through the office, not st
 
 // ============ 2. an issue lands only on books that are still free ============
 
-/** A client that takes Book-001 for somebody else between the check and the write. */
+/**
+ * A client that takes Book-001 for somebody else between the check and the write.
+ *
+ * IT HOOKS THE RPC NOW, not `.from('books').update()`. The issue path used to
+ * be a PostgREST update followed by a separate history insert; it is one SQL
+ * function, so the moment to steal the book is the moment that function is
+ * called. The property under test has not changed — an issue lands only on
+ * books that are still free — and if this hook is ever pointed at a call the
+ * handler no longer makes, the race stops being simulated and every assertion
+ * below passes for the wrong reason.
+ */
 function racedClient(w) {
   const inner = w.ctx.supabaseAdmin
   return {
     ...inner,
-    from: (t) => {
-      const q = inner.from(t)
-      if (t === 'books') {
-        const update = q.update.bind(q)
-        q.update = (patch) => {
-          const b = w.db.tables.books.find((x) => x.idx === 1)
-          b.status = 'Out'; b.held_by_agent = 'A002'
-          return update(patch)
-        }
+    rpc: (fn, args) => {
+      if (fn === 'issue_books_tx') {
+        const b = w.db.tables.books.find((x) => x.idx === 1)
+        b.status = 'Out'; b.held_by_agent = 'A002'
       }
-      return q
+      return inner.rpc(fn, args)
     },
   }
 }
