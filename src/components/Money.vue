@@ -5,7 +5,7 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { state, api, toast, canWrite, isSold } from '../lib/store.js'
-import { money, moneyShort, date } from '../lib/format.js'
+import { money, moneyShort, date, COUNTED_IN_HELP } from '../lib/format.js'
 import { waNumber, isDialable } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
 
@@ -415,7 +415,12 @@ function waLink(a) {
                     <div v-for="p in payments[a.agentId]" :key="p.id" class="paidrow">
                       <span :class="p.amount < 0 ? 'bad' : ''">{{ money(p.amount, currency) }}</span>
                       <span class="tiny muted">{{ p.receivedAt ? date(p.receivedAt) : '' }}</span>
-                      <span class="tiny muted grow">
+                      <!-- A settlement row and a hand-over row are the same money
+                           arriving by different routes, and only one of them has a
+                           name a volunteer has to be taught. -->
+                      <span class="tiny muted grow"
+                            :class="{ helpword: p.source === 'settlement' }"
+                            :title="p.source === 'settlement' ? COUNTED_IN_HELP : undefined">
                         {{ p.source === 'settlement' ? 'counted in with a book' : (p.note || 'handed in') }}
                       </span>
                     </div>
@@ -436,7 +441,9 @@ function waLink(a) {
 
                   <div v-if="!ticketsFor(a.agentId).length" class="tiny muted">
                     No tickets are written down against this seller yet — the money
-                    owed comes from a book counted in, not from individual sales.
+                    owed comes from a book
+                    <span class="helpword" :title="COUNTED_IN_HELP">counted in</span>,
+                    not from individual sales.
                   </div>
                   <table v-else class="inner">
                     <thead>

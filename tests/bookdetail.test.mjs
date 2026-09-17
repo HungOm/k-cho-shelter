@@ -102,5 +102,81 @@ console.log('an empty title attribute is not rendered')
      'no button carries a valueless title')
 }
 
+console.log('"Count it in" says what counting in means, because the words do not')
+{
+  /*
+   * ASKED DIRECTLY, looking at a brought-back book with every ticket gone:
+   * "if the whole book is sold, why does it still have an active Count in?"
+   *
+   * Because sold and counted-in are different facts and the screen never said
+   * so. Sold 10 of 10 is the tickets; Handed in RM 0.00 is the money; the
+   * button is the step that closes the gap. Everything needed to work that out
+   * was on the panel, in figures, for a reader who already knew the two were
+   * separate — which is the reader who did not need the panel.
+   */
+  const ADMIN = STORE.replace('computed(() => false)', 'computed(() => true)')
+  const html = await renderScreen('src/components/modals/BookDetail.vue', ADMIN,
+    { props: { book: { ...BASE, status: 'Returned', sold: 10, available: 0, expected: 100, paid: 0 } } })
+
+  ok(/Count it in/.test(visibleText(html)),
+     'a brought-back book still offers it, however much of it sold')
+  ok(/title="Counting a book in is its last step/.test(html),
+     'and hovering it explains what that means')
+  ok(/sold out and still owe money/.test(html),
+     'naming the case that prompted the question, rather than defining a term in the abstract')
+}
+
+console.log('and the sentence is written once, for every place the phrase appears')
+{
+  /*
+   * THREE SITES, ONE SENTENCE. It is a button on this sheet, a verb in the
+   * trail ("Counted in"), and the note on a settlement row in Money. Three
+   * hand-written tooltips would drift into three different promises about what
+   * the button does, which is worse than none: a volunteer who reads two of
+   * them learns that the app is not sure either.
+   */
+  const { readFileSync, readdirSync, statSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const { codeOf } = await import('./source.mjs')
+
+  const ROOT = fileURLToPath(new URL('../', import.meta.url))
+  const walk = (d) => readdirSync(d).flatMap((f) => {
+    const p = join(d, f)
+    return statSync(p).isDirectory() ? walk(p) : [p]
+  })
+  const files = walk(join(ROOT, 'src')).filter((f) => /\.(vue|js)$/.test(f))
+  const rel = (f) => f.slice(ROOT.length)
+
+  const defs = files.filter((f) => /export const COUNTED_IN_HELP/.test(readFileSync(f, 'utf8')))
+  ok(defs.length === 1 && rel(defs[0]) === 'src/lib/format.js',
+     `the sentence is defined once, in format.js (found ${defs.map(rel).join(', ') || 'nowhere'})`)
+
+  // Retyped rather than imported is the failure this catches: a copy reads as
+  // correct on the day it is made and drifts on the day the original changes.
+  const retyped = files.filter((f) =>
+    rel(f) !== 'src/lib/format.js' && /Counting a book in is its last step/.test(readFileSync(f, 'utf8')))
+  ok(retyped.length === 0, `nobody retypes it (${retyped.map(rel).join(', ') || 'none do'})`)
+
+  /*
+   * CheckIn.vue names the term too and does NOT carry the tooltip. It is
+   * another session's file as this is written and reverting somebody's
+   * in-flight work to add a title attribute is not a trade worth making. Listed
+   * so the gap is a decision on the record rather than an oversight; remove it
+   * from here when that file lands and the tooltip goes on.
+   */
+  const PENDING = ['src/components/modals/CheckIn.vue']
+
+  const missing = files.filter((f) => {
+    const r = rel(f)
+    if (r === 'src/lib/format.js' || PENDING.includes(r)) return false
+    const code = codeOf(readFileSync(f, 'utf8'))
+    if (!/[Cc]ount(ed|ing)? it in|[Cc]ounted in/.test(code)) return false
+    return !/COUNTED_IN_HELP/.test(code)
+  })
+  ok(missing.length === 0,
+     `every screen that names it also explains it (${missing.map(rel).join(', ') || 'all do'})`)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

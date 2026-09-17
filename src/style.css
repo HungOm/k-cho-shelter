@@ -273,6 +273,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
+/* ---------- a word that explains itself on hover ---------- */
+/* A tooltip nobody knows is there is not an explanation. The dotted underline
+   is the only thing that says "there is more here", and `cursor: help` is what
+   a pointer does over it. Used for terms a volunteer cannot guess from the
+   words alone — "Counted in" being the one that was asked about: a book can be
+   sold out and still owe money, and nothing on the screen said why. */
+.helpword { border-bottom: 1px dotted currentColor; cursor: help; }
+@media print { .helpword { border-bottom: 0; } }
+
 /* ---------- print ---------- */
 /* Paper is not a screen. Everything here drags the app back to plain ink:
    no chrome, no dark theme, no scroll boxes that would cut a long book list

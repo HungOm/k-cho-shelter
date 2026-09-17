@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { state, isAdmin, go, bookBlock } from '../../lib/store.js'
-import { money, date, BOOK_WORDS } from '../../lib/format.js'
+import { money, date, BOOK_WORDS, COUNTED_IN_HELP } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import StatusPill from '../ui/StatusPill.vue'
 import History from './History.vue'
@@ -98,7 +98,11 @@ const showHistory = ref(false)
         Sell it whole
       </button>
       <button v-if="canPrintReceipt" class="btn" @click="emit('receipt', book.agentId)">Receipt</button>
-      <button v-if="isAdmin && canSettle" class="btn primary" @click="emit('settle', book)">Count it in</button>
+      <!-- The tooltip is the answer to a question that was actually asked:
+           if the whole book is sold, why is this still here. Sold is about
+           tickets; this is about money, and they are different facts. -->
+      <button v-if="isAdmin && canSettle" class="btn primary" :title="COUNTED_IN_HELP"
+              @click="emit('settle', book)">Count it in</button>
 
       <!-- GHOST, not another button. Four controls of identical weight is a row
            with no answer to "what am I meant to do here", and the browser's

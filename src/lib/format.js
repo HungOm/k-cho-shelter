@@ -92,6 +92,27 @@ export const STATUS_WORDS = {
   Void: 'Cancelled'
 }
 
+/**
+ * What "counting a book in" means, in one sentence, for the tooltip wherever
+ * the phrase appears.
+ *
+ * IT IS THE ONE STEP A VOLUNTEER CANNOT GUESS FROM THE WORDS. "Brought back"
+ * sounds finished and is not: the paper has returned, the money has not been
+ * counted, and the book is still open. The panel says so in figures — sold 10
+ * of 10, handed in RM 0, difference RM -100 — but only to somebody who already
+ * knows that those are two different facts. It was asked directly: if the whole
+ * book is sold, why is "Count it in" still there.
+ *
+ * Spelled HERE and nowhere else, because it appears as a button, as a verb in
+ * the trail, and as the note on a payment row. Three copies of a sentence drift
+ * into three different promises about what the button does.
+ */
+export const COUNTED_IN_HELP =
+  'Counting a book in is its last step: the unsold ticket numbers are read ' +
+  'back, the cash that came with them is written down, and the book closes as ' +
+  'Finished. A book that is Brought back has returned but has not been counted ' +
+  'in yet — which is why it can be sold out and still owe money.'
+
 export const BOOK_WORDS = {
   Unassigned: 'In the office',
   Out: 'With a seller',

@@ -34,7 +34,7 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { api, state, agentMap, isSold } from '../../lib/store.js'
-import { dateTime, money, plainName, isSellerContact, STATUS_WORDS } from '../../lib/format.js'
+import { dateTime, money, plainName, isSellerContact, STATUS_WORDS, COUNTED_IN_HELP } from '../../lib/format.js'
 import { isDialable, waNumber } from '../../lib/search.js'
 import Sheet from '../ui/Sheet.vue'
 import StatusPill from '../ui/StatusPill.vue'
@@ -266,6 +266,10 @@ const trailHasTheSale = computed(() => changes.value.some(c => isSold({ status: 
 const steps = computed(() => {
   const list = (trail.value?.history || []).map(h => ({
     kind: 'move', at: h.at, title: words(h.action), detail: movement(h),
+    // "Counted in" is the one verb in this list a volunteer cannot infer from
+    // the word, so it carries its own explanation. The others describe
+    // themselves: given out, passed on, brought back.
+    help: h.action === 'settle' ? COUNTED_IN_HELP : '',
     // The same movement as structured people, so the names can carry their
     // zone and be rung. `detail` stays for anything that has no people in it.
     from: h.fromWho || null, to: h.toWho || null,
@@ -384,7 +388,7 @@ const movedAlready = computed(() => {
                and an organiser can ring them; anything else keeps the plain
                sentence it always had. -->
           <div class="what">
-            <b>{{ s.title }}</b>
+            <b :class="{ helpword: s.help }" :title="s.help || undefined">{{ s.title }}</b>
             <template v-if="s.from || s.to">
               <template v-if="s.from">
                 from

@@ -158,9 +158,29 @@ console.log('the branches one render cannot reach — each is a sentence somebod
   const owesButNoTickets = await renderScreen('src/components/Money.vue',
     money([], [{ ...row, ticketsSold: 0, expected: 10, collected: 0, outstanding: 10 }]),
     { drive: async b => { await b.load(); b.toggle('A1') } })
-  ok(/money\s+owed comes from a book counted in/.test(owesButNoTickets.replace(/\s+/g, ' ')),
+  /*
+   * READ AS VISIBLE TEXT, not as raw HTML.
+   *
+   * This matched the sentence in the markup, so it broke the moment "counted
+   * in" was wrapped in a span to carry its hover explanation — the words a
+   * reader sees did not change at all. A test that a person can read a sentence
+   * should ask what is rendered, not how it is marked up, or every assertion
+   * about copy becomes a lock on the tags around it.
+   */
+  const owesText = visibleText(owesButNoTickets).replace(/\s+/g, ' ')
+  // `\s*` before the comma is visibleText's own doing, not the page's: it joins
+  // adjacent nodes with a space, and "counted in" is its own span now. The
+  // markup is `counted in</span>,` with nothing between, so a browser renders
+  // it tight. Matching the helper's spacing rather than loosening the sentence.
+  ok(/money owed comes from a book counted in\s*, not from individual sales/.test(owesText),
      'a seller who owes with no tickets recorded gets the explanation, not a blank panel')
   ok(/JOHN/.test(visibleText(owesButNoTickets)), 'and is still named on the row itself')
+
+  // And the term explains itself on hover, rather than assuming the reader
+  // knows that a sold-out book can still owe money.
+  ok(/class="helpword"[^>]*title="Counting a book in is its last step/.test(owesButNoTickets)
+     || /title="Counting a book in is its last step[^"]*"[^>]*class="helpword"/.test(owesButNoTickets),
+     'and "counted in" carries its explanation where it is named')
 
   const loading = await renderScreen('src/components/Money.vue', money(tickets, [row]))
   ok(/skel/.test(loading), 'before the report arrives the screen shows it is working')
