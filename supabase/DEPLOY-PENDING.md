@@ -61,12 +61,12 @@ the thing organisers do most.
 
 ## What is in the set
 
-**THIRTEEN** migrations are unapplied as of the last revision of this file;
+**FOURTEEN** migrations are unapplied as of the last revision of this file;
 production's `schema_migrations` head is `20260917150000`, and has not moved
 since the hold began.
 
-**Do not trust that number — derive it.** It has been ten, twelve and thirteen
-on three successive readings of this document, because the set grows while it is
+**Do not trust that number — derive it.** It has been ten, twelve, thirteen and
+fourteen on four successive readings of this document, because the set grows while it is
 being reviewed. That is the single best argument for a deploy window somebody
 chooses rather than a gap between two commits:
 
@@ -74,7 +74,10 @@ chooses rather than a gap between two commits:
     git ls-tree -r --name-only HEAD supabase/migrations/ | sed 's|.*/||' \
       | awk -F_ -v a="<that version>" '$1>a'
 
-Re-verified across all thirteen, not carried over from the twelve:
+Re-verified across all thirteen, not carried over from the twelve. The
+fourteenth, `20260918600000`, arrived after that pass and is covered on its own
+below — it replaces one view and one policy, writes no row, and is the one whose
+absence is a data-exposure rather than a missing feature:
 
 - **Nothing destructive.** No `drop table`, no `drop column`, no `truncate`, no
   top-level `delete`. Every grep hit for "truncate" is *creating* an
@@ -95,6 +98,37 @@ Re-verified across all thirteen, not carried over from the twelve:
   | `check_in_dates` | `+ cleared_at`, `+ cleared_by` | `20260918050000` |
   | `prizes` | `+ removed_at`, `+ removed_by` | `20260918050000` |
   | `tickets` | `+ holder text not null default 'desk'` | `20260918100000` |
+
+**`20260918600000` is the one worth applying earliest, and it CANNOT go alone.**
+
+Until it runs, every signed-in seller's browser holds every other seller's
+takings for the whole raffle — who sold each ticket, for how much, whether that
+money came in, and who wrote it down. It replaces `tickets_readable` and the
+`tickets_read` policy. No row is touched and no column changes shape, and the
+client needs no matching deploy: every masked field is already behind a `v-if`,
+so an agent looking at another seller's ticket sees "Sold" and nothing else.
+
+**It depends on `20260918100000`**, which adds `tickets.holder` and creates
+`ticket_movements` — the new policy names both. On a database without them it
+fails at `create policy` with
+
+    ERROR: column "holder" does not exist
+
+which is a clean refusal, nothing half-applied, but it is a refusal. It must
+also come after `20260915131319`, which recreates the same view. Filename order
+already satisfies both, so the whole set applied in order is the ordinary path
+and needs no special handling.
+
+If somebody wants the masking in before the rest of the set, the minimal step is
+those two in order — `20260918100000` then `20260918600000` — and that pair was
+applied to a scratch database and the masking checked on it afterwards.
+
+One caveat on that scratch test, because it is the sort of thing that reads as
+stronger than it is: the database was built from **today's** `schema.sql`, which
+is kept in step with the migrations and therefore already carries `holder` and
+`ticket_movements`. Production's schema was not built that way — it was built by
+migrations applied over time. The two objects were dropped to imitate it. That
+is good evidence and it is not the same as having run it against production.
 
   The last is the only one worth a second look: a `not null default` on the
   20,000-row tickets table. On Postgres 11 and later that is metadata only — no
