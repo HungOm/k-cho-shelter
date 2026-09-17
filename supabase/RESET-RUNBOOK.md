@@ -53,22 +53,27 @@ screen.
 2. **Count the migrations before you push them.**
 
    ```
-   git ls-files supabase/migrations/ | wc -l    # what is in the repository
-   ls supabase/migrations/ | wc -l              # what db push will apply
+   git ls-tree -r HEAD --name-only supabase/migrations/ | wc -l   # what is committed
+   ls supabase/migrations/ | wc -l                                # what db push applies
    ```
 
    **These two numbers must match.** `supabase db push` reads the DIRECTORY, not
-   git, so anything sitting uncommitted in this shared working tree rides along
-   with whoever pushes next, whatever session wrote it and whatever state it is
-   in. On 17 September this happened twice: first three migrations reached
-   production while existing in no commit, and then — while this runbook was
-   being written — three more appeared on disk from work still in progress.
+   git, so anything sitting uncommitted in this working tree rides along with
+   whoever pushes next, whatever state it is in. On 16 September three
+   migrations reached production while existing in no commit.
 
-   If they differ, run `comm -13` on the two lists to see which files are
-   unaccounted for, and find out who is writing them before you push anything.
-   The danger is not the extra migration. It is that a clean checkout of master
-   plus `db push` then builds a database MISSING objects the deployed function
-   assumes.
+   `git ls-tree -r HEAD`, **not `git ls-files`.** This page said `ls-files`
+   until somebody checked it: that command reads the INDEX, and where several
+   people share one working tree the index is a mutable thing that drifts behind
+   HEAD. It read 21 against a HEAD that had 23, inventing two uncommitted
+   migrations that were committed hours earlier — and it can as easily go the
+   other way and report clean while a file really is missing. `ls-tree` asks
+   what is in the commit, which is the actual question.
+
+   If they differ, `comm -13` on the two lists names the files. Find out who is
+   writing them before pushing anything. The danger is not the extra migration
+   — that is recoverable. It is that a clean checkout of master plus `db push`
+   then builds a database MISSING objects the deployed function assumes.
 
 3. **The deploy is current, in this order.** Each step depends on the one
    before it:
