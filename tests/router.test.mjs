@@ -419,6 +419,67 @@ console.log('an APPROVED request actually runs — driven through decide, not ar
   ok(!world.row('app_users', (u) => u.email === 'no@x.com'), 'nobody was added')
 }
 
+console.log('undoing money takes two people')
+{
+  /*
+   * WHY THESE TWO AND NOT THE REST OF THE MONEY ACTIONS.
+   *
+   * Recording a payment and settling a book are one person's job by design —
+   * somebody hands cash over and somebody writes it down, and the person who
+   * handed it over is the check. reverse_payment and write_off have no such
+   * person. They change what a named volunteer is shown as owing with nothing
+   * handed over and nobody else in the room, which in a raffle run by
+   * volunteers for their own community is exactly where a second signature
+   * belongs.
+   *
+   * Both already demanded a reason and both already wrote a new row rather than
+   * editing one, so the audit trail was never the gap. The gap was that one
+   * person could decide it alone.
+   */
+  const money = () => fakeDb({
+    config: baseConfig({ CURRENCY: 'RM' }),
+    app_users: [
+      { email: 'boss@x.com', name: 'Boss', role: 'admin', active: true, agent_id: null },
+      { email: 'admin@x.com', name: 'Admin', role: 'admin', active: true, agent_id: null },
+    ],
+    agents: [{ agent_id: 'A001', name: 'Daw Hla', phone: '0125551111', zone: 'KL', active: true }],
+    payments: [{ id: 1, agent_id: 'A001', amount: 40, source: 'hand',
+                 received_at: '2026-09-15T00:00:00.000Z', note: 'at the hall', reverses: null }],
+  })
+
+  const rev = await call('reverse_payment', { paymentId: 1, reason: 'recorded against the wrong seller' },
+    'admin@x.com', money())
+  eq(rev.body.error?.code, 'APPROVAL_REQUIRED', 'an organiser alone cannot undo a payment')
+  const revText = String(rev.body.error?.details?.summary ?? '')
+  ok(/Daw Hla/.test(revText), `the approver is told whose money it is (${revText})`)
+  ok(/40\.00/.test(revText), 'and how much, because they are signing for a figure')
+
+  const off = await call('write_off', { agentId: 'A001', reason: 'left the country, confirmed by her sister' },
+    'admin@x.com', money())
+  eq(off.body.error?.code, 'APPROVAL_REQUIRED', 'nor write a debt off')
+  const offText = String(off.body.error?.details?.summary ?? '')
+  ok(/Daw Hla/.test(offText), `named there too (${offText})`)
+  ok(/not read as having been paid/.test(offText),
+     'and told the thing that makes a write-off different from a payment')
+
+  /*
+   * THE OWNER IS EXEMPT, and that is not a hole: they are the person who would
+   * approve it. Requiring them to ask themselves would make the queue a
+   * formality, and a formality is what people learn to click through.
+   */
+  const asOwner = await call('reverse_payment', { paymentId: 1, reason: 'recorded against the wrong seller' },
+    'boss@x.com', money())
+  ok(asOwner.body.error?.code !== 'APPROVAL_REQUIRED',
+     `the owner does not queue a request to themselves (${asOwner.body.error?.code ?? 'ran'})`)
+
+  // Recording money is deliberately NOT in this gate: somebody handed cash over
+  // and that person is the second pair of eyes. Fencing it would push the desk
+  // back to writing on paper, which is what the app replaced.
+  const rec = await call('record_payment', { agentId: 'A001', amount: 10 }, 'admin@x.com', money())
+  ok(rec.body.error?.code !== 'APPROVAL_REQUIRED',
+     `taking money in stays one person's job (${rec.body.error?.code ?? 'ran'})`)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)

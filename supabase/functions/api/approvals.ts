@@ -1,9 +1,15 @@
 /**
  * Two-person control — ported from Approvals.gs.
  *
- * An admin asks, the super admin approves, and the action runs. Three things
- * need it: marking a run of books lost or void, putting books back on the
- * shelf, and settling a book that is already settled.
+ * An admin asks, the super admin approves, and the action runs. What needs it:
+ * marking a run of books lost or void, putting books back on the shelf,
+ * settling a book that is already settled, letting somebody sign in — and
+ * UNDOING MONEY, which is reversing a recorded payment or writing off a debt.
+ *
+ * The money pair were added last and for a different reason from the rest.
+ * Everything above changes what the raffle can still sell. Those two change
+ * what a named volunteer is shown as owing, with nothing handed over and
+ * nobody else in the room.
  *
  * APPROVING EXECUTES, in the same call. An approval that merely unlocked the
  * action for later leaves a gap between what was read and what runs — approve a
@@ -108,6 +114,73 @@ export async function approvalNeeded(
       // screen has to get right is that the words match the deed. The role is
       // named explicitly because it is the part that actually matters.
       text: `Let ${email} sign in as ${WORD[role] ?? role}.`,
+    }
+  }
+
+  /*
+   * UNDOING MONEY TAKES TWO PEOPLE, and it is the only kind of write here that
+   * changes what a named volunteer is shown as owing without anybody handing
+   * anything over.
+   *
+   * Both of these were already an organiser's alone, both already demanded a
+   * reason, and both already wrote a new row rather than editing one — the
+   * audit is not the gap. The gap is that one person could decide, at a desk,
+   * that a debt on somebody else's name is gone, and the only trace is a line
+   * nobody reads until there is an argument. A raffle run by volunteers for
+   * their own community is exactly where that has to be two signatures.
+   *
+   * THE SENTENCE CARRIES THE NUMBERS, because an approver reading "write off a
+   * debt" is being asked to sign for something they cannot see. The figures are
+   * read here, at request time, from the same views the money screens use.
+   */
+  const currencyWord = async () => {
+    const { data } = await ctx.supabaseAdmin
+      .from('config').select('value').eq('key', 'CURRENCY').maybeSingle()
+    return String(data?.value ?? 'RM')
+  }
+  const agentName = async (id: string) => {
+    if (!id) return 'a seller'
+    const { data } = await ctx.supabaseAdmin
+      .from('agents').select('name').eq('agent_id', id).maybeSingle()
+    return String(data?.name ?? '') || id
+  }
+
+  if (action === 'reverse_payment') {
+    const id = Number(payload.paymentId)
+    const { data: row } = await ctx.supabaseAdmin
+      .from('payments').select('agent_id,amount,source,received_at').eq('id', id).maybeSingle()
+    const r = (row ?? {}) as Record<string, unknown>
+    const who = await agentName(String(r.agent_id ?? ''))
+    const cur = await currencyWord()
+    const amount = Number(r.amount ?? 0)
+    const when = String(r.received_at ?? '').slice(0, 10)
+    // A settlement row is a book's own figure as well as a payment, so undoing
+    // one is a bigger act than undoing a hand-over and the sentence says which.
+    const kindWord = String(r.source ?? '') === 'settlement'
+      ? ' It was counted in with a book, so the book\'s figure moves too.'
+      : ''
+    return {
+      kind: 'reverse_payment', paymentId: id, agentId: String(r.agent_id ?? ''), amount,
+      text: `Undo ${cur} ${amount.toFixed(2)} recorded against ${who}` +
+            (when ? ` on ${when}` : '') + `.${kindWord} Both entries stay on the record.`,
+    }
+  }
+
+  if (action === 'write_off') {
+    const agentId = String(payload.agentId ?? '').trim()
+    const who = await agentName(agentId)
+    const cur = await currencyWord()
+    const { data: m } = await ctx.supabaseAdmin
+      .from('agent_money').select('outstanding').eq('agent_id', agentId).maybeSingle()
+    const owed = Number((m as { outstanding?: number } | null)?.outstanding ?? 0)
+    const asked = payload.amount === undefined || payload.amount === null || payload.amount === ''
+      ? owed : Number(payload.amount)
+    const whole = Math.abs(asked - owed) < 0.005
+    return {
+      kind: 'write_off', agentId, amount: asked, owed,
+      text: `Write off ${cur} ${asked.toFixed(2)} owed by ${who}` +
+            (whole ? ', which is everything they owe' : ` of the ${cur} ${owed.toFixed(2)} they owe`) +
+            '. Nobody asks them for it again, and it will not read as having been paid.',
     }
   }
 

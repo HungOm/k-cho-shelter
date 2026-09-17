@@ -3,8 +3,12 @@
  *
  * Two-person control over the handful of actions that take something away: a
  * range of books marked lost, tickets put back on the shelf, a settled book
- * re-opened over figures already recorded. An admin asks, the super admin
- * approves, and the action runs.
+ * re-opened over figures already recorded, and a recorded payment undone. An
+ * admin asks, the super admin approves, and the action runs.
+ *
+ * The last of those was added for a different reason from the rest. The others
+ * change what the raffle can still sell; undoing a payment changes what a named
+ * volunteer is shown as owing, with nothing handed over and nobody else there.
  *
  * Approving EXECUTES, in the same call. An approval that merely unlocked the
  * action for later would leave a gap between what was read and what runs —
@@ -84,6 +88,42 @@ function approvalSummaryFor_(action, payload) {
         (r.length > 1 ? ' to ' + r[r.length - 1] : '') +
         '. The settlement figures already recorded against ' +
         (r.length === 1 ? 'it' : 'them') + ' are cleared.'
+    };
+  }
+
+  /*
+   * UNDOING MONEY TAKES TWO PEOPLE.
+   *
+   * Everything above this takes away something the raffle can still sell.
+   * Reversing a payment is different: it changes what a named volunteer is
+   * shown as owing, with nothing handed over and nobody else in the room. It
+   * already demanded a reason and already wrote a new row rather than editing
+   * one, so the audit trail was never the gap — the gap was that one person
+   * could decide it alone.
+   *
+   * THE SENTENCE CARRIES THE FIGURES, because an approver reading "undo a
+   * payment" is being asked to sign for something they cannot see.
+   *
+   * write_off has no twin here: it is a Supabase-only action, so there is
+   * nothing on this side to gate. If it is ever ported, it belongs in this
+   * block beside its pair.
+   */
+  if (action === 'reverse_payment') {
+    var pid = String(payload.paymentId || '');
+    var rows = readPaymentsRaw_();
+    var hit = null;
+    for (var pi = 0; pi < rows.length; pi++) {
+      if (String(rows[pi].Payment_ID || rows[pi].id || '') === pid) { hit = rows[pi]; break; }
+    }
+    var names = agentNameMap_();
+    var aid = hit ? String(hit._agent || '') : '';
+    var who = (names[aid] && names[aid].name) || aid || 'a seller';
+    var amt = hit ? Number(hit._amount || 0) : 0;
+    var cur = (getConfig().CURRENCY || 'RM');
+    return {
+      kind: 'reverse_payment', paymentId: pid, agentId: aid, amount: amt,
+      text: 'Undo ' + cur + ' ' + amt.toFixed(2) + ' recorded against ' + who +
+            '. Both entries stay on the record.'
     };
   }
 
