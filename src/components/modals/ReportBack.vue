@@ -189,6 +189,15 @@ async function send() {
         <template v-if="draft.dueBy"> Your books are due back by <b>{{ date(draft.dueBy) }}</b>.</template>
       </div>
 
+      <!-- Said once, above the list, rather than argued with per book: they
+           can report the same book again and it is not an error, but they
+           should know they are doing it. -->
+      <div v-if="lines.some(b => b.inReport)" class="note warn">
+        Some of these are in a report you have already sent, waiting for an organiser.
+        Sending again is fine — nothing is counted twice — but the first one is still
+        there.
+      </div>
+
       <template v-if="lines.length">
         <label>Your books</label>
         <div v-for="b in lines" :key="b.book" class="bk">
@@ -197,7 +206,10 @@ async function send() {
               <b>{{ b.book }}</b>
               <span class="sub"> {{ b.firstTicket }}–{{ b.lastTicket }}</span>
             </span>
-            <span class="sub">{{ b.recordedSold }} of {{ b.held }} written down</span>
+            <span class="sub">
+              <span v-if="b.inReport" class="pill warn">already reported</span>
+              {{ b.recordedSold }} of {{ b.held }} written down
+            </span>
           </div>
           <div class="picks">
             <button v-for="opt in [

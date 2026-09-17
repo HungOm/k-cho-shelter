@@ -148,6 +148,23 @@ console.log('the screen says the same thing the backend will')
   ok(/A001/.test(refused), `another seller is told whose it is (${refused})`)
   ok(/A002/.test(refused), 'and which seller the app thinks they are')
 
+  /*
+   * A BOOK THAT IS NOT IN YOUR LIST IS NOT YOURS — and for a seller that now
+   * means something, because their list is the books in their hands and nothing
+   * else. A ticket whose book is missing belongs to one that has been brought
+   * back, counted in, lost, or was never theirs; every one of those is a sale
+   * the server refuses. Returning "not blocked" would have the screen offer it
+   * and the refusal arrive after the press.
+   */
+  state.user = { role: 'agent', agentId: 'A001' }
+  ok(/not one of your/.test(sellBlock({ book: 'Book-999' }) || ''),
+     'a seller is blocked on a ticket whose book is not in their list')
+
+  // Staff hold the whole raffle in their list, so a miss is a snapshot still
+  // loading — failing closed there would block the desk at every sign-in.
+  state.user = { role: 'admin', agentId: null }
+  eq(sellBlock({ book: 'Book-999' }), null, 'an organiser is not blocked by a book still loading')
+
   state.user = null
 }
 

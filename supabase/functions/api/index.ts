@@ -141,6 +141,10 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   sell_book: { group: 'Tickets', label: 'Sell a whole book to one buyer' },
   list_books: { group: 'Books', label: 'See the books' },
   issue_books: { group: 'Books', label: 'Give books to a seller' },
+  offer_books: { group: 'Books', label: 'Offer books to a seller' },
+  withdraw_offer: { group: 'Books', label: 'Take back an offer nobody has answered' },
+  accept_offer: { group: 'Books', label: 'Take on books offered to you' },
+  decide_offer: { group: 'Books', label: 'Accept or turn down books offered to you' },
   transfer_books: { group: 'Books', label: 'Move books between sellers' },
   return_books: { group: 'Books', label: 'Take books back' },
   // Tickets rather than a whole book. No screen calls it yet; it is here so
@@ -233,6 +237,27 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
 
   // --- books ---
   issue_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.issueBooks },
+  offer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.offerBooks },
+  withdraw_offer: { roles: ADMIN_ONLY, kind: 'write', fn: books.withdrawOffer },
+  /*
+   * ADMIN_ONLY AND RUN BY A SELLER, WHICH IS NOT A CONTRADICTION.
+   *
+   * These roles are the DIRECT door — who may call this action over the wire —
+   * and no seller may, because accepting is not something to be done by naming
+   * books in a request. It is reached only through decide_offer, where the
+   * queue has already established that this exact person is the one the books
+   * were offered to, and decideWith then runs it AS them. Exactly how
+   * issue_books is ADMIN_ONLY and yet runs when a petition is granted.
+   */
+  accept_offer: { roles: ADMIN_ONLY, kind: 'write', fn: books.acceptOffer },
+  /*
+   * ANY SIGNED-IN USER, narrowed to one person by the row rather than by role.
+   * `roles: null` is as close as this registry can get; the real bar is in
+   * approvals.ts, which refuses any row whose decide_by_agent is not the
+   * caller's own seller id. A role could only ever say "sellers", and the
+   * question here is "this seller".
+   */
+  decide_offer: { roles: null, kind: 'write', fn: decideOffer },
   transfer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.transferBooks },
   return_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.returnBooks },
   move_tickets: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.moveTickets },
@@ -410,9 +435,26 @@ async function decideBookRequest(p: Record<string, unknown>, user: AppUser, ctx:
   return decideWith(p, user, ctx, { petitionsOnly: true })
 }
 
+/**
+ * The seller's half of the queue, and the only door that reaches an offer.
+ *
+ * A THIRD ACTION for the same reason there was a second: the other two say
+ * something true about who may use them, and widening either to let a seller
+ * through would make the registry lie about the most dangerous action in the
+ * list. This one reaches offers and nothing else, and approvals.ts refuses it
+ * any offer that is not addressed to the caller.
+ */
+async function decideOffer(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  if (!user.agentId) {
+    throw new ApiError('NOT_A_SELLER',
+      'Books are offered to sellers, and your account is not linked to one.', null, 403)
+  }
+  return decideWith(p, user, ctx, { offersOnly: true })
+}
+
 function decideWith(
   p: Record<string, unknown>, user: AppUser, ctx: Ctx,
-  opts: { petitionsOnly?: boolean },
+  opts: { petitionsOnly?: boolean; offersOnly?: boolean },
 ) {
   return approvals.decideApproval(
     p, user, ctx,
@@ -872,12 +914,59 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   if (p.status) query = query.eq('status', String(p.status))
   if (p.agentId) query = query.eq('held_by_agent', String(p.agentId))
 
-  // A seller's book list is the books in their hands. Anything else is a wall
-  // of two thousand squares that tells them nothing and costs them a download.
-  if (user.role === 'agent') query = query.eq('held_by_agent', user.agentId ?? '\u0000')
+  /*
+   * A SELLER'S BOOK LIST IS THE BOOKS IN THEIR HANDS — which is what this said
+   * and not what it did.
+   *
+   * held_by_agent deliberately SURVIVES a return and a settlement, because
+   * settlement has to know whose money it is. So a seller who handed a book
+   * back last month, and watched an organiser count it in, kept seeing it on
+   * their own screen for the rest of the raffle: a book they no longer have,
+   * beside the ones they do, with no way to tell which is which. Asked for in
+   * exactly those terms — a book the organiser has accepted should no longer be
+   * the seller's to look at.
+   *
+   * 'Out' is that list. Returned and Settled are books the desk has; Lost and
+   * Void are closed. An organiser still sees every one of them, because the
+   * holder is how the money is chased.
+   */
+  if (user.role === 'agent') {
+    query = query.eq('held_by_agent', user.agentId ?? '\u0000').eq('status', 'Out')
+  }
 
   const { data, error } = await query
   if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  /*
+   * AND THE BOOKS THAT ARE IN A REPORT NOBODY HAS ACCEPTED YET.
+   *
+   * Sending a report changes nothing — that is the whole design — so those
+   * books are still Out, still the seller's, and still theirs to sell from
+   * until an organiser accepts. Which is right, and invisible: the seller sees
+   * a book that looks exactly as it did before they reported it, and so does
+   * the organiser looking at the same book from the other side.
+   *
+   * So the books a pending report names are marked, for both of them. For the
+   * seller it is "I have said I am bringing this back"; for the organiser it is
+   * "there is a report waiting on this one", which is the difference between
+   * counting a book in twice and knowing not to.
+   *
+   * Read from the queue rather than stored on the book: a request that lapses
+   * or is turned down stops marking it with nothing to clean up, and the book
+   * row keeps meaning exactly what it means.
+   */
+  const { data: waitingReports } = await ctx.supabaseAdmin
+    .from('pending_approvals').select('payload,requested_by')
+    .eq('action', 'report_back').eq('status', 'Pending')
+  const reported = new Set<string>()
+  for (const r of (waitingReports ?? []) as Array<Record<string, unknown>>) {
+    const payload = (r.payload ?? {}) as Record<string, unknown>
+    if (user.role === 'agent' && String(payload.agentId ?? '') !== (user.agentId ?? '')) continue
+    for (const line of (Array.isArray(payload.books) ? payload.books : []) as Array<Record<string, unknown>>) {
+      const n = String(line.book ?? '').trim()
+      if (n) reported.add(n)
+    }
+  }
 
   /*
    * MAPPED FIELD BY FIELD, not echoed.
@@ -920,6 +1009,10 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
      * to get one.
      */
     countedIn: r.declared_sold !== null && r.declared_sold !== undefined,
+    // Named in a report waiting to be accepted. Nothing about the book has
+    // changed and nothing will until somebody accepts it — this is the seller
+    // having said what they intend to do with it.
+    inReport: reported.has(String(r.number)),
     /*
      * WHO TOOK THE MONEY, and when. settle_book has written settled_by since it
      * existed and nothing has ever read it back — so the book sheet said

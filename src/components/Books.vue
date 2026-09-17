@@ -80,6 +80,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
                 <template v-if="b.sold"> · {{ b.sold }} sold</template>
               </span>
             </span>
+            <span v-if="b.inReport" class="pill warn">reported</span>
             <span v-if="b.daysOverdue > 0" class="pill bad">{{ b.daysOverdue }} days late</span>
             <StatusPill :status="b.status" kind="book" />
             <span class="chev">›</span>

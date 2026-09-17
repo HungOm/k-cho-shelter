@@ -233,7 +233,22 @@ export function sellBlock(ticket) {
  * somebody finds out before pressing rather than after.
  */
 export function bookBlock(b) {
-  if (!b) return null
+  /*
+   * A BOOK THAT IS NOT IN YOUR LIST IS NOT YOURS, and for a seller that now
+   * means something it did not used to.
+   *
+   * A seller's book list is the books in their hands — Out, and nothing else.
+   * So a ticket whose book is missing from it belongs to a book that has been
+   * brought back, counted in, lost or was never theirs, and every one of those
+   * is a sale the server will refuse. Returning null here meant "not blocked",
+   * which would have the screen offer the sale and the refusal arrive after the
+   * press: the exact shape this function exists to prevent.
+   *
+   * STAFF ARE UNCHANGED. They hold the whole raffle in their list, so a miss is
+   * a snapshot still loading rather than a book that is not theirs, and failing
+   * closed there would block the desk for the first seconds of every session.
+   */
+  if (!b) return state.user?.role === 'agent' ? 'not one of your books' : null
   if (['Settled', 'Lost', 'Void'].includes(b.status)) return `book is ${b.status.toLowerCase()}`
   if (b.status !== 'Out') return null
 

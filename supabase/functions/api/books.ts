@@ -20,6 +20,8 @@ import {
 // hand-over does. money.ts imports nothing from here, so this is a leaf edge and
 // not a cycle — deadlines.ts already depends on money.ts the same way.
 import { recordPayment } from './money.ts'
+// The approvals queue owns the row a seller answers; books.ts owns the books.
+import { openOffer } from './approvals.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -431,6 +433,162 @@ export async function returnCheck(p: Record<string, unknown>, user: AppUser, ctx
     // The one number an organiser is looking for.
     unaccounted: lines.reduce((n, l) => n + Math.max(0, l.shortBy ?? 0), 0),
   }
+}
+
+/* ============================ OFFERING BOOKS ============================
+ *
+ * issueBooks above puts books straight into a seller's hands. That is right in
+ * exactly one situation: the seller ASKED for them, an organiser granted the
+ * petition, and the grant runs issue_books. Consent is already on the record.
+ *
+ * When the organiser starts it, there is no consent yet, and until this existed
+ * there was never going to be any. Typing a name made that person liable for
+ * the money. So an organiser OFFERS, and the books sit reserved — on nobody's
+ * balance, invisible to every money view — until the seller accepts.
+ */
+
+/**
+ * ORGANISER: offer books to a seller. Reserves and moves nothing.
+ */
+export async function offerBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const agentId = String(p.agentId ?? '').trim()
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Who are you offering them to?')
+
+  const { data: agent } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name,phone').eq('agent_id', agentId).maybeSingle()
+  if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${agentId}".`, null, 404)
+
+  const idxs = await resolveBooks(ctx, p)
+  const liveBooks = await activeBookLimit(ctx)
+
+  // Checked before the write, so a range that is half unreleased offers nothing
+  // rather than offering the front of it.
+  const tooHigh = idxs.filter((i) => i > liveBooks)
+  if (tooHigh.length) {
+    throw new ApiError('BOOKS_NOT_AVAILABLE',
+      `${tooHigh.length} of ${idxs.length} books have not been released yet. Nothing was changed.`,
+      { blocked: tooHigh.map((i) => ({ book: i, status: 'not released yet', agentId: '' })) })
+  }
+
+  const dueAt = await defaultDueDate(ctx, p.dueDate)
+  const finalDeadline = await configDate(ctx, 'FINAL_DEADLINE')
+  if (finalDeadline && dueAt > finalDeadline) {
+    throw new ApiError('DUE_AFTER_FINAL',
+      `These books would be due back on ${dueAt}, after the final deadline of ` +
+      `${finalDeadline}. Give them an earlier date, or move the final deadline first.`,
+      { due: dueAt, finalDeadline })
+  }
+
+  const note = String(p.note ?? '')
+  const { data: reserved, error } = await ctx.supabaseAdmin.rpc('offer_books_tx', {
+    p_idxs: idxs, p_agent_id: agentId, p_due_at: dueAt, p_user: user.email, p_note: note,
+  })
+  if (error) {
+    // The SQL names the books that are not free; passed through rather than
+    // flattened to "some books are not available", because the organiser is
+    // standing at a shelf and needs to know which ones.
+    if (/BOOKS_NOT_FREE/.test(error.message)) {
+      throw new ApiError('BOOKS_NOT_AVAILABLE', error.message.replace(/^.*BOOKS_NOT_FREE: /, ''))
+    }
+    throw new ApiError('QUERY_FAILED', error.message)
+  }
+
+  const books = (reserved ?? []) as Array<{ idx: number; number: string }>
+  if (!books.length) throw new ApiError('NOTHING_TO_DO', 'None of those books were free to offer.')
+
+  /*
+   * THE BOOKS ARE RESERVED AND THE SELLER CANNOT YET ANSWER. If the queue row
+   * fails to write, that state is permanent until somebody notices — reserved
+   * stock with no way to accept it. So the reservation is undone rather than
+   * left, and the organiser sees the failure and tries again.
+   */
+  try {
+    const opened = await openOffer(ctx, user, agent, books, dueAt, note)
+    return { offered: books.length, books: books.map((b) => b.number), dueAt, ...opened }
+  } catch (e) {
+    await ctx.supabaseAdmin.rpc('release_offer_tx', {
+      p_idxs: books.map((b) => b.idx), p_user: user.email,
+      p_reason: 'Offer could not be sent to the seller',
+    })
+    throw e
+  }
+}
+
+/**
+ * SELLER: accept books offered to you. Reached only through the approvals
+ * queue, which has already checked that this offer is addressed to this person.
+ */
+export async function acceptOffer(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const agentId = String(p.agentId ?? '').trim()
+  const idxs = Array.isArray(p.idxs) ? p.idxs.map(Number).filter(Number.isFinite) : []
+  if (!idxs.length) throw new ApiError('MISSING_FIELD', 'Which books?')
+
+  /*
+   * THE SELLER IS TAKEN FROM THE STORED OFFER AND CHECKED AGAINST WHO IS HERE.
+   * decideApproval has already refused a row addressed to anybody else, and
+   * this is the second lock: the payload is what reaches the SQL, and a payload
+   * that disagreed with the caller would be an acceptance in somebody else's
+   * name. accept_offer_tx refuses it a third time, from the row itself.
+   */
+  if (user.agentId && agentId && user.agentId !== agentId) {
+    throw new ApiError('NOT_YOUR_DECISION', 'Those books were offered to somebody else.', null, 403)
+  }
+
+  const { data: taken, error } = await ctx.supabaseAdmin.rpc('accept_offer_tx', {
+    p_idxs: idxs, p_agent_id: agentId, p_user: user.email, p_note: String(p.note ?? ''),
+  })
+  if (error) {
+    if (/NOT_OFFERED_TO_YOU/.test(error.message)) {
+      throw new ApiError('NOT_OFFERED_TO_YOU',
+        'Those books are not waiting for you any more — the offer may have been ' +
+        'withdrawn or run out of time.')
+    }
+    throw new ApiError('QUERY_FAILED', error.message)
+  }
+
+  const books = (taken ?? []) as Array<{ idx: number; number: string }>
+  return { accepted: books.length, books: books.map((b) => b.number) }
+}
+
+/**
+ * ORGANISER: take an offer back before the seller has answered.
+ */
+export async function withdrawOffer(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const requestId = String(p.requestId ?? '').trim()
+  if (!requestId) throw new ApiError('MISSING_FIELD', 'Which offer?')
+
+  const { data: r } = await ctx.supabaseAdmin
+    .from('pending_approvals').select('*').eq('request_id', requestId).maybeSingle()
+  if (!r) throw new ApiError('NOT_FOUND', 'No offer with that id.', null, 404)
+  if (!r.decide_by_agent) throw new ApiError('NOTHING_TO_DO', 'That request is not an offer of books.')
+  if (r.status !== 'Pending') {
+    throw new ApiError('NOTHING_TO_DO', 'That offer has already been answered.')
+  }
+
+  const pay = (r.payload ?? {}) as { idxs?: unknown }
+  const idxs = Array.isArray(pay.idxs) ? pay.idxs.map(Number).filter(Number.isFinite) : []
+
+  // Books first. A cancelled row with the books still reserved is the failure
+  // that hides itself; reserved books with a Pending row can at least be
+  // withdrawn again.
+  const { error } = await ctx.supabaseAdmin.rpc('release_offer_tx', {
+    p_idxs: idxs, p_user: user.email, p_reason: 'The organiser withdrew the offer',
+  })
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  await ctx.supabaseAdmin.from('pending_approvals')
+    .update({ status: 'Cancelled', decided_by: user.email, decided_at: new Date().toISOString(),
+              note: String(p.note ?? '') })
+    .eq('request_id', requestId)
+
+  // Through this file's own audit helper rather than an inline literal. Both
+  // are correct; only one of them keeps `action: '…'` in books.ts meaning
+  // "a movement written into book_history", which is what tests/history.test.mjs
+  // reads this file for. An audit verb sitting in that shape made the screen's
+  // trail look like it was missing a translation it should never have had.
+  await audit(ctx, 'OFFER_WITHDRAWN',
+              { requestId, idxs, agentId: r.decide_by_agent }, user.email)
+  return { requestId, status: 'Cancelled', released: idxs.length }
 }
 
 export async function returnBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
@@ -1005,6 +1163,29 @@ export async function reportDraft(p: Record<string, unknown>, user: AppUser, ctx
     .from('books').select('idx,number,first_ticket,last_ticket,due_at,status')
     .eq('held_by_agent', agentId).eq('status', 'Out').order('idx')
 
+  /*
+   * WHAT THEY HAVE ALREADY REPORTED AND NOBODY HAS ACCEPTED.
+   *
+   * Sending a report changes nothing, so those books are still Out and still
+   * here — and a seller opening this screen a second time would be shown them
+   * exactly as before, with no sign they had already said anything. Two reports
+   * naming the same book is not dangerous (the second finds the work done and
+   * says so) but it is confusing at the moment somebody is trying to be
+   * careful, which is the wrong moment to confuse them.
+   */
+  const { data: waiting } = await ctx.supabaseAdmin
+    .from('pending_approvals').select('payload')
+    .eq('action', 'report_back').eq('status', 'Pending')
+  const alreadyReported = new Set<string>()
+  for (const r of (waiting ?? []) as Array<Record<string, unknown>>) {
+    const payload = (r.payload ?? {}) as Record<string, unknown>
+    if (String(payload.agentId ?? '') !== agentId) continue
+    for (const line of (Array.isArray(payload.books) ? payload.books : []) as Array<Record<string, unknown>>) {
+      const n = String(line.book ?? '').trim()
+      if (n) alreadyReported.add(n)
+    }
+  }
+
   const idxs = (held ?? []).map((b: { idx: number }) => Number(b.idx))
   const { data: tickets } = idxs.length
     ? await ctx.supabaseAdmin.from('tickets')
@@ -1041,6 +1222,7 @@ export async function reportDraft(p: Record<string, unknown>, user: AppUser, ctx
        * anybody else can carry it.
        */
       suggest: sold.length ? 'count' : 'return',
+      inReport: alreadyReported.has(String(b.number)),
     }
   })
 

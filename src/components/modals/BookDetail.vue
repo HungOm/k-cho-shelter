@@ -171,6 +171,14 @@ const showHistory = ref(false)
           {{ date(book.due) }}<template v-if="book.daysOverdue > 0"> — {{ book.daysOverdue }} days late</template>
         </b>
       </div>
+      <!-- A REPORT NOBODY HAS ACCEPTED YET. The book has not moved and will
+           not until somebody accepts, so every other row here is unchanged —
+           which is exactly why this one has to be said. Without it the seller
+           and the organiser are both looking at a book that shows no sign of
+           having been reported at all. -->
+      <div v-if="book.inReport" class="f">
+        <span>Reported</span><b style="color:var(--warn)">waiting to be accepted</b>
+      </div>
       <div class="f"><span>Sold</span><b>{{ book.sold }} of {{ state.cfg.ticketsPerBook }}</b></div>
       <div class="f"><span>Should have</span><b>{{ money(book.expected, currency) }}</b></div>
       <template v-if="book.countedIn">

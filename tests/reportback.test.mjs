@@ -399,5 +399,62 @@ console.log('9. the seller names the tickets that came back, rather than countin
      'they are tapped, which is the act the seller is already performing')
 }
 
+console.log('10. a book the organiser has accepted stops being the seller\'s')
+{
+  /*
+   * ASKED FOR IN THESE TERMS: a book the seller returned and the organiser
+   * accepted should no longer be seen by the seller; one that has been reported
+   * but NOT accepted should be marked, and still be theirs to sell from.
+   *
+   * held_by_agent deliberately survives a return and a settlement — settlement
+   * has to know whose money it is — so "the books in their hands", which is
+   * what this list claimed to be, actually meant "every book they have ever
+   * held". A seller watched an organiser count a book in and kept it on their
+   * own screen for the rest of the raffle.
+   */
+  const w = withSales()
+  // One accepted and counted in, one still out with her.
+  Object.assign(w.db.tables.books.find((b) => b.idx === 1), { status: 'Settled' })
+  Object.assign(w.db.tables.book_ledger_all.find((b) => b.idx === 1), { status: 'Settled' })
+
+  const seller = await call('list_books', {}, 'seller@x.com', w)
+  const mine = seller.body.data.books.map((b) => b.book)
+  ok(!mine.includes('Book-001'), `a counted-in book is gone from her list (${mine.join(', ')})`)
+  ok(mine.includes('Book-002'), 'and the one she is still holding is not')
+
+  const org = await call('list_books', {}, 'org@x.com', w)
+  ok(org.body.data.books.map((b) => b.book).includes('Book-001'),
+     'the organiser still sees it — the holder is how the money is chased')
+}
+
+console.log('11. a book in a report nobody has accepted is marked, and still hers')
+{
+  const w = withSales()
+  await call('request_approval', {
+    action: 'report_back',
+    payload: { books: [{ book: 'Book-002', action: 'return' }], amountHanded: 0 },
+  }, 'seller@x.com', w)
+
+  const seller = await call('list_books', {}, 'seller@x.com', w)
+  const two = seller.body.data.books.find((b) => b.book === 'Book-002')
+  const one = seller.body.data.books.find((b) => b.book === 'Book-001')
+  ok(two, 'the reported book is still on her list')
+  eq(two.status, 'Out', 'still out with her, because nothing happens until it is accepted')
+  ok(two.inReport, 'and marked as reported')
+  ok(one && !one.inReport, 'while a book she did not report is not')
+
+  // The organiser sees the same mark from the other side, which is the
+  // difference between counting a book in twice and knowing not to.
+  const org = await call('list_books', {}, 'org@x.com', w)
+  ok(org.body.data.books.find((b) => b.book === 'Book-002')?.inReport,
+     'the organiser sees there is a report waiting on it')
+
+  // And her own report screen says so rather than offering it as though it were
+  // the first time.
+  const draft = await call('report_draft', {}, 'seller@x.com', w)
+  ok(draft.body.data.books.find((b) => b.book === 'Book-002')?.inReport,
+     'her next draft says which books she has already reported')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
