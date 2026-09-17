@@ -271,6 +271,51 @@ console.log('9. a seller is shown their own payments and nobody else\'s')
 }
 
 
+console.log('a reversal lands in the same bucket the money came from')
+{
+  /*
+   * FOUND BY ANOTHER SESSION, MEASURING RATHER THAN READING.
+   *
+   * The contra row was always written as source 'hand'. agent_money sums cash
+   * as `filter (where source = 'hand')` and forgiveness as `filter (where
+   * source = 'writeoff')`, so an always-'hand' reversal only cancels when the
+   * thing it undoes was also 'hand'. Reversing a SETTLEMENT subtracted from a
+   * figure that row had never added to — measured at collected -280.00 and
+   * outstanding 290.00 after three RM100 settlement reversals.
+   *
+   * The rule in one line: a row undoing money must be the same KIND of money,
+   * or the sum it lands in is not the sum it came from.
+   */
+  const seeded = (source, amount, id) => world([{
+    id, agent_id: 'A001', amount, source, book_idx: source === 'settlement' ? 1 : null,
+    note: 'seeded', reverses: null, method: 'cash',
+    received_by: 'boss@x.com', received_at: new Date().toISOString(),
+  }])
+
+  const w = seeded('hand', 40, 900)
+  await M.reversePayment({ paymentId: 900, reason: 'recorded against the wrong seller' }, users.boss, w.ctx)
+  eq(w.table('payments').find((r) => r.reverses === 900)?.source, 'hand',
+     'undoing a hand-over is a hand-over the other way')
+
+  // The case that was wrong. A settlement row is already inside the book's own
+  // amount_paid, which is why the cash sum asks for 'hand' by name — so its
+  // reversal must not arrive as cash.
+  const w2 = seeded('settlement', 100, 901)
+  await M.reversePayment({ paymentId: 901, reason: 'the book was sold at the office' }, users.boss, w2.ctx)
+  const settleContra = w2.table('payments').find((r) => r.reverses === 901)
+  eq(settleContra?.source, 'settlement',
+     'undoing a settlement stays a settlement, so it cancels where it came from')
+  ok(settleContra?.source !== 'hand',
+     'and is NOT cash — that one line is what made a seller read as -280')
+
+  // A write-off is forgiveness, not money. Undoing one must not read as cash
+  // arriving, which is the same mistake pointed the other way.
+  const w3 = seeded('writeoff', 25, 902)
+  await M.reversePayment({ paymentId: 902, reason: 'she came back and paid' }, users.boss, w3.ctx)
+  eq(w3.table('payments').find((r) => r.reverses === 902)?.source, 'writeoff',
+     'undoing forgiveness is not the same as money arriving')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)

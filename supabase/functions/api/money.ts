@@ -467,7 +467,26 @@ export async function reversePayment(p: Record<string, unknown>, user: AppUser, 
     note: reason,
     book_idx: orig.book_idx ?? null,
     reverses: id,
-    source: 'hand',
+    /*
+     * THE CONTRA ROW BELONGS IN THE SAME BUCKET AS THE ROW IT UNDOES.
+     *
+     * This said 'hand', always. agent_money sums cash as
+     * `filter (where source = 'hand')` and forgiveness as
+     * `filter (where source = 'writeoff')`, so a reversal that is always 'hand'
+     * only cancels correctly when the thing it reverses was also 'hand':
+     *
+     *   reversing a hand payment    +X then -X, both counted    cancels
+     *   reversing a settlement      +X counted nowhere, -X in cash
+     *                               subtracts from a figure it never added to
+     *   reversing a write-off       +X in forgiven, -X in cash
+     *                               wrong in two directions at once
+     *
+     * Measured by another session, on the second case: a seller at collected
+     * -280.00 and outstanding 290.00 after three RM100 settlement reversals.
+     * The row undoing money has to be the same KIND of money, or the sum it
+     * lands in is not the sum it came from.
+     */
+    source: String(orig.source ?? 'hand'),
   })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
