@@ -1,5 +1,0 @@
-# clasp pushes from rootDir (apps_script/), but be explicit: nothing from the
-# web app, the tests or node_modules belongs in the Apps Script project.
-**/**
-!appsscript.json
-!*.gs

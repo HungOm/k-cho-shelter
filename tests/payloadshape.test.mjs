@@ -36,7 +36,6 @@ let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
 const client = read('../src/components/SellTicket.vue')
-const gs = read('../apps_script/Tickets.gs')
 const ts = read('../supabase/functions/api/tickets.ts')
 
 /** The payload object the client passes for a given action. */
@@ -52,34 +51,34 @@ function payloadFor(action) {
   return client.slice(open, i + 1)
 }
 
-console.log('both spellings are read from the backends, not retyped here')
-const gsAllowed = (gs.match(/var allowed = \[([^\]]*)\]/) || [null, ''])[1]
-  .match(/'([A-Za-z_]+)'/g)?.map(x => x.replace(/'/g, '')) ?? []
+console.log('the accepted field names are read from the handler, not retyped here')
 const tsAllowed = [...((ts.match(/const allowed = \{([\s\S]*?)\} as const/) || [null, ''])[1])
   .matchAll(/(\w+):\s*'[a-z_]+'/g)].map(m => m[1])
-ok(gsAllowed.includes('Buyer_Name'), `Apps Script reads the sheet spelling (${gsAllowed.length} fields)`)
-ok(tsAllowed.includes('buyerName'), `Supabase reads camelCase (${tsAllowed.length} fields)`)
+ok(tsAllowed.includes('buyerName'), `the handler names its fields (${tsAllowed.length} of them)`)
 
-console.log('a correction carries a spelling each backend recognises')
+console.log('a correction carries a spelling the handler recognises')
 {
+  /*
+   * THIS USED TO BE ABOUT TWO SPELLINGS. The client sent `Buyer_Name` AND
+   * `buyerName` on every correction, because the spreadsheet read the column
+   * heading and the Edge Function read camelCase, and a payload carrying only
+   * one of them was silently ignored by whichever backend it was not speaking
+   * to. With one backend there is one spelling to get right.
+   */
   const p = payloadFor('correct_ticket')
   ok(!!p, 'the correction payload was found')
-  for (const k of ['Buyer_Name', 'Buyer_Phone']) {
-    ok(gsAllowed.includes(k), `${k} is in Apps Script's allowed list`)
-    ok(p.includes(`${k}:`), `and the client sends it — without it, Apps Script ignores the fix`)
-  }
   for (const k of ['buyerName', 'buyerPhone']) {
-    ok(tsAllowed.includes(k), `${k} is in Supabase's allowed list`)
-    ok(p.includes(`${k}:`), `and the client sends it — without it, Supabase returns NOTHING_TO_DO`)
+    ok(tsAllowed.includes(k), `${k} is in the handler's allowed list`)
+    ok(p.includes(`${k}:`), `and the client sends it — without it, a correction returns NOTHING_TO_DO`)
   }
 }
 
-console.log('the port accepts the sheet spelling too, so the duplication can end')
-// When this passes, the Buyer_* keys can come out of the client — but only once
-// the port is DEPLOYED, not merely written. Removing them early puts corrections
-// back to silently doing nothing.
+console.log('the sheet spellings are still accepted, and that is deliberate')
+// They cost nothing to keep and they are the reason a correction sent by an old
+// cached bundle still lands. The client no longer sends them; the handler still
+// takes them.
 for (const k of ['Buyer_Name', 'Buyer_Phone', 'Buyer_Zone']) {
-  ok(tsAllowed.includes(k), `Supabase also accepts ${k}`)
+  ok(tsAllowed.includes(k), `the handler still accepts ${k}`)
 }
 
 console.log('and widening the input did not widen a hole')
@@ -92,12 +91,11 @@ console.log('and widening the input did not widen a hole')
      'the status guard reads both spellings, not just the one it was written for')
 }
 
-console.log('a sale needs one spelling, because both backends agree there')
+console.log('a sale sends one spelling and always did')
 {
   const p = payloadFor('sell_ticket')
   ok(/buyerName:/.test(p), 'the sale sends buyerName')
-  ok(/requireField_\(payload, 'buyerName'\)/.test(gs), 'which is what Apps Script asks for')
-  ok(!/Buyer_Name:/.test(p), 'and does not need the sheet spelling')
+  ok(!/Buyer_Name:/.test(p), 'and never needed the sheet spelling')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

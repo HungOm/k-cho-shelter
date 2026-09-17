@@ -31,11 +31,9 @@ import { readFileSync } from 'node:fs'
 import { cut } from './source.mjs'
 const read = p => readFileSync(new URL(p, import.meta.url), 'utf8')
 const src = read('../src/components/Money.vue')
-const gs = read('../apps_script/Reports.gs')
 const ts = read('../supabase/functions/api/reports.ts')
-// The Supabase side splits the decision out of the report; Apps Script keeps
-// both in Reports.gs. So "defined once per backend" is asserted against the
-// file that DEFINES it, and "used" against the report that calls it.
+// The decision is split out of the report, so "defined once" is asserted against
+// the file that DEFINES it and "used" against the report that calls it.
 const tsMoney = read('../supabase/functions/api/money.ts')
 
 let pass = 0, fail = 0
@@ -50,7 +48,6 @@ function literalKeys(text, open, close) {
 }
 
 const built = {
-  'Apps Script': literalKeys(gs, 'byAgent[r.agentId] = {', '};'),
   Supabase: literalKeys(ts, 'byAgent.get(key) ?? {', '\n    }')
 }
 // A parse that found nothing would pass every check below by vacuity.
@@ -102,25 +99,21 @@ console.log('the per-seller scoping the port dropped')
  * the first would restore the bug and reads, in a diff, like removing a
  * duplicate.
  */
-ok(/function totalsAgents_\(/.test(gs) && /function visibleAgents_\(/.test(gs),
-   'Apps Script answers both questions, each in one place')
 ok(/export function totalsAgents\(/.test(tsMoney) && /export function visibleAgents\(/.test(tsMoney),
-   'and so does Supabase — what one seller owes is not another seller\'s business')
+   'each question is answered in one place — what one seller owes is not another seller\'s business')
 ok(!/function (totalsAgents|visibleAgents)\(/.test(ts),
    'and the report does not keep a second opinion of its own')
-ok(/var only = totalsAgents_\(user\)/.test(gs) && /const only = totalsAgents\(user\)/.test(ts),
+ok(/const only = totalsAgents\(user\)/.test(ts),
    'and the outstanding report sums by whose money it is, not by whose name may be printed')
-ok(/only && only\.indexOf\(r\.agentId\) === -1/.test(gs) &&
-   /only && !only\.includes\(key\)/.test(ts),
-   'and both actually filter the rows by it')
+ok(/only && !only\.includes\(key\)/.test(ts),
+   'and actually filters the rows by it')
 // The table of debts is released by an allow-list on both sides. `!== 'totals'`
 // was correct until a fourth scope existed, and then handed a helper every
 // seller's line.
-ok(/function showsSellerNames_\(/.test(gs) && /export function showsSellerNames\(/.test(tsMoney),
-   'and who gets the ROWS is its own decision, spelled once per backend')
-ok(/showsSellerNames_\(scope\) \? list : \[\]/.test(gs) &&
-   /showsSellerNames\(scope\) \? rows : \[\]/.test(ts),
-   'and both reports release the table through it, rather than testing the scope by hand')
+ok(/export function showsSellerNames\(/.test(tsMoney),
+   'and who gets the ROWS is its own decision, spelled once')
+ok(/showsSellerNames\(scope\) \? rows : \[\]/.test(ts),
+   'and the report releases the table through it, rather than testing the scope by hand')
 
 console.log('the stopgap is gone, not merely unused')
 ok(!/normalise/.test(src), 'no second spelling of the wire shape in the client')

@@ -34,8 +34,20 @@ function proseOf(src) {
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
     .replace(/([^:'"])\/\/.*$/gm, '$1')
-  return [...code.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)]
-    .map(m => m[1] ?? m[2])
+  /*
+   * TEMPLATE LITERALS COUNT, and leaving them out was a hole the size of the
+   * backend. Every refusal in the Edge Function written with backticks — which
+   * is most of them, because most name a book or a seller — was invisible to
+   * both checks in this file: the banned-word scan never read them, and the
+   * assertion that SOMETHING names the top role could not see the one sentence
+   * that does.
+   *
+   * The `${…}` holes are replaced with a space rather than removed, so two
+   * words either side of a value do not run together into a third.
+   */
+  return [...code.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)]
+    .map(m => m[1] ?? m[2] ?? m[3])
+    .map(t => t.replace(/\$\{[^}]*\}/g, ' '))
 }
 
 /**
@@ -70,14 +82,20 @@ const TOP_WORD = RW.superadmin
 
 // ---------------------------------------------------------------- 1. server
 
-console.log('the Apps Script backend calls people what the app calls them')
+console.log('the backend calls people what the app calls them')
 {
-  const files = readdirSync(ROOT + 'apps_script').filter(f => f.endsWith('.gs'))
-  ok(files.length >= 9, `read the backend: ${files.length} .gs files`)
+  /*
+   * RE-POINTED AT THE EDGE FUNCTION. This scanned `apps_script/*.gs` — so the
+   * rule that a refusal must not speak in wire words was enforced on the
+   * backend being deleted and never on the one a volunteer actually reads
+   * messages from.
+   */
+  const files = readdirSync(ROOT + 'supabase/functions/api').filter(f => f.endsWith('.ts'))
+  ok(files.length >= 9, `read the backend: ${files.length} handler files`)
 
   const offences = []
   for (const f of files) {
-    for (const s of proseOf(read('apps_script/' + f))) {
+    for (const s of proseOf(read('supabase/functions/api/' + f))) {
       // Sheet and tab names are real objects in the spreadsheet and keep their
       // names; so do role values and the permission column headers.
       if (['admin', 'recorder', 'agent', 'viewer', 'superadmin', 'Agents', 'agents'].includes(s)) continue
@@ -94,11 +112,16 @@ console.log('and the top role is called what it is called now')
   // to the day before yesterday's.
   ok(/^[A-Z]/.test(TOP_WORD), `the top role has a word: ${TOP_WORD}`)
 
-  const surfaces = [
-    ['apps_script/Auth.gs', read('apps_script/Auth.gs')],
-    ['apps_script/People.gs', read('apps_script/People.gs')],
-    ['supabase/functions/api/gate.ts', read('supabase/functions/api/gate.ts')],
-  ]
+  /*
+   * THE WHOLE DIRECTORY, not two files by name. This listed Auth.gs and
+   * People.gs because that is where the Apps Script refusals lived; naming
+   * files couples the check to a layout when the claim is about a RULE, and
+   * this repository has been caught by that three times. The sentence that
+   * names the top role is in prizes.ts today and could be anywhere tomorrow.
+   */
+  const surfaces = readdirSync(ROOT + 'supabase/functions/api')
+    .filter(f => f.endsWith('.ts'))
+    .map(f => ['supabase/functions/api/' + f, read('supabase/functions/api/' + f)])
   for (const [name, src] of surfaces) {
     const prose = proseOf(src).join(' | ')
     ok(!/\bowner\b/i.test(prose), `${name} still says "owner" to somebody`)
@@ -110,23 +133,25 @@ console.log('and the top role is called what it is called now')
   ok(named, `no backend refusal names the ${TOP_WORD}`)
 }
 
-// ------------------------------------------------- 2. the two backends agree
+// ------------------------------------------------- 2. the refusal a volunteer reads
 
-console.log('both backends refuse in the same words')
+console.log('the refusal for the wrong role is written for a person')
 {
-  // The same refusal reaching a volunteer in two different wordings is how a
-  // support call turns into "well it says something else on mine".
-  const gs = read('apps_script/Tickets.gs')
+  /*
+   * This compared the INSUFFICIENT_ROLE sentence between the two backends,
+   * because the same refusal reaching a volunteer in two wordings is how a
+   * support call turns into "well it says something else on mine". There is one
+   * wording now, so what is checked is that it EXISTS and is a sentence rather
+   * than a role name — which is the half that was ever about the reader.
+   */
   const ts = read('supabase/functions/api/tickets.ts')
-  const pick = (src, code) => {
-    const m = src.match(new RegExp(`'${code}',\\s*'([^']+)'`))
-    return m ? m[1] : null
+  const m = ts.match(/'INSUFFICIENT_ROLE',\s*'([^']+)'/)
+  ok(!!m, 'there is an INSUFFICIENT_ROLE message')
+  const msg = m ? m[1] : ''
+  ok(msg.split(' ').length >= 4, `and it is a sentence, not a code: "${msg}"`)
+  for (const [re, what] of BANNED) {
+    ok(!re.test(msg), `and does not say ${what} to a volunteer: "${msg}"`)
   }
-  const a = pick(gs, 'INSUFFICIENT_ROLE')
-  const b = pick(ts, 'INSUFFICIENT_ROLE')
-  ok(a, 'Apps Script has an INSUFFICIENT_ROLE message to compare')
-  ok(b, 'the edge function has one too')
-  eq(b, a, 'the two backends word the same refusal identically')
 }
 
 // ------------------------------------------------------------- 3. Burmese

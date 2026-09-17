@@ -5,36 +5,18 @@ One-time setup, about 30 minutes. Do the steps in order — later ones depend on
 You need: a Google account, and the ability to create a GitHub repository.
 
 Anything in `<angle brackets>` is yours to fill in — `<you>` is your GitHub account, `<your-repo>`
-the repository you push to, `<your-domain>` the name you own if you set one up in Step 7b, and
+the repository you push to, `<your-domain>` the name you own if you set one up under **Using your own address**, and
 `<project-ref>` the reference Supabase gives your project. This guide names no account, repository
 or address of its own on purpose: a copied example that happens to work is how somebody ends up
 pointing their raffle at a stranger's deployment.
 
 ---
 
-## First: which backend?
+## Setting it up
 
-There are two, and the app talks to either. **Set up Supabase** unless you have a reason not to.
-
-| | Supabase | Apps Script + Sheet |
-|---|---|---|
-| Where the data lives | Postgres | a Google Sheet |
-| Readable and editable by hand | through the dashboard | yes, it is a spreadsheet |
-| Row-level security | yes | no — the Sheet is the permission boundary |
-| Ticket record that cannot be edited or erased | yes, append-only | no |
-| What a closed check-in round said | frozen per round | not kept |
-| Payments ledger, reversals | yes | book totals only |
-| Settlement takes a row lock | yes | no |
-| Two people for destructive changes | yes | yes |
-| Scheduled backup | weekly, encrypted, in GitHub Actions | nightly, to Drive |
-| Speed of a cold start | 57–82ms for reads | 1.1s floor, 9s cold |
-
-The second column is not a worse version of the first — it is a spreadsheet, and the guarantees in
-the rows above are constraints, triggers and policies that a spreadsheet has nowhere to put. What
-each one is and why it exists is in [supabase/AUDIT.md](supabase/AUDIT.md).
-
-**Setting up Supabase.** Steps 3 and 7 below are shared — the Google sign-in and putting the app
-online are the same either way — and the rest of the Supabase side is:
+Everything below builds one Supabase project: Postgres, one Edge Function in front of it, and a
+static page on GitHub Pages. Two of the steps below — **Creating the Google sign-in ID** and
+**Putting the app online** — are the only ones that touch anything outside it.
 
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough) and
    `supabase link --project-ref <ref>`.
@@ -47,10 +29,10 @@ online are the same either way — and the rest of the Supabase side is:
    table directly.
 4. `supabase functions deploy api`, and set its secrets — including `SUPER_ADMIN_EMAIL`, which is
    the one thing that must live outside the database.
-5. Enable Google under Authentication → Providers and paste in the client ID from step 3 below.
-6. Set the repository variables `VITE_BACKEND=supabase`, `VITE_SUPABASE_URL` and
-   `VITE_SUPABASE_PUBLISHABLE_KEY`, then push. **If `VITE_BACKEND` is unset the build falls back to
-   Apps Script**, which is the one way to end up quietly running the other backend.
+5. Enable Google under Authentication → Providers and paste in the client ID from **Creating the Google sign-in ID** below.
+6. Set the repository variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, then
+   push. The publishable key is meant to be public — row-level security is what stands between it
+   and the data, which is why `rls.sql` is not optional.
 7. Turn on the weekly backup — **[Backups](#backups-supabase)** below. The free plan takes none,
    and the job deliberately fails every week until it is set up.
 8. **Set the numbering, then make the tickets.** A new project starts with the 26 settings in the
@@ -72,8 +54,7 @@ online are the same either way — and the rest of the Supabase side is:
    `TOTAL_TICKETS` can always be raised later from the same screen. It can never be lowered.
 9. Check it: `./tests/run.sh`, and `./supabase/test-rls.sh` against a throwaway database.
 
-Everything from Step 1 to Step 9 below is the **Apps Script** path, and Step 3 (Google sign-in) and
-Step 7 (putting the app online) are needed for both.
+The numbered steps below expand on the two that need a Google account rather than a Supabase one.
 
 ---
 
@@ -259,44 +240,7 @@ you need it. A backup nobody has restored is a backup nobody has.
 
 ---
 
-## Step 1 — Create the spreadsheet *(Apps Script path)*
-
-1. Go to [sheets.new](https://sheets.new) to make a new blank spreadsheet.
-2. Name it after your raffle — **Raffled Tickets** will do.
-3. Leave it open — you need it in the next step.
-
-This spreadsheet is your database. Everything lives here. Nothing sensitive ever goes into GitHub.
-
----
-
-## Step 2 — Add the code
-
-1. In the spreadsheet: **Extensions → Apps Script**.
-2. Delete whatever is in `Code.gs`.
-3. For each file in the `apps_script/` folder of this project, create a matching file in the editor
-   (click **+** next to *Files* → *Script*) and paste the contents in:
-
-   | Create a file named | Paste in the contents of |
-   |---|---|
-   | `Config` | `apps_script/Config.gs` |
-   | `Auth` | `apps_script/Auth.gs` |
-   | `Api` | `apps_script/Api.gs` |
-   | `Tickets` | `apps_script/Tickets.gs` |
-   | `Books` | `apps_script/Books.gs` |
-   | `People` | `apps_script/People.gs` |
-   | `Reports` | `apps_script/Reports.gs` |
-   | `Setup` | `apps_script/Setup.gs` |
-
-   (The editor adds the `.gs` itself. You can delete the empty `Code.gs`.)
-
-4. Click the **save** icon. Name the project **Raffled API**.
-
-> Prefer the command line? `npm i -g @google/clasp`, then `clasp login`, `clasp clone <script id>`,
-> copy the files in, and `clasp push`. Much faster when you need to update the code later.
-
----
-
-## Step 3 — Create the Google sign-in ID
+## Creating the Google sign-in ID
 
 This is what lets people prove who they are. It is the fiddliest step; take it slowly.
 
@@ -308,14 +252,14 @@ This is what lets people prove who they are. It is the fiddliest step; take it s
      user support email: your email, developer contact: your email
    - Save and continue through the remaining steps. You do **not** need to add scopes.
    - On *Audience* / *Test users*, either add the Google accounts of your helpers as test users,
-     or click **Publish app** so anyone can sign in. (Access is controlled by the Users tab either
+     or click **Publish app** so anyone can sign in. (Access is controlled by `app_users` either
      way — publishing does not give anyone access to your data.)
 4. Search for **Credentials** → **+ Create Credentials** → **OAuth client ID**.
    - Application type: **Web application**
    - Name: `Raffled web`
    - Under **Authorized JavaScript origins**, click *Add URI* and add:
      - `https://<you>.github.io`
-     - `https://<your-domain>` — if you have set one up (Step 7b)
+     - `https://<your-domain>` — if you have set one up
      - `http://localhost:8000` — only if you want to test on your own computer
 
      Add the **origin only** — no path, no repository name, no trailing slash. Listing several is
@@ -341,9 +285,7 @@ protects it is the *Authorized JavaScript origins* list you just filled in: a si
 your client ID can only be issued to a page served from your own domain. A copy on somebody else's
 site is useless.
 
-### On Supabase, the same client ID has to be listed there too
-
-Skip this if you are running on Apps Script.
+### The same client ID has to be listed in Supabase too
 
 The app signs in with the Google button on its own page and trades the token Google returns for a
 Supabase session, rather than handing off to `<project>.supabase.co` and coming back. That is why
@@ -354,7 +296,7 @@ like to somebody being careful.
 Supabase will only accept a token minted for a client ID it has been told to trust:
 
 > Supabase dashboard → **Authentication** → **Providers** → **Google** → enable it, and paste the
-> client ID from step 3 into **Authorized Client IDs**.
+> client ID from above into **Authorized Client IDs**.
 
 Until that is done every sign-in is refused. The app says so in those words rather than reporting a
 rejected credential, because it is a setting somebody has to change and no amount of trying again at
@@ -365,86 +307,7 @@ to the address and the handoff comes back.
 
 ---
 
-## Step 4 — Tell the script who you are
-
-Back in the Apps Script editor:
-
-1. Click the **gear icon** (Project Settings) in the left sidebar.
-2. Scroll to **Script Properties** → **Add script property**. Add these two:
-
-   | Property | Value |
-   |---|---|
-   | `GOOGLE_CLIENT_ID` | the client ID you copied in step 3 |
-   | `SUPER_ADMIN_EMAIL` | your own Google email address |
-
-3. Click **Save script properties**.
-
-`SUPER_ADMIN_EMAIL` is the **System Admin** — one account, above every other, and the most important
-setting in this list.
-
-It is your way back in: that address is treated as an admin even before the Users tab exists, so a
-fresh deploy cannot lock you out. It is also the only account that can hand out or take away the
-admin role, disable another admin, export the entry list, void a sold ticket, record a winner, or
-read the audit log. Ordinary admins never see it — not the row, not the address.
-
-It is deliberately kept here, in Script Properties, rather than in the spreadsheet. Nothing inside
-the app can change it, and neither can anybody editing the Sheet by hand. Moving it to another
-person means coming back to this screen, which only the Google account that owns the script can open. Put your own
-address in it, not a shared mailbox.
-
-> Set up before this change? `ADMIN_BOOTSTRAP_EMAIL` is still read as the old name, so your
-> deployment keeps working. Rename it to `SUPER_ADMIN_EMAIL` when convenient.
-
----
-
-## Step 5 — Choose your ticket numbers, then build the sheet
-
-**Do this before you print any tickets.** Numbering locks once tickets exist.
-
-1. In the Apps Script editor, pick `setup` from the function dropdown at the top and press **Run**.
-2. The first time, Google asks for permission: **Review permissions** → choose your account →
-   **Advanced** → **Go to <the name you gave the project> (unsafe)** → **Allow**.
-   On this deployment that reads *K'Cho Shelter API*, because it was set up before the rename.
-   (The "unsafe" warning appears for every script that hasn't been through Google's paid review.
-   It is your own code, running in your own account.)
-3. Go back to the spreadsheet. You now have tabs: **Tickets, Books, Agents, Users, Winners,
-   Prizes, Prize_Types, Book_History, Config, _AuditLog**.
-
-   **Prize_Types** arrives with four rows — Cash, Donated goods, Voucher and Share of takings.
-   **Prizes** starts empty; you fill it in from the app, on **The draw** screen, rather than
-   by hand. Each row is one prize with a quantity, so ten consolation hampers are one row
-   saying ten, not ten rows.
-4. Open the **Config** tab and set your numbers:
-
-   | Key | Default | Change it to |
-   |---|---|---|
-   | `TICKET_PREFIX` | `KS-` | whatever goes before the number, or blank |
-   | `TICKET_START` | `1` | the first ticket number |
-   | `TICKET_DIGITS` | `5` | padding — `5` gives `KS-00001` |
-   | `TOTAL_TICKETS` | `10000` | how many tickets you are printing |
-   | `TICKETS_PER_BOOK` | `10` | how many in one physical book |
-   | `BOOK_PREFIX` / `BOOK_DIGITS` | `Book-` / `4` | `Book-0001` |
-   | `TICKET_PRICE` | `10` | price of one ticket |
-   | `CURRENCY` | `RM` | |
-   | `CHECK_IN_DATE` | one month out | the day every seller reports by, this round |
-   | `FINAL_DEADLINE` | blank | the day everything has to be back — set this |
-   | `CHECK_IN_EVERY_MONTHS` | `1` | how far apart the rounds are — `3` for quarterly |
-   | `REPORT_GRACE_DAYS` | `3` | days after the check-in before somebody is shown as late |
-   | `DEFAULT_DUE_DAYS` | `30` | fallback only, if neither date above is set |
-   | `EVENT_NAME`, `ORG_NAME`, `DRAW_DATE` | | shown on receipts |
-
-5. If you changed any of the numbering rows, run **`regenerate`** to rebuild the tickets and books.
-   Run **`showConfig`** to print what you have; check the first and last ticket numbers look right.
-
-> `regenerate` refuses to run once any ticket has been sold. At that point the printed tickets in
-> people's hands are the real record, and renumbering would disconnect every one of them.
-
-**Pick the padding for the raffle you might end up with, not the one you are printing.**
-`TICKET_DIGITS` and `BOOK_DIGITS` are the two settings that can never be changed afterwards — widening
-them renumbers every ticket already printed. The defaults above leave room to grow to 10,000 tickets
-in 1,000 books. If there is any chance of going further, set them higher now; it costs nothing.
-
-### The two deadlines
+## The two deadlines
 
 A raffle runs on two dates, and confusing them is how money goes missing.
 
@@ -498,7 +361,7 @@ A step landing a few days before the final deadline is **kept**, not tidied into
 one week is redundant; skipping that round leaves a gap longer than the monthly rhythm, and it is the
 last moment anybody finds out forty books are still out while there are days left to ring people.
 
-### Who has reported
+## Who has reported
 
 A book coming back and a seller reporting are not the same event, and only one of them can be seen in
 the data. Somebody can honestly say "sold six, here is the money, I am keeping the book for the rest"
@@ -544,7 +407,7 @@ the check-in date in with it, because nothing may sit later than the wall.
 blocker, alongside unsettled books and uncollected money. Drawing a winner early pulls from a pool
 sellers are still adding to, and it cannot be undone once a name has been read out.
 
-### Growing a raffle that is already running
+## Growing a raffle that is already running
 
 If the project expands after tickets are out, the System Admin can add more — `expand_tickets`. It only
 ever adds. A total can never be reduced, because every ticket above a lowered line would quietly stop
@@ -563,34 +426,11 @@ It refuses, with an explanation, when:
 | the new total is lower than, or the same as, the current one | tickets would stop existing |
 | the padding cannot express the new highest ticket or book number | widening it would renumber everything |
 | the last book is not full (e.g. 6,005 tickets in books of 10) | that book would have to be rewritten, not added to |
-| the sheet no longer matches the Config tab | new rows would land on the wrong lines |
-| the new total is above 50,000 | the ceiling for one spreadsheet |
+| the new total is above `TICKET_CEILING` | a slipped digit would generate ten times the tickets you meant |
 
 ---
 
-## Step 6 — Publish the API
-
-1. In the Apps Script editor: **Deploy → New deployment**.
-2. Click the gear next to *Select type* → **Web app**.
-3. Fill in:
-   - Description: `v1`
-   - **Execute as: Me**
-   - **Who has access: Anyone**
-4. **Deploy**, then copy the **Web app URL**. It ends in `/exec`.
-
-**"Anyone" sounds alarming — here is why it is correct.** It only means the address is reachable
-without a Google login *at the network level*. Every request still has to carry a valid Google
-sign-in token that the script checks against your Users tab; anything else is refused. This setting
-is also the only one that lets the web page talk to the script at all — with "Anyone with a Google
-account", the browser blocks the request before it ever arrives.
-
-Test it: paste the `/exec` URL into a browser tab. You should see
-`{"ok":true,"message":"Raffled API is running..."}` — or the name the deployed copy was
-written with, which on this deployment is still *K'Cho Shelter API*.
-
----
-
-## Step 7 — Put the app online
+## Putting the app online
 
 1. Create a new **GitHub repository** — `raffled`, or whatever you like. Public or private both work.
 2. The client ID sits near the top of the `<script>` block in `index.html`. Check it matches the
@@ -612,12 +452,12 @@ written with, which on this deployment is still *K'Cho Shelter API*.
 > older than the name the product goes by now, and that is fine. Renaming a repository moves every
 > clone's remote, and renaming a domain takes the app off the air until DNS catches up. Neither is
 > part of naming the product.
-5. Check that this address matches what you put in **Authorized JavaScript origins** in step 3.
+5. Check that this address matches what you put in **Authorized JavaScript origins** for the sign-in ID.
    The origin is just the `https://<you>.github.io` part — no repository name.
 
 ---
 
-## Step 7b — Use your own address (optional but recommended)
+## Using your own address (optional but recommended)
 
 An address of your own — `tickets.<your-domain>` — looks far more trustworthy to a ticket buyer
 than a `github.io` address, and it costs nothing. Skip this if you are happy with the GitHub address.
@@ -644,16 +484,13 @@ tick **Enforce HTTPS**. Usually minutes; occasionally a few hours.
 origins**, add `https://tickets.<your-domain>`. **Sign-in will not work until you do this.** Leave
 the `github.io` origin in the list as well, so nothing breaks while DNS spreads.
 
-Nothing changes in the Apps Script. The `/exec` address does not care which site calls it, and
-access is decided by the sign-in token, not the domain. No redeploy needed.
+Nothing changes in Supabase. The Edge Function does not care which site calls it, and access is
+decided by the signed-in session, not the domain. No redeploy needed.
 
-**Two things that catch people out:**
-
-- **The address gets shorter.** On GitHub it was `…github.io/<your-repo>/`; on your own subdomain
-  the app sits at the root, so it is just `https://tickets.<your-domain>/`.
-- **Everyone reconnects once.** The saved Apps Script link lives in the browser and is tied to the
-  old address, so it does not follow you across. Send everyone a fresh link (see *Sharing the app*
-  below) and they are set again in one tap.
+**One thing that catches people out.** The address gets shorter: on GitHub it was
+`…github.io/<your-repo>/`; on your own subdomain the app sits at the root, so it is just
+`https://tickets.<your-domain>/`. Everyone signs in again once, because a session is tied to the
+address it was created on.
 
 > If you later publish the OAuth consent screen with a homepage on `<your-domain>`, Google will
 > ask you to prove you own the domain via Search Console. Adding a JavaScript origin, as above,
@@ -661,28 +498,13 @@ access is decided by the sign-in token, not the domain. No redeploy needed.
 
 ---
 
-## Step 8 — First sign-in
+## First sign-in
 
 1. Open your Pages URL.
-2. It asks for the Apps Script link — paste the `/exec` URL from step 6.
-3. Sign in with the Google account you put in `ADMIN_BOOTSTRAP_EMAIL`.
+2. Sign in with the Google account you put in `SUPER_ADMIN_EMAIL`.
 
-You are in, as admin.
-
----
-
-## Step 9 — Turn on backups *(Apps Script path)*
-
-On Supabase this is **[Backups](#backups-supabase)** near the top instead — the weekly workflow,
-the key it seals with, and how to restore one.
-
-In the Apps Script editor, run **`installBackupTrigger`** once.
-
-A copy of the whole spreadsheet is saved to a Drive folder called *K'Cho Shelter Backups* — named
-before the rename and deliberately left alone, because the string names a folder that already has
-backups in it — every
-night, keeping the last 30. This spreadsheet becomes the only record of every ringgit collected.
-Do not skip this.
+You are in, as the System Admin. That account is the way back in before the allowlist has any rows,
+which is why it lives in a function secret rather than in the table it lets you edit.
 
 ---
 
@@ -705,20 +527,15 @@ To remove someone, set them to *Disable*. Their access stops within a minute —
 
 ### Sharing the app with helpers
 
-Send them one link with the API address in the `#` part:
+Send them the address. There is nothing to paste and nothing to configure — the app knows which
+project it belongs to because that was built into it.
 
 ```
-https://tickets.<your-domain>/#s=https://script.google.com/macros/s/.../exec
+https://tickets.<your-domain>/
 ```
 
-or, if you stayed on the GitHub address:
-
-```
-https://<you>.github.io/<your-repo>/#s=https://script.google.com/macros/s/.../exec
-```
-
-They tap it once and the app remembers. The `#` part is never sent to any web server, so it stays
-out of logs and browser history.
+They sign in with Google, and see whatever their row in `app_users` allows. Somebody with no row
+is told they are not on the list rather than shown an empty raffle.
 
 ---
 
@@ -762,16 +579,16 @@ as nonsense. There is nothing to fix in code; it is worth knowing before you are
 
 ## When something goes wrong
 
-**"Not on the access list"** — the signed-in Google address is not in the Users tab, or is disabled.
-Check the exact spelling. Personal Gmail and work Google accounts are different addresses.
+**"Not on the access list"** — the signed-in Google address has no row in `app_users`, or its
+status is not `active`. Check the exact spelling. Personal Gmail and work Google accounts are
+different addresses.
 
-**Nothing loads / network errors** — almost always the deployment settings. Re-check step 6:
-*Execute as: **Me***, *Who has access: **Anyone***. If you changed them, you must deploy a **new
-version** (Deploy → Manage deployments → pencil icon → Version: New version) — editing code alone
-does not update the live URL.
+**Nothing loads / network errors** — check the Edge Function is deployed and its secrets are set
+(`supabase functions list` shows the live version). A function deployed without `SUPER_ADMIN_EMAIL`
+refuses everybody, including you.
 
-**"Sign-in token was not issued for this app"** — the client ID in `index.html` does not match
-`GOOGLE_CLIENT_ID` in Script Properties, or your Pages address is missing from Authorized JavaScript
+**"Sign-in token was not issued for this app"** — the client ID the build was given does not match
+the one in Google Cloud, or your Pages address is missing from Authorized JavaScript
 origins. Both must match exactly.
 
 **Sign-in button does nothing** — the address you are visiting is not in Authorized JavaScript
@@ -782,37 +599,32 @@ apply changes.
 **Sign-in stopped working right after moving to the custom domain** — that is the same thing. The
 new origin has to be added in Google Cloud; the old one being there does not cover it.
 
-**It asks for the Apps Script link again after moving domains** — expected. That setting is stored
-per web address, so it does not carry across. Paste the `/exec` URL once, or open a `#s=` link.
-
 **Custom domain stuck on "certificate not yet available"** — usually Cloudflare proxying. Set the
 DNS record to **DNS only** (grey cloud), wait for GitHub to issue the certificate, then turn
 proxying back on if you want it. Also check the CNAME points at `<you>.github.io`, not at
 the repository.
 
-**It works for a while, then stops** — Google signs everyone out after an hour.
-The app now notices, keeps everything on screen, and shows "Your sign-in has expired"
-with a button. Tap it and carry on — nothing in progress is lost. If no button
-appears, reload the page.
+**It works for a while, then stops** — a Supabase session is refreshed in the background, so this
+is usually the browser having been asleep. Reload the page and sign in again; nothing recorded is
+lost, because nothing is held only in the page.
 
 **Two people saved at once** — the second gets *"changed by someone else while you were working
 on it"*. That is the system doing its job. Refresh and redo that one entry.
 
-**Something looks wrong in the data** — run **`verifyIntegrity`** in the Apps Script editor. It
-writes a `_Health` tab listing anything inconsistent: missing tickets, rows out of order, books held
-by an agent who is not on the list.
+**Something looks wrong in the data** — the database enforces most of it and will have refused
+rather than stored it; `supabase/AUDIT.md` lists what is guaranteed and what is not. For the rest,
+the audit log (Setup → What people have been doing) records every write with who made it.
 
 ---
 
 ## Rules worth remembering
 
-1. **Do not sort or reorder the Tickets or Books tabs by hand.** Use Google Sheets *filter views*
-   instead (Data → Create filter view) — they show you a sorted view without moving the underlying
-   rows. If rows do get shuffled, everything still works, just more slowly; `verifyIntegrity` will
-   tell you.
-2. **Never put a spreadsheet export in the repository.** It contains every buyer's phone number.
+1. **Numbering is locked once tickets exist**, on purpose, and the database enforces it rather than
+   asking you to remember. Get it right before printing.
+2. **Never put an export of the data in the repository.** It contains every buyer's phone number.
    `.gitignore` blocks `.csv` and `.xlsx`, but do not work around it.
-3. **Numbering is locked after setup** on purpose. Get it right before printing.
-4. The four green columns on the right of the *Books* tab (`Recorded_Sold` … `Variance_Amount`) are
-   formulas. Do not type over them — they are what shows you, live, whether the cash matches the
-   tickets.
+3. **`rls.sql` is not optional.** It is what makes the database default-deny. Without it the key
+   that ships in the browser can read every table directly.
+4. **Apply the SQL before deploying a function that needs it.** A function deployed ahead of its
+   migration answers every call with a database error, and the order is the only thing standing
+   between you and that.

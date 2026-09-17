@@ -83,7 +83,7 @@ console.log('the logo comes from config, and never falls back to a bundled one')
   ok(/small \|\| big/.test(code), 'a missing small file falls back to the large one')
 }
 
-console.log('both backends carry the logo to the client')
+console.log('the backend carries the logo to the client')
 {
   // Six field-shape divergences in this repository have been a key one end
   // builds and the other does not. A new config key is exactly that shape.
@@ -100,14 +100,24 @@ console.log('both backends carry the logo to the client')
   const ts = readdirSync(join(ROOT, 'supabase/functions/api'))
     .filter((f) => f.endsWith('.ts'))
     .map((f) => readFileSync(join(ROOT, 'supabase/functions/api', f), 'utf8')).join('\n')
-  const gs = readFileSync(join(ROOT, 'apps_script/Api.gs'), 'utf8')
-  for (const [name, src] of [['Supabase', ts], ['Apps Script', gs]]) {
-    ok(/orgLogo:/.test(src), `${name} sends orgLogo`)
-    ok(/orgLogoSmall:/.test(src), `${name} sends orgLogoSmall`)
-  }
+  ok(/orgLogo:/.test(ts), 'the backend sends orgLogo')
+  ok(/orgLogoSmall:/.test(ts), 'and orgLogoSmall')
 
-  const cfg = readFileSync(join(ROOT, 'apps_script/Config.gs'), 'utf8')
-  ok(/\['ORG_LOGO',\s*''/.test(cfg), 'and the Sheet seeds it BLANK, not with a logo')
+  /*
+   * SEEDED BLANK, and this is where that guarantee lives now.
+   *
+   * It was asserted against `CONFIG_DEFAULTS` in Config.gs, because the Apps
+   * Script setup routine was the only thing that ever created a config row. A
+   * Supabase project now seeds its own — see the WHAT A RAFFLE IS SET UP AS
+   * block — so the claim moved with the seeding.
+   *
+   * It is not decoration. A raffle that has not chosen a logo must show NO logo
+   * rather than whoever's happened to be in the default, and blank is the only
+   * value that means that.
+   */
+  const cfg = readFileSync(join(ROOT, 'supabase/schema.sql'), 'utf8')
+  ok(/\('ORG_LOGO',\s*''/.test(cfg), 'and a new project seeds it BLANK, not with a logo')
+  ok(/\('ORG_LOGO_SMALL',\s*''/.test(cfg), 'and the small one too')
 
   /*
    * The brand colour travels the same road, and a new config key is EXACTLY the
@@ -116,18 +126,14 @@ console.log('both backends carry the logo to the client')
    * satisfied by the first hit, which is how a half-applied change reports as
    * fine. That trap has now been hit three times in two days by two people.
    */
-  for (const [name, src] of [['Supabase', ts], ['Apps Script', gs]]) {
-    ok((src.match(/brandColor:/g) ?? []).length === 1, `${name} sends brandColor exactly once`)
-  }
-  ok(/\['BRAND_COLOR',\s*''/.test(cfg), 'and the Sheet seeds the colour blank too')
+  ok((ts.match(/brandColor:/g) ?? []).length === 1, 'the backend sends brandColor exactly once')
+  ok(/\('BRAND_COLOR',\s*''/.test(cfg), 'and a new project seeds the colour blank too')
 
   // Blank must be a real no-op. A key that arrives as undefined instead of ''
   // would make applyBrand strip the tokens anyway, but only by luck; the
   // contract is a string.
-  for (const [name, src] of [['Supabase', ts], ['Apps Script', gs]]) {
-    ok(/brandColor: cfg\.BRAND_COLOR (\?\?|\|\|) ''/.test(src),
-       `${name} sends '' rather than undefined when it is unset`)
-  }
+  ok(/brandColor: cfg\.BRAND_COLOR (\?\?|\|\|) ''/.test(ts),
+     "it sends '' rather than undefined when it is unset")
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -37,35 +37,47 @@ const backendJs = read('src/lib/backend.js')
 const deployYml = read('.github/workflows/deploy.yml')
 const backupYml = read('.github/workflows/backup.yml')
 
-console.log('1. the docs name the backends the code actually has')
-{
-  const declared = [...backendJs.matchAll(/export const BACKENDS = \[([^\]]+)\]/g)]
-    .flatMap((m) => [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]))
-  ok(declared.length === 2, `backend.js declares ${declared.length} backends`)
-  for (const b of declared) {
-    const word = b === 'appsscript' ? 'Apps Script' : 'Supabase'
-    ok(README.includes(word), `README names the ${word} backend`)
-    ok(SETUP.includes(word), `SETUP names the ${word} backend`)
-  }
-}
-
-console.log('2. the fallback default is stated, and stated correctly')
+console.log('1. the docs describe the backend the code actually has')
 {
   /*
-   * The trap this warns about: VITE_BACKEND unset means the build silently
-   * serves the OLDER backend. If somebody changes that fallback, the warning
-   * in both documents becomes a lie pointing the wrong way — and nothing else
-   * in the suite would notice, because the app works either way.
+   * WHAT THIS WAS. It read `BACKENDS` out of backend.js, asserted there were
+   * two, and required both README and SETUP to name each. That was the right
+   * check while the app could talk to either — a document that forgot to
+   * mention one left somebody running a backend they had never read about.
+   *
+   * There is one now, and the question turns around: the docs must not still be
+   * offering a choice that no longer exists. A setup guide describing a
+   * spreadsheet is worse than one that is merely out of date, because every
+   * step in it appears to work right up to the point where nothing does.
    */
-  const m = backendJs.match(/if \(!BACKENDS\.includes\(chosen\)\) chosen = '([^']+)'/)
-  ok(!!m, 'backend.js has a literal fallback')
-  const fallback = m?.[1]
-  ok(fallback === 'appsscript',
-    `the fallback is ${fallback} — if this changed on purpose, the warning in README and SETUP has to change with it`)
-  ok(/falls back to\s+\n?`?appsscript`?|falls back to\s+\n?Apps Script/.test(README),
-    'README says which backend an unset VITE_BACKEND lands on')
-  ok(/VITE_BACKEND` is unset the build falls back to/.test(SETUP),
-    'and SETUP warns about it where somebody is setting the variable')
+  ok(/Supabase/.test(README) && /Supabase/.test(SETUP), 'both name Supabase')
+  for (const [doc, name] of [[README, 'README'], [SETUP, 'SETUP']]) {
+    // In prose. A historical aside that says the backend WAS removed is fine;
+    // an instruction that says to set one up is not.
+    ok(!/Apps Script/.test(doc), `${name} no longer offers the Apps Script backend`)
+    ok(!/VITE_BACKEND/.test(doc), `${name} does not tell anybody to choose a backend`)
+  }
+  // supabase/MIGRATION.md is deliberately exempt: it is the record of the move
+  // off Sheets and the measurements that justified it, and it says so in its
+  // own first line.
+  ok(/Google Sheets/.test(MIGRATION), 'the migration record still says what was moved away from')
+}
+
+console.log('2. the setup guide builds a raffle that can actually be drawn')
+{
+  /*
+   * THE GAP THIS REPLACES. A Supabase project used to be installable only by
+   * building a spreadsheet first and migrating out of it, because `schema.sql`
+   * created empty tables and every config row in production had arrived through
+   * that migration. The guide has to name the step that closed it, or the
+   * reader ends up with a raffle whose tickets are numbered `1` to `10000`.
+   */
+  ok(/expand_tickets|Make more tickets/.test(SETUP),
+     'SETUP says how tickets get generated')
+  ok(/TICKET_PREFIX/.test(SETUP), 'and which settings decide what they are called')
+  ok(/before you generate|before you print/i.test(SETUP),
+     'and that numbering is chosen before it locks')
+  ok(/rls\.sql/.test(SETUP), 'and that row-level security is applied, not optional')
 }
 
 console.log('3. every build variable the setup guide names is one the workflows read')
@@ -142,16 +154,15 @@ console.log('7. the migration note no longer says nothing here is live')
   ok(/This happened/.test(MIGRATION), 'and it says which way the decision went')
 }
 
-console.log('8. the integrity work is attributed to the backend that has it')
+console.log('8. the integrity work is named where somebody deciding would look')
 {
-  // The claim that matters to somebody choosing: these are not features one
-  // backend has more of, they are constraints a spreadsheet has nowhere to put.
+  // These are not features: they are constraints, and the reason the raffle is
+  // on Postgres rather than in a spreadsheet at all.
   ok(/row-level security/i.test(README), 'README names row-level security')
   ok(/AUDIT\.md/.test(README) && /AUDIT\.md/.test(SETUP),
     'both point at the audit for what each guarantee is')
-  const table = SETUP.slice(SETUP.indexOf('## First: which backend?'), SETUP.indexOf('## Step 1'))
-  ok(/\|.*Supabase.*\|.*Sheet.*\|/.test(table), 'SETUP compares them side by side')
-  ok(/append-only|append only/i.test(table), 'including the ticket record that cannot be erased')
+  ok(/append-only|append only/i.test(README),
+    'including the ticket record that cannot be erased')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -91,10 +91,23 @@ function keysClientReads(action) {
 const constructedKeys = (src) => new Set(
   [...src.matchAll(/(?:^|[{,\s])([A-Za-z_]\w*)\s*:/gm)].map((m) => m[1]))
 
-const tsAll = ['index.ts', 'reports.ts', 'books.ts', 'tickets.ts', 'people.ts', 'deadlines.ts', 'approvals.ts']
+/*
+ * EVERY HANDLER FILE, READ FROM THE DIRECTORY rather than listed.
+ *
+ * It was a hand-written list of seven, and it was missing money.ts, config.ts,
+ * branding.ts, gate.ts and prizes.ts. Nothing noticed, because the check below
+ * used to forgive a key if EITHER backend built it and Apps Script kept its
+ * money handlers in Reports.gs — so `payments`, which Money.vue reads off
+ * list_payments, was satisfied by the spreadsheet while the file that actually
+ * builds it was never opened.
+ *
+ * A list of source files is exactly the thing that goes stale silently: adding
+ * prizes.ts did not break anything, it just quietly narrowed what this test
+ * could see.
+ */
+const tsAll = readdirSync(join(ROOT, 'supabase/functions/api'))
+  .filter((f) => f.endsWith('.ts'))
   .map((f) => read('supabase/functions/api/' + f)).join('\n')
-const gsAll = readdirSync(join(ROOT, 'apps_script')).filter((f) => f.endsWith('.gs'))
-  .map((f) => read('apps_script/' + f)).join('\n')
 
 /*
  * The actions whose responses a screen picks apart field by field. Listed
@@ -112,7 +125,6 @@ console.log('the instrument reads both ends')
 {
   ok(clientSrc.length > 50000, `client source loaded (${Math.round(clientSrc.length / 1000)}k)`)
   ok(tsAll.length > 50000, `Supabase handlers loaded (${Math.round(tsAll.length / 1000)}k)`)
-  ok(gsAll.length > 50000, `Apps Script handlers loaded (${Math.round(gsAll.length / 1000)}k)`)
   // A scanner that finds nothing reports nothing, and the two look identical.
   const found = REPORTS.filter((a) => keysClientReads(a).size > 0)
   ok(found.length >= 6, `it found keys for ${found.length} of ${REPORTS.length} actions`)
@@ -120,7 +132,16 @@ console.log('the instrument reads both ends')
 
 console.log('every key a screen reads is a key some handler builds')
 {
-  const both = new Set([...constructedKeys(tsAll), ...constructedKeys(gsAll)])
+  /*
+   * ONE SOURCE NOW, AND THIS GOT STRICTER RATHER THAN WEAKER.
+   *
+   * It was the UNION of the keys both backends constructed, so a key the client
+   * read was forgiven if EITHER backend built it — which meant a field only the
+   * spreadsheet produced satisfied a screen running on Supabase. With one
+   * backend there is nothing to forgive against: every key a screen reads has
+   * to be built by the handlers it actually talks to.
+   */
+  const both = constructedKeys(tsAll)
   const missing = []
   for (const action of REPORTS) {
     for (const k of keysClientReads(action)) {

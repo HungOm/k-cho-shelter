@@ -313,7 +313,13 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
     throw new ApiError('BAD_REQUEST', 'Role must be one of: ' + ASSIGNABLE_ROLES.join(', '))
   }
   if (role === 'agent' && !p.agentId) {
-    throw new ApiError('MISSING_FIELD', 'An agent user must be linked to an Agent_ID.')
+    // Said in the words the app uses everywhere else. "An agent user must be
+    // linked to an Agent_ID" names two wire values at somebody who is looking
+    // at a screen that says "seller" — and this is the sentence they get when
+    // the account will not save.
+    throw new ApiError('MISSING_FIELD',
+      'Choose which seller this account belongs to. A selling account has to be ' +
+      'tied to somebody on the sellers list, or their sales have nobody to credit.')
   }
 
   const { data: existing } = await ctx.supabaseAdmin

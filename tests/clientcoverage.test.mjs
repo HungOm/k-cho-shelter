@@ -54,21 +54,16 @@ for (const file of walk(join(here, '../src'))) {
 
 ok(calls.size > 25, `found the client's calls (${calls.size} distinct actions)`)
 
-// ---------- the two registries ----------
+// ---------- the registry ----------
 
-const gs = read('../apps_script/Api.gs')
 const ts = read('../supabase/functions/api/index.ts')
-
-const gsBody = gs.slice(gs.indexOf('function actionRegistry()'), gs.indexOf('function actionMeta'))
-const appsScript = new Set([...gsBody.matchAll(/^\s{4}([a-z_]+):\s*\{\s*fn:/gm)].map(m => m[1]))
 
 const tsStart = ts.indexOf('const REGISTRY')
 const tsBody = ts.slice(tsStart, ts.indexOf('\n}', tsStart))
 const supabase = new Map(
   [...tsBody.matchAll(/^\s{2}([a-z_]+):\s*\{(.*)$/gm)].map(m => [m[1], m[2]]))
 
-ok(appsScript.size > 25, `Apps Script registry parsed (${appsScript.size})`)
-ok(supabase.size > 25, `Supabase registry parsed (${supabase.size})`)
+ok(supabase.size > 25, `the registry parsed (${supabase.size} actions)`)
 
 /*
  * Calls the client makes that one backend deliberately does not answer.
@@ -82,62 +77,8 @@ const CLIENT_EXEMPT = new Map([
            'Supabase path skips the pre-flight rather than pinging it'],
 ])
 
-/*
- * Actions the client calls that the SPREADSHEET backend does not have.
- *
- * This direction had no exemption at all, because until the check-in report
- * there was no screen that called one. The rule it replaces — every action a
- * screen calls exists on both backends — was the right rule while the two
- * backends were meant to be interchangeable, and the migration has since
- * produced features that genuinely cannot exist in a spreadsheet: a table
- * nothing can rewrite, and columns the sheet has no place for.
- *
- * SO THE BAR MOVES RATHER THAN DROPS. A screen may call a Supabase-only action
- * if it is listed here with a reason AND the file that calls it knows which
- * backend it is on — asserted below, not promised. Without that second half
- * this list would be a way to make a screen break quietly on the other backend
- * by writing a sentence about it.
- */
-const SUPABASE_ONLY = new Map([
-  ['check_in_sheet',
-   'the stub and unsold counts it reconciles are columns the spreadsheet has no place for'],
-  ['round_snapshot',
-   'a closed round is frozen into an append-only table; a spreadsheet figure anybody ' +
-   'can retype is the one thing the snapshot exists to stop being true'],
-  ['set_check_in_date',
-   'a moved round is a row in check_in_dates, which the spreadsheet backend has no table for'],
-  ['set_sales_close',
-   'the cutoff is refused in the edge function, so a setter on the spreadsheet backend ' +
-   'would hand an organiser a closing date nothing there enforces'],
-  ['acknowledge_books',
-   'recording whose word a confirmation is — the seller\'s own tap against an organiser ' +
-   'typing that they saw a signed paper — needs a row nobody can edit afterwards, which a ' +
-   'sheet anybody with the link can open has nowhere to put'],
-  ['acknowledged_books',
-   'reads back what acknowledge_books writes, and there is nothing to read on a backend ' +
-   'that cannot write it'],
-])
 
-console.log('every action the client calls exists on Apps Script')
-for (const [action, where] of calls) {
-  if (appsScript.has(action)) { pass++; continue }
-  const why = SUPABASE_ONLY.get(action)
-  ok(!!why, `${action} — called from ${where[0]}, not in the Apps Script registry and no reason given`)
-}
-
-console.log('and a screen that calls one knows which backend it is on')
-for (const [action, why] of SUPABASE_ONLY) {
-  ok(why.length > 20, `${action}'s exemption gives an actual reason`)
-  ok(!appsScript.has(action), `${action} is exempt but Apps Script now has it — delete the exemption`)
-  for (const file of calls.get(action) ?? []) {
-    const src = read('../' + file)
-    ok(/isSupabase/.test(src),
-       `${file} calls ${action} and reads isSupabase — otherwise it shows a volunteer ` +
-       'an unknown-action error and reads as the app being broken')
-  }
-}
-
-console.log('…and on Supabase, unless the omission was written down')
+console.log('every action the client calls exists, unless the omission was written down')
 for (const [action, where] of calls) {
   if (supabase.has(action)) { pass++; continue }
   const why = CLIENT_EXEMPT.get(action)

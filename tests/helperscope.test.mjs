@@ -157,21 +157,17 @@ console.log('all three read paths carry the rule')
   const apiDir = new URL('../supabase/functions/api/', import.meta.url)
   const edge = readdirSync(apiDir).filter((f) => f.endsWith('.ts'))
     .map((f) => readFileSync(new URL(f, apiDir), 'utf8')).join('\n')
-  const gs = readFileSync(new URL('../apps_script/Tickets.gs', import.meta.url), 'utf8')
 
   ok(/when 'recorder' then\s+t\.recorded_by = auth_email\(\)/.test(rls),
      'tickets_readable narrows a recorder to their own entries')
   ok(/user\.role === 'recorder'[\s\S]{0,120}recorded_by/.test(edge),
      "the edge function's mask() narrows a recorder")
-  ok(/ROLES\.RECORDER[\s\S]{0,200}WIRE_RECORDED_BY/.test(gs),
-     'maskWireRow_ narrows a recorder')
 
   // Each path must blank the same four columns. A rule that hides the phone in
   // one place and the phone plus the note in another is two rules.
   for (const [name, src, fields] of [
     ['the view', rls, ['buyer_name', 'buyer_phone', 'buyer_zone', 'notes']],
     ['the edge function', edge, ['buyer_name', 'buyer_phone', 'buyer_zone', 'notes']],
-    ['Apps Script', gs, ['WIRE_NAME', 'WIRE_PHONE', 'WIRE_ZONE', 'WIRE_NOTES']],
   ]) {
     for (const f of fields) ok(src.includes(f), `${name} handles ${f}`)
   }

@@ -33,12 +33,27 @@
  * system does not send.
  */
 import { readFileSync } from 'node:fs'
+import { codeOf } from './source.mjs'
 import { renderScreen, visibleText } from './screen.mjs'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
-const read = (p) => readFileSync(new URL('../' + p, import.meta.url), 'utf8')
+/*
+ * CODE ONLY, for every scrape in this file.
+ *
+ * These assertions are about what a handler BUILDS and what a screen READS, and
+ * both files discuss those keys at length in prose — people.ts now carries a
+ * paragraph naming org, orgName, generatedAt, issuedAt, ticketCount and
+ * valueIfAllSold, because that is the bug it documents. A scrape over the raw
+ * text would find the vocabulary in the explanation of the vocabulary and
+ * report the payload as correct on the strength of a comment about it.
+ * 12ae61's point, and this file was one match away from it.
+ *
+ * It also makes the brace matching honest: a comment holding an unbalanced
+ * brace would otherwise end the return literal in the wrong place.
+ */
+const read = (p) => codeOf(readFileSync(new URL('../' + p, import.meta.url), 'utf8'))
 
 /** The body of one function, from its signature to the next top-level one. */
 function bodyOf(src, signature) {
@@ -84,26 +99,17 @@ function returnedKeys(body) {
 
 const supa = returnedKeys(bodyOf(read('supabase/functions/api/people.ts'),
   'export async function handoverReceipt'))
-const gs = returnedKeys(bodyOf(read('apps_script/Books.gs'),
-  'function handleHandoverReceipt'))
-
-console.log('the instrument found both payloads')
-{
-  ok(supa.size >= 8, `Supabase builds ${supa.size} keys`)
-  ok(gs.size >= 8, `Apps Script builds ${gs.size} keys`)
-}
-
-console.log('the two backends send the same receipt')
+console.log('the instrument found the payload')
 {
   /*
-   * Both directions. A key only Apps Script builds is the bug that was live;
-   * a key only Supabase builds is the same bug waiting for whoever switches
-   * back, and ?backend=appsscript is one URL away on any device.
+   * WHAT THIS USED TO DO was diff the handler's keys against the Apps Script
+   * one in both directions, because `handleHandoverReceipt` was the reference
+   * and a key only it built was the bug that had been live. With one backend
+   * there is no second opinion to diff against, so the reference moves to the
+   * SCREEN — which is what the receipt is for and is the half that could always
+   * catch a key going missing.
    */
-  const onlyGs = [...gs].filter((k) => !supa.has(k))
-  const onlySupa = [...supa].filter((k) => !gs.has(k))
-  ok(onlyGs.length === 0, `Supabase does not build: ${onlyGs.join(', ')}`)
-  ok(onlySupa.length === 0, `Apps Script does not build: ${onlySupa.join(', ')}`)
+  ok(supa.size >= 8, `the handler builds ${supa.size} keys`)
 }
 
 console.log('and the screen reads exactly those names')

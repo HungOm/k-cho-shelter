@@ -14,12 +14,9 @@ pay for and nothing to host.
 
 ## How it works
 
-The raffle runs on **Supabase** — Postgres, with one Edge Function in front of it. An older
-**Apps Script and Google Sheet** backend is still in the repository and still works; the app can
-talk to either, and which one it uses is a setting rather than a deploy.
+The raffle runs on **Supabase** — Postgres, with one Edge Function in front of it.
 
-**If you are setting this up today, use Supabase.** Everything the system does to keep its own
-figures honest lives there and only there: row-level security, the append-only ticket record and
+Everything the system does to keep its own figures honest lives in the database: row-level security, the append-only ticket record and
 round snapshots, the payments ledger, the settlement lock, and the two-person approval on
 destructive changes. A spreadsheet cannot enforce any of it — every one of those guarantees is a
 constraint, a trigger or a policy in Postgres. See [supabase/AUDIT.md](supabase/AUDIT.md) for what
@@ -42,36 +39,8 @@ filters and masks. That is the whole performance difference — 57–82ms direct
 through the function — and it is safe because the database, not the function, decides what a given
 person may see. Writes always go through the function, where the roles live.
 
-<details>
-<summary>The Apps Script backend, which is still here</summary>
-
-```
-Browser (GitHub Pages)          Apps Script web app                Google Sheet
-   │                                    │                                │
-   ├─ Sign in with Google ──► ID token   │                                │
-   ├─ POST {action, idToken} ───────────►├─ verify token with Google      │
-   │    Content-Type: text/plain        ├─ check email against Users tab ►│
-   │                                    ├─ check role + book ownership    │
-   │◄─────────── JSON ──────────────────┤                                │
-```
-
-It answers the same `{action, payload}` calls and returns the same envelope, which is what makes
-the choice a setting instead of a rewrite. What it does not have is the integrity work above: the
-Sheet stays readable and editable by hand, and that is exactly why a constraint cannot be enforced
-in it. `tests/portparity.test.mjs` compares the two gates over every action and role, so the pair
-cannot quietly drift apart.
-
-</details>
-
-**Choosing one.** `VITE_BACKEND=supabase | appsscript` at build time sets the default for
-everybody. `?backend=supabase` in the URL overrides it for one device and is remembered — which is
-how you try a backend on your own phone while every volunteer stays on the other one, with no
-deploy either way. With neither set the app falls back to `appsscript`, so a build that forgets the
-variable is pointed at the older system: set it.
-
 There are no passwords anywhere. Access is a Google sign-in checked against an allowlist — a row in
-`app_users` on Supabase, or the Users tab in the Sheet — and revoking a row takes effect within a
-minute.
+`app_users` — and revoking a row takes effect within a minute.
 
 ## Who's who
 
@@ -89,8 +58,8 @@ Most agents never open the app at all: they take paper books and hand back money
 | View only | Totals and reports, no phone numbers |
 
 There is exactly **one super admin**, and it is not a row in the database. It is an email address
-in `SUPER_ADMIN_EMAIL` — a function secret on Supabase, a Script Property on Apps Script — so it
-lives outside the store the app can write to. No admin can promote themselves, and neither can
+in `SUPER_ADMIN_EMAIL`, a secret on the Edge Function — so it lives outside the store the app can
+write to. No admin can promote themselves, and neither can
 anyone editing rows by hand. Six things are reserved to it:
 
 - granting or removing the **admin** role
@@ -140,8 +109,8 @@ matters — how many sold tickets have no name or phone. A sold ticket with no c
 details is a winner you cannot find.
 
 Plus: overdue chase list with one-tap WhatsApp reminders, seller statements, an audit
-log of every change, and a weekly backup — encrypted, on Supabase
-([`.github/workflows/backup.yml`](.github/workflows/backup.yml)); to Drive on Apps Script.
+log of every change, and a weekly encrypted backup
+([`.github/workflows/backup.yml`](.github/workflows/backup.yml)).
 
 ## Who can do what
 
@@ -222,7 +191,6 @@ src/
     SellTicket.vue      the two-mode sale flow
     ui/                 Sheet, Empty, Toasts, BookGrid, StatusPill, Progress
     modals/             IssueBooks, SettleBook, BookDetail, Receipt, forms
-apps_script/            the backend — see SETUP.md
   Config.gs  Auth.gs  Api.gs  Tickets.gs  Books.gs  People.gs  Reports.gs  Setup.gs
 tests/                  ./tests/run.sh
 .github/workflows/      builds and deploys on push to master
@@ -271,35 +239,31 @@ delete it a set period after the draw.
 ./tests/run.sh
 ```
 
-Plain Node, nothing to install. The Apps Script services are stood up in memory
-(`tests/mock.cjs`) so the real handlers run against a sheet-like store.
+Plain Node, nothing to install. The database is stood up in memory
+([`tests/fakedb.mjs`](tests/fakedb.mjs)) so the real handlers run against something
+shaped like Postgres, and the SQL itself is checked against a real one by
+[`supabase/test-functions.sh`](supabase/test-functions.sh), which needs Docker and is
+deliberately not part of `run.sh`.
 
 | Suite | Covers |
 |---|---|
-| `numbering` | ticket↔book arithmetic across configs, plus an exhaustive round-trip over all 6,000 tickets |
-| `settlement` | settlement maths, the one-source reconciliation rule, double-sell and stale-edit refusal, book ownership, reservations released on return, all-or-nothing bulk entry |
-| `superadmin` | the root account: cannot be disabled or demoted from inside the app, only it can create or change an organiser, hidden from ordinary admins |
-| `permissions` | the access table overrides defaults, super-admin-only features stay ungrantable, and the admin lock holds even if somebody edits the sheet by hand |
-| `approvals` | requests execute on approval under the requester's identity, re-checked; lapse after a day; cannot be self-approved |
-| `sellbook` | selling a whole book, and never overwriting a ticket already sold to somebody else |
-| `cache` | the server-side ticket table cache and its version keying |
+| `freshinstall` | a raffle built from nothing: the seeded config numbers the tickets the way the settings say |
+| `gate` | who may do what — every action against every role, and the two rules an override may never break |
+| `wireshape` | the ticket wire the client indexes into positionally, and the shapes the screens read |
+| `edgehandlers` | the handlers themselves, against an in-memory database |
+| `everyaction` | one real call of every action, because four bugs shipped through handlers nobody had ever invoked |
+| `integrity` | the guarantees the audit added: append-only history, round snapshots, the settlement lock |
+| `prizes` | the prize schedule and the awarding of it — seats, forfeits, and one ticket one prize |
+| `ledger`, `money`, `moneyowed`, `helpermoney` | what is owed, what came in, and whose money a person may see |
+| `checkin`, `deadlines`, `roundsnapshot` | the reporting rounds and the two dates the raffle runs on |
 | `search` | folding, spelling tolerance, phone formats, book ranges, match ordering |
 | `bookrange` | resolving a typed range locally — what is taken, by whom, what does not exist, where the next free run is |
-| `loadorder` | no `.gs` file reads another file's constants at load time (see below) |
+| `docs` | the half of the documentation that rots silently — named files, scripts and variables |
 | `emits` | every button actually does something (see below) |
 
-### Two suites that exist because of specific bugs
+That is a selection; `./tests/run.sh` runs 83 suites.
 
-**`loadorder`** — Apps Script concatenates `.gs` files in whatever order the project
-holds them, and nothing in the repo controls it. A top-level array built from another
-file's constants can silently become `[undefined, undefined]`: nothing throws, the
-lookup just stops matching, and settled books start counting toward the money total on
-the wrong figures. A wrong cash total with no error message. The rule is now enforced —
-a top-level initialiser may only use names declared above it in its own file.
-
-The same shape bit the browser code too: `store.js` read `localStorage` at module scope,
-so a browser with storage blocked would have failed the import and shown a blank page
-rather than a slow one.
+### A suite that exists because of a specific bug
 
 **`emits`**
 
@@ -326,7 +290,6 @@ than eight tabs that overflow, and plain words throughout — "With a seller", n
 mode for whoever is keying in a stack of stubs.
 
 **On the super admin.** One email, held outside the database the app writes to —
-a function secret on Supabase, a Script Property on Apps Script. Nothing in the
-app can grant it, and no admin can disable or demote it; that takes the Supabase
-dashboard or the Apps Script project, which only their owners can open. It is
-also the way back in before the allowlist has any rows.
+a secret on the Edge Function. Nothing in the app can grant it, and no admin can
+disable or demote it; that takes the Supabase dashboard, which only its owners
+can open. It is also the way back in before the allowlist has any rows.

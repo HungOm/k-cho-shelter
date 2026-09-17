@@ -218,10 +218,15 @@ console.log('a correction is accepted in either spelling')
    * a SALE, so selling worked and only correcting broke — which is why nobody
    * noticed.
    *
-   * My own tests hid it. whoholds.test.mjs called correctTicket({buyerName});
-   * whoholds.gs.cjs called handleCorrectTicket({Buyer_Name}). I wrote both, used
+   * My own tests hid it. This file called correctTicket({buyerName}); its Apps
+   * Script twin called handleCorrectTicket({Buyer_Name}). I wrote both, used
    * whichever spelling made each pass, and never compared them. A parity suite
    * with a different spelling on each side is not a parity suite.
+   *
+   * The twin is gone with that backend. Both spellings are still asserted here,
+   * against the one handler that remains, because the handler still accepts
+   * both and a correction that silently does nothing is the failure this
+   * catches.
    */
   const w = world()
   await sell(w, 'KS-00013', users.recorder)
@@ -284,28 +289,6 @@ console.log('widening the input did not widen what a helper may do')
   }
 }
 
-// ============ 5. the Apps Script side agrees ============
-console.log('the Sheet backend decides it the same way')
-{
-  // Not a re-test of the logic — a check that the two backends have not
-  // drifted, which is the failure this project keeps having.
-  const { execFileSync } = await import('node:child_process')
-  let out
-  try {
-    out = execFileSync(process.execPath, [new URL('./whoholds.gs.cjs', import.meta.url).pathname],
-      { encoding: 'utf8' })
-  } catch (e) {
-    // It exits non-zero on failure and the report is still on stdout. Without
-    // this the whole half vanishes at exactly the moment it has something to
-    // say, which is the worst possible time for a test to go quiet.
-    out = (e.stdout ?? '') + (e.stderr ?? '')
-  }
-  const lines = out.split('\n').filter((l) => l.startsWith('  FAIL'))
-  if (lines.length) process.stdout.write(lines.join('\n') + '\n')
-  const m = out.match(/(\d+) passed, (\d+) failed/)
-  ok(!!m, `the Apps Script half ran${m ? '' : ' — it crashed:\n' + out.slice(-800)}`)
-  if (m) { pass += Number(m[1]); fail += Number(m[2]) }
-}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()

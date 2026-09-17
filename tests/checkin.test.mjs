@@ -369,26 +369,6 @@ console.log('13. and when the side note fails, it fails LOUDLY and alone')
   ok(String(complaint?.details?.why ?? '').length > 0, 'and why it failed')
 }
 
-// ============ 4. the Apps Script side agrees ============
-
-console.log('14. the Sheet backend decides it the same way')
-{
-  const { execFileSync } = await import('node:child_process')
-  let out
-  try {
-    out = execFileSync(process.execPath, [new URL('./checkin.gs.cjs', import.meta.url).pathname],
-      { encoding: 'utf8' })
-  } catch (e) {
-    // It exits non-zero on failure and the report is still on stdout. Without
-    // this the whole half vanishes at exactly the moment it has something to say.
-    out = (e.stdout ?? '') + (e.stderr ?? '')
-  }
-  const lines = out.split('\n').filter((l) => l.startsWith('  FAIL'))
-  if (lines.length) process.stdout.write(lines.join('\n') + '\n')
-  const m = out.match(/(\d+) passed, (\d+) failed/)
-  ok(!!m, `the Apps Script half ran${m ? '' : ' — it crashed:\n' + out.slice(-900)}`)
-  if (m) { pass += Number(m[1]); fail += Number(m[2]) }
-}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()

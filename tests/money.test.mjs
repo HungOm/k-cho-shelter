@@ -270,24 +270,6 @@ console.log('9. a seller is shown their own payments and nobody else\'s')
   eq(desk.payments.length, 0, 'a helper holding nothing is shown nothing')
 }
 
-// ============ 5. the Apps Script side agrees ============
-
-console.log('10. the Sheet backend decides it the same way')
-{
-  const { execFileSync } = await import('node:child_process')
-  let out
-  try {
-    out = execFileSync(process.execPath, [new URL('./money.gs.cjs', import.meta.url).pathname],
-      { encoding: 'utf8' })
-  } catch (e) {
-    out = (e.stdout ?? '') + (e.stderr ?? '')
-  }
-  const lines = out.split('\n').filter((l) => l.startsWith('  FAIL'))
-  if (lines.length) process.stdout.write(lines.join('\n') + '\n')
-  const m = out.match(/(\d+) passed, (\d+) failed/)
-  ok(!!m, `the Apps Script half ran${m ? '' : ' — it crashed:\n' + out.slice(-900)}`)
-  if (m) { pass += Number(m[1]); fail += Number(m[2]) }
-}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
