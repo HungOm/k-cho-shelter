@@ -404,27 +404,48 @@ select
   a.name,
   a.phone,
   a.zone,
-  coalesce(l.books_out, 0)      as books_out,
-  coalesce(l.books_settled, 0)  as books_settled,
-  coalesce(l.overdue_books, 0)  as overdue_books,
-  coalesce(l.tickets_sold, 0)   as tickets_sold,
-  coalesce(l.expected, 0)       as expected,
-  coalesce(l.book_collected, 0) + coalesce(p.handed_in, 0) as collected,
-  coalesce(p.written_off, 0)    as written_off,
-  coalesce(l.expected, 0)
-    - coalesce(l.book_collected, 0) - coalesce(p.handed_in, 0)
-    - coalesce(p.written_off, 0) as outstanding
+  coalesce(cust.books_out, 0)       as books_out,
+  coalesce(cl.books_settled, 0)     as books_settled,
+  coalesce(cust.overdue_books, 0)   as overdue_books,
+  coalesce(op.tickets_sold, 0) + coalesce(cl.declared_sold, 0) as tickets_sold,
+  coalesce(op.expected, 0) + coalesce(cl.expected, 0)          as expected,
+  coalesce(cl.book_collected, 0) + coalesce(p.handed_in, 0)    as collected,
+  coalesce(p.written_off, 0)        as written_off,
+  coalesce(op.expected, 0) + coalesce(cl.expected, 0)
+    - coalesce(cl.book_collected, 0) - coalesce(p.handed_in, 0)
+    - coalesce(p.written_off, 0)    as outstanding
 from agents a
+-- paper: where the books are, and which are late
 left join lateral (
   select
-    count(*) filter (where bl.status = 'Out')          as books_out,
-    count(*) filter (where bl.status = 'Settled')      as books_settled,
-    count(*) filter (where bl.days_overdue > 0)        as overdue_books,
-    coalesce(sum(bl.counted_sold), 0)::integer         as tickets_sold,
-    coalesce(sum(bl.counted_expected), 0)::numeric(12,2)  as expected,
-    coalesce(sum(bl.counted_collected), 0)::numeric(12,2) as book_collected
+    count(*) filter (where bl.status = 'Out')   as books_out,
+    count(*) filter (where bl.days_overdue > 0) as overdue_books
   from book_ledger_all bl where bl.held_by_agent = a.agent_id
-) l on true
+) cust on true
+-- an OPEN book's truth is its ticket rows, and each one names its seller
+left join lateral (
+  select
+    count(*)::integer                                  as tickets_sold,
+    coalesce(sum(t.amount), 0)::numeric(12,2)          as expected
+  from tickets t
+  join books b on b.idx = t.book_idx
+  where t.sold_by_agent = a.agent_id
+    and t.status in ('Sold','Donated')
+    and t.idx <= active_tickets()
+    and not (b.status in ('Settled','Lost') and b.declared_sold is not null)
+) op on true
+-- a CLOSED book's truth is what was declared when it was counted in
+left join lateral (
+  select
+    count(*)                                           as books_settled,
+    coalesce(sum(b.declared_sold), 0)::integer         as declared_sold,
+    coalesce(sum(b.amount_due), 0)::numeric(12,2)      as expected,
+    coalesce(sum(b.amount_paid), 0)::numeric(12,2)     as book_collected
+  from books b
+  where b.settled_by_agent = a.agent_id
+    and b.status in ('Settled','Lost')
+    and b.declared_sold is not null
+) cl on true
 left join lateral (
   select
     coalesce(sum(amount) filter (where source = 'hand'), 0)::numeric(12,2)     as handed_in,
@@ -432,8 +453,6 @@ left join lateral (
   from payments where agent_id = a.agent_id
 ) p on true;
 
--- Server-only, like book_ledger_all: the browser reaches this through the
--- Edge Function or not at all.
 revoke all on agent_money from anon, authenticated;
 
 

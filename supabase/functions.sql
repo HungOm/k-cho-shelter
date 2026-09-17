@@ -541,7 +541,16 @@ begin
 
   update books set
     status = 'Settled', declared_sold = declared, amount_due = v_amount_due,
+    -- settled_by is the EMAIL of whoever typed it; settled_by_agent is the
+    -- SELLER the declared money belongs to. The organiser settles most books
+    -- and none of that money is theirs, so the two are different questions.
+    --
+    -- FROZEN HERE, ON PURPOSE. Once a book is counted in its figures are the
+    -- truth and must not move again because somebody later changed who holds
+    -- the paper. That is the whole reason the column exists rather than the
+    -- view reading held_by_agent a second time.
     amount_paid = p_amount_paid, settled_at = now(), settled_by = p_user,
+    settled_by_agent = b.held_by_agent,
     notes = coalesce(nullif(p_note,''), notes), modified_by = p_user
   where idx = b.idx;
 
@@ -613,13 +622,28 @@ end $$ language plpgsql;
 -- whole raffle and nothing is counted twice.
 
 create or replace function desk_money() returns jsonb as $$
+  with open_desk as (
+    select count(*) as sold,
+           coalesce(sum(t.amount), 0) as expected,
+           coalesce(sum(t.amount) filter (where t.payment_status = 'Paid'), 0) as collected
+    from tickets t
+    join books b on b.idx = t.book_idx
+    where t.sold_by_agent is null
+      and t.status in ('Sold','Donated')
+      and t.idx <= active_tickets()
+      and not (b.status in ('Settled','Lost') and b.declared_sold is not null)
+  ),
+  closed_desk as (
+    select coalesce(sum(b.declared_sold), 0) as sold,
+           coalesce(sum(b.amount_due), 0) as expected,
+           coalesce(sum(b.amount_paid), 0) as collected
+    from books b
+    where b.settled_by_agent is null
+      and b.status in ('Settled','Lost')
+      and b.declared_sold is not null
+  )
   select jsonb_build_object(
-    'sold',      count(*),
-    'expected',  coalesce(sum(t.amount), 0),
-    'collected', coalesce(sum(t.amount) filter (where t.payment_status = 'Paid'), 0))
-  from tickets t
-  join books b on b.idx = t.book_idx
-  where b.held_by_agent is null
-    and t.status in ('Sold','Donated')
-    and t.idx <= active_tickets();
+    'sold',      (select sold from open_desk) + (select sold from closed_desk),
+    'expected',  (select expected from open_desk) + (select expected from closed_desk),
+    'collected', (select collected from open_desk) + (select collected from closed_desk));
 $$ language sql stable;

@@ -133,6 +133,12 @@ create table if not exists books (
   amount_paid    numeric(12,2),
   settled_at     timestamptz,
   settled_by     text not null default '',
+  -- settled_by is the EMAIL of whoever typed the settlement. This is the
+  -- SELLER the declared money belongs to, which is a different question: the
+  -- organiser settles most books and none of that money is theirs. Frozen at
+  -- settle time so that changing who holds the paper afterwards cannot move
+  -- money that has already been accounted for.
+  settled_by_agent text,
   notes          text not null default '',
   version        integer not null default 1,
   modified_by    text not null default '',
@@ -175,6 +181,8 @@ create index if not exists tickets_missing_contact_idx on tickets (status)
   where status in ('Sold','Donated') and buyer_phone = '';
 
 -- A seller's statement, and "who still owes money".
+create index if not exists books_settled_by_agent_idx
+  on books (settled_by_agent) where settled_by_agent is not null;
 create index if not exists tickets_agent_idx on tickets (sold_by_agent)
   where sold_by_agent is not null;
 

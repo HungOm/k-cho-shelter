@@ -559,13 +559,29 @@ ok "$(P "select indisunique from pg_index where indexrelid = 'payments_settlemen
 # computed independently, and that the three quantities stay apart.
 echo "what each seller owes, added up by the database"
 P "insert into agents(agent_id,name,phone,zone) values ('AM','Money Seller','0125550000','KL') on conflict do nothing;
-   update books set status='Settled', held_by_agent='AM', declared_sold=8, amount_due=80, amount_paid=55 where idx=3;
+   -- settled_by_agent as well as held_by_agent, because that is the state
+   -- settle_book now leaves behind: custody says where the paper is, and the
+   -- frozen seller says whose the declared money is. A fixture that sets only
+   -- the first is simulating a settlement this system no longer performs.
+   update books set status='Settled', held_by_agent='AM', settled_by_agent='AM', declared_sold=8, amount_due=80, amount_paid=55 where idx=3;
    delete from payments where agent_id='AM';
    insert into payments(agent_id,amount,source,note) values ('AM',12.35,'hand','part'),('AM',7.65,'writeoff','gone away and not coming back')" >/dev/null
 ok "$(P "select expected||'/'||collected||'/'||written_off||'/'||outstanding from agent_money where agent_id='AM'")" "80.00/67.35/7.65/5.00" "expected, cash, forgiven and the gap"
+# WORKED OUT THE OTHER WAY, from the two regimes rather than from the view. It
+# used to sum book_ledger_all by held_by_agent, which was the old model's own
+# arithmetic written a second time — so it would have agreed with the view
+# however wrong they both were. Now it asks the question the model asks: an open
+# book's money is its ticket rows by seller, a closed book's is its declared
+# figure by whoever settled it.
 ok "$(P "select (select outstanding from agent_money where agent_id='AM') = (
-             (select coalesce(sum(counted_expected),0) from book_ledger_all where held_by_agent='AM')
-           - (select coalesce(sum(counted_collected),0) from book_ledger_all where held_by_agent='AM')
+             (select coalesce(sum(t.amount),0) from tickets t join books b on b.idx=t.book_idx
+               where t.sold_by_agent='AM' and t.status in ('Sold','Donated')
+                 and t.idx <= active_tickets()
+                 and not (b.status in ('Settled','Lost') and b.declared_sold is not null))
+           + (select coalesce(sum(b.amount_due),0) from books b
+               where b.settled_by_agent='AM' and b.status in ('Settled','Lost') and b.declared_sold is not null)
+           - (select coalesce(sum(b.amount_paid),0) from books b
+               where b.settled_by_agent='AM' and b.status in ('Settled','Lost') and b.declared_sold is not null)
            - (select coalesce(sum(amount),0) from payments where agent_id='AM' and source='hand')
            - (select coalesce(sum(amount),0) from payments where agent_id='AM' and source='writeoff'))")" "t" "and it equals the same sum worked out independently"
 ok "$(P "select pg_typeof(outstanding)::text from agent_money where agent_id='AM'")" "numeric" "in the type money is stored in, not a float"
@@ -884,6 +900,74 @@ ok "$r" "UPDATE 1" "and rewriting a locked key with its own value is not a chang
 # Everything else stays editable — the lock is about numbering, not about config.
 r=$(P "update config set value='Autumn Draw' where key='EVENT_NAME'")
 ok "$r" "UPDATE 1" "the keys that are not numbering are still editable"
+
+echo "money follows the sale, not whoever is holding the paper"
+# THE ASSERTION THAT WOULD HAVE CAUGHT IT ON DAY ONE, and did not exist.
+#
+# Every balance used to be keyed on books.held_by_agent, which is right only
+# while custody and selling are the same person. It failed four times in three
+# shapes: a book returned and then sold at the office charged the ex-holder, a
+# book sold at the desk and issued afterwards charged the new holder. RM400
+# across two volunteers, found by somebody looking at a screen.
+#
+# Measured as a DELTA rather than an absolute. By this point in the file A002
+# has sold tickets from several earlier cases, and an assertion on their total
+# would be pinning the sum of everything above it — which fails for reasons
+# that have nothing to do with what it is testing.
+a002_before=$(P "select coalesce(expected,0) from agent_money where agent_id='A002'")
+desk_before=$(P "select (desk_money()->>'expected')::numeric")
+# Every ticket in book 5, whatever it was before, becomes a desk sale: the book
+# stays with A002 and not one ringgit of it is theirs. Written over the whole
+# book rather than only the untouched rows, because by here some are already
+# sold and the interesting case is money MOVING off a holder, not merely never
+# landing on them.
+P "update tickets set status='Sold', sold_by_agent=null, amount=10,
+     payment_status='Paid', sold_at=now() where book_idx=5;" >/dev/null
+ok "$(P "select coalesce(expected,0) from agent_money where agent_id='A002'")" \
+   "$(P "select ( (select coalesce(sum(t.amount),0) from tickets t join books b on b.idx=t.book_idx
+                   where t.sold_by_agent='A002' and t.status in ('Sold','Donated')
+                     and t.idx <= active_tickets()
+                     and not (b.status in ('Settled','Lost') and b.declared_sold is not null))
+                 + (select coalesce(sum(b.amount_due),0) from books b
+                     where b.settled_by_agent='A002' and b.status in ('Settled','Lost')
+                       and b.declared_sold is not null) )::numeric(12,2)")" \
+   "a holder is charged for exactly what they sold and what they settled, and no more"
+ok "$(P "select ((desk_money()->>'expected')::numeric - $desk_before) >= 0")" "t" \
+   "and what nobody sold went to the desk rather than to whoever held the book"
+
+# EVERY RINGGIT IS ON EXACTLY ONE BALANCE: a seller's, or the desk's. Not both,
+# and not neither.
+#
+# COMPARED AGAINST THE TWO REGIMES, not against the raw ticket rows. A settled
+# book may declare more than its tickets show — that is what unidentified_sold
+# is for, money the seller counted with no number written down — so summing
+# tickets alone is not the total the raffle expects, and an identity written
+# that way fails on a perfectly correct database. The first version of this case
+# did exactly that and reported a 40.00 gap that was not a gap.
+#
+# Its limit, said plainly because a test nobody can see the edge of is worse
+# than none: this catches money on NO balance or on TWO. It cannot catch money
+# on the WRONG one — a ticket credited to the wrong seller still sums correctly.
+# What it closes is the class where a figure quietly stops being counted, which
+# is what a returned book's money did for six days.
+ok "$(P "select (select coalesce(sum(expected),0) from agent_money)
+           + (desk_money()->>'expected')::numeric
+           - ( (select coalesce(sum(t.amount),0) from tickets t join books b on b.idx=t.book_idx
+                 where t.status in ('Sold','Donated') and t.idx <= active_tickets()
+                   and not (b.status in ('Settled','Lost') and b.declared_sold is not null))
+             + (select coalesce(sum(b.amount_due),0) from books b
+                 where b.status in ('Settled','Lost') and b.declared_sold is not null) )")" "0.00" \
+   "every ringgit of sold ticket is on exactly one balance"
+
+# A SETTLED BOOK'S MONEY IS FROZEN TO WHOEVER SETTLED IT, so moving the paper
+# afterwards cannot move money already accounted for. This is the property the
+# new column exists for: without it the view would read custody a second time
+# and the bug would come back through a different door.
+settled_before=$(P "select coalesce(expected,0) from agent_money where agent_id='AM'")
+P "update books set held_by_agent=null where idx=3" >/dev/null
+ok "$(P "select coalesce(expected,0) from agent_money where agent_id='AM'")" "$settled_before" \
+   "clearing the holder of a settled book does not move its money"
+P "update books set held_by_agent='AM' where idx=3" >/dev/null
 
 echo
 echo "$pass passed, $fail failed"
