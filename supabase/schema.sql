@@ -336,6 +336,43 @@ end $$ language plpgsql;
 drop trigger if exists tickets_record_history on tickets;
 create trigger tickets_record_history after update on tickets
   for each row execute function record_ticket_history();
+
+-- APPEND ONLY, AND ENFORCED RATHER THAN INTENDED.
+--
+-- "Append only" was true of this table the way most things are true of a table
+-- nobody has written the code to change yet: no handler updates it, no handler
+-- deletes from it, and that held until somebody wrote the one that did. The
+-- trail is the only place an overwritten buyer, seller or amount still exists.
+-- Everything else about it is defended by the database — the trigger that fills
+-- it so no code path can forget, the FK that refuses to let a ticket be deleted
+-- out from under its own record — and its immutability was defended by nothing
+-- but the absence of a line of code.
+--
+-- So the same bar as the rest: a rule that does not care who is asking. The
+-- Edge Function holds the secret key and bypasses row security, which makes
+-- every grant and policy on this table irrelevant to the one caller that can
+-- actually reach it. A trigger is not irrelevant to it.
+--
+-- A CORRECTION IS NOT AN EDIT. Getting a name wrong in the trail is fixed by
+-- correcting the ticket, which appends the correction — the wrong name stays
+-- visible with the right one after it, which is the whole point of keeping a
+-- record rather than a current value.
+create or replace function ticket_history_append_only() returns trigger as $$
+begin
+  raise exception 'ticket_history is append only — % is not allowed on it', tg_op
+    using errcode = 'restrict_violation',
+          hint = 'Correct the ticket instead: the correction is appended to its record, and what was there before stays readable.';
+end $$ language plpgsql;
+
+drop trigger if exists ticket_history_no_change on ticket_history;
+create trigger ticket_history_no_change before update or delete on ticket_history
+  for each row execute function ticket_history_append_only();
+
+-- Truncate is not an update or a delete and would empty the table without
+-- firing either. Statement-level, because that is the only level it has.
+drop trigger if exists ticket_history_no_truncate on ticket_history;
+create trigger ticket_history_no_truncate before truncate on ticket_history
+  for each statement execute function ticket_history_append_only();
 -- ============ TICKET HISTORY (end) ============
 
 -- ============ ACCESS CONTROL ============
@@ -416,6 +453,60 @@ create table if not exists check_in_reports (
 );
 -- "Who has answered this round" is the question asked on every seller list.
 create index if not exists check_in_round_idx on check_in_reports (round);
+
+-- ============ WHAT THE SELLER PHYSICALLY BROUGHT (begin) ============
+-- A check-in used to record three numbers: books back, tickets sold, money
+-- paid. Two of those are the seller's word about things the system already
+-- counts for itself, so the report they produced could only ever restate what
+-- was already on the screen. What it could not say is the thing an organiser at
+-- a table actually needs to know: does the PAPER add up.
+--
+-- A seller carrying N books is carrying N × TICKETS_PER_BOOK physical tickets.
+-- At a checkpoint each one of them is in exactly one of four places: handed in
+-- as a stub, handed back unsold, still in a book they are keeping, or missing.
+-- The fourth is the only one that matters and it is the one nothing could see,
+-- because "sold" was a number somebody typed rather than a count of counterfoils
+-- against a count of tickets.
+--
+-- DECLARED, NOT COUNTED, and the distinction is the same one settlement makes.
+-- Nothing here moves money, closes a book or marks a ticket: it is what the
+-- person said while standing there. The value is in the DIFFERENCE between it
+-- and what the system recorded, which is why both are printed side by side.
+alter table check_in_reports add column if not exists stubs_returned  integer not null default 0 check (stubs_returned >= 0);
+alter table check_in_reports add column if not exists unsold_returned integer not null default 0 check (unsold_returned >= 0);
+-- How many books they were holding WHEN THEY REPORTED, which is not how many
+-- they hold now and not how many the round-closing snapshot will record. The
+-- paper arithmetic on a sheet printed in November has to use the number that
+-- was true in September, or a reprint quietly contradicts the copy somebody
+-- signed. Stored for the same reason round_snapshots stores `outstanding`
+-- rather than deriving it: a recomputation years later is not a record.
+alter table check_in_reports add column if not exists books_out_at    integer not null default 0 check (books_out_at >= 0);
+-- ============ WHAT THE SELLER PHYSICALLY BROUGHT (end) ============
+
+-- ============ A ROUND'S DATE, WHERE SOMEBODY MOVED IT (begin) ============
+-- The rounds are WORKED OUT from the anchor, the cadence and the wall, and that
+-- stays the default: nobody should have to type a calendar, and a seller can be
+-- told every one of their dates the day they take their books.
+--
+-- What the derivation cannot do is know that round 4 lands on Chinese New Year.
+-- So a row here OVERRIDES the derived date for one round and nothing else. An
+-- empty table is the behaviour this system has always had.
+--
+-- NOT APPEND ONLY, deliberately, unlike ticket_history and round_snapshots. A
+-- date somebody moved to the wrong day has to be movable again, and a table of
+-- corrections to a date nobody has reported by yet records nothing anybody will
+-- ever ask about. What IS kept is the audit row for each change: who moved a
+-- reporting date and when is a question about people, and it is answered where
+-- every other such question is answered.
+create table if not exists check_in_dates (
+  round    integer primary key check (round >= 1),
+  due_at   date not null,
+  note     text not null default '',
+  set_by   text not null default '',
+  set_at   timestamptz not null default now()
+);
+-- ============ A ROUND'S DATE, WHERE SOMEBODY MOVED IT (end) ============
+
 -- ============ WHAT THE ROUND SAID WHEN IT CLOSED ============
 
 create table if not exists round_snapshots (
@@ -562,6 +653,106 @@ create index if not exists payments_agent_idx on payments (agent_id);
 create index if not exists payments_settlement_book_idx
   on payments (book_idx) where source = 'settlement';
 
+-- ============ THE LEDGER IS APPEND ONLY, AND ENFORCED (begin) ============
+-- Every ringgit that moves is a row here: cash handed in, a settlement, a
+-- write-off. Nothing corrects a row — reverse_payment, a forced re-settle and a
+-- restock all write a NEW row with `reverses` pointing at the one it undoes, so
+-- a balance is a fold over the rows and the arithmetic that produced it is
+-- still on the table afterwards.
+--
+-- ALL OF THAT WAS A HABIT. No handler updates this table and no handler deletes
+-- from it, which held exactly as long as nobody wrote the one that did. The
+-- Edge Function holds the secret key and bypasses row security, so every grant
+-- and policy here is irrelevant to the only caller that can reach it; a trigger
+-- is not. The same bar as ticket_history and round_snapshots, and for a table
+-- whose whole value is that yesterday's figure cannot quietly become today's.
+--
+-- A CORRECTION IS NOT AN EDIT. Money taken by mistake is reversed, which leaves
+-- both the claim and the correction readable. An edit leaves a number that has
+-- always been right, which is indistinguishable from a number that is wrong.
+create or replace function payments_append_only() returns trigger as $$
+begin
+  raise exception 'payments is append only — % is not allowed on it', tg_op
+    using errcode = 'restrict_violation',
+          hint = 'Reverse the row instead: reverse_payment writes the opposite entry, and the pair is what makes the correction auditable.';
+end $$ language plpgsql;
+
+drop trigger if exists payments_no_change on payments;
+create trigger payments_no_change before update or delete on payments
+  for each row execute function payments_append_only();
+
+-- Truncate is neither, and would empty the ledger without firing either.
+drop trigger if exists payments_no_truncate on payments;
+create trigger payments_no_truncate before truncate on payments
+  for each statement execute function payments_append_only();
+
+-- ============ THE SAME MONEY, RECORDED TWICE, IS THE RETRY (begin) ============
+-- A ticket sale is idempotent by nature: the ticket number is the key, the
+-- version check makes a second attempt fail loudly, and the sell screen reads
+-- the rows back one by one. A PAYMENT has no natural key. RM60 for one seller
+-- twice is indistinguishable from two genuine RM60 payments — and the app tells
+-- the person exactly that, after a write times out: "Checking what went
+-- through". That sentence is shown at the precise moment somebody on bad signal
+-- in a car park taps the button again.
+--
+-- So the CALLER names the attempt. One key per attempt, reused on every retry
+-- of that same attempt, and a second insert with the same key is not an error —
+-- it returns the row the first one wrote. Refusing would be the same problem
+-- wearing a different hat: the volunteer cannot tell "already recorded" from
+-- "record it again", and one of those answers loses money.
+--
+-- NULL IS ALLOWED AND NOT UNIQUE, so nothing that already exists needs a key
+-- and no handler is forced to invent one. A partial index rather than a unique
+-- constraint, because in Postgres every NULL is distinct and a plain unique
+-- column would work here by accident rather than by design.
+alter table payments add column if not exists client_key text;
+create unique index if not exists payments_client_key_idx
+  on payments (client_key) where client_key is not null;
+-- ============ THE SAME MONEY, RECORDED TWICE (end) ============
+
+-- ============ ONE REQUEST, ONE THREAD THROUGH THE TABLES (begin) ============
+-- Counting a book in writes to four tables: the tickets it marks sold (through
+-- the history trigger), the payments row for the cash, the book's custody line,
+-- and the audit log. Nothing joined them. "Show me everything that happened when
+-- Book-0031 was counted in" was a join on TIME — the one key that is
+-- approximately right, always available, and wrong in exactly the cases worth
+-- investigating, where two people were working the same minute.
+--
+-- WHY IT IS READ FROM THE REQUEST AND NOT PASSED IN. The obvious version is a
+-- column threaded through every insert. There are about fifty of them, three are
+-- inside SQL functions this cannot reach without changing their signatures, and
+-- every one is a place a future handler can forget. PostgREST already puts the
+-- request's headers where SQL can see them, so the id arrives with the request
+-- and the DEFAULT picks it up — including inside settle_book, which is the one
+-- case that motivated the whole thing.
+--
+-- IT IS NOT A TRANSACTION ID. One API call makes several REST calls and each of
+-- those is its own transaction. This is the thread that lets somebody pull on
+-- any one row and find the rest of what happened with it.
+--
+-- BLANK IS A REAL ANSWER and the system works without it: a row written by hand
+-- in the SQL editor, by a migration, or by anything that is not an HTTP request
+-- gets ''. That is the truth about those rows rather than a failure.
+create or replace function request_id() returns text as $$
+  select coalesce(
+    nullif(current_setting('request.headers', true), '')::json ->> 'x-request-id',
+    '')
+$$ language sql stable set search_path = public;
+
+alter table payments     add column if not exists request_id text not null default request_id();
+alter table audit_log    add column if not exists request_id text not null default request_id();
+alter table book_history add column if not exists request_id text not null default request_id();
+-- On ticket_history the default does the work the trigger would otherwise have
+-- to be taught, which also means it covers the rows written from inside
+-- bulk_record_sales, sell_books and settle_book without those functions
+-- growing a parameter apiece.
+alter table ticket_history add column if not exists request_id text not null default request_id();
+
+-- "Everything that happened in that one action" is the only way this is read.
+create index if not exists audit_log_request_idx on audit_log (request_id) where request_id <> '';
+create index if not exists payments_request_idx on payments (request_id) where request_id <> '';
+-- ============ ONE REQUEST, ONE THREAD (end) ============
+
 /*
  * THAT INDEX USED TO BE UNIQUE, and it cannot be any more.
  *
@@ -594,7 +785,6 @@ create index if not exists payments_settlement_book_idx
  * it by name before creating this one; this file is only ever applied to an
  * empty database, where there is nothing to drop.
  */
-
 
 -- ============ THE ONE THING THE SHEET COULD NOT ENFORCE ============
 -- A ticket cannot be sold without a name and a usable phone number. In the
