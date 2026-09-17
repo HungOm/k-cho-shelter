@@ -100,43 +100,59 @@ console.log('5. the number on it is still the number, and the hover still reads'
      'and the legend carries both marks, because a mark nobody can look up is decoration')
 }
 
-console.log('5b. a sold-out book has its own colour, and still says where it is')
+console.log('5b. a sold-out book carries a mark you can see, and still says where it is')
 {
   /*
-   * THREE FORMS, BECAUSE THE FIRST TWO COULD NOT BE SEEN.
+   * FOUR FORMS, BECAUSE THE FIRST TWO COULD NOT BE SEEN AND THE THIRD COST TOO
+   * MUCH.
    *
-   * A 2px white ring, then a solid white band, then a colour. The organiser
-   * looked at the real grid and said "same colour" three times, and each time
-   * the class was present, the data was right and the mark was rendering. The
-   * design rule — colour means custody, a mark means sales — was defensible
-   * every time and the screen was unreadable every time. A rule that keeps
-   * being right while nobody can use the screen is not worth the screen.
+   * A 2px white ring, a solid white band, a violet fill, now a corner seal. The
+   * organiser looked at the real grid and said "same colour" three times, and
+   * each time the class was present, the data was right and the mark was
+   * rendering. Then the fill fixed it and broke something else: custody had to
+   * move to the edge, and a finished sold-out book drew violet-ringed-in-green.
+   * "Ugly" was the word, and it was a fault, not a taste — two full-strength
+   * hues on a 40px tile make the reader decode which half means what.
    *
-   * WHAT THIS PINS is not the hue, which is a taste somebody may change. It is
-   * the two properties that failed: the mark is a FILL rather than a hairline,
-   * and custody is still legible, because losing it would make a sold-out book
-   * that is out with a seller indistinguishable from one sitting on the desk —
-   * and telling those apart is the whole job of the chase list.
+   * WHAT THIS PINS is neither the hue nor the shape, both of which somebody may
+   * improve. It is the three properties whose loss caused a reported failure:
+   *
+   *   1. the mark has AREA — the ring and the band died as hairlines
+   *   2. custody keeps the FILL — losing it is what made the violet unreadable
+   *   3. the legend wears the same mark, or it teaches a thing that is not there
    */
   const css = read('src/components/ui/BookGrid.vue')
 
-  const fill = cut(css, '.bk.sold-all {', '}', 'the sold-out fill')
-  ok(/background:\s*#[0-9a-f]{3,8}/i.test(fill),
-     'a sold-out book has a colour of its own, not an outline drawn on another one')
-  for (const custody of ['#2563eb', '#c2700a', '#15803d', '#c62828', '#4b5563']) {
-    ok(!fill.includes(custody),
-       `and it is not ${custody}, which already means a place a book can be`)
-  }
+  const mark = cut(css, '.bk.sold-all::after', '}', 'the sold-out mark')
+  // Sized either literally or through --seal; the test reads whichever it is,
+  // because pinning the mechanism would fail the next time somebody tidies it.
+  const size = Number(mark.match(/width:\s*(\d+(?:\.\d+)?)px/)?.[1]
+                   ?? css.match(/--seal:\s*(\d+(?:\.\d+)?)px/)?.[1] ?? 0)
+  ok(size >= 10,
+     `the mark is ${size}px across — a hairline is what the ring and the band died of`)
+  ok(/background:/.test(mark),
+     'and it is a filled shape, not an outline drawn on another one')
 
-  const edge = cut(css, '.bk.sold-all::after', '}', 'the custody edge')
-  ok(/var\(--custody/.test(edge),
-     'custody survives as the edge — a sold-out book still says where it is')
+  // No such rule at all is the healthy case: nothing overrides the fill.
+  const fill = css.match(/\.bk\.sold-all\s*\{[^}]*\}/)?.[0] ?? ''
+  ok(!/background:\s*#[0-9a-f]{3,8}/i.test(fill),
+     'the tile keeps its custody colour — a sold-out book still says where it is')
+  for (const custody of ['#2563eb', '#c2700a', '#15803d', '#c62828', '#4b5563']) {
+    ok(css.includes(`--custody: ${custody}`) || css.includes(`--custody:${custody}`),
+       `${custody} is still a place a book can be`)
+  }
   ok(/--custody:/.test(cut(css, '.s-Out', '}', 'the out-state rule')),
-     'and each state names its colour once, so the edge borrows rather than repeats it')
+     'and each state names its colour once, so the mark can borrow it')
+
+  const some = cut(css, '.bk.sold-some::after', '}', 'the part-sold dot')
+  const someSize = Number(some.match(/width:\s*(\d+(?:\.\d+)?)px/)?.[1] || 0)
+  ok(someSize > 0 && someSize < size,
+     `part-sold stays the smaller mark (${someSize}px against ${size}px), so the two do not read alike`)
 
   // The key teaches the mark. If they diverge the legend is a lie.
-  const key = cut(css, '.keys i.sold-all {', '}', 'the legend swatch')
-  ok(/background:\s*#[0-9a-f]{3,8}/i.test(key), 'the legend swatch carries the same fill')
+  const key = cut(css, '.keys i.sold-all::after', '}', 'the legend swatch')
+  ok(/border-radius:\s*50%/.test(key) && /background:/.test(key),
+     'the legend wears the same seal, smaller, rather than a drawing of it')
 }
 
 console.log('6. and the form asks who sold it, rather than deciding')

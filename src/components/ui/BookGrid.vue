@@ -19,10 +19,11 @@
  * screen that cannot show a thing that happened is indistinguishable from a
  * screen that did not hear about it.
  *
- * So the colour stays custody and the SALES are a mark on top: a ring when
- * every ticket in the book has gone, a corner when some have. A second colour
- * scale would have meant choosing which of the two questions the grid answers,
- * and losing the other.
+ * So the colour stays custody and the SALES are a mark on top: a ticked seal in
+ * the corner when every ticket in the book has gone, a dot when some have. A
+ * second colour scale would have meant choosing which of the two questions the
+ * grid answers, and losing the other — which is exactly what happened the once
+ * it was tried, and why the mark came back to the corner.
  */
 import { computed } from 'vue'
 import { bookShort, BOOK_WORDS } from '../../lib/format.js'
@@ -93,6 +94,7 @@ function sales(b) {
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 5px; }
 .bk {
   aspect-ratio: 1; border: 0; border-radius: 7px; padding: 0;
+  position: relative; --seal: 13px;
   display: grid; place-items: center; cursor: pointer;
   font-size: .68rem; font-weight: 700; color: #fff;
   transition: transform .12s var(--ease), box-shadow .12s;
@@ -135,38 +137,85 @@ function sales(b) {
  * jittering when a sale lands.
  */
 /*
- * A COLOUR OF ITS OWN, asked for after a band and a ring both failed to read.
+ * A SEAL, WHICH IS THE FOURTH FORM THIS MARK HAS TAKEN.
  *
- * The rule here was that colour means custody and nothing else, and a seventh
- * hue would be read as a seventh place a book can be. That held until somebody
- * looking at the actual grid said "same colour" three times. A rule that keeps
- * being right while the screen keeps being unreadable is not worth the screen.
+ * A 2px white ring, a solid white band, then a violet fill. The first two could
+ * not be seen at all. The third could — and it cost the thing the grid is for:
+ * with the fill spent on sales, custody had to move to the edge, so a sold-out
+ * book that was finished drew as violet ringed in green. Somebody looking at
+ * the real screen called it ugly, and they were describing a real fault rather
+ * than a taste. Two full-strength hues on one 40px tile is a tile arguing with
+ * itself, and a reader has to decode which half means what before they can read
+ * either.
  *
- * So a sold-out book is violet, and CUSTODY IS NOT LOST — it becomes the edge,
- * borrowing --custody from whichever state rule applied above. Fill answers
- * "is there anything left in it", edge answers "where is it". Somebody chasing
- * books can still tell a sold-out book that is out with a seller from one
- * sitting on the desk, which is the distinction the old rule existed to keep.
+ * SO THE FILL GOES BACK TO CUSTODY, where it was always legible, and the sales
+ * become a seal in the corner: a white disc with a tick struck through it in
+ * the tile's own colour. That fixes what killed the ring and the band without
+ * spending the fill. Those failed because they were HAIRLINES — 2px of white a
+ * few pixels from a rounded edge, competing with the bold numeral in the middle
+ * of the tile. A disc is a solid shape with area, it sits in a corner where
+ * nothing else is drawn, and it carries its own contrast in both directions:
+ * white against every custody colour, and the custody colour again inside it.
+ *
+ * A tick is also the one mark nobody has to be taught. The legend still names
+ * it, but a reader who never looks at the legend will read a ticked book as a
+ * finished one, which is exactly what it is.
+ *
+ * Drawn INSIDE the square, never as a border — these sit in a dense grid and a
+ * border would shift every tile around it by a pixel, which reads as the grid
+ * jittering when a sale lands. Sized from --seal so the legend swatch can wear
+ * a smaller copy of the same mark rather than an approximation of it.
  */
-.bk.sold-all { background: #6d28d9; color: #fff; }
 .bk.sold-all::after {
-  content: ''; position: absolute; inset: 0; border-radius: 7px;
-  box-shadow: inset 0 0 0 3px var(--custody, transparent);
+  content: ''; position: absolute; right: 2px; bottom: 2px;
+  width: var(--seal); height: var(--seal); border-radius: 50%;
+  background: #fff;
+  /* A halo in the tile's own colour, because a book number is three digits and
+     the seal sits on top of the last one. Without it the disc and the numeral
+     collide and both get harder to read; with it the seal reads as sitting
+     above the tile and the digit passes behind. */
+  box-shadow: 0 0 0 2px var(--custody, #fff), 0 1px 2px rgba(0, 0, 0, .3);
+}
+/* The tick, centred on the disc and nudged down the way a handwritten one sits. */
+.bk.sold-all::before {
+  content: ''; position: absolute; z-index: 1;
+  right: calc(2px + var(--seal) / 2 - var(--seal) * .11);
+  bottom: calc(2px + var(--seal) / 2 - var(--seal) * .18);
+  width: calc(var(--seal) * .22); height: calc(var(--seal) * .44);
+  border: solid var(--custody, #333);
+  border-width: 0 calc(var(--seal) * .13) calc(var(--seal) * .13) 0;
+  transform: rotate(45deg);
 }
 .bk.sold-some::after {
   content: ''; position: absolute; right: 4px; bottom: 4px;
   width: 7px; height: 7px; border-radius: 50%;
   background: rgba(255, 255, 255, .9);
 }
-/* The office tile is pale and its own mark has to be dark to show at all. A
-   sold-out office book is violet like any other, so only the dot needs it. */
+/*
+ * The office tile is pale, so a white disc on it is invisible and a white dot
+ * is too. Both marks invert there — and they invert through TOKENS rather than
+ * a literal, because in dark mode --muted is the light one. A hardcoded white
+ * tick would be a white tick on a light grey disc after dusk.
+ */
+.bk.s-Unassigned.sold-all::after { background: var(--muted); box-shadow: 0 0 0 2px var(--surface-2); }
+.bk.s-Unassigned.sold-all::before { border-color: var(--surface-2); }
 .bk.s-Unassigned.sold-some::after { background: var(--muted); }
-.bk { position: relative; }
 
-.keys i.sold-all { position: relative; background: #6d28d9; }
+/* The legend wears the same mark, smaller, rather than a drawing of it. */
+.keys i.sold-all { position: relative; --seal: 9px; }
 .keys i.sold-all::after {
-  content: ''; position: absolute; inset: 0; border-radius: 4px;
-  box-shadow: inset 0 0 0 2px var(--custody, transparent);
+  content: ''; position: absolute; right: 1px; bottom: 1px;
+  width: var(--seal); height: var(--seal); border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+.keys i.sold-all::before {
+  content: ''; position: absolute; z-index: 1;
+  right: calc(1px + var(--seal) / 2 - var(--seal) * .11);
+  bottom: calc(1px + var(--seal) / 2 - var(--seal) * .18);
+  width: calc(var(--seal) * .22); height: calc(var(--seal) * .44);
+  border: solid var(--custody, #333);
+  border-width: 0 calc(var(--seal) * .14) calc(var(--seal) * .14) 0;
+  transform: rotate(45deg);
 }
 .keys i.sold-some { position: relative; }
 .keys i.sold-some::after {
