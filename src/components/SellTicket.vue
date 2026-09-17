@@ -13,7 +13,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { state, optimistic, toast, setSellMode, agentMap, whereIs, sellBlock, isSold } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
-import { money, STATUS_WORDS, plainName, isSellerContact } from '../lib/format.js'
+import { money, STATUS_WORDS, plainName, isSellerContact, COUNTED_IN_HELP } from '../lib/format.js'
 import Sheet from './ui/Sheet.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Bi from './ui/Bi.vue'
@@ -176,6 +176,29 @@ async function correct() {
     </div>
     <div v-else-if="!done && place?.status === 'Lost' && !isSold(t)" class="note bad">
       <b>This book was reported lost.</b> The ticket cannot win.
+    </div>
+    <!--
+      A COUNTED-IN BOOK DISABLED BOTH BUTTONS AND SAID NOTHING, which is the
+      trap the note above this one exists to prevent. The rule was right: a book
+      that has been counted in has had its money reconciled, and selling another
+      ticket out of it changes a total somebody already signed off. But it was
+      enforced in silence, and a rule nobody can see is indistinguishable from a
+      screen that is broken — which is exactly how it was reported.
+
+      The way out is named, because "you cannot do this" without "here is what
+      you can do" is half an answer: an organiser puts the book back on the
+      shelf, and the tickets that came back unsold go with it.
+    -->
+    <div v-else-if="!done && place?.status === 'Settled' && !isSold(t)" class="note bad">
+      <b>{{ t.book }} has already been
+        <span class="helpword" :title="COUNTED_IN_HELP">counted in</span>.</b>
+      Its money was settled when it came back, so nothing more can be sold from it —
+      including this ticket, which came back unsold. To sell it, an organiser puts
+      the book back on the shelf first: <b>Books → Put books back on the shelf</b>.
+      The tickets already sold from it keep their buyers.
+    </div>
+    <div v-else-if="!done && place?.status === 'Void' && !isSold(t)" class="note bad">
+      <b>{{ t.book }} was cancelled.</b> Nothing can be sold from it.
     </div>
 
     <!-- saved -->

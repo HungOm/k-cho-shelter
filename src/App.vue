@@ -440,6 +440,7 @@ function seeTickets(book) {
                    @sell-book="b => openModal('sellbook', b)"
                    @transfer="openModal('bookaction', 'transfer')"
                    @return-books="openModal('bookaction', 'return')"
+                   @restock="openModal('bookaction', 'restock')"
                    @mark="openModal('bookaction', 'mark')"
                    @record-winner="openModal('winner')"
                    @edit-prize="p => openModal('prize', p)"
