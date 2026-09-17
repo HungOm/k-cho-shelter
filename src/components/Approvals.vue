@@ -11,7 +11,7 @@
  */
 import { ref, onMounted, onActivated, computed, watch } from 'vue'
 import { api, toast, state, go, isAdmin } from '../lib/store.js'
-import { dateTime, relative } from '../lib/format.js'
+import { dateTime, relative, COUNTED_IN_HELP } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 
 const rows = ref(null)
@@ -140,6 +140,85 @@ const isRequest = (r) => r.detail?.runAs === 'approver'
  */
 const isReport = (r) => r.detail?.kind === 'report_back'
 
+/**
+ * WHAT WILL HAPPEN TO EACH BOOK, AND WHETHER IT STILL CAN.
+ *
+ * REPORTED FROM THE LIVE RAFFLE. A report was accepted and came back as a red
+ * toast: "Book-004 is returned already, Book-001 is settled already, Book-002 is
+ * settled already. Nothing was changed." The guard is right — a report is
+ * judged against the books as they are NOW, and half a checkpoint landing is
+ * worse than none — but the organiser learned it AFTER pressing, from an error,
+ * with a seller in front of them.
+ *
+ * Every fact in that sentence was already on this device. `state.books` carries
+ * the status of every book an organiser can see, and the request says which
+ * books it names. So the same check runs here, before the press, per book,
+ * beside what the report wants to do with it.
+ *
+ * A COURTESY, LIKE EVERY OTHER CLIENT-SIDE RULE HERE: the server decides, and
+ * it will still refuse a report that went stale in the seconds after this
+ * rendered. What this removes is the ordinary case — a book counted in by hand
+ * an hour ago, which nobody could see from this screen.
+ */
+function reportLines(r) {
+  const byNumber = new Map(state.books.map(b => [b.book, b]))
+  return (r.detail?.lines ?? []).map((l) => {
+    const book = byNumber.get(l.book)
+    const status = book?.status ?? ''
+    // Out with the seller who sent it is the only state either act can start
+    // from: bringing a book back and counting one in both begin with a book
+    // that is still in somebody's hands.
+    const ready = status === 'Out'
+    return {
+      ...l,
+      status,
+      ready,
+      why: ready ? ''
+        : !book ? 'not a book this screen can see'
+        : status === 'Settled' ? 'counted in already'
+        : status === 'Returned' ? 'brought back already'
+        : `is ${String(status).toLowerCase()} now`,
+    }
+  })
+}
+
+/** Nothing in it can still be carried out, so accepting would only fail. */
+const nothingLeft = (r) => {
+  const lines = reportLines(r)
+  return lines.length > 0 && lines.every(l => !l.ready)
+}
+
+/*
+ * WHAT THE APPROVER COUNTED, which is the point of them being there.
+ *
+ * The figures on a report are a CLAIM about two physical things: an envelope of
+ * cash and a bundle of stubs. The organiser counts both at the table — that is
+ * the whole of what a checkpoint is — and until now the only ways to record a
+ * count that differed from the claim were to accept a figure nobody counted or
+ * to send the seller away and ask them to type it again.
+ *
+ * Prefilled with what was claimed, so the ordinary case is one press. Both
+ * figures survive: what is typed here is recorded and reaches the ledger, and
+ * the claim stays on the request for ever, with the difference written onto the
+ * check-in in words.
+ */
+const counted = ref({})
+function countedFor(r) {
+  if (!counted.value[r.requestId]) {
+    counted.value[r.requestId] = {
+      amountHanded: String(r.detail?.handed ?? 0),
+      stubsReturned: String(r.detail?.stubsReturned ?? 0),
+    }
+  }
+  return counted.value[r.requestId]
+}
+const differs = (r) => {
+  const c = counted.value[r.requestId]
+  if (!c) return false
+  return Number(c.amountHanded) !== Number(r.detail?.handed ?? 0) ||
+         Number(c.stubsReturned) !== Number(r.detail?.stubsReturned ?? 0)
+}
+
 /** Whether this reader can decide THIS row, which is not one answer any more. */
 function canDecide(r) {
   return youDecide.value || (isAdmin.value && isRequest(r))
@@ -155,7 +234,10 @@ async function decide(r, approve) {
     // handler; which one is called is what decides whether this reader is
     // allowed to touch the row, and the server refuses the wrong pairing.
     const res = await api(youDecide.value ? 'decide_approval' : 'decide_book_request', {
-      requestId: r.requestId, approve, note: note.value.trim()
+      requestId: r.requestId, approve, note: note.value.trim(),
+      // Only for a report, and only what was actually counted. Every other kind
+      // of request runs exactly the payload that was stored, untouched.
+      ...(approve && isReport(r) ? { verified: counted.value[r.requestId] } : {})
     })
     note.value = ''
     if (res.executed) {
@@ -232,6 +314,38 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
         <p class="what">{{ r.summary }}</p>
         <p class="tiny muted">Asked by {{ r.requestedBy }} · {{ dateTime(r.requestedAt) }}</p>
 
+        <!-- BOOK BY BOOK, because that is how the paper is checked: a stack in
+             one hand, this list in the other. Each line says what accepting
+             would do to that book and whether it still can — the same check the
+             server makes, made here, before the press rather than as a red
+             error after it. -->
+        <template v-if="isReport(r) && reportLines(r).length">
+          <ul class="lines">
+            <li v-for="l in reportLines(r)" :key="l.book" :class="{ stale: !l.ready }">
+              <b>{{ l.book }}</b>
+              <span class="grow">
+                <template v-if="l.action === 'count'">
+                  <span class="helpword" :title="COUNTED_IN_HELP">count in</span> ·
+                  {{ l.unsold }} {{ l.unsold === 1 ? 'ticket' : 'tickets' }} unsold
+                </template>
+                <template v-else>coming back unsold</template>
+              </span>
+              <span v-if="!l.ready" class="pill bad">{{ l.why }}</span>
+            </li>
+          </ul>
+          <p v-if="reportLines(r).some(l => !l.ready)" class="note bad tiny">
+            <template v-if="nothingLeft(r)">
+              None of these books can be moved any more — this report has been
+              overtaken. Say no, and they can send a fresh one.
+            </template>
+            <template v-else>
+              Some of these books have moved since this was sent. Accepting will be
+              refused outright rather than doing the rest — say no, and they can send
+              it again.
+            </template>
+          </p>
+        </template>
+
         <!-- Look before you decide. A sentence alone turns an approval into a
              rubber stamp for anything bigger than a name. -->
         <button v-if="subjectOf(r)" class="btn sm ghost look" @click="lookAt(r)">
@@ -239,6 +353,27 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
         </button>
 
         <div v-if="canDecide(r)" class="mt">
+          <!-- WHAT YOU COUNTED, prefilled with what they claimed, so the
+               ordinary case is one press and a disagreement is one keystroke.
+               Both figures survive: this is what gets recorded, and what they
+               said stays on the request with the difference written onto the
+               check-in. -->
+          <div v-if="isReport(r)" class="row counted">
+            <div class="field grow">
+              <label :for="'m' + r.requestId">Money you counted</label>
+              <input :id="'m' + r.requestId" v-model="countedFor(r).amountHanded"
+                     type="number" inputmode="decimal" step="0.01">
+            </div>
+            <div class="field grow">
+              <label :for="'s' + r.requestId">Stubs you counted</label>
+              <input :id="'s' + r.requestId" v-model="countedFor(r).stubsReturned"
+                     type="number" inputmode="numeric" min="0">
+            </div>
+          </div>
+          <p v-if="isReport(r) && differs(r)" class="note warn tiny">
+            This is not what they said. What you counted is what gets recorded; their
+            figures stay on this request, and the difference goes on their check-in.
+          </p>
           <input v-model="note" placeholder="A note, if you want (optional)">
           <div class="row mt">
             <button class="btn danger grow" :disabled="busy === r.requestId" @click="decide(r, false)">
@@ -316,6 +451,16 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 
 <style scoped>
 .look { margin-top: 8px; }
+.lines { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.lines li {
+  display: flex; align-items: center; gap: 10px; font-size: .9rem;
+  padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface);
+  border: 1px solid var(--border);
+}
+.lines li.stale { opacity: .65; border-style: dashed; }
+.lines .grow { flex: 1; color: var(--muted); }
+.counted { gap: 10px; margin-bottom: 8px; }
+.note.tiny { font-size: .84rem; }
 .linkrow {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 8px 14px 12px; border-top: 1px solid var(--border);

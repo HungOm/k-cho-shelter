@@ -1166,13 +1166,46 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
   if (handed > 0) {
     payment = await recordPayment({
       agentId, amount: handed, method: String(p.method ?? 'cash'),
-      note: `Handed in with their report`,
+      // The ledger says which figure this is. A row that reads "handed in with
+      // their report" when the approver counted something else is the ledger
+      // quoting the claim as though it were the count.
+      note: (p.declared && Number((p.declared as Record<string, unknown>).amountHanded ?? 0) !== handed)
+        ? 'Counted at the table with their report'
+        : 'Handed in with their report',
     }, user, ctx)
   }
 
-  // 4. And the declaration itself — what the seller SAID, beside what the rows
-  //    now show. This is the half `return_check` compares, and the half nothing
-  //    else records.
+  /*
+   * 4. And the declaration itself — what the seller SAID, beside what the rows
+   *    now show. This is the half `return_check` compares, and the half nothing
+   *    else records.
+   *
+   *    WHERE THE APPROVER COUNTED SOMETHING DIFFERENT, BOTH FIGURES GO IN. The
+   *    numbers stored are what was actually counted, because those are what the
+   *    ledger and the chase list have to agree with. The claim is written into
+   *    the note in words — "they said 180, counted 170" — so the difference is
+   *    on the check-in sheet an organiser prints, rather than only in an audit
+   *    row nobody opens. `declared` is set by decideApproval and by nothing
+   *    else; a direct call has no such field and this whole branch is skipped.
+   */
+  const declared = (p.declared ?? null) as Record<string, unknown> | null
+  const gaps: string[] = []
+  if (declared) {
+    const said = (k: string) => Number(declared[k] ?? 0)
+    const got = (k: string) => Number(p[k] ?? 0) || 0
+    if (said('amountHanded') !== got('amountHanded')) {
+      gaps.push(`they said ${said('amountHanded')} and ${got('amountHanded')} was counted`)
+    }
+    if (said('stubsReturned') !== got('stubsReturned')) {
+      gaps.push(`they said ${said('stubsReturned')} stubs and ${got('stubsReturned')} were counted`)
+    }
+    if (said('unsoldReturned') !== got('unsoldReturned')) {
+      gaps.push(`they said ${said('unsoldReturned')} unsold and ${got('unsoldReturned')} came back`)
+    }
+  }
+  const note = [String(p.note ?? '').trim(), gaps.length ? `Counted at the table: ${gaps.join('; ')}.` : '']
+    .filter(Boolean).join(' ')
+
   await recordCheckIn({
     agentId,
     booksBack: coming.length,
@@ -1180,7 +1213,7 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
     amountPaid: handed,
     stubsReturned: Number(p.stubsReturned ?? 0) || 0,
     unsoldReturned: Number(p.unsoldReturned ?? 0) || 0,
-    note: String(p.note ?? '').trim(),
+    note,
   }, user, ctx)
 
   await audit(ctx, 'REPORT_BACK', {

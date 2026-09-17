@@ -358,6 +358,21 @@ function reportPetition(
     runAs: 'approver',
     agentId: user.agentId,
     books: all.length,
+    /*
+     * BOOK BY BOOK, because that is how the paper is checked.
+     *
+     * An organiser at the table has a stack of books and a bundle of stubs in
+     * front of them, and the question they are answering is "does this pile
+     * match this screen". Totals cannot answer it: two books counted in with
+     * eight stubs each and one with sixteen come to the same number and are not
+     * the same report. The per-book unsold count is the one figure that can be
+     * checked against a book by opening it.
+     */
+    lines: lines.map((l) => ({
+      book: String(l.book ?? ''),
+      action: String(l.action ?? ''),
+      unsold: Array.isArray(l.unsold) ? l.unsold.length : 0,
+    })).filter((l) => l.book && l.action !== 'keep'),
     counting, returning, handed,
     stubsReturned: Number(payload.stubsReturned ?? 0) || 0,
     unsoldReturned: Number(payload.unsoldReturned ?? 0) || 0,
@@ -663,8 +678,55 @@ export async function decideApproval(
       `${r.requested_by} can no longer do that, so their request cannot run.`)
   }
 
-  const result = await run(r.action, r.payload as Record<string, unknown>,
-                           petition ? user : requester)
+  /*
+   * WHAT THE APPROVER COUNTED, WHERE IT DIFFERS FROM WHAT WAS CLAIMED.
+   *
+   * "What was approved is what happens" is the rule this queue is built on, and
+   * it stays. It exists to stop a payload CHANGING BETWEEN BEING READ AND BEING
+   * RUN — a three-book restock approved and a two-hundred-book one firing. It
+   * was never meant to stop the approver from writing down what is in front of
+   * them.
+   *
+   * A seller's report is the one request where that matters, because it is the
+   * only one whose figures are a CLAIM about physical things: an envelope of
+   * cash and a bundle of stubs. The organiser counts both at the table. If the
+   * seller said 180 and the tin holds 170, the choice used to be to accept a
+   * figure nobody counted or to refuse a report that is right about everything
+   * else — and a seller standing there while it is sent back is how a
+   * checkpoint stops being reported at all.
+   *
+   * SO BOTH NUMBERS SURVIVE. What the approver counted is what is recorded and
+   * what reaches the ledger; what the seller claimed stays in this row's
+   * payload, for ever, and the handler writes the difference onto the check-in
+   * in words. Nothing is overwritten and nothing is silently averaged.
+   *
+   * NARROW ON PURPOSE. Three fields, on one action, and never the books: which
+   * books move is the part that must not change between reading and running,
+   * and it is the part the approver is looking at when they decide.
+   */
+  let payload = r.payload as Record<string, unknown>
+  const counted = (p.verified ?? null) as Record<string, unknown> | null
+  const adjusted: Record<string, unknown> = {}
+  if (petition && r.action === 'report_back' && counted && typeof counted === 'object') {
+    for (const field of ['amountHanded', 'stubsReturned', 'unsoldReturned']) {
+      const v = counted[field]
+      if (v === undefined || v === null || v === '') continue
+      const n = Number(v)
+      if (!Number.isFinite(n) || n < 0) {
+        throw new ApiError('BAD_REQUEST', `${field} has to be a number, or left alone.`)
+      }
+      if (n !== Number(payload[field] ?? 0)) adjusted[field] = n
+    }
+    if (Object.keys(adjusted).length) {
+      payload = { ...payload, ...adjusted, declared: {
+        amountHanded: Number(payload.amountHanded ?? 0),
+        stubsReturned: Number(payload.stubsReturned ?? 0),
+        unsoldReturned: Number(payload.unsoldReturned ?? 0),
+      } }
+    }
+  }
+
+  const result = await run(r.action, payload, petition ? user : requester)
 
   await ctx.supabaseAdmin.from('pending_approvals')
     .update({ status: 'Approved', decided_by: user.email, decided_at: new Date().toISOString(),
@@ -674,7 +736,11 @@ export async function decideApproval(
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'APPROVAL_APPROVED',
     details: { requestId, action: r.action, summary: r.summary,
-               requestedBy: r.requested_by, approvedBy: user.email },
+               requestedBy: r.requested_by, approvedBy: user.email,
+               // Named here as well as on the check-in, because this is the row
+               // somebody reads when they are asking what an approver did
+               // rather than what a seller said.
+               ...(Object.keys(adjusted).length ? { counted: adjusted } : {}) },
     email: user.email,
   })
 
