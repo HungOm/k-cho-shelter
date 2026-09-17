@@ -410,7 +410,25 @@ export const gettingStarted = computed(() => {
       detail: state.agents.length
         ? `${state.agents.length} ${state.agents.length === 1 ? 'person' : 'people'}`
         : 'The people who will carry books. No account needed.', action: 'add-agent' },
-    { done: (state.bookStats.Out || 0) > 0, title: 'Give out books',
+    /*
+     * EVER GIVEN OUT, not out at this moment — and the card says "once".
+     *
+     * This asked whether any book is Out RIGHT NOW. So a raffle well past
+     * setting up, with money collected and tickets sold, had the whole
+     * first-run card come back the moment every book happened to be at the
+     * desk: "Let's get started. Four things, once." to an organiser who had
+     * plainly started. Reported from a live screen showing RM190 collected and
+     * 19 tickets sold with the card above it.
+     *
+     * A book that has been out is in some status other than Unassigned —
+     * Out, Returned, Settled, Lost — and none of those go backwards on their
+     * own. Counted from the book totals the server already sends, so this asks
+     * "has this raffle ever handed a book to anybody", which is the question
+     * a once-only checklist is entitled to ask.
+     */
+    { done: Object.entries(state.bookStats || {})
+        .some(([status, n]) => status !== 'Unassigned' && Number(n) > 0),
+      title: 'Give out books',
       detail: state.bookStats.Out ? `${state.bookStats.Out} books out` : 'Hand books to a seller',
       action: 'issue' },
     { done: state.tickets.some(isSold),

@@ -27,7 +27,16 @@ watch(() => props.percent, animate)
     <div class="bar"><i :style="{ width }"></i></div>
     <div class="legend">
       <span>{{ (sold || 0).toLocaleString() }} of {{ (total || 0).toLocaleString() }} tickets sold</span>
-      <span>{{ Math.round(percent) }}% of {{ moneyShort(target, currency) }}</span>
+      <!--
+        "0% OF RM100,000" IS NOT A FACT WORTH LEADING WITH.
+        A raffle that has sold nineteen tickets on its first evening is going
+        fine, and the screen told the person running it they were at nought per
+        cent — a round zero beside a bar that looks empty, which reads as
+        failure rather than as early. The target still belongs here; the
+        percentage only starts saying something once there is something to say.
+      -->
+      <span v-if="percent >= 1">{{ Math.round(percent) }}% of {{ moneyShort(target, currency) }}</span>
+      <span v-else>target {{ moneyShort(target, currency) }}</span>
     </div>
   </div>
 </template>

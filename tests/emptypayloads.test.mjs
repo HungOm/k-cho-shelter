@@ -110,6 +110,39 @@ try {
      'including the step that reads bookStats.Out')
 } catch (err) { ok(false, `gettingStarted threw: ${err.message}`) }
 
+/*
+ * "FOUR THINGS, ONCE" HAS TO MEAN ONCE.
+ *
+ * The third step asked whether any book is Out RIGHT NOW, so a raffle well past
+ * setting up — money collected, tickets sold — had the entire first-run card
+ * come back the moment every book happened to be sitting at the desk. Reported
+ * from a live screen reading RM190 collected and 19 of 10,000 sold, with
+ * "Let's get started. Four things, once." above it.
+ *
+ * Books that have been out do not go back to Unassigned by themselves, so the
+ * honest question is whether this raffle has EVER handed one over.
+ */
+{
+  const setStats = (stats) => { store.state.bookStats = stats }
+  const stepDone = (title) => (store.gettingStarted.value || []).find(x => x.title === title)?.done
+
+  setStats({ Unassigned: 2000 })
+  ok(stepDone('Give out books') === false,
+     'a raffle that has never issued a book still has that step to do')
+
+  setStats({ Unassigned: 1998, Out: 2 })
+  ok(stepDone('Give out books') === true, 'books out counts as done')
+
+  // THE CASE THAT FAILED: everything handed back in. Nothing is Out, and the
+  // old test flipped the step — and the whole card — back to not-done.
+  setStats({ Unassigned: 1998, Returned: 2 })
+  ok(stepDone('Give out books') === true,
+     'and so does a book that went out and came back — the card does not return')
+
+  setStats({ Unassigned: 1999, Settled: 1 })
+  ok(stepDone('Give out books') === true, 'and one that was counted in')
+}
+
 try {
   ok(store.overview.value === null || typeof store.overview.value === 'object',
      'overview returned null rather than throwing')

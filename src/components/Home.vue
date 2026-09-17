@@ -73,24 +73,6 @@ function doStep(action) {
       <button class="btn sm" style="margin-top:10px" @click="refresh()">Try again</button>
     </div>
 
-    <!-- first run: what to do, in order -->
-    <div v-if="gettingStarted" class="card">
-      <h3><Bi text="Let's get started" /></h3>
-      <p class="muted small"><Bi text="Four things, once." /></p>
-      <div class="steps">
-        <div v-for="(s, i) in gettingStarted" :key="i"
-             :class="['step', { done: s.done, now: !s.done && gettingStarted.findIndex(x => !x.done) === i }]"
-             @click="!s.done && s.action && doStep(s.action)">
-          <span class="mark">{{ s.done ? '✓' : i + 1 }}</span>
-          <span class="grow">
-            <span class="t"><Bi :text="s.title" /></span>
-            <span class="d"><Bi :text="s.detail" /></span>
-          </span>
-          <span v-if="!s.done && s.action" class="chev">›</span>
-        </div>
-      </div>
-    </div>
-
     <!-- money raised -->
     <Progress v-if="overview" v-bind="{
       percent: overview.percent, collected: overview.collected, target: overview.target,
@@ -109,6 +91,30 @@ function doStep(action) {
             {{ state.loadProgress.total.toLocaleString() }} tickets
           </template>
           <template v-else>One moment…</template>
+        </div>
+      </div>
+    </div>
+
+    <!-- THEN what is left to set up, if anything.
+         This card used to be FIRST, above the money. On a raffle that is
+         running, the figure somebody opens the app to see was the second thing
+         on the screen and a setup list they had finished was the first. Setup
+         is a thing you do once; the money is the thing you check twenty times a
+         day. On a genuinely new raffle the hero above simply reads nought and
+         this sits directly under it, which is the same order and still right. -->
+    <div v-if="gettingStarted" class="card">
+      <h3><Bi text="Let's get started" /></h3>
+      <p class="muted small"><Bi text="Four things, once." /></p>
+      <div class="steps">
+        <div v-for="(s, i) in gettingStarted" :key="i"
+             :class="['step', { done: s.done, now: !s.done && gettingStarted.findIndex(x => !x.done) === i }]"
+             @click="!s.done && s.action && doStep(s.action)">
+          <span class="mark">{{ s.done ? '✓' : i + 1 }}</span>
+          <span class="grow">
+            <span class="t"><Bi :text="s.title" /></span>
+            <span class="d"><Bi :text="s.detail" /></span>
+          </span>
+          <span v-if="!s.done && s.action" class="chev">›</span>
         </div>
       </div>
     </div>
@@ -140,9 +146,13 @@ function doStep(action) {
         </button>
       </TransitionGroup>
     </template>
-    <div v-else-if="overview" class="note ok">
-      <b>All good.</b> Nothing needs your attention right now.
-    </div>
+    <!-- A LINE, NOT A BANNER. This was a full-width card spending the best
+         space on the screen saying that nothing had happened, wedged between
+         two blocks that were asking for action. Good news should be quiet and
+         findable, not loud and in the way. -->
+    <p v-else-if="overview" class="allgood">
+      <Icon name="check" :size="16" /><Bi text="All good — nothing needs you right now." />
+    </p>
 
     <!-- shortcuts -->
     <h3 class="sect"><Bi text="What do you want to do?" /></h3>
@@ -211,6 +221,15 @@ function doStep(action) {
 .step.done .t { color: var(--muted); }
 .step .d { display: block; font-size: .9rem; color: var(--muted); margin-top: 1px; }
 .step .chev { color: var(--muted); font-size: 1.4rem; line-height: 1; }
+
+/* THE ALL-CLEAR, as a line rather than a banner. Good news should be quiet:
+   it was a full-width card in the best space on the screen, saying that
+   nothing had happened, between two blocks asking for action. */
+.allgood {
+  display: flex; align-items: center; gap: 8px;
+  margin: 2px 0 18px; color: var(--ok);
+  font-size: .92rem; font-weight: 650;
+}
 
 /* attention rows */
 .attn {
