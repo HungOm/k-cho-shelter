@@ -2,7 +2,7 @@
 
 This is the runbook for `supabase/reset.sql`, which empties the live database
 and generates a fresh set of tickets. **There is no undo.** Read the whole page
-before you start; the steps are in this order for reasons, and step 3 is the
+before you start; the steps are in this order for reasons, and the backup in step 4 is the
 only thing standing between a mistake and the loss of the raffle's records.
 
 Nobody should run this because a screen looks wrong. It is for ending one
@@ -50,7 +50,27 @@ screen.
    nobody intends to commit. A reset while somebody is mid-change means the
    next deploy carries work that was never tested against an empty database.
 
-2. **The deploy is current, in this order.** Each step depends on the one
+2. **Count the migrations before you push them.**
+
+   ```
+   git ls-files supabase/migrations/ | wc -l    # what is in the repository
+   ls supabase/migrations/ | wc -l              # what db push will apply
+   ```
+
+   **These two numbers must match.** `supabase db push` reads the DIRECTORY, not
+   git, so anything sitting uncommitted in this shared working tree rides along
+   with whoever pushes next, whatever session wrote it and whatever state it is
+   in. On 17 September this happened twice: first three migrations reached
+   production while existing in no commit, and then — while this runbook was
+   being written — three more appeared on disk from work still in progress.
+
+   If they differ, run `comm -13` on the two lists to see which files are
+   unaccounted for, and find out who is writing them before you push anything.
+   The danger is not the extra migration. It is that a clean checkout of master
+   plus `db push` then builds a database MISSING objects the deployed function
+   assumes.
+
+3. **The deploy is current, in this order.** Each step depends on the one
    before it:
 
    ```
@@ -72,7 +92,7 @@ screen.
    from the shared working tree. Both of 17 September's production faults came
    through that door.
 
-3. **Take a backup and check you can read it.**
+4. **Take a backup and check you can read it.**
 
    ```
    ./supabase/backup.sh
@@ -86,7 +106,7 @@ screen.
    exist — which the reset leaves alone. If the schema is ever lost as well, the
    rebuild is `schema.sql`, `functions.sql`, `rls.sql`, then the CSVs.
 
-4. **Tell the volunteers.** Anybody with the app open will see their books
+5. **Tell the volunteers.** Anybody with the app open will see their books
    vanish. Better they hear it first.
 
 ## Running it
@@ -134,5 +154,5 @@ and the error names what it objected to. The two worth knowing:
 - *"an append-only trigger is still disabled"* — it refuses to commit a database
   whose ledger can be edited. Nothing was written; run it again.
 
-If it committed and the result is wrong, the backup from step 3 is the way
+If it committed and the result is wrong, the backup from step 4 is the way
 back — restore the CSVs into the existing tables.
