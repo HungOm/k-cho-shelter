@@ -29,6 +29,9 @@ function setup() {
   createSheet_(SHEET.AGENTS, COLS.AGENTS, '#b45309');
   createSheet_(SHEET.USERS, COLS.USERS, '#9333ea');
   createSheet_(SHEET.WINNERS, COLS.WINNERS, '#be123c');
+  createSheet_(SHEET.PRIZES, COLS.PRIZES, '#a16207');
+  createSheet_(SHEET.PRIZE_TYPES, COLS.PRIZE_TYPES, '#a16207');
+  seedPrizeTypes_();
   createSheet_(SHEET.AUDIT, COLS.AUDIT, '#525252');
 
   invalidateHeaderCaches();

@@ -619,6 +619,30 @@ export function go(screen) {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+// ---------- the draw screen's own facts ----------
+
+/**
+ * A counter the Draw screen watches, bumped by anything that changes what is on
+ * its prize board or in its winners list.
+ *
+ * WHY IT HAS TO EXIST. Every screen sits inside a KeepAlive, so a screen is
+ * mounted once and then kept. The Draw screen fetches the prize schedule, the
+ * winners and the readiness report itself, in onMounted — none of which is in
+ * the ticket snapshot the poller refreshes. So adding a prize closed the dialog
+ * onto a board that did not have it, and the only way to see it was to reload
+ * the page.
+ *
+ * That is the shape of bug this repository has had twice already: the action
+ * worked, nothing errored, and the screen quietly disagreed with the database.
+ * A volunteer reads that as the button not having worked, and presses it again.
+ *
+ * A counter rather than an event bus, because there is exactly one screen
+ * listening and one question being asked — has anything under me changed — and
+ * the answer only ever needs to be "yes, again".
+ */
+export const drawStamp = ref(0)
+export function drawChanged() { drawStamp.value++ }
+
 // ---------- toasts ----------
 
 export const toasts = ref([])

@@ -42,6 +42,7 @@ import Deadlines from './components/modals/Deadlines.vue'
 import CheckIn from './components/modals/CheckIn.vue'
 import RecordPayment from './components/modals/RecordPayment.vue'
 import WinnerForm from './components/modals/WinnerForm.vue'
+import PrizeForm from './components/modals/PrizeForm.vue'
 import AskApproval from './components/modals/AskApproval.vue'
 import Toasts from './components/ui/Toasts.vue'
 
@@ -602,6 +603,7 @@ function seeTickets(book) {
                    @return-books="openModal('bookaction', 'return')"
                    @mark="openModal('bookaction', 'mark')"
                    @record-winner="openModal('winner')"
+                   @edit-prize="p => openModal('prize', p)"
                    @make-tickets="openModal('make')"
                    @tickets-in-play="openModal('inplay')"
                    @deadlines="openModal('deadlines')"
@@ -649,6 +651,9 @@ function seeTickets(book) {
     <RecordPayment v-else-if="modal?.kind === 'payment'" :seller="modal.payload"
                    @close="closeModal" @saved="closeModal" />
     <WinnerForm v-else-if="modal?.kind === 'winner'" @close="closeModal" @saved="closeModal" />
+    <!-- payload is the prize being changed, or null to add one. -->
+    <PrizeForm v-else-if="modal?.kind === 'prize'" :prize="modal.payload"
+               @close="closeModal" @saved="closeModal" />
   </Teleport>
 
   <Teleport to="body">

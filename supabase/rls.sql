@@ -101,6 +101,8 @@ alter table ticket_history enable row level security;
 alter table round_snapshots enable row level security;
 alter table check_in_dates enable row level security;
 alter table winners       enable row level security;
+alter table prizes        enable row level security;
+alter table prize_types   enable row level security;
 
 -- Nothing below grants INSERT, UPDATE or DELETE to anybody. Writes go through
 -- the Edge Function, which holds the secret key and bypasses these policies.
@@ -496,6 +498,30 @@ drop view if exists config_readable;
 create view config_readable with (security_invoker = true) as
 select key, value from config where app_role() is not null;
 grant select on config_readable to authenticated;
+
+-- ============ THE PRIZE SCHEDULE ============
+--
+-- READABLE BY ANYONE SIGNED IN, and directly rather than through a view.
+--
+-- Every other readable table here is behind one because it carries something
+-- that has to be masked from somebody — a buyer's telephone number, a seller's
+-- position, the super admin's address. The prize schedule carries none of it.
+-- It is the answer to "what can I win", which a seller is asked at the table
+-- by every person they sell to, and a view over it would exist only to hide
+-- nothing from nobody.
+--
+-- WRITES ARE STILL SHUT, like everything else here: adding a prize goes through
+-- the Edge Function, which knows that changing the schedule after a prize has
+-- been awarded is the owner's decision and not an organiser's.
+
+drop policy if exists prizes_read on prizes;
+create policy prizes_read on prizes for select using (app_role() is not null);
+
+drop policy if exists prize_types_read on prize_types;
+create policy prize_types_read on prize_types for select using (app_role() is not null);
+
+grant select on prizes, prize_types to authenticated;
+revoke all on prizes, prize_types from anon;
 
 -- ============ EVERYTHING ELSE STAYS SHUT ============
 --

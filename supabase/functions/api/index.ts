@@ -48,6 +48,7 @@ import * as money from './money.ts'
 import { dayStart, today } from './deadlines.ts'
 import * as people from './people.ts'
 import * as reports from './reports.ts'
+import * as prizes from './prizes.ts'
 import * as approvals from './approvals.ts'
 
 // ============ ACTION REGISTRY ============
@@ -177,6 +178,11 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   read_audit: { group: 'Reports', label: 'The activity log' },
   record_winner: { group: 'Reports', label: 'Record a winner', danger: true },
   list_winners: { group: 'Reports', label: 'See the winners' },
+  set_winner_status: { group: 'Reports', label: 'Say a winner has been told or has collected' },
+  list_prizes: { group: 'Reports', label: 'See the prizes' },
+  upsert_prize: { group: 'Reports', label: 'Add or change a prize' },
+  remove_prize: { group: 'Reports', label: 'Take a prize off the list', danger: true },
+  upsert_prize_type: { group: 'Reports', label: 'Add or change a kind of prize' },
   list_permissions: { group: 'Access', label: 'See who can do what' },
   request_approval: { group: 'Access', label: 'Ask the organiser to approve something' },
   list_approvals: { group: 'Access', label: 'See what is waiting for approval' },
@@ -286,9 +292,27 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   agent_statement: { roles: ['agent', 'recorder'], kind: 'report', fn: reports.agentStatement },
   export_entries: { roles: ADMIN_ONLY, sup: true, kind: 'report', fn: reports.exportEntries },
 
+  // --- the prize schedule ---
+  // Anyone signed in, sellers included. "What can I win?" is the question a
+  // seller is asked by everybody they sell to, and an answer only an organiser
+  // can open is an answer given from memory at the table.
+  list_prizes: { roles: null, kind: 'read', fn: prizes.listPrizes },
+  // Organisers, NOT the owner alone. Setting up what is on offer is ordinary
+  // organising, decided at a meeting like the sales-close date. The handler is
+  // what holds the line that matters: changing a prize somebody has ALREADY
+  // WON needs the System Admin, because by then it has been said out loud.
+  upsert_prize: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.upsertPrize },
+  remove_prize: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.removePrize },
+  upsert_prize_type: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.upsertPrizeType },
+
   // --- winners ---
   record_winner: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: reports.recordWinner },
   list_winners: { roles: ['viewer', 'recorder'], kind: 'read', fn: reports.listWinners },
+  // A helper rings the winners and a helper is who is standing there when one
+  // turns up for their hamper. Recording that is not the owner's job — it is
+  // the job of whoever is at the table, which is exactly what record_payment
+  // already assumes about cash.
+  set_winner_status: { roles: ['recorder'], kind: 'write', fn: prizes.setWinnerStatus },
 
   // --- two-person control ---
   request_approval: { roles: ADMIN_ONLY, kind: 'write', fn: approvals.requestApproval },

@@ -633,6 +633,92 @@ ok "$(P "select is_generated from information_schema.columns where table_name='a
 ok "$(P "select is_generated from information_schema.columns where table_name='agents' and column_name='active'")" "NEVER" "agents.active is a plain boolean the handlers write"
 ok "$(P "select count(*) from information_schema.columns where table_name='agents' and column_name='status'")" "0" "and an agent has no sign-in lifecycle, because an agent does not sign in"
 
+# ============ THE PRIZE SCHEDULE ============
+#
+# The half of it that cannot be read off the page. Over-awarding a prize is not
+# a bug somebody reports — it is two people holding a receipt for one car — so
+# the guard is structural, and structural means the database has to be asked
+# whether it really refuses.
+
+echo "the four prize types arrive with the schema"
+ok "$(P "select count(*) from prize_types where built_in")" "4" "cash, goods, voucher and a share of the takings"
+ok "$(P "select valuing from prize_types where type_id='pot_share'")" "percent" "a split-the-pot prize is valued as a percentage"
+# The TYPES are open — an organiser adds one without a migration — and this is
+# what that looks like in the table rather than in an argument about it.
+r=$(P "insert into prize_types(type_id,label,valuing,added_by) values ('goat','A goat','none','org@x.com')")
+ok "$r" "INSERT 0 1" "and an organiser can add a kind nobody thought of"
+# What is NOT open is how a value is read, because the code can only read it the
+# ways it has branches for.
+r=$(P "insert into prize_types(type_id,label,valuing) values ('vibes','Vibes','whatever')")
+has "$r" "prize_types_valuing_check" "an invented valuing rule is refused"
+
+echo "a prize is set up once, however many of it there are"
+P "insert into prizes(prize_id,tier,name,type_id,value_amount,quantity,rank) values
+     ('grand','Grand Prize','Toyota Hilux','goods',120000,1,1),
+     ('hampers','Consolation','Hamper','goods',250,10,3)" >/dev/null
+ok "$(P "select quantity from prizes where prize_id='hampers'")" "10" "ten hampers are one row saying ten"
+ok "$(P "select active from prizes where prize_id='grand'")" "t" "and a new prize is being offered"
+# A quantity of nothing is not a prize.
+r=$(P "insert into prizes(prize_id,tier,name,type_id,quantity) values ('none','X','Y','goods',0)")
+has "$r" "prizes_quantity_check" "a prize given zero times is refused"
+
+echo "a seat that does not exist cannot be filled"
+P "update tickets set status='Sold', buyer_name='Buyer', buyer_phone='0125550001' where idx between 1 and 6" >/dev/null
+r=$(P "insert into winners(ticket_idx,prize,prize_id,seq) values (1,'Grand','grand',2)")
+has "$r" "there is no number 2" "the Grand Prize has one seat, and it is number 1"
+r=$(P "insert into winners(ticket_idx,prize,prize_id,seq) values (1,'Consolation','hampers',11)")
+has "$r" "there is no number 11" "and ten hampers stop at ten"
+r=$(P "insert into winners(ticket_idx,prize,prize_id,seq) values (1,'Ghost','unicorn',1)")
+has "$r" "No prize called unicorn" "a prize nobody set up cannot be awarded"
+
+echo "the same seat cannot be filled twice"
+P "insert into winners(ticket_idx,prize,prize_id,seq) values (1,'Grand Prize — Toyota Hilux','grand',1)" >/dev/null
+ok "$(P "select count(*) from winners where prize_id='grand'")" "1" "the car has gone to somebody"
+# THE RACE, which is the reason the seat is a column and not a count: two
+# organisers recording winners in the same second both read "none given" and
+# both write seat 1. A unique index cannot be read at the wrong moment.
+r=$(P "insert into winners(ticket_idx,prize,prize_id,seq) values (2,'Grand','grand',1)")
+has "$r" "winners_one_per_seat" "and the second person to reach for it is refused"
+
+echo "one ticket, one prize"
+r=$(P "insert into winners(ticket_idx,prize,prize_id,seq) values (1,'Consolation','hampers',1)")
+has "$r" "winners_pkey" "a ticket that has won cannot win again"
+
+echo "rows from before the schedule existed do not collide with each other"
+# The index is PARTIAL on purpose. A plain unique index would make every winner
+# recorded as free text — prize_id null, seq null — collide with the next one,
+# so the migration would fail on any raffle that had already drawn anything.
+P "insert into winners(ticket_idx,prize) values (3,'First prize'),(4,'Second prize')" >/dev/null
+ok "$(P "select count(*) from winners where prize_id is null")" "2" "two typed prizes sit side by side"
+
+echo "a quantity cannot be cut out from under somebody holding one"
+P "insert into winners(ticket_idx,prize,prize_id,seq) values (5,'Consolation','hampers',1),(6,'Consolation','hampers',2)" >/dev/null
+r=$(P "update prizes set quantity=1 where prize_id='hampers'")
+has "$r" "given 2 times already" "two hampers are out, so ten cannot become one"
+# Trimming the unclaimed tail is fine — the guard is about people, not numbers.
+r=$(P "update prizes set quantity=2 where prize_id='hampers'")
+ok "$r" "UPDATE 1" "but the seats nobody holds can go"
+# And a seat stranded above the new ceiling is caught even when the count is not:
+# seat 2 of 2 is held, so cutting to 1 has to fail on the seat as well.
+P "delete from winners where ticket_idx=5" >/dev/null
+r=$(P "update prizes set quantity=1 where prize_id='hampers'")
+has "$r" "above number 1" "one holder at seat 2 still blocks a cut to one"
+
+echo "a prize somebody holds cannot be deleted out from under them"
+r=$(P "delete from prizes where prize_id='grand'")
+has "$r" "violates foreign key" "the row that names it stops the delete"
+
+echo "a forfeited prize is still on the record"
+P "update winners set forfeited_at=now() where prize_id='grand'" >/dev/null
+ok "$(P "select count(*) from winners where prize_id='grand'")" "1" "the draw that happened is not erased"
+ok "$(P "select count(*) from winners where prize_id='grand' and forfeited_at is null")" "0" "but nobody is holding the car"
+
+echo "the browser can read the prizes and nothing else new"
+ok "$(P "select count(*) from information_schema.role_table_grants where grantee='authenticated' and table_name='prizes' and privilege_type='SELECT'")" "1" "a signed-in person may read what is on offer"
+ok "$(P "select count(*) from information_schema.role_table_grants where grantee='authenticated' and table_name='prizes' and privilege_type='UPDATE'")" "0" "and may not change it"
+ok "$(P "select count(*) from information_schema.role_table_grants where grantee='anon' and table_name in ('prizes','prize_types')")" "0" "a request with no session gets nothing"
+ok "$(P "select count(*) from information_schema.role_table_grants where grantee='authenticated' and table_name='winners'")" "0" "and the winners table, which carries telephone numbers, stays shut"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1

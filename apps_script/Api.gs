@@ -100,9 +100,27 @@ function actionRegistry() {
     agent_statement:       { fn: handleAgentStatement,    roles: [ROLES.AGENT, ROLES.RECORDER], kind: 'report' },
     read_audit:            { fn: handleReadAudit,         roles: ADMIN_ONLY, sup: true, kind: 'read' },
 
+    // --- the prize schedule ---
+    // Anyone signed in, sellers included. "What can I win?" is the question a
+    // seller is asked by everybody they sell to, and an answer only an
+    // organiser can open is an answer given from memory at the table.
+    list_prizes:           { fn: handleListPrizes,        roles: null, kind: 'read' },
+    // Organisers, NOT the owner alone. Setting up what is on offer is ordinary
+    // organising, decided at a meeting like the sales-close date. The handler
+    // holds the line that matters: changing a prize somebody has ALREADY WON
+    // needs the System Admin, because by then it has been said out loud.
+    upsert_prize:          { fn: handleUpsertPrize,       roles: ADMIN_ONLY, kind: 'write', lock: true },
+    remove_prize:          { fn: handleRemovePrize,       roles: ADMIN_ONLY, kind: 'write', lock: true },
+    upsert_prize_type:     { fn: handleUpsertPrizeType,   roles: ADMIN_ONLY, kind: 'write', lock: true },
+
     // --- winners ---
     record_winner:         { fn: handleRecordWinner,      roles: ADMIN_ONLY, sup: true, kind: 'write', lock: true },
-    list_winners:          { fn: handleListWinners,       roles: [ROLES.VIEWER, ROLES.RECORDER], kind: 'read' }
+    list_winners:          { fn: handleListWinners,       roles: [ROLES.VIEWER, ROLES.RECORDER], kind: 'read' },
+    // A helper rings the winners and a helper is who is standing there when one
+    // turns up for their hamper. Recording that is not the owner's job — it is
+    // the job of whoever is at the table, which is what record_payment already
+    // assumes about cash.
+    set_winner_status:     { fn: handleSetWinnerStatus,   roles: [ROLES.RECORDER], kind: 'write', lock: true }
   };
 }
 
@@ -166,6 +184,11 @@ function actionMeta() {
     read_audit:             { group: 'Reports', label: 'The activity log' },
     record_winner:          { group: 'Reports', label: 'Record a winner', danger: true },
     list_winners:           { group: 'Reports', label: 'See the winners' },
+    set_winner_status:      { group: 'Reports', label: 'Say a winner has been told or has collected' },
+    list_prizes:            { group: 'Reports', label: 'See the prizes' },
+    upsert_prize:           { group: 'Reports', label: 'Add or change a prize' },
+    remove_prize:           { group: 'Reports', label: 'Take a prize off the list', danger: true },
+    upsert_prize_type:      { group: 'Reports', label: 'Add or change a kind of prize' },
 
     list_permissions:       { group: 'Access',  label: 'See who can do what' },
     request_approval:       { group: 'Access',  label: 'Ask the organiser to approve something' },
@@ -194,7 +217,11 @@ function actionMeta() {
 var NO_TICKET_WRITES = [
   'upsert_agent', 'upsert_user', 'set_user_status', 'set_permission',
   'request_approval', 'cancel_approval', 'record_winner',
-  'issue_books', 'transfer_books'
+  'issue_books', 'transfer_books',
+  // The prize schedule is not the ticket table. Throwing away six thousand
+  // cached ticket rows because somebody renamed a hamper is the exact waste
+  // this list exists to stop.
+  'upsert_prize', 'remove_prize', 'upsert_prize_type', 'set_winner_status'
 ];
 
 // ============ ENTRY POINTS ============

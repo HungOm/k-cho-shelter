@@ -20,6 +20,9 @@ import {
   collectedByAgent, deskMoney, moneyScope, round2, showsSellerNames, totalsAgents,
   visibleAgents, writtenOffByAgent,
 } from './money.ts'
+// For nextSeat. reports.ts imports prizes.ts and not the other way round — the
+// awarding needs the schedule, the schedule needs nothing from the reports.
+import * as prizes from './prizes.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -524,6 +527,28 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
     })
   }
 
+  /*
+   * NOTHING TO WIN. A raffle whose prize schedule is empty is not ready to be
+   * drawn, and this is the one blocker that is about the draw itself rather
+   * than the books behind it — everything above asks whether the pool is
+   * honest, and none of it would notice that there is nothing to give out.
+   *
+   * It is counted over ACTIVE prizes, not every row: a prize turned off is an
+   * organiser saying "not this one after all", and three switched-off prizes
+   * are the same as no prizes at all on the night.
+   */
+  const { count: prizeCount } = await ctx.supabaseAdmin
+    .from('prizes').select('prize_id', { count: 'exact', head: true }).eq('active', true)
+  const prizesOffered = Number(prizeCount ?? 0)
+  if (!prizesOffered) {
+    problems.push({
+      what: 'no prizes have been set up',
+      count: 0,
+      why: 'There is nothing to draw for. Set the prize schedule before the draw, ' +
+           'so every winner is recorded against a prize rather than a typed phrase.',
+    })
+  }
+
   // Drawing before the wall means drawing from books that are still legitimately
   // out. Those sellers have not done anything wrong — they have until the final
   // deadline — so the raffle is not ready, however tidy the rest of it looks.
@@ -584,6 +609,7 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
       outstanding: Math.round((expected - collected) * 100) / 100,
       missingContact,
       unidentified,
+      prizesOffered,
       pendingApprovals,
     },
     booksByStatus,
@@ -666,13 +692,46 @@ export async function listWinners(_p: Record<string, unknown>, user: AppUser, ct
   const holds = await agentBooks(user, ctx)
   const winners = (data ?? []).map((w: Record<string, unknown>) => {
     const t = w.tickets as Record<string, unknown> | null
-    if (!t) return w
+    // A winner whose ticket cannot be read is a winner nobody can vouch for, so
+    // the number goes rather than being passed through unexamined. The foreign
+    // key makes this unreachable today; it is here so that it stays harmless if
+    // that ever stops being true.
+    if (!t) return { ...w, buyer_phone: '' }
+
+    /*
+     * THE WINNER ROW CARRIES ITS OWN COPY OF THE NUMBER, and that copy was
+     * going out unmasked.
+     *
+     * The masker was applied to the joined TICKET and stopped there, which
+     * looked complete because the ticket is where a telephone number normally
+     * lives. But `winners.buyer_phone` is a second one — frozen at the moment
+     * of the award, deliberately, so the record of the night survives a later
+     * correction — and nothing had ever masked it. A viewer, whose entire
+     * defining property is that numbers arrive as ••••100, was handed every
+     * winner's number in full by the row beside the one that had been masked.
+     *
+     * Nothing displayed it, which is the only reason it went unnoticed: the
+     * draw screen read a field name the Apps Script backend used and this one
+     * did not, so the number was in the reply and never on the screen. A leak
+     * that depends on a client not reading a field is a leak.
+     *
+     * WHO MAY SEE IT is decided from the TICKET, because that is the row that
+     * knows which book it came from and therefore which helper is entitled to
+     * it. WHAT THEY SEE is the frozen copy, because that is the point of
+     * freezing it. The two questions have different sources and always did.
+     */
+    const scoped = mask({ ...t, buyer_phone: w.buyer_phone }, user, holds)
+
     // The NAME survives for everyone, and that is a deliberate departure from
     // the masker rather than an oversight. Applying it whole inverted the
     // hierarchy: a viewer kept the name and a helper lost it, so the LESS
     // trusted role saw more. And announcing who won is what a draw is for —
     // it is the telephone number that belongs only to whoever has to ring them.
-    return { ...w, tickets: { ...mask(t, user, holds), buyer_name: t.buyer_name } }
+    return {
+      ...w,
+      buyer_phone: scoped.buyer_phone,
+      tickets: { ...mask(t, user, holds), buyer_name: t.buyer_name },
+    }
   })
   return { winners }
 }
@@ -694,23 +753,103 @@ export async function recordWinner(p: Record<string, unknown>, user: AppUser, ct
     )
   }
 
+  /*
+   * ONE TICKET, ONE PRIZE — said here, in a sentence, rather than left to the
+   * primary key. The counterfoil comes out of the drum and is set aside; that
+   * is the rule this raffle runs on. The database still enforces it, but a
+   * duplicate-key error reaching an organiser mid-draw reads as the app having
+   * broken at the worst possible moment.
+   */
+  const { data: already } = await ctx.supabaseAdmin
+    .from('winners').select('prize').eq('ticket_idx', t.idx).maybeSingle()
+  if (already) {
+    throw new ApiError('BAD_REQUEST',
+      `Ticket ${number} has already won${already.prize ? ` (${already.prize})` : ''}.`)
+  }
+
+  /*
+   * THE PRIZE COMES FROM THE SCHEDULE, and this is the change the whole prize
+   * schedule exists for. It used to be whatever text was typed, so "First
+   * prize" and "1st Prize" were two prizes, nothing could say how many of the
+   * ten hampers were left, and the Grand Prize could be given away twice.
+   *
+   * FREE TEXT STILL WORKS when no schedule has been set up. A raffle whose
+   * organiser never opened the prize screen must still be able to record that
+   * somebody won something — refusing would turn a missing setup step into a
+   * draw that cannot be written down while the room waits.
+   */
+  const prizeId = String(p.prizeId ?? '').trim()
+  let label = String(p.prize ?? '').trim()
+  let seat: number | null = null
+  let value: number | null = null
+
+  if (prizeId) {
+    const { seat: s, prize } = await prizes.nextSeat(prizeId, ctx)
+    seat = s
+    // The label and the value are FROZEN here beside the buyer's name and
+    // number, which have been frozen since the beginning and for the same
+    // reason: correcting a typo in the schedule next week must not rewrite
+    // what was read out on the night.
+    label = label || (prize.name ? `${prize.tier} — ${prize.name}` : prize.tier)
+    value = await unitValue(prize, ctx)
+  } else if (!label) {
+    throw new ApiError('MISSING_FIELD', 'What did it win?')
+  }
+
   const { error } = await ctx.supabaseAdmin.from('winners').insert({
     ticket_idx: t.idx,
-    prize: String(p.prize ?? ''),
+    prize: label,
+    prize_id: prizeId || null,
+    seq: seat,
+    prize_value: value,
     // The buyer is copied in rather than joined, so the record of who won says
     // what it said on the day even if the ticket row is corrected later.
     buyer_name: t.buyer_name, buyer_phone: t.buyer_phone,
     recorded_by: user.email,
   })
   if (error) {
-    if (String(error.message).includes('duplicate')) {
-      throw new ApiError('BAD_REQUEST', `Ticket ${number} has already been drawn.`)
+    const m = String(error.message)
+    if (/duplicate/i.test(m)) {
+      // Either the ticket won already — caught above, so this is the race — or
+      // two organisers reached for the same seat in the same second. Both are
+      // "try that again", and neither is the app being broken.
+      throw new ApiError('BAD_REQUEST',
+        `Somebody recorded a winner for that at the same moment. Check the list and try again.`)
     }
-    throw new ApiError('QUERY_FAILED', error.message)
+    throw new ApiError('QUERY_FAILED', m)
   }
 
   await ctx.supabaseAdmin.from('audit_log').insert({
-    action: 'RECORD_WINNER', details: { ticket: number, prize: p.prize }, email: user.email,
+    action: 'RECORD_WINNER',
+    details: { ticket: number, prize: label, prizeId: prizeId || null, seq: seat },
+    email: user.email,
   })
-  return { ticketNumber: number, buyerName: t.buyer_name, buyerPhone: t.buyer_phone }
+  return {
+    ticketNumber: number, prize: label, prizeId: prizeId || null, seq: seat,
+    buyerName: t.buyer_name, buyerPhone: t.buyer_phone,
+  }
+}
+
+/**
+ * What one of a prize is worth right now.
+ *
+ * A share-of-takings prize is not knowable until the money is in, so it is
+ * worked out from the payments ledger at the moment it is awarded and frozen
+ * there. `null` for a prize with nothing declared — and null is not zero: zero
+ * would join the totals as though somebody had valued the thing at nothing.
+ */
+async function unitValue(prize: Record<string, unknown>, ctx: Ctx): Promise<number | null> {
+  const { data: type } = await ctx.supabaseAdmin
+    .from('prize_types').select('valuing').eq('type_id', prize.type_id).maybeSingle()
+  const amount = Number(prize.value_amount ?? 0)
+  switch (type?.valuing ?? 'fixed') {
+    case 'none': return null
+    case 'percent': {
+      const { data: paid } = await ctx.supabaseAdmin.from('payments').select('amount')
+      const collected = (paid ?? []).reduce(
+        (s: number, r: Record<string, unknown>) => s + Number(r.amount ?? 0), 0)
+      return round2(collected * amount / 100)
+    }
+    default: return amount
+  }
 }

@@ -835,7 +835,6 @@ function handleReadAudit(payload, user) {
 
 function handleRecordWinner(payload, user) {
   var ticketNumber = requireField_(payload, 'ticketNumber');
-  var prize = requireField_(payload, 'prize');
 
   var ctx = loadTicket_(ticketNumber);
   var t = ctx.ticket;
@@ -847,33 +846,89 @@ function handleRecordWinner(payload, user) {
   var sheet = sheet_(SHEET.WINNERS);
   var map = headerMap(sheet);
   var existingRow = 0;
+  var existingPrize = '';
   if (sheet.getLastRow() > 1) {
     var nums = sheet.getRange(2, map.Ticket_Number, sheet.getLastRow() - 1, 1).getValues();
     for (var i = 0; i < nums.length; i++) {
-      if (String(nums[i][0]).trim().toUpperCase() === ticketNumber.toUpperCase()) { existingRow = i + 2; break; }
+      if (String(nums[i][0]).trim().toUpperCase() === ticketNumber.toUpperCase()) {
+        existingRow = i + 2;
+        existingPrize = String(sheet.getRange(existingRow, map.Prize).getValue() || '');
+        break;
+      }
     }
   }
 
-  var row = [
+  /*
+   * ONE TICKET, ONE PRIZE. The counterfoil comes out of the drum and is set
+   * aside; that is the rule this raffle runs on.
+   *
+   * THIS USED TO OVERWRITE. The row was found and rewritten in place, so
+   * recording a second winner against a number that had already won replaced
+   * the first one — silently, with no error and no trace of who had been
+   * announced. The Supabase twin refused the same call outright, so the two
+   * backends disagreed about the single least recoverable write in the system.
+   * They now both refuse, and say what the ticket already won.
+   */
+  if (existingRow) {
+    throw new ApiError('BAD_REQUEST',
+      'Ticket ' + ticketNumber + ' has already won' + (existingPrize ? ' (' + existingPrize + ')' : '') + '.');
+  }
+
+  /*
+   * THE PRIZE COMES FROM THE SCHEDULE. It used to be whatever text was typed,
+   * so "First prize" and "1st Prize" were two prizes, nothing could say how
+   * many of the ten hampers were left, and the Grand Prize could be given away
+   * twice.
+   *
+   * FREE TEXT STILL WORKS when no schedule has been set up. A raffle whose
+   * organiser never opened the prize screen must still be able to record that
+   * somebody won something — refusing would turn a missed setup step into a
+   * draw that cannot be written down while the room waits.
+   */
+  var prizeId = String(payload.prizeId || '').trim();
+  var prize = String(payload.prize || '').trim();
+  var seat = '';
+  var value = '';
+
+  if (prizeId) {
+    var next = nextPrizeSeat_(prizeId);
+    seat = next.seat;
+    // FROZEN here beside the buyer's name and number, which have been frozen
+    // since the beginning and for the same reason: correcting a typo in the
+    // schedule next week must not rewrite what was read out on the night.
+    if (!prize) {
+      prize = next.prize.Name ? (next.prize.Tier + ' — ' + next.prize.Name) : String(next.prize.Tier);
+    }
+    var listed = handleListPrizes({}, user);
+    for (var k = 0; k < listed.prizes.length; k++) {
+      if (listed.prizes[k].prize_id === prizeId) {
+        value = listed.prizes[k].unitValue === null ? '' : listed.prizes[k].unitValue;
+        break;
+      }
+    }
+  } else if (!prize) {
+    throw new ApiError('MISSING_FIELD', 'What did it win?');
+  }
+
+  sheet.appendRow([
     ticketNumber, prize, payload.drawnDate ? new Date(payload.drawnDate) : new Date(),
     t.Buyer_Name || '', t.Buyer_Phone || '',
     payload.notified === undefined ? false : !!payload.notified,
     payload.claimed === undefined ? false : !!payload.claimed,
     payload.claimed ? new Date() : '',
     payload.notes || '',
-    user.email
-  ];
+    user.email,
+    prizeId, seat, value, ''
+  ]);
 
-  if (existingRow) {
-    sheet.getRange(existingRow, 1, 1, COLS.WINNERS.length).setValues([row]);
-  } else {
-    sheet.appendRow(row);
-  }
-
-  logAudit('RECORD_WINNER', { ticket: ticketNumber, prize: prize }, user.email);
+  logAudit('RECORD_WINNER',
+    { ticket: ticketNumber, prize: prize, prizeId: prizeId || null, seq: seat || null }, user.email);
   return {
     ticket: ticketNumber,
+    ticketNumber: ticketNumber,
     prize: prize,
+    prizeId: prizeId || null,
+    seq: seat || null,
     buyerName: t.Buyer_Name || '',
     contactable: !isBlank_(t.Buyer_Name) && !isBlank_(t.Buyer_Phone)
   };
@@ -898,6 +953,12 @@ function handleListWinners(payload, user) {
       notified: isTrue_(r.Notified),
       claimed: isTrue_(r.Claimed),
       claimedDate: toIso_(r.Claimed_Date),
+      // Null rather than '' for a winner recorded before the schedule existed,
+      // so a screen can tell "no prize schedule then" from "a prize called ''".
+      prizeId: r.Prize_ID || null,
+      seq: isBlank_(r.Seq) ? null : Number(r.Seq),
+      prizeValue: isBlank_(r.Prize_Value) ? null : Number(r.Prize_Value),
+      forfeitedDate: toIso_(r.Forfeited_Date),
       notes: r.Notes || ''
     });
   }

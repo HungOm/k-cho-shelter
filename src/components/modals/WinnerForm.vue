@@ -15,17 +15,79 @@
  * already on the device, and the save button stays out of reach until a real
  * sold ticket is in the box.
  */
-import { ref, computed } from 'vue'
-import { state, api, toast, isSuper, isSold } from '../../lib/store.js'
+import { ref, computed, onMounted } from 'vue'
+import { state, api, toast, isSuper, isSold, drawChanged } from '../../lib/store.js'
 import { resolveTicketNumber } from '../../lib/books.js'
+import { money } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 
 const emit = defineEmits(['close', 'saved'])
 
 const raw = ref('')
 const prize = ref('')
+const prizeId = ref('')
+const schedule = ref(null)
 const busy = ref(false)
 const problem = ref('')
+
+const currency = computed(() => state.cfg?.currency || '')
+
+/*
+ * THE PRIZE COMES OFF THE SCHEDULE NOW, and the reason is that this box used to
+ * be free text. "First prize", "1st Prize" and "Grand prize" were three
+ * different prizes to everything downstream, nothing could say how many of the
+ * ten hampers were left, and the same prize could be awarded twice.
+ *
+ * Only what is still to give is offered. A prize already given is not a choice
+ * an organiser should have to notice is wrong — on a night when somebody is
+ * reading numbers out of a drum, the list itself should be the guard.
+ */
+onMounted(async () => {
+  try {
+    schedule.value = await api('list_prizes', {})
+    const first = available.value[0]
+    if (first) prizeId.value = first.prize_id
+  } catch (err) {
+    /*
+     * A BACKEND WITHOUT THE PRIZE LIST MUST NOT STOP A DRAW.
+     *
+     * Pushing to master deploys the frontend alone; the Edge Function is a
+     * separate, manual step. So this screen can be live against a server that
+     * has never heard of list_prizes — and leaving `schedule` null on the error
+     * left the prize field on a skeleton for ever with the save button out of
+     * reach, on the one screen in this app that is used with a room waiting.
+     *
+     * An empty schedule is already a state this form knows how to be in: it
+     * offers the typed box. Falling into it is strictly better than refusing,
+     * for the same reason the backend still accepts free text at all.
+     */
+    schedule.value = { prizes: [], types: [], collected: 0 }
+    if (err.code !== 'UNKNOWN_ACTION') toast(err.message, 'bad', err.code)
+  }
+})
+
+const available = computed(() =>
+  (schedule.value?.prizes || []).filter(p => p.active !== false && p.remaining > 0))
+
+/*
+ * NO SCHEDULE MEANS THE TYPED BOX IS STILL THERE. A raffle whose organiser
+ * never opened the prize screen must still be able to record that somebody won
+ * something — refusing would turn a missed setup step into a draw that cannot
+ * be written down while the room is waiting.
+ */
+const noSchedule = computed(() => !!schedule.value && !schedule.value.prizes.length)
+const allGone = computed(() =>
+  !!schedule.value && schedule.value.prizes.length > 0 && !available.value.length)
+
+const chosen = computed(() =>
+  available.value.find(p => p.prize_id === prizeId.value) || null)
+
+function label(p) {
+  const left = p.remaining === p.quantity
+    ? `${p.quantity} to give`
+    : `${p.remaining} of ${p.quantity} left`
+  return `${p.tier}${p.name ? ' — ' + p.name : ''} (${left})`
+}
 
 /** "611" is what somebody reads off the paper; KS-00611 is what it is called. */
 const number = computed(() => resolveTicketNumber(raw.value))
@@ -44,7 +106,9 @@ const eligible = computed(() =>
 const contactable = computed(() =>
   !!ticket.value && !!ticket.value.name.trim() && !!ticket.value.phone.trim())
 
-const canSave = computed(() => eligible.value && !!prize.value.trim() && !busy.value)
+const canSave = computed(() =>
+  eligible.value && !busy.value &&
+  (noSchedule.value ? !!prize.value.trim() : !!prizeId.value))
 
 async function save() {
   problem.value = ''
@@ -52,9 +116,16 @@ async function save() {
   try {
     const r = await api('record_winner', {
       ticketNumber: number.value,
-      prize: prize.value.trim(),
+      // One or the other. The prize id wins where there is a schedule, and the
+      // backend freezes the label from it rather than trusting what is typed
+      // here — so correcting a spelling next week cannot rewrite the record of
+      // what was read out on the night.
+      ...(noSchedule.value
+        ? { prize: prize.value.trim() }
+        : { prizeId: prizeId.value }),
     })
     toast(`${r.ticketNumber || r.ticket} recorded as a winner`, 'ok')
+    drawChanged()
     emit('saved')
   } catch (err) {
     problem.value = explain(err)
@@ -75,6 +146,9 @@ function explain(err) {
         : err.message
     case 'SUPER_ADMIN_ONLY':
       return 'Only the System Admin can record a winner.'
+    case 'NOT_FOUND':
+      // Somebody removed the prize between this screen loading and the save.
+      return 'That prize is no longer on the list. Close this and open it again.'
     default:
       return err.message
   }
@@ -118,11 +192,42 @@ function explain(err) {
         That is not a ticket in this raffle.
       </div>
 
-      <div class="field">
+      <!-- Off the schedule where there is one, so a prize cannot be named two
+           ways or given twice. -->
+      <div v-if="!schedule" class="skel" style="height:56px;margin-bottom:14px"></div>
+
+      <div v-else-if="allGone" class="note warn">
+        Every prize on the list has been given out. Add another prize before recording
+        more winners, so this one is recorded against something.
+      </div>
+
+      <div v-else-if="noSchedule" class="field">
         <label for="wp">What did it win? <span class="req">*</span></label>
         <input id="wp" v-model="prize" class="xl" placeholder="e.g. First prize"
                autocomplete="off">
-        <p class="hint">Whatever you want to appear beside their name.</p>
+        <p class="hint">
+          No prizes have been set up, so type what this one won. Setting up the prize
+          list first means the app can count what is left and stop the same prize
+          going out twice.
+        </p>
+      </div>
+
+      <div v-else class="field">
+        <label for="wpz">Which prize? <span class="req">*</span></label>
+        <select id="wpz" v-model="prizeId" class="xl">
+          <option v-for="p in available" :key="p.prize_id" :value="p.prize_id">
+            {{ label(p) }}
+          </option>
+        </select>
+        <p v-if="chosen" class="hint">
+          This is number {{ chosen.awarded + 1 }} of {{ chosen.quantity }}.
+          <template v-if="chosen.unitValue !== null && chosen.unitValue > 0">
+            Worth {{ money(chosen.unitValue, currency) }}<template v-if="chosen.valuing === 'percent'">
+              — {{ chosen.value_amount }}% of the {{ money(schedule.collected, currency) }} handed in
+              so far</template>.
+          </template>
+          <template v-else>No value has been stated for it.</template>
+        </p>
       </div>
 
       <div v-if="problem" class="note bad">{{ problem }}</div>

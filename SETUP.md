@@ -391,7 +391,12 @@ address in it, not a shared mailbox.
    (The "unsafe" warning appears for every script that hasn't been through Google's paid review.
    It is your own code, running in your own account.)
 3. Go back to the spreadsheet. You now have tabs: **Tickets, Books, Agents, Users, Winners,
-   Book_History, Config, _AuditLog**.
+   Prizes, Prize_Types, Book_History, Config, _AuditLog**.
+
+   **Prize_Types** arrives with four rows — Cash, Donated goods, Voucher and Share of takings.
+   **Prizes** starts empty; you fill it in from the app, on **The draw** screen, rather than
+   by hand. Each row is one prize with a quantity, so ten consolation hampers are one row
+   saying ten, not ten rows.
 4. Open the **Config** tab and set your numbers:
 
    | Key | Default | Change it to |

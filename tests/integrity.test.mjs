@@ -136,6 +136,14 @@ console.log('3. sales nobody can draw, and requests nobody decided, keep the dra
       { request_id: 'R1', action: 'restock_books', payload: {}, summary: 'x', requested_by: 'admin@x.com', expires_at: soon, status: 'Pending' },
       { request_id: 'R2', action: 'restock_books', payload: {}, summary: 'y', requested_by: 'admin@x.com', expires_at: ago, status: 'Pending' },
     ],
+    /*
+     * A prize, so the two blockers under test here are the only ones speaking.
+     * An empty schedule is its own blocker — a raffle with nothing to win is
+     * not ready to be drawn — and this section is about the pool, not the
+     * prizes. prizes.test.mjs owns that one.
+     */
+    prizes: [{ prize_id: 'grand', tier: 'Grand Prize', name: 'Hilux', type_id: 'goods',
+               value_amount: 1, quantity: 1, rank: 1 }],
   })
   const r = await reports.reportDrawReady({}, users.boss, w.ctx)
   ok(!r.ready, 'not ready')

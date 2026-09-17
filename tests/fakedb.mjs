@@ -53,7 +53,70 @@ const DEFAULTS = {
               source: 'hand', book_idx: null, reverses: null,
               received_at: () => new Date().toISOString() },
   audit_log: { at: () => new Date().toISOString() },
+  /*
+   * `active` is the one that matters, and it matters because nothing sets it.
+   * upsertPrize inserts a new prize WITHOUT it and leans on the column default,
+   * and both listPrizes and the draw-readiness blocker filter on active = true.
+   * A fake that left it undefined would hide every prize the moment it was
+   * created — a fake disagreeing with Postgres, failing on correct code.
+   */
+  prizes: { active: true, description: '', donor: '', draw_order: null, rank: 1,
+            quantity: 1, value_amount: 0, created_by: '',
+            created_at: () => new Date().toISOString() },
+  prize_types: { active: true, built_in: false, sort: 0, valuing: 'fixed', added_by: '',
+                 added_at: () => new Date().toISOString() },
+  winners: { prize: '', prize_id: null, seq: null, prize_value: null,
+             notified: false, claimed: false, claimed_at: null, forfeited_at: null,
+             notes: '', buyer_name: '', buyer_phone: '', recorded_by: '',
+             drawn_at: () => new Date().toISOString() },
   book_history: { at: () => new Date().toISOString(), note: '' },
+}
+
+/*
+ * The defaults a SEEDED row gets, which is a much shorter list than the ones an
+ * INSERT gets, and the difference is deliberate.
+ *
+ * WHY ANY AT ALL. `prizes.active` is `not null default true` and nothing sets
+ * it — upsertPrize leans on the column default, and both listPrizes and the
+ * draw-readiness blocker filter on it. A fixture that seeded a prize without
+ * spelling out `active: true` got a prize the real database calls live and this
+ * fake called switched off: "The Consolation is not being offered", to a test
+ * whose entire point was that it was.
+ *
+ * WHY NOT ALL OF THEM. Applying the whole DEFAULTS table to seeded rows breaks
+ * fixtures that mean something by leaving a column out. `app_users.status` is
+ * the case in hand: gate.ts falls back to `active === false ? 'suspended'` for
+ * rows that predate the lifecycle column, router.test.mjs seeds exactly such a
+ * row to exercise that fallback, and filling the status in turns a suspended
+ * super admin into a signed-in one. An absent column is not always a column
+ * waiting for a default — sometimes it is the fixture.
+ *
+ * So this names what gets filled rather than what does not. Adding to it is a
+ * decision about one column, made once, in writing.
+ */
+const SEED_DEFAULTS = {
+  prizes: ['active'],
+  prize_types: ['active'],
+  winners: ['notified', 'claimed', 'forfeited_at'],
+}
+
+function seeded(tables) {
+  const out = {}
+  for (const [name, rows] of Object.entries(tables)) {
+    const cols = SEED_DEFAULTS[name]
+    if (!cols || !Array.isArray(rows)) { out[name] = rows; continue }
+    out[name] = rows.map((r) => {
+      const filled = { ...r }
+      for (const c of cols) {
+        if (filled[c] === undefined) {
+          const d = DEFAULTS[name]?.[c]
+          filled[c] = typeof d === 'function' ? d() : d
+        }
+      }
+      return filled
+    })
+  }
+  return out
 }
 
 function withDefaults(table, row) {
@@ -361,7 +424,8 @@ export function fakeDb(seed = {}) {
       book_history: [], audit_log: [], pending_approvals: [], winners: [],
       permissions: [], book_ledger: [], book_ledger_all: [], check_in_reports: [],
       payments: [], ticket_history: [], round_snapshots: [],
-      ...copy(seed),
+      prizes: [], prize_types: [],
+      ...seeded(copy(seed)),
     },
     writes: [],
   }

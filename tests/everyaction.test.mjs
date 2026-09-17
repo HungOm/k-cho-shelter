@@ -41,6 +41,14 @@ function world() {
     status: 'Sold', buyer_name: 'Ma Nu', buyer_phone: '0125550100',
     amount: 10, sold_by_agent: 'A001',
   })
+  // A second sold ticket that has NOT won, so record_winner has somebody to
+  // award to. KS-00001 already holds a hamper in the fixture below, and a
+  // record_winner that merely refuses deliberately would leave the awarding
+  // path — the seat arithmetic, the frozen label — never once executed.
+  Object.assign(tickets[5], {
+    status: 'Sold', buyer_name: 'U Tun', buyer_phone: '0125550105',
+    amount: 10, sold_by_agent: 'A001',
+  })
   const books = Array.from({ length: 3 }, (_, i) => ({
     idx: i + 1, number: 'Book-' + String(i + 1).padStart(3, '0'),
     first_ticket: 'KS-' + String(i * 10 + 1).padStart(5, '0'),
@@ -53,6 +61,29 @@ function world() {
   return fakeDb({
     config: baseConfig({ TOTAL_TICKETS: '30', ACTIVE_TICKETS: '30', TICKET_CEILING: '100' }),
     tickets, books,
+    /*
+     * A schedule with one prize already given, so the reads have something to
+     * count and set_winner_status has a winner to move. 'second-hamper' is here
+     * unawarded because remove_prize must have something it is allowed to
+     * remove — a prize nobody holds.
+     */
+    prize_types: [
+      { type_id: 'goods', label: 'Donated goods', valuing: 'fixed', sort: 20, active: true, built_in: true },
+      { type_id: 'pot_share', label: 'Share of takings', valuing: 'percent', sort: 40, active: true, built_in: true },
+    ],
+    prizes: [
+      { prize_id: 'grand-hilux', tier: 'Grand Prize', name: 'Toyota Hilux', description: '',
+        type_id: 'goods', value_amount: 120000, quantity: 1, rank: 1, draw_order: null,
+        donor: '', active: true, created_by: 'boss@x.com' },
+      { prize_id: 'second-hamper', tier: 'Second Prize', name: 'Hamper', description: '',
+        type_id: 'goods', value_amount: 250, quantity: 10, rank: 2, draw_order: null,
+        donor: '', active: true, created_by: 'boss@x.com' },
+    ],
+    winners: [
+      { ticket_idx: 1, prize: 'Second Prize — Hamper', prize_id: 'second-hamper', seq: 1,
+        prize_value: 250, buyer_name: 'Ma Nu', buyer_phone: '0125550100',
+        notified: false, claimed: false, recorded_by: 'boss@x.com' },
+    ],
     agents: [{ agent_id: 'A001', name: 'Daw Hla', phone: '0125551111', zone: 'KL', active: true }],
     app_users: [
       { email: 'boss@x.com', name: 'Boss', role: 'admin', active: true, agent_id: null },
@@ -115,7 +146,12 @@ const CALLS = {
   request_approval: { action: 'restock_books', payload: { fromBook: 'Book-002' } },
   cancel_approval: { requestId: 'nope' },
   decide_approval: { requestId: 'nope', approve: false },
-  record_winner: { ticketNumber: 'KS-00001', prize: 'First' },
+  record_winner: { ticketNumber: 'KS-00006', prizeId: 'grand-hilux' },
+  list_prizes: {},
+  upsert_prize: { tier: 'Second Prize', name: 'Hamper', typeId: 'goods', value: 250, quantity: 3 },
+  remove_prize: { prizeId: 'second-hamper' },
+  upsert_prize_type: { label: 'Experience day', valuing: 'none' },
+  set_winner_status: { ticketNumber: 'KS-00001', notified: true },
   expand_tickets: { totalTickets: 50 },
   set_active_tickets: { activeTickets: 20 },
   set_ticket_ceiling: { ticketCeiling: 200 },

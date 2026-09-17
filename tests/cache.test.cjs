@@ -123,7 +123,7 @@ console.log('router bumps on every write');
   // The exemption list is the dangerous part: an action that quietly starts
   // writing tickets while still listed would serve a stale table. Re-derive it
   // from the source rather than trusting the list.
-  const sources = ['Tickets.gs', 'Books.gs', 'People.gs', 'Auth.gs', 'Approvals.gs', 'Reports.gs']
+  const sources = ['Tickets.gs', 'Books.gs', 'People.gs', 'Auth.gs', 'Approvals.gs', 'Reports.gs', 'Prizes.gs']
     .map(f => fs.readFileSync(path + f, 'utf8')).join('\n');
   const TOUCHES = /SHEET\.TICKETS|settleTicketRows_|releaseReservedInBook_|voidUnsoldInBook_/;
 

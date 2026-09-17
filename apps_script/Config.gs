@@ -19,6 +19,8 @@ var SHEET = {
   PERMISSIONS: 'Permissions',
   PENDING: 'Pending',
   WINNERS: 'Winners',
+  PRIZES: 'Prizes',
+  PRIZE_TYPES: 'Prize_Types',
   CHECK_INS: 'Check_Ins',
   PAYMENTS: 'Payments',
   CONFIG: 'Config',
@@ -54,8 +56,20 @@ var COLS = {
     'Request_ID', 'Action', 'Payload', 'Summary', 'Detail', 'Requested_By', 'Requested_At',
     'Expires_At', 'Status', 'Decided_By', 'Decided_At', 'Note'
   ],
+  // Prize_ID, Seq, Prize_Value and Forfeited_Date are APPENDED, never inserted.
+  // Rows are written positionally from COLS.WINNERS, so a new column in the
+  // middle shifts every value after it one place to the right — which on this
+  // sheet would put a telephone number in the Claimed column.
   WINNERS: ['Ticket_Number', 'Prize', 'Drawn_Date', 'Buyer_Name', 'Buyer_Phone',
-            'Notified', 'Claimed', 'Claimed_Date', 'Notes', 'Recorded_By'],
+            'Notified', 'Claimed', 'Claimed_Date', 'Notes', 'Recorded_By',
+            'Prize_ID', 'Seq', 'Prize_Value', 'Forfeited_Date'],
+  // The prize schedule. Quantity is how many of this prize there are; Seq on
+  // the Winners sheet says which one of them somebody holds.
+  PRIZES: ['Prize_ID', 'Tier', 'Name', 'Description', 'Type_ID', 'Value_Amount',
+           'Quantity', 'Rank', 'Draw_Order', 'Donor', 'Active', 'Created_By', 'Created_Date'],
+  // What KINDS of prize exist, as rows rather than as a list in the code —
+  // see Prizes.gs for why the types are open and Valuing is not.
+  PRIZE_TYPES: ['Type_ID', 'Label', 'Valuing', 'Sort', 'Active', 'Built_In', 'Added_By'],
   // One row per seller per round. Created on first use, like the Pending tab.
   CHECK_INS: ['Agent_ID', 'Round', 'Due_Date', 'Reported_At', 'Books_Back',
               'Tickets_Sold', 'Amount_Paid', 'Note', 'Recorded_By'],
@@ -647,7 +661,8 @@ function headerMap(sheet) {
 function invalidateHeaderCaches() {
   var cache = CacheService.getScriptCache();
   var names = [SHEET.TICKETS, SHEET.BOOKS, SHEET.BOOK_HISTORY, SHEET.AGENTS,
-               SHEET.USERS, SHEET.WINNERS, SHEET.CONFIG, SHEET.AUDIT];
+               SHEET.USERS, SHEET.WINNERS, SHEET.PRIZES, SHEET.PRIZE_TYPES,
+               SHEET.CONFIG, SHEET.AUDIT];
   for (var i = 0; i < names.length; i++) {
     var s = ss_().getSheetByName(names[i]);
     if (s) cache.remove('hdr_' + s.getSheetId());
