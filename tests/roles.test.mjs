@@ -19,6 +19,7 @@
  * actually supported.
  */
 import { readFileSync } from 'node:fs'
+import { renderScreen, setupOf, visibleText } from './screen.mjs'
 const read = p => readFileSync(new URL(p, import.meta.url), 'utf8')
 
 let pass = 0, fail = 0
@@ -87,6 +88,126 @@ console.log('only an owner is offered the two roles that hand out access')
   }
   ok(/t: 'System Admin'/.test(computed),
      'the top option is called System Admin, not the wire word superadmin')
+}
+
+console.log('a selling account names its seller, and the seller can be made here')
+{
+  /*
+   * WHAT THIS SCREEN USED TO DO WITH A SELLER WHO WAS NOT ON THE LIST: nothing.
+   *
+   * upsertUser has refused a selling account with no seller since it was
+   * written — their sales would have nobody to credit — and this form asked the
+   * question as though it were optional, offered only people already on the
+   * sellers list, and let the server explain after the press. On the first day
+   * of a raffle that list is empty, so the answer to "which seller are they?"
+   * was "none of these", and the way through was to cancel, go to the Sellers
+   * screen, add them, come back and start again.
+   *
+   * Two things are pinned. The requirement is asked BEFORE the press, and the
+   * seller can be written from here — one press, both records, tied together at
+   * the moment they are made rather than by somebody remembering to come back.
+   */
+  const store = `
+import { reactive, computed } from 'vue'
+export const state = reactive({ agents: [{ id: 'A001', name: 'Amos Hung', active: true }] })
+export const api = async (action, payload) => {
+  (globalThis.__calls ??= []).push([action, payload])
+  if (action === 'upsert_agent') return { agentId: 'A007', created: true }
+  if (globalThis.__refuse) { const e = new Error(globalThis.__refuse); e.code = globalThis.__refuse; throw e }
+  return {}
+}
+export const toast = (m) => { globalThis.__toast = m }
+export const refresh = async () => {}
+export const isSuper = computed(() => false)
+`
+
+  // 1. The question is asked here rather than by the server.
+  {
+    globalThis.__calls = []; globalThis.__toast = ''
+    const { ctx, cleanup } = await setupOf('src/components/modals/UserForm.vue', store)
+    ctx.email.value = 'amos@example.com'
+    ctx.role.value = 'agent'
+    await ctx.save()
+    ok(globalThis.__calls.length === 0, 'nothing is sent with no seller chosen')
+    ok(/which seller/i.test(globalThis.__toast || ''),
+       `and the screen says so itself (${globalThis.__toast})`)
+    cleanup()
+  }
+
+  // 2. The seller is written first, and the account is tied to the id it got
+  //    back — not to the sentinel the picker holds.
+  {
+    globalThis.__calls = []; globalThis.__refuse = ''
+    const { ctx, cleanup } = await setupOf('src/components/modals/UserForm.vue', store)
+    ctx.email.value = 'amos@example.com'
+    ctx.name.value = 'Amos Hung'
+    ctx.role.value = 'agent'
+    ctx.agentId.value = '__new'
+    ctx.phone.value = '012-345 6789'
+    ctx.zone.value = 'Klang'
+    ok(ctx.makingNew.value, 'the screen knows a seller is being made')
+    await ctx.save()
+
+    const [first, second] = globalThis.__calls
+    ok(first?.[0] === 'upsert_agent', `the seller is written first (${first?.[0]})`)
+    ok(first?.[1]?.name === 'Amos Hung' && first?.[1]?.phone === '012-345 6789' &&
+       first?.[1]?.zone === 'Klang', 'with everything a seller record holds')
+    ok(second?.[0] === 'upsert_user', `then the account (${second?.[0]})`)
+    ok(second?.[1]?.agentId === 'A007',
+       `tied to the seller that was just made (${second?.[1]?.agentId})`)
+    ok(second?.[1]?.email === 'amos@example.com',
+       'and to the email typed on this screen, which is the whole point of doing it here')
+    cleanup()
+  }
+
+  // 3. A seller without a name is what the server refuses next, so it is asked
+  //    for here — the account may fall back to the email address; a seller may not.
+  {
+    globalThis.__calls = []; globalThis.__toast = ''
+    const { ctx, cleanup } = await setupOf('src/components/modals/UserForm.vue', store)
+    ctx.email.value = 'amos@example.com'
+    ctx.role.value = 'agent'
+    ctx.agentId.value = '__new'
+    await ctx.save()
+    ok(globalThis.__calls.length === 0, 'a nameless seller is not written')
+    ok(/called/i.test(globalThis.__toast || ''), `and the screen asks for one (${globalThis.__toast})`)
+    cleanup()
+  }
+
+  // 4. THE SECOND PRESS. Adding the account can fail after the seller is
+  //    written — a mistyped email, an approval the owner has to give — and the
+  //    obvious thing to do is fix it and press again. Every press must not
+  //    leave another copy of the same person on the sellers list.
+  {
+    globalThis.__calls = []; globalThis.__refuse = 'BAD_REQUEST'
+    const { ctx, cleanup } = await setupOf('src/components/modals/UserForm.vue', store)
+    ctx.email.value = 'not-an-email'
+    ctx.name.value = 'Amos Hung'
+    ctx.role.value = 'agent'
+    ctx.agentId.value = '__new'
+    await ctx.save()
+    ok(ctx.madeAgent.value === 'A007', 'the seller was created on the first press')
+
+    globalThis.__refuse = ''
+    await ctx.save()
+    const made = globalThis.__calls.filter((c) => c[0] === 'upsert_agent')
+    ok(made.length === 1, `one seller, however many presses it took (${made.length})`)
+    const last = globalThis.__calls[globalThis.__calls.length - 1]
+    ok(last?.[0] === 'upsert_user' && last?.[1]?.agentId === 'A007',
+       'and the account still points at that same seller')
+    cleanup()
+  }
+
+  // 5. What a person actually sees on the sheet.
+  {
+    const said = visibleText(await renderScreen('src/components/modals/UserForm.vue', store, {
+      drive: (b) => { b.role.value = 'agent'; b.agentId.value = '__new'; b.name.value = 'Amos Hung' },
+    }))
+    ok(/Which seller are they\?/.test(said), 'the question is on the sheet')
+    ok(/Phone number/.test(said) && /Church or area/.test(said),
+       'and choosing somebody new asks for the rest of a seller record, here')
+    ok(/sellers list/i.test(said), 'saying plainly that a seller is being added too')
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
