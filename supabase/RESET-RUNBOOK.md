@@ -78,6 +78,19 @@ screen.
 3. **The deploy is current, in this order.** Each step depends on the one
    before it:
 
+   **Look at what the push will apply before applying it:**
+
+   ```
+   supabase db push --linked --dry-run
+   ```
+
+   Production lags the repository by more than one change at a time. On
+   17 September it was six committed migrations behind with two more about to
+   be committed — so the next person to deploy applies eight at once, which is
+   a far bigger step than any single author tested. The dry run lists them by
+   name, connects for real, and changes nothing. Read the list; if a name is
+   one you do not recognise, find its author before you go on.
+
    ```
    supabase db push --linked                          # schema and migrations
    psql "$SUPABASE_DB_URL" -f supabase/functions.sql  # the functions
