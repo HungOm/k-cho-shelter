@@ -112,18 +112,30 @@ function sales(b) {
 /*
  * THE SALES, DRAWN ON TOP OF THE CUSTODY COLOUR.
  *
- * A white ring for a book with nothing left in it, a corner for one part sold.
- * White rather than a colour of its own: every custody colour in this grid is
- * already a hue, and a seventh would be read as a seventh place a book can be.
- * A ring is not a place, which is the point.
+ * A solid white band along the bottom for a book with nothing left in it, a
+ * corner dot for one part sold. White rather than a colour of its own: every
+ * custody colour in this grid is already a hue, and a seventh would be read as
+ * a seventh place a book can be. A band is not a place, which is the point.
  *
- * Inset so it cannot change the square's size — these sit in a dense grid and a
+ * IT WAS A THIN RING AND IT DID NOT READ. Reported twice, looking at Book-003 —
+ * "same colour on the grid" — and the reporter was right in the only way that
+ * counts: the mark was rendering correctly and nobody could see it. A 2px white
+ * outline sits a few pixels from a rounded edge and competes with the bold
+ * white numeral already in the middle of the tile, so it reads as part of the
+ * text's noise rather than as a separate fact. A mark you have to be told to
+ * look for is the same as no mark.
+ *
+ * The band is a contiguous shape with nothing else near it, and it makes the
+ * progression from the part-sold dot obvious: a dot is some, a full bar is all.
+ *
+ * Drawn INSIDE the square, never as a border — these sit in a dense grid and a
  * border would shift every tile around it by a pixel, which reads as the grid
  * jittering when a sale lands.
  */
 .bk.sold-all::after {
-  content: ''; position: absolute; inset: 4px;
-  border: 2px solid rgba(255, 255, 255, .9); border-radius: 4px;
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 8px;
+  background: rgba(255, 255, 255, .95); border-radius: 0 0 7px 7px;
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, .18);
 }
 .bk.sold-some::after {
   content: ''; position: absolute; right: 4px; bottom: 4px;
@@ -131,14 +143,14 @@ function sales(b) {
   background: rgba(255, 255, 255, .9);
 }
 /* The office colour is pale, so a white mark on it would be invisible. */
-.bk.s-Unassigned.sold-all::after { border-color: var(--muted); }
+.bk.s-Unassigned.sold-all::after { background: var(--muted); box-shadow: none; }
 .bk.s-Unassigned.sold-some::after { background: var(--muted); }
 .bk { position: relative; }
 
 .keys i.sold-all { position: relative; }
 .keys i.sold-all::after {
-  content: ''; position: absolute; inset: 2px;
-  border: 1.5px solid rgba(255, 255, 255, .9); border-radius: 2px;
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+  background: rgba(255, 255, 255, .95); border-radius: 0 0 4px 4px;
 }
 .keys i.sold-some { position: relative; }
 .keys i.sold-some::after {

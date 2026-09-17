@@ -23,7 +23,11 @@
  * has not been released yet has no sales and no tickets left, and must not be
  * drawn as sold out.
  */
+import { readFileSync } from 'node:fs'
 import { renderScreen } from './screen.mjs'
+import { cut } from './source.mjs'
+
+const read = (p) => readFileSync(new URL('../' + p, import.meta.url), 'utf8')
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -94,6 +98,47 @@ console.log('5. the number on it is still the number, and the hover still reads'
   // a missing legend.
   ok(/<i class="s-Returned sold-all"/.test(html) && /<i class="s-Returned sold-some"/.test(html),
      'and the legend carries both marks, because a mark nobody can look up is decoration')
+}
+
+console.log('5b. the sold-out mark is a shape somebody can see, not a hairline')
+{
+  /*
+   * THE CLASS WAS RIGHT AND NOBODY COULD SEE IT.
+   *
+   * Cases 1-3 assert that a sold-out book carries `sold-all`, and they passed
+   * throughout — while the organiser reported twice, looking at Book-003, that
+   * the grid showed "same colour". They were right in the only way that counts.
+   * The mark was a 2px white outline inset from a rounded edge, on a tile with
+   * a bold white numeral already in the middle of it, so it read as part of the
+   * text rather than as a separate fact.
+   *
+   * A test on the CLASS cannot catch that: the class is present either way.
+   * What failed was whether the mark is a shape, so that is what is asserted —
+   * `sold-all` paints a filled area, and does not go back to being a hairline
+   * that only a person who knows to look for it will find.
+   *
+   * This is the weakest kind of assertion, a scrape over a stylesheet, and it
+   * is here because the alternative is no check at all on the one property that
+   * actually broke. It is not a claim that the mark looks good; it is a claim
+   * that it is still solid.
+   */
+  const css = read('src/components/ui/BookGrid.vue')
+  const rule = cut(css, '.bk.sold-all::after', '}', 'the sold-out mark')
+
+  ok(/background:/.test(rule), 'it fills an area rather than drawing an outline')
+  ok(!/^\s*border:\s*\d/m.test(rule),
+     'and is not a hairline border again — that is the form nobody could see')
+  ok(/rgba\(255, 255, 255, \.9\d*\)|#fff/.test(rule), 'in white, so it sits on every custody colour')
+
+  // The pale office tile cannot take a white mark, and that override has to
+  // follow the mark's shape or it silently stops applying.
+  const pale = cut(css, '.bk.s-Unassigned.sold-all::after', '}', 'the office-tile override')
+  ok(/background:\s*var\(--muted\)/.test(pale),
+     'and the pale tile overrides the same property the mark now uses')
+
+  // The key teaches the mark. If they diverge, the legend is a lie.
+  const key = cut(css, '.keys i.sold-all::after', '}', 'the legend swatch')
+  ok(/background:/.test(key), 'the legend swatch shows the same shape as the tile')
 }
 
 /*
