@@ -45,11 +45,194 @@ online are the same either way — and the rest of the Supabase side is:
 6. Set the repository variables `VITE_BACKEND=supabase`, `VITE_SUPABASE_URL` and
    `VITE_SUPABASE_PUBLISHABLE_KEY`, then push. **If `VITE_BACKEND` is unset the build falls back to
    Apps Script**, which is the one way to end up quietly running the other backend.
-7. Add the backup secrets from [`.github/workflows/backup.yml`](.github/workflows/backup.yml).
+7. Turn on the weekly backup — **[Backups](#backups-supabase)** below. The free plan takes none,
+   and the job deliberately fails every week until it is set up.
 8. Check it: `./tests/run.sh`, and `./supabase/test-rls.sh` against a throwaway database.
 
 Everything from Step 1 to Step 9 below is the **Apps Script** path, and Step 3 (Google sign-in) and
 Step 7 (putting the app online) are needed for both.
+
+---
+
+## Reaching the database
+
+Three things about connecting cost an afternoon each, and every one of them presents as a
+different problem than it is. They are written down here so they cost nobody a second one.
+
+### The connection string the dashboard shows may not work
+
+**Use the session pooler, not the direct host.** Project Settings → Database → *Connection string*
+→ **Session pooler**:
+
+```
+postgresql://postgres.<project-ref>:PASSWORD@aws-0-<region>.pooler.supabase.com:5432/postgres
+```
+
+Two details that are easy to miss and both fatal:
+
+- the username carries the project ref — `postgres.abcdefgh`, not `postgres`
+- the port is **5432**. There is a transaction pooler on 6543; it does not support what `pg_dump`
+  and migrations need.
+
+The direct host, `db.<project-ref>.supabase.co`, is what the dashboard offers first. It is
+IPv6-only and on this project it **refuses connections on 5432 outright** — which reads as a
+firewall problem or a wrong password, and is neither.
+
+### The database password is a third credential
+
+Not your Supabase account login, and not the API keys. It is the Postgres password for the
+`postgres` role, shown once when the project was created and **not retrievable afterwards** —
+only resettable, at Project Settings → Database → *Reset database password*.
+
+Resetting it is safe. Nothing that serves the raffle uses it:
+
+| What | Uses |
+|---|---|
+| The Vue app | `VITE_SUPABASE_PUBLISHABLE_KEY` |
+| The `api` Edge Function | `SUPABASE_SECRET_KEY` |
+| `connect.sh` | the REST API and the secret key |
+| `backup.sh`, the weekly workflow, `supabase db push` | **the database password** |
+
+So a reset interrupts backups and migrations, and nothing a volunteer touches.
+
+Put it in `supabase/.env.local`, which is gitignored:
+
+```
+SUPABASE_DB_URL=postgresql://postgres.<ref>:PASSWORD@aws-0-<region>.pooler.supabase.com:5432/postgres
+```
+
+**Percent-encode `@ : / # ^ +` if the password contains them**, or the URL parses as a different
+host and the error will talk about DNS.
+
+### `supabase db push --db-url` does not work here
+
+It fails to authenticate against a string that `psql` accepts unchanged. Use the CLI's own
+variable instead:
+
+```
+SUPABASE_DB_PASSWORD='...' supabase db push --linked
+```
+
+`--dry-run` connects happily either way, so **a green dry run does not prove the real push will
+connect**. Take a backup before pushing, and verify afterwards rather than trusting the exit code.
+
+---
+
+## Backups *(Supabase)*
+<a id="backups-supabase"></a>
+
+**The free plan takes no automatic backups.** Everything about this raffle that cannot be
+reconstructed lives in one database: who bought which ticket, and how to telephone them. Lose it
+and the draw cannot be run — not "is awkward to run", cannot be run, because there is no way left
+to tell a winner they have won.
+
+[`.github/workflows/backup.yml`](.github/workflows/backup.yml) runs every Sunday night and can be
+triggered by hand. **Until it is set up it fails every week on purpose**, because a backup nobody
+has finished configuring should be loud rather than quiet.
+
+### Why it is encrypted, and why it refuses rather than falling back
+
+A dump of this database is every buyer's name and telephone number, most of them refugees. A
+GitHub artifact is readable by anybody with read access to the repository — and this repository
+publishes a Pages site, which on a free account means it is public, which means everybody.
+"Retained privately" is not a property an artifact has here; it is one the file has to carry.
+
+So the dump is sealed with gpg **before** it is handed to the artifact store, and the plaintext is
+deleted in the same step. The runner holds only the PUBLIC key: it can seal a backup and cannot
+open one, so whoever gets hold of the artifact, the runner, or this repository still cannot read a
+telephone number.
+
+If the key is not configured the job **fails instead of uploading plaintext**, and that check runs
+*before* the dump — checking afterwards would mean the plaintext already exists on the runner when
+you discover you cannot seal it.
+
+### One-time setup
+
+**1. Make the key pair.** On a machine that is not the CI runner:
+
+```
+bash supabase/backup-key.sh
+```
+
+It writes `backup-key.pub` (gitignored) and prints the fingerprint. The private half stays in your
+gpg keyring on that machine and nowhere else.
+
+**2. Keep the private half somewhere you will still have in a year.**
+
+```
+gpg --armor --export-secret-keys "K'Cho raffle backups" > kcho-backup-key.asc
+```
+
+Move it off the machine — password manager, a USB stick in a drawer, anywhere you keep things that
+matter. **Without it no sealed backup can ever be opened, by anybody, including you.** This is the
+step people skip, and it is the one that makes every backup after it worthless.
+
+**3. Add four repository secrets.** Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+|---|---|
+| `BACKUP_GPG_PUBLIC_KEY` | the whole of `backup-key.pub`, `BEGIN` and `END` lines included |
+| `SUPABASE_DB_URL` | the session pooler connection string, as above |
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+| `SUPABASE_SECRET_KEY` | the `sb_secret_` key from Settings → API — **not** the publishable one |
+
+Or with the `gh` CLI: `gh secret set BACKUP_GPG_PUBLIC_KEY < backup-key.pub`, and the same for the
+other three.
+
+**4. Run it once by hand.** Actions → *Weekly backup* → Run workflow. Do not wait for Sunday: a
+mistake should surface on the day you made it.
+
+### What is in a backup, and what is not
+
+`pg_dump` refuses to run against a server newer than itself, and Supabase upgrades the hosted
+server while nobody upgrades their laptop. When that happens — or when Docker is not available,
+since `supabase db dump` fetches a matching `pg_dump` in a container — `backup.sh` falls back to
+copying **every table out with `psql`**, which has no such rule. The table list is asked of the
+database rather than written down here, so a table added next month is in the backup without
+anybody remembering to add it.
+
+That fallback captures the **data and not the schema**, and says so in a note inside the folder.
+It is the honest trade: the schema can be rebuilt from this repository and the migrations; the
+names and telephone numbers cannot be rebuilt from anything.
+
+### Restoring
+
+```
+gpg --decrypt raffle-backup-<date>.tar.gz.gpg > raffle-backup.tar.gz
+tar -xzf raffle-backup.tar.gz
+```
+
+A full dump restores with `psql "$DB_URL" -f schema.sql` then `-f data.sql`.
+
+A fallback backup has CSVs and **its own restore script**, written at the time the backup was
+taken. Build the schema first — `supabase/schema.sql`, `functions.sql`, `rls.sql`, then
+`supabase/migrations/` — and run it for the data:
+
+```
+DB_URL='postgresql://...' bash restore.sh
+```
+
+Do not hand-write the `\copy` loop. Three things break it, and all three were found by trying:
+
+- **Positional copy fails the moment the schema gains a column.** Which is the situation every
+  restore is in — you are loading an old backup into a newer database. It fails with *missing data
+  for column*, at the worst possible moment. The script names the columns from each CSV's header.
+- **Generated columns cannot be written by COPY.** `app_users.active` is computed from `status`,
+  and a backup taken with `select *` carries it. The script drops any column the target derives
+  for itself.
+- **Alphabetical order violates the foreign keys** — `book_history` loads before `books`. The
+  script copies what it can and retries the rest until a pass makes no progress, then says which
+  tables are left and why.
+
+It also advances the sequences afterwards. Ids come across with their rows and the sequences stay
+at 1, so without that step the restore looks perfect and the next insert collides with a row that
+is already there.
+
+The CSV path has been round-tripped into an empty database and checked — 20,000 tickets, 2,000
+books, and every other table equal going out and coming back, with the next insert landing on a
+fresh id rather than a collision. The full-dump path has not been exercised here, because no `pg_dump` matching the
+hosted server was available; if you ever take one, restore it into a throwaway project once before
+you need it. A backup nobody has restored is a backup nobody has.
 
 ---
 
@@ -462,9 +645,8 @@ You are in, as admin.
 
 ## Step 9 — Turn on backups *(Apps Script path)*
 
-On Supabase this is [`.github/workflows/backup.yml`](.github/workflows/backup.yml) instead — it
-runs weekly and seals the dump with gpg before it is uploaded, because an artifact on a public
-repository is readable by anybody. Add the four secrets named at the top of that file.
+On Supabase this is **[Backups](#backups-supabase)** near the top instead — the weekly workflow,
+the key it seals with, and how to restore one.
 
 In the Apps Script editor, run **`installBackupTrigger`** once.
 

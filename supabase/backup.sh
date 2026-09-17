@@ -119,12 +119,127 @@ else
   : > "$OUT/data.sql"
   mkdir -p "$OUT/csv"
   for t in $TABLES; do
-    psql "$SUPABASE_DB_URL" -q -c "\copy (select * from public.$t) to '$OUT/csv/$t.csv' with (format csv, header)" \
+    # NAMED COLUMNS, AND NOT THE DERIVED ONES.
+    #
+    # `select *` takes generated columns too — app_users.active is computed from
+    # status — and COPY refuses to write one back, so a backup taken with * is a
+    # backup that cannot be restored. They are also not data: a generated column
+    # is a function of the row, and it comes back by itself.
+    cols=$(psql "$SUPABASE_DB_URL" -tAc "
+      select string_agg(quote_ident(column_name), ',' order by ordinal_position)
+        from information_schema.columns
+       where table_schema='public' and table_name='$t' and is_generated = 'NEVER'")
+    [ -n "$cols" ] || { echo "REFUSING TO CALL THIS A BACKUP: $t reported no columns." >&2; exit 1; }
+    psql "$SUPABASE_DB_URL" -q -c "\copy (select $cols from public.$t) to '$OUT/csv/$t.csv' with (format csv, header)" \
       || { echo "REFUSING TO CALL THIS A BACKUP: $t could not be copied out." >&2; exit 1; }
     rows=$(( $(wc -l < "$OUT/csv/$t.csv") - 1 ))
     printf -- '-- %s: %s rows (see csv/%s.csv)\n' "$t" "$rows" "$t" >> "$OUT/data.sql"
     echo "      $t — $rows rows"
   done
+
+  # A RESTORE SCRIPT, WRITTEN NOW, WHILE IT IS EASY.
+  #
+  # The obvious restore — \copy each CSV straight back — is positional, and it
+  # breaks the moment the schema has gained a column since the backup was taken.
+  # Which is the situation EVERY restore is in: you are putting an old backup
+  # into a newer database. It fails with "missing data for column", at the worst
+  # possible moment, to somebody who did not write the backup.
+  #
+  # So the columns are named, read from each CSV's own header row. A column
+  # added later is simply absent and takes its default; one that was dropped
+  # since is the only case that still needs a person, and it says so.
+  cat > "$OUT/restore.sh" <<'RESTORE'
+#!/usr/bin/env bash
+# Put this backup into an EMPTY database.
+#
+#   DB_URL='postgresql://...' bash restore.sh
+#
+# Build the schema first — supabase/schema.sql, functions.sql, rls.sql and
+# supabase/migrations/ from the repository — then run this for the data.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${DB_URL:?Set DB_URL to the target connection string}"
+
+# IN WHATEVER ORDER THE FOREIGN KEYS ALLOW, found by trying.
+#
+# csv/*.csv is alphabetical, so book_history loads before books and the foreign
+# key refuses it. Rather than encode the dependency graph here — where it would
+# go stale the first time somebody adds a table — each pass copies what it can
+# and the next pass retries the rest. A pass that achieves nothing means what is
+# left cannot be loaded at all, and it says which and stops.
+#
+# A failed COPY writes nothing, so a retry starts clean.
+todo=$(ls csv/*.csv 2>/dev/null)
+[ -n "$todo" ] || { echo "No CSVs here." >&2; exit 1; }
+
+while [ -n "$todo" ]; do
+  failed=""
+  progress=""
+  for f in $todo; do
+    t=$(basename "$f" .csv)
+    cols=$(head -1 "$f")
+    if [ -z "$cols" ]; then echo "  $t — empty file, skipped"; progress=yes; continue; fi
+    # Drop any column the TARGET computes for itself. An older backup may carry
+    # a generated column this database now derives, and COPY refuses to write
+    # one — it is not the backup's job to supply what the schema produces.
+    cols=$(psql "$DB_URL" -tAc "
+      select string_agg(quote_ident(c), ',')
+        from unnest(string_to_array('$cols', ',')) c
+       where c not in (select column_name from information_schema.columns
+                        where table_schema='public' and table_name='$t'
+                          and is_generated <> 'NEVER')")
+    if [ -z "$cols" ]; then echo "  $t — nothing left to copy, skipped"; progress=yes; continue; fi
+    if psql "$DB_URL" -q -c "\\copy public.$t ($cols) from '$f' with (format csv, header)" 2>/dev/null; then
+      echo "  $t"
+      progress=yes
+    else
+      failed="$failed $f"
+    fi
+  done
+  if [ -z "$failed" ]; then break; fi
+  if [ -z "$progress" ]; then
+    echo >&2
+    echo "STOPPED. These could not be loaded, and retrying will not help:" >&2
+    for f in $failed; do
+      t=$(basename "$f" .csv)
+      echo "  $t:" >&2
+      psql "$DB_URL" -c "\\copy public.$t ($(head -1 "$f")) from '$f' with (format csv, header)" 2>&1 | head -2 | sed 's/^/    /' >&2
+    done
+    echo >&2
+    echo "Usually the schema has moved on since this backup. Build the schema from" >&2
+    echo "the repository at the commit this backup was taken, load the data, then" >&2
+    echo "apply the migrations since." >&2
+    exit 1
+  fi
+  todo="$failed"
+done
+
+# SEQUENCES DO NOT MOVE WHEN ROWS ARE COPIED IN.
+#
+# Every id comes across with its row, and the sequence behind it stays where it
+# was — at 1, in a fresh database. The restore looks perfect and the very next
+# insert collides with a row that is already there. Asked of the database
+# rather than listed here, so a table added later is covered.
+psql "$DB_URL" -q -c "
+do \$\$
+declare r record; m bigint;
+begin
+  for r in
+    select c.table_name as t, c.column_name as col,
+           pg_get_serial_sequence('public.' || quote_ident(c.table_name), c.column_name) as seq
+      from information_schema.columns c
+     where c.table_schema = 'public'
+       and pg_get_serial_sequence('public.' || quote_ident(c.table_name), c.column_name) is not null
+  loop
+    execute format('select coalesce(max(%I), 0) from public.%I', r.col, r.t) into m;
+    perform setval(r.seq, greatest(m, 1));
+  end loop;
+end \$\$;" || { echo "Sequences were NOT advanced. The next insert may collide with a" >&2
+                 echo "restored id — fix before anybody uses this database." >&2; exit 1; }
+
+echo "Restored. Check a count you recognise before trusting it."
+RESTORE
+  chmod +x "$OUT/restore.sh"
 
   cat > "$OUT/SCHEMA-NOT-INCLUDED.txt" <<'NOTE'
 This backup has the DATA and not the schema.
@@ -193,9 +308,7 @@ else
   # data.sql is a manifest in this mode, not a script. Printing the same two
   # lines either way would hand somebody a restore that silently does nothing.
   echo "  # the schema first — see $OUT/SCHEMA-NOT-INCLUDED.txt"
-  echo "  # then the data, one table at a time:"
-  echo "  for f in $OUT/csv/*.csv; do"
-  echo "    t=\$(basename \"\$f\" .csv)"
-  echo "    psql \"\$DB_URL\" -c \"\\copy public.\$t from '\$f' with (format csv, header)\""
-  echo "  done"
+  echo "  # then the data:"
+  echo "  DB_URL=... bash $OUT/restore.sh"
+
 fi
