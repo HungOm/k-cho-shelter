@@ -349,6 +349,37 @@ ok "$(AS 'off@x.com' "select count(*) from config_readable")" "0" \
 denied 'admin@x.com' 'select notes from config' \
    "config.notes stays out of reach — the grant names key and value only"
 
+# ============ AND IT HAS TO RUN A SECOND TIME ============
+#
+# EVERY DEPLOY BUT THE FIRST APPLIES rls.sql TO A DATABASE THAT ALREADY HOLDS
+# rls.sql's OWN PREVIOUS OUTPUT. Nothing here tested that. This suite built a
+# database from nothing and applied the file once, which is the one shape the
+# deploy never has — so a `drop view` that the existing views refuse looked
+# perfectly green here and stopped the deploy dead at the line it was on:
+#
+#   ERROR: cannot drop view book_ledger_all because other objects depend on it
+#   DETAIL: view agent_money depends on view book_ledger_all
+#
+# leaving the policies above that line applied and the money views below it not.
+# Two sessions hit it on one evening, and both worked around it by hand.
+#
+# It costs one more application of a file against a container that is already
+# up, and it is the only check here that exercises the deploy rather than the
+# install.
+echo "and the whole file survives being applied twice, which is what a deploy does"
+if APPLY supabase/rls.sql >/dev/null 2>&1; then
+  pass=$((pass+1))
+else
+  fail=$((fail+1))
+  echo "  FAIL rls.sql cannot be re-applied to a database that already has its views"
+  APPLY supabase/rls.sql 2>&1 | grep -iE "error|detail" | head -4 | sed 's/^/    /'
+fi
+# And the masking still holds afterwards, because "it ran" is not "it is right":
+# a re-run that dropped the view and recreated a stale one would pass the line
+# above and hand every seller back their neighbour's takings.
+ok "$(AS 'a1@x.com' "select coalesce(sold_by_agent,'') from tickets_readable where number='KS-00021'")" "" \
+   "and another seller's takings are still masked after the second run"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1

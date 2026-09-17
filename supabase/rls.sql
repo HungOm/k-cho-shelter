@@ -381,6 +381,29 @@ grant select on book_ledger to authenticated;
  * has to, being above the policies. Explicitly revoked from anon and
  * authenticated so the unfiltered one can never be reached from a browser.
  */
+/*
+ * AND agent_money GOES FIRST, BECAUSE IT READS THIS ONE.
+ *
+ * `drop view` without `cascade` is refused while anything depends on the view,
+ * and agent_money selects from book_ledger_all. On a fresh database there is
+ * nothing to depend on it and this file runs clean, which is the only shape any
+ * suite here exercised — so the fault was invisible until a deploy, where the
+ * database always already holds this file's own previous output:
+ *
+ *     ERROR: cannot drop view book_ledger_all because other objects depend on it
+ *     DETAIL: view agent_money depends on view book_ledger_all
+ *
+ * and rls.sql stops at that line, leaving the policies above it applied and the
+ * money views below it not. Two sessions hit it on the same evening.
+ *
+ * Named rather than `cascade`, for the reason this file gives about negative
+ * conditions elsewhere: `cascade` destroys whatever happens to depend on this
+ * view, including something added later that nothing here recreates. Dropping
+ * agent_money by name says exactly what is being destroyed, and it is recreated
+ * further down this same file. If a second dependent is ever added, this line
+ * stops working and somebody has to think — which is the point.
+ */
+drop view if exists agent_money;
 drop view if exists book_ledger_all;
 create view book_ledger_all as
 select
