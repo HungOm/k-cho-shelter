@@ -760,6 +760,23 @@ export function fakeDb(seed = {}) {
             source: 'settlement', reverses: r.id, received_at: new Date().toISOString(),
             note: 'Reversed: book put back on the shelf',
           })
+          /*
+           * AND THE SAME MONEY BACK AS A HAND-OVER, which is the half a seller
+           * notices. The reversal is bookkeeping — the book's amount_paid is
+           * being cleared and that row is the same cash. The sales survive the
+           * restock and still name their seller, so without this the charge
+           * stays and the credit goes, and somebody who paid ninety on the 14th
+           * is shown owing ninety. Modelled here because the money screen tests
+           * read these rows.
+           */
+          if (Number(r.amount) !== 0) {
+            pays.push({
+              id: pays.length + 1, agent_id: r.agent_id, amount: Number(r.amount),
+              received_by: args.p_user, method: r.method ?? 'cash', book_idx: r.book_idx,
+              source: 'hand', reverses: null, received_at: new Date().toISOString(),
+              note: 'Cash kept from the count-in of a book, which went back on the shelf',
+            })
+          }
         }
         let moved = 0
         for (const b of db.tables.books ?? []) {

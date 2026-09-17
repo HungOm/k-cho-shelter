@@ -16,21 +16,20 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-# ONE CONTAINER PER RUN, because several sessions share this worktree.
+# PER PROCESS, so two sessions can run this at the same time.
 #
-# This was a fixed name and a fixed port, and the script opens by removing any
-# container already called that. So a second run killed the first one's database
-# mid-flight, and what the first run then printed was not a failure report — it
-# was a wall of SQL errors whose real cause was "No such container". Two sessions
-# lost an hour today believing one.
+# These were fixed strings, and the script starts by running `docker rm -f` on
+# that name: a second run killed the first one's container mid-flight, and the
+# first then reported schema.sql failing and a hundred and forty-four cases
+# failing after it. Every one of those was a phantom — the real error was "No
+# such container" — and confident nonsense is worse than a red suite, because
+# somebody goes hunting a bug that does not exist.
 #
-# The local-Postgres branch below has always done this properly: it creates
-# kcho_sqltest_$$, a throwaway named after the process, so a run "can never touch
-# anything that was already on the machine". The docker branch was simply never
-# given the same treatment. Overridable, so a run can still be pointed at a
-# known name when somebody is debugging one.
+# The local-Postgres branch below has always done this: it creates
+# kcho_sqltest_$$ precisely so a run cannot touch anything already on the
+# machine. The docker branch was never given the same treatment.
 NAME=${KCHO_SQLTEST_NAME:-kcho-sqltest-$$}
-PORT=${KCHO_SQLTEST_PORT:-$(( 55434 + ($$ % 500) ))}
+PORT=${KCHO_SQLTEST_PORT:-$(( 55434 + ($$ % 400) ))}
 pass=0; fail=0
 ok()  { if [ "$1" = "$2" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "  FAIL $3"; echo "    got:  $1"; echo "    want: $2"; fi; }
 has() { if grep -q "$2" <<<"$1"; then pass=$((pass+1)); else fail=$((fail+1)); echo "  FAIL $3"; echo "    got: $1"; fi; }
@@ -741,6 +740,35 @@ has "$r" "append only" "nor deleted"
 r=$(P "truncate audit_log")
 has "$r" "append only" "nor the whole log emptied"
 ok "$(P "select email from audit_log where action='TEST_OVERRIDE'")" "someone@x.com" "and the original entry is untouched"
+
+echo "putting a book back on the shelf does not un-pay the seller"
+# BOOK-084, FROM THE LIVE RAFFLE. A book counted in with nine sold and RM90
+# handed over, then put back on the shelf, left JOHN owing ninety pounds of
+# money he had already given. Restock reverses the settlement payment — it must,
+# because it also clears the book's amount_paid and the two are the same cash —
+# and the nine sales survive the restock, so the charge stayed and the credit
+# went. The cash arrived; it did not stop having arrived.
+P "insert into agents(agent_id,name,phone,active) values ('RS','Restock Seller','0125559999',true)" >/dev/null
+P "insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent) values (12,'Book-0012','KS-00111','KS-00120','Out','RS')" >/dev/null
+P "insert into tickets(idx,number,book_idx,status) select i,'KS-'||lpad(i::text,5,'0'),12,'Available' from generate_series(111,120) i" >/dev/null
+# Its own book and its own ticket range: every range below 100 is already spoken
+# for by a case above, and settling somebody else's half-sold fixture proves
+# nothing about restock.
+P "update config set value='120' where key='TOTAL_TICKETS'" >/dev/null
+P "select settle_book('Book-0012','[\"KS-00120\"]'::jsonb,90,false,null,false,'admin@x.com','')" >/dev/null
+ok "$(P "select outstanding from agent_money where agent_id='RS'")" "0.00" "counted in and paid in full, nothing outstanding"
+
+P "select restock_books_tx(array[12],'admin@x.com','')" >/dev/null
+ok "$(P "select count(*) from tickets where book_idx=12 and status='Sold'")" "9" "the nine sales survive the restock — they are somebody's tickets"
+ok "$(P "select expected from agent_money where agent_id='RS'")" "90.00" "and are still charged to the seller who sold them"
+ok "$(P "select collected from agent_money where agent_id='RS'")" "90.00" "the money they handed over is still theirs to have paid"
+ok "$(P "select outstanding from agent_money where agent_id='RS'")" "0.00" "so they owe nothing, which is the truth"
+# The ledger says both things rather than hiding one: the settlement row is
+# reversed because the book's figure is gone, and the cash is re-entered as the
+# hand-over it now is.
+ok "$(P "select count(*) from payments where agent_id='RS' and source='settlement' and reverses is not null")" "1" "the settlement row is reversed, not deleted"
+has "$(P "select note from payments where agent_id='RS' and source='hand'")" "went back on the shelf" "and the cash is re-entered saying where it came from"
+P "update config set value='50' where key='TOTAL_TICKETS'" >/dev/null
 
 echo "the ledger cannot be edited or erased"
 P "insert into payments(agent_id,amount,received_by,note) values ('A001',50,'me@x.com','cash at the desk')" >/dev/null
