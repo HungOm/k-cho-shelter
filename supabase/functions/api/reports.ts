@@ -507,7 +507,6 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
         : 'Sold, but the cash has not come back. If some of it is never coming, write ' +
           'it off with a reason rather than recording a payment that did not happen.' })
   }
-
   if (reserved) {
     problems.push({ what: 'tickets still being held', count: reserved,
       why: 'Neither sold nor available — decide before the draw.' })
@@ -621,31 +620,259 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
   }
 }
 
-/** One seller's books and what they owe — the sheet you hand them. */
+/**
+ * ONE SELLER'S STATEMENT OF ACCOUNT — what they were charged, what they paid,
+ * what is left, in the order it happened.
+ *
+ * WHAT WAS HERE BEFORE returned four totals and a list of books, and the screen
+ * that showed the money drew its detail from somewhere else entirely: every
+ * payment row the seller had, raw. That produced the thing that got this
+ * rewritten — a panel showing RM -100.00, RM -100.00, RM -100.00, RM 100.00,
+ * RM 100.00, RM 100.00, all labelled "counted in with a book", none of which
+ * moved the balance by a penny.
+ *
+ * They did not move it because settlement payment rows are NOT what a closed
+ * book's cash is counted from. agent_money reads `books.amount_paid` for that
+ * and sums only source='hand' out of payments, precisely so the same cash is
+ * not counted twice. So the old panel listed six rows that are bookkeeping
+ * exhaust — a re-settle reverses its predecessor and writes a fresh row — and
+ * omitted the figures that actually make up the debt.
+ *
+ * A STATEMENT IS THE ORDINARY ANSWER to this, and it is ordinary on purpose:
+ * charges on the left, credits on the right, a running balance down the side,
+ * every line dated and referenced to the book or the receipt it came from.
+ * Anybody who has read a bank statement or a utility bill can read it, which
+ * is the whole requirement — the people using this are volunteers, not
+ * accountants, and the ones they hand it to are sellers being asked for money.
+ *
+ * THE TOTALS ARE NOT COMPUTED HERE. They are read from agent_money, the same
+ * view the table on the screen reads, and the entries are built from the rows
+ * that view is defined over. A statement that adds up to a different number
+ * than the line it expands is the bug this repo has produced five times in
+ * other shapes; here it would be a seller shown two different debts on one
+ * screen. The test asserts the entries sum to the view's figure rather than
+ * trusting that they were derived from the same tables.
+ *
+ * WHY A WRITE-OFF IS ITS OWN KIND OF LINE. It reduces what is owed, so it must
+ * move the running balance — a closing balance that disagrees with the debt is
+ * not a statement. But it is not cash, so it is never added to what was
+ * collected, and it carries its own label on the row. Collapsing the two tells
+ * the treasurer money arrived that never did, and tells the seller they paid
+ * something somebody else decided to absorb.
+ */
 export async function agentStatement(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
-  // An agent may only ever pull their own. Asking for somebody else's is not an
-  // error worth explaining — it is quietly turned back into their own.
-  const agentId = user.role === 'agent'
-    ? (user.agentId ?? '')
-    : String(p.agentId ?? '').trim()
-  if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller?')
+  /*
+   * WHOSE STATEMENT, and this had to be tightened when the document grew.
+   *
+   * It used to say "an agent may only pull their own", which left everybody
+   * else — including a HELPER — able to name any seller and read their
+   * account. That was already wrong and it was small: four totals and a list of
+   * books. It is not small now. This returns every charge, every payment and a
+   * running balance, which is precisely the who-owes-what that moneyScope
+   * keeps away from helpers on the screen next door.
+   *
+   * So: an organiser may read anybody's, and everybody else reads their own,
+   * whatever they asked for. A helper carrying no books has no account to read
+   * and is told so plainly rather than handed an empty one — they owe nothing,
+   * by design, and an empty statement reads like a bug.
+   */
+  const mine = String(user.agentId ?? '').trim()
+  const asked = String(p.agentId ?? '').trim()
+  const agentId = user.isAdmin ? (asked || mine) : mine
+  if (!agentId) {
+    throw new ApiError(
+      user.isAdmin ? 'MISSING_FIELD' : 'NO_STATEMENT',
+      user.isAdmin
+        ? 'Which seller?'
+        : 'A statement belongs to a seller carrying books. The sales you write '
+          + 'down are credited to whoever holds the book, so none of the money is yours.',
+      null, user.isAdmin ? 400 : 403,
+    )
+  }
 
   const { data: agent } = await ctx.supabaseAdmin
     .from('agents').select('*').eq('agent_id', agentId).maybeSingle()
   if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${agentId}".`, null, 404)
 
+  const cur = await currency(ctx)
+
+  // The figures the screen already shows for this seller. Read, not recomputed.
+  const { data: summary } = await ctx.supabaseAdmin
+    .from('agent_money').select('*').eq('agent_id', agentId).maybeSingle()
+
   const { data: books } = await ctx.supabaseAdmin
     .from('book_ledger_all').select('*').eq('held_by_agent', agentId).order('idx')
 
-  const expected = (books ?? []).reduce((s: number, b: { counted_expected: number }) => s + Number(b.counted_expected ?? 0), 0)
-  const collected = (books ?? []).reduce((s: number, b: { counted_collected: number }) => s + Number(b.counted_collected ?? 0), 0)
+  /*
+   * THE TWO REGIMES, kept apart exactly as agent_money keeps them.
+   *
+   * An OPEN book's truth is its ticket rows: the sale names its seller, so that
+   * is who owes for it. A CLOSED book's truth is the figure declared when it
+   * was counted in, frozen against the seller it was counted in for. Adding
+   * them would double a book that is both — which is why the open side excludes
+   * anything already declared.
+   */
+  const active = Number((await ctx.supabaseAdmin.rpc('active_tickets', {})).data ?? 0)
+
+  const { data: openSales } = await ctx.supabaseAdmin
+    .from('tickets')
+    .select('number,amount,sold_at,book_idx,status,books(number,status,declared_sold)')
+    .eq('sold_by_agent', agentId)
+    .in('status', ['Sold', 'Donated'])
+    .lte('idx', active)
+    .order('idx')
+
+  type Sale = {
+    number: string; amount: number | null; sold_at: string | null; book_idx: number
+    books: { number: string; status: string; declared_sold: number | null } | null
+  }
+  const stillOpen = ((openSales ?? []) as Sale[]).filter((t) => {
+    const b = t.books
+    return !(b && (b.status === 'Settled' || b.status === 'Lost') && b.declared_sold != null)
+  })
+
+  const { data: closed } = await ctx.supabaseAdmin
+    .from('books')
+    .select('number,declared_sold,amount_due,amount_paid,settled_at,status')
+    .eq('settled_by_agent', agentId)
+    .in('status', ['Settled', 'Lost'])
+    .not('declared_sold', 'is', null)
+    .order('idx')
+
+  const { data: pays } = await ctx.supabaseAdmin
+    .from('payments')
+    .select('id,amount,method,note,source,received_at,received_by,book_idx,reverses')
+    .eq('agent_id', agentId)
+    .order('received_at')
+
+  /*
+   * ONE LINE PER BOOK, not one per ticket.
+   *
+   * A seller with sixty books has six hundred tickets, and a statement that
+   * lists them is not a statement, it is a printout. The book is the unit the
+   * conversation actually happens in — "Book-230, ten sold, RM100" is what both
+   * sides can check against the paper in their hands. Which tickets those were
+   * is a question the ticket list answers, on demand, for one book.
+   */
+  const byBook = new Map<string, { book: string; count: number; amount: number; at: string | null }>()
+  for (const t of stillOpen) {
+    const name = t.books?.number ?? `Book ${t.book_idx}`
+    const e = byBook.get(name) ?? { book: name, count: 0, amount: 0, at: null }
+    e.count += 1
+    e.amount += Number(t.amount ?? 0)
+    // The last sale in the book, because that is when the charge finished growing.
+    if (t.sold_at && (!e.at || t.sold_at > e.at)) e.at = t.sold_at
+    byBook.set(name, e)
+  }
+
+  type Entry = {
+    at: string | null; kind: string; ref: string; description: string
+    charge: number; credit: number; balance: number; reversed?: boolean
+  }
+  const entries: Entry[] = []
+
+  for (const b of byBook.values()) {
+    entries.push({
+      at: b.at, kind: 'sale', ref: b.book,
+      description: `${b.count} ticket${b.count === 1 ? '' : 's'} sold`,
+      charge: round2(b.amount), credit: 0, balance: 0,
+    })
+  }
+
+  type Closed = {
+    number: string; declared_sold: number | null; amount_due: number | null
+    amount_paid: number | null; settled_at: string | null; status: string
+  }
+  for (const b of ((closed ?? []) as Closed[])) {
+    const due = round2(Number(b.amount_due ?? 0))
+    const paid = round2(Number(b.amount_paid ?? 0))
+    entries.push({
+      at: b.settled_at, kind: 'settlement', ref: b.number,
+      description: `Counted in · ${b.declared_sold ?? 0} declared sold`,
+      charge: due, credit: 0, balance: 0,
+    })
+    // The cash that came with the count-in is its own line. Netting it against
+    // the charge would hide a book counted in and not paid for, which is the
+    // single most useful thing this screen can show.
+    if (paid) {
+      entries.push({
+        at: b.settled_at, kind: 'settlement-cash', ref: b.number,
+        description: 'Cash handed in when counted in',
+        charge: 0, credit: paid, balance: 0,
+      })
+    }
+  }
+
+  /*
+   * PAYMENTS, and only the kinds that move the balance.
+   *
+   * source='hand' is cash given over between settlements. source='writeoff' is
+   * a debt somebody accountable decided to absorb. source='settlement' rows are
+   * deliberately NOT here: the book's own amount_paid above is that same money,
+   * and listing both is what produced the six meaningless lines this replaces.
+   * They remain in the audit trail, which is a different question and a
+   * different screen.
+   */
+  type Pay = {
+    id: number; amount: number | null; method: string | null; note: string | null
+    source: string | null; received_at: string | null; book_idx: number | null
+    reverses: number | null
+  }
+  const reversed = new Set(((pays ?? []) as Pay[]).map((r) => r.reverses).filter(Boolean) as number[])
+  for (const r of ((pays ?? []) as Pay[])) {
+    if (r.source === 'settlement') continue
+    const amount = round2(Number(r.amount ?? 0))
+    const isWriteOff = r.source === 'writeoff'
+    entries.push({
+      at: r.received_at, kind: isWriteOff ? 'writeoff' : 'hand',
+      ref: r.book_idx ? `#${r.id}` : `#${r.id}`,
+      description: isWriteOff
+        ? (r.note || 'Written off')
+        : (r.note || `Handed in${r.method ? ` (${r.method})` : ''}`),
+      // A negative hand-over is a correction to one, and reads as a charge —
+      // the money went back out. Putting it in the credit column as a minus is
+      // how a statement gets an answer nobody can follow.
+      charge: amount < 0 ? Math.abs(amount) : 0,
+      credit: amount > 0 ? amount : 0,
+      balance: 0,
+      reversed: reversed.has(r.id) || undefined,
+    })
+  }
+
+  // Undated entries sort last rather than first: an entry with no date is
+  // almost always the most recent thing that happened and has not been stamped.
+  entries.sort((a, b) => String(a.at ?? '9999').localeCompare(String(b.at ?? '9999')))
+  let running = 0
+  for (const e of entries) {
+    running = round2(running + e.charge - e.credit)
+    e.balance = running
+  }
+
+  const expected = round2(Number(summary?.expected ?? 0))
+  const collected = round2(Number(summary?.collected ?? 0))
+  const writtenOff = round2(Number(summary?.written_off ?? 0))
+  const outstanding = round2(Number(summary?.outstanding ?? 0))
 
   return {
     agent: { id: agent.agent_id, name: agent.name, phone: agent.phone, zone: agent.zone },
     books: books ?? [],
-    sold: (books ?? []).reduce((s: number, b: { counted_sold: number }) => s + Number(b.counted_sold ?? 0), 0),
-    expected, collected, outstanding: expected - collected,
-    currency: await currency(ctx),
+    entries,
+    /*
+     * THE CHECK, RETURNED RATHER THAN ASSUMED.
+     *
+     * The running balance is built from rows; the totals come from the view the
+     * table reads. They should agree, and when they do not the screen must say
+     * so rather than show two numbers and let the reader pick. A statement that
+     * silently disagrees with the line it expands is worse than no statement:
+     * it is an audit trail that cannot be trusted and looks like one that can.
+     */
+    reconciles: Math.abs(round2(running - outstanding)) < 0.005,
+    ledgerBalance: running,
+    sold: Number(summary?.tickets_sold ?? 0),
+    booksOut: Number(summary?.books_out ?? 0),
+    booksSettled: Number(summary?.books_settled ?? 0),
+    expected, collected, writtenOff, outstanding,
+    currency: cur,
   }
 }
 

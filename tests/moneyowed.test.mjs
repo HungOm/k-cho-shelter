@@ -150,7 +150,7 @@ console.log('the chase button uses the number the report carries')
   ok(one.includes('1 ticket.') && !one.includes('1 tickets'), 'one ticket is not "1 tickets"')
 }
 
-console.log('which tickets, read from what the device already has')
+console.log('which tickets — the helper\'s own, read from what the device already has')
 {
   // Code at both ends. This ended at the comment above telHref, so rewording
   // that prose would have silently changed the region — and a missing marker
@@ -173,7 +173,27 @@ console.log('which tickets, read from what the device already has')
      'and UNPAID does not — it contains "paid", which is how this went wrong')
   ok(!isPaid({ payment: '' }) && !isPaid({}), 'blank reads as not paid, never as paid')
 }
-ok(/t\.agent === agentId/.test(src), 'the breakdown is the seller\'s own tickets')
+/*
+ * THIS PINNED THE OPPOSITE RULE UNTIL THE RAFFLE OUTGREW IT.
+ *
+ * The seller's breakdown used to be built by filtering the ticket snapshot the
+ * browser already held — deliberately, and the assertion below said so: "no
+ * extra round trip". That is the right trade at fifty tickets and the wrong one
+ * at ten thousand, which is the size this raffle actually runs at: every seller
+ * expanded walked the whole raffle in memory, on the phone of whoever was
+ * standing at the desk.
+ *
+ * So the detail is a request now, made when somebody opens a line and not
+ * before, and what the screen holds is one row per seller. The old assertion is
+ * not softened here, it is reversed — with the reason written down, because a
+ * test that flips without one reads as a test somebody found inconvenient.
+ */
+ok(/api\('agent_statement'/.test(src),
+   "a seller's detail is fetched when their line is opened")
+ok(/if \(statements\.value\[agentId\]\) return/.test(src),
+   'and once per seller — reopening a line does not ask again')
+ok(!/state\.tickets[\s\S]{0,200}t\.agent === agentId/.test(src),
+   'and it is no longer assembled by walking every ticket on the device')
 /*
  * MOVED TO isSold, which is where the two statuses live.
  *
@@ -186,7 +206,8 @@ ok(/t\.agent === agentId/.test(src), 'the breakdown is the seller\'s own tickets
 ok(/isSold\(t\)/.test(src), 'sold and donated only, from the one place that spells them')
 ok(!/\['Sold', 'Donated'\]/.test(src), 'and not spelled out a second time here')
 ok(/isPaid\(t\)/.test(src), 'each ticket says whether ITS money came in, not the seller\'s total')
-ok(/state\.tickets/.test(src), 'read from tickets already on the device — no extra round trip')
+ok(/state\.tickets/.test(src),
+   "the helper's own record still comes from the device — it is their own rows, already here")
 
 console.log('and the case the Books column reads as innocent')
 ok(/a\.outstanding > 0 && !a\.booksOut/.test(src),

@@ -151,7 +151,6 @@ console.log('5. no action is registered on the server that nothing can call')
     write_off: 'a debt can be forgiven by the server and by nothing else',
     set_ticket_ceiling: 'the ceiling is set by editing config directly',
     return_check: 'declaration against verified returns is computed and never shown',
-    agent_statement: "a seller's statement can be produced but not asked for",
     chase_today: 'the chase list exists as a handler only',
   }
 

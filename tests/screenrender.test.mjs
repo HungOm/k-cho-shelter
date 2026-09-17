@@ -53,7 +53,23 @@ export const state = reactive({
   cfg: { currency: 'RM' }, totals: {}, user: __USER__,
   tickets: __TICKETS__
 })
-export const api = async () => ({ agents: __ROWS__, scope: __SCOPE__, currency: 'RM' })
+export const asked = []
+export const api = async (action) => {
+  asked.push(action)
+  if (action === 'agent_statement') return {
+    agent: { id: 'A1', name: 'JOHN', phone: '0125550011', zone: '' },
+    entries: [
+      { at: '2026-09-10T00:00:00Z', kind: 'settlement', ref: 'Book-001',
+        description: 'Counted in · 2 declared sold', charge: 20, credit: 0, balance: 20 },
+      { at: '2026-09-11T00:00:00Z', kind: 'hand', ref: '#1',
+        description: 'Handed in (cash)', charge: 0, credit: 10, balance: 10 },
+    ],
+    reconciles: true, ledgerBalance: 10,
+    expected: 20, collected: 10, writtenOff: 0, outstanding: 10,
+    sold: 2, booksOut: 1, booksSettled: 1, currency: 'RM',
+  }
+  return { agents: __ROWS__, scope: __SCOPE__, currency: 'RM' }
+}
 export const toast = () => {}
 export const agentMap = computed(() => ({}))
 export const isSuper = computed(() => true)
@@ -87,28 +103,39 @@ const html = await renderScreen('src/components/Money.vue', money(tickets, [row]
   }
 })
 
-console.log('one ticket paid, one not — and the screen says so')
+console.log('opening a seller asks the server for their statement, and renders it')
 /*
- * THE FIXTURE NOW USES THE VALUES THE SYSTEM WRITES, which is the whole lesson
- * of this assertion. It used to say payment:'' for the unpaid ticket, and the
- * screen read it correctly — while the real value, 'Unpaid', rendered as PAID,
- * because the test was /paid|received|in/i and "Unpaid" contains "paid". Every
- * sold ticket in the raffle showed the green chip above a total saying ten of
- * them had not been settled.
+ * WHAT THIS BLOCK USED TO ASSERT, and why it changed rather than being deleted.
  *
- * I wrote that regex and verified it in a browser against a fixture I invented.
- * A fixture that does not use the system's own vocabulary proves the screen can
- * render something — not that it renders what it will be given.
+ * It checked that opening a seller listed their tickets with buyer names,
+ * phone numbers and a paid/not-paid chip per row, built by filtering the ticket
+ * snapshot in the browser. Those assertions were right about a screen that no
+ * longer exists: the raffle runs at thousands of tickets across hundreds of
+ * sellers, and a panel that walked every ticket in memory to draw one seller
+ * was the reason the money screen had to be rebuilt.
+ *
+ * The detail is a request now — one per seller, when somebody opens their line
+ * — and what comes back is a statement of account rather than a ticket dump.
+ * So the assertions follow it: the request is made, the lines are drawn, and
+ * the arithmetic the reader can check is on the screen. The paid/unpaid
+ * distinction those old lines protected has not been dropped; it lives on the
+ * helper's own record, which is still assembled locally, and is asserted there.
  */
-ok(/not paid/.test(visibleText(html)), 'a ticket recorded Unpaid reads "not paid"')
-ok(/\bpaid\b/.test(visibleText(html)), 'and the paid one reads "paid"')
-// The mutant that survived everything else: hardcoding the pill to 'in'. It
-// does not break the screen, it just tells somebody the money arrived.
-ok((visibleText(html).match(/not paid/g) || []).length === 1,
-   'exactly one ticket of the two is unpaid — not all of them, and not none')
-ok(/KS-00001/.test(html) && /KS-00002/.test(html), 'both tickets are listed')
-ok(/Buyer One/.test(visibleText(html)) && /0125550002/.test(visibleText(html)),
-   'with who bought them and how to ring them')
+/*
+ * The statement below can only be on the screen if the request was made: none
+ * of it is in the ticket snapshot the stub hands the component, which carries
+ * no books, no charges and no balance. Whether the call is made once per seller
+ * and cached is asserted in moneyowed.test.mjs, against the source.
+ */
+ok(/Book-001/.test(visibleText(html)),
+   'opening a line draws what the server returned for that seller')
+ok(/Counted in/.test(visibleText(html)), 'and what the line is')
+ok(/Balance due/.test(visibleText(html)), 'with the closing balance spelled out')
+// The reconciliation the reader is invited to check: charged, less received,
+// less written off, is what is left. A money screen that shows four figures
+// which do not visibly relate is a screen people stop trusting.
+ok(/Charged/i.test(visibleText(html)) && /Received/i.test(visibleText(html)),
+   'the identity behind the balance is on the screen, not implied')
 ok(/JOHN/.test(visibleText(html)), 'under the seller who owes — read from the table, not from a link')
 ok(/wa\.me/.test(html), 'and a way to chase them')
 
@@ -167,13 +194,21 @@ console.log('the branches one render cannot reach — each is a sentence somebod
    * should ask what is rendered, not how it is marked up, or every assertion
    * about copy becomes a lock on the tags around it.
    */
+  /*
+   * WHAT THIS ASSERTED BEFORE: a sentence explaining that a seller with no
+   * ticket rows still owes money, because the debt came from a book counted in
+   * rather than from individual sales. It existed to keep an empty ticket list
+   * from reading as a bug.
+   *
+   * There is no ticket list any more, and the statement answers the same
+   * question better: the debt is a dated line that says which book it came from
+   * and what was declared. So the assertion follows the answer rather than the
+   * sentence that used to stand in for it.
+   */
   const owesText = visibleText(owesButNoTickets).replace(/\s+/g, ' ')
-  // `\s*` before the comma is visibleText's own doing, not the page's: it joins
-  // adjacent nodes with a space, and "counted in" is its own span now. The
-  // markup is `counted in</span>,` with nothing between, so a browser renders
-  // it tight. Matching the helper's spacing rather than loosening the sentence.
-  ok(/money owed comes from a book counted in\s*, not from individual sales/.test(owesText),
-     'a seller who owes with no tickets recorded gets the explanation, not a blank panel')
+  ok(/Book counted in/.test(owesText),
+     'a seller who owes with no tickets of their own is told the debt came from a book')
+  ok(/Balance due/.test(owesText), 'and what is left after it')
   ok(/JOHN/.test(visibleText(owesButNoTickets)), 'and is still named on the row itself')
 
   // And the term explains itself on hover, rather than assuming the reader

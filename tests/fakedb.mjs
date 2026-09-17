@@ -146,16 +146,99 @@ function withDefaults(table, row) {
  */
 function agentMoneyRows(db) {
   const ledger = db.tables.book_ledger_all ?? []
+  const books = db.tables.books ?? []
+  const tickets = db.tables.tickets ?? []
   const payments = db.tables.payments ?? []
   const round2 = (n) => Math.round(n * 100) / 100
 
+  /*
+   * MONEY FOLLOWS THE SALE, as of the migration of 2026-09-17, and this had not
+   * followed it. The fake still keyed every figure on who was HOLDING the paper
+   * — which is what the view did until that day and is exactly the bug the
+   * migration ended. Left alone it would have been the most expensive kind of
+   * fake: money tests passing against a model the database had stopped using,
+   * agreeing with each other and with nothing in production.
+   *
+   * The two regimes, kept apart here the same way the SQL keeps them:
+   *
+   *   an OPEN book    the ticket rows are the truth, so what is expected
+   *                   follows tickets.sold_by_agent
+   *   a CLOSED book   the declared figure is the truth, frozen at settle time
+   *                   against books.settled_by_agent
+   *
+   * The counts stay on custody: how many books are with you, and how many are
+   * late, are questions about paper.
+   */
+  const conf = (k, d) => {
+    const row = (db.tables.config ?? []).find((c) => c.key === k)
+    return parseInt(row?.value ?? '', 10) || d
+  }
+  const total = conf('TOTAL_TICKETS', 0)
+  const chosen = conf('ACTIVE_TICKETS', 0)
+  const active = chosen <= 0 || chosen > total ? total : chosen
+  const bookOf = (idx) => books.find((b) => b.idx === idx)
+  const isClosed = (b) =>
+    !!b && (b.status === 'Settled' || b.status === 'Lost') && notNull(b.declared_sold)
+
+  /*
+   * THREE FALLBACKS, EACH ONE COPYING WHAT THE REAL SYSTEM DOES, so that
+   * fixtures written before the model changed keep describing the same raffle
+   * instead of quietly describing an empty one.
+   *
+   *   a ticket with no sold_by_agent   -> the book's holder. Production sets
+   *                                       that column on every sale and credits
+   *                                       a sale out of an issued book to
+   *                                       whoever is carrying it, so an
+   *                                       under-specified fixture means the
+   *                                       holder and nothing else.
+   *   a book with no settled_by_agent  -> the book's holder. This is precisely
+   *                                       the backfill the migration itself ran.
+   *   a fixture with no sale-level
+   *   evidence at all                  -> the ledger view's own figures. Those
+   *                                       fixtures seed book_ledger_all with
+   *                                       counted_expected and say nothing about
+   *                                       which tickets or which settlement it
+   *                                       came from; deriving from rows that do
+   *                                       not exist would make every one of them
+   *                                       a raffle where nobody owes anything,
+   *                                       which is not a stricter test, it is a
+   *                                       blank one. Seeding a book stub without
+   *                                       tickets is still no evidence — what
+   *                                       counts is a sale or a settlement.
+   *
+   * The fallbacks are not the model. Any fixture that names a seller on a sale
+   * or a settlement gets the real rule, and the four books that moved when the
+   * migration landed are exactly the fixtures that do.
+   */
+  const ledgerOnly = ledger.length > 0 && tickets.length === 0 && !books.some(isClosed)
+  const soldBy = (t) => String(t.sold_by_agent ?? bookOf(t.book_idx)?.held_by_agent ?? '')
+  const settledBy = (b) => String(b.settled_by_agent ?? b.held_by_agent ?? '')
+
   return (db.tables.agents ?? []).map((a) => {
     const id = String(a.agent_id ?? '')
-    const mine = ledger.filter((b) => String(b.held_by_agent ?? '') === id)
+    const held = ledger.filter((b) => String(b.held_by_agent ?? '') === id)
     const sum = (rows, f) => round2(rows.reduce((t, r) => t + Number(f(r) ?? 0), 0))
 
-    const expected = sum(mine, (b) => b.counted_expected)
-    const bookCollected = sum(mine, (b) => b.counted_collected)
+    // An open book's sales, named ticket by ticket.
+    const open = tickets.filter((t) =>
+      soldBy(t) === id &&
+      (t.status === 'Sold' || t.status === 'Donated') &&
+      Number(t.idx ?? 0) <= active &&
+      !isClosed(bookOf(t.book_idx)))
+
+    // A closed book's declared figures, frozen against whoever it was closed for.
+    const closed = books.filter((b) =>
+      settledBy(b) === id &&
+      (b.status === 'Settled' || b.status === 'Lost') &&
+      notNull(b.declared_sold))
+
+    const expected = ledgerOnly
+      ? sum(held, (b) => b.counted_expected)
+      : round2(sum(open, (t) => t.amount) + sum(closed, (b) => b.amount_due))
+    const bookCollected = ledgerOnly
+      ? sum(held, (b) => b.counted_collected)
+      : sum(closed, (b) => b.amount_paid)
+
     const mineP = payments.filter((r) => String(r.agent_id ?? '') === id)
     // 'hand' BY NAME, as the SQL asks: settlement is already inside the book's
     // own figure, and a write-off is not cash at all.
@@ -167,10 +250,12 @@ function agentMoneyRows(db) {
       name: a.name ?? '',
       phone: a.phone ?? '',
       zone: a.zone ?? '',
-      books_out: mine.filter((b) => b.status === 'Out').length,
-      books_settled: mine.filter((b) => b.status === 'Settled').length,
-      overdue_books: mine.filter((b) => Number(b.days_overdue ?? 0) > 0).length,
-      tickets_sold: mine.reduce((t, b) => t + Number(b.counted_sold ?? 0), 0),
+      books_out: held.filter((b) => b.status === 'Out').length,
+      books_settled: ledgerOnly ? held.filter((b) => b.status === 'Settled').length : closed.length,
+      overdue_books: held.filter((b) => Number(b.days_overdue ?? 0) > 0).length,
+      tickets_sold: ledgerOnly
+        ? held.reduce((t, b) => t + Number(b.counted_sold ?? 0), 0)
+        : open.length + closed.reduce((t, b) => t + Number(b.declared_sold ?? 0), 0),
       expected,
       collected: round2(bookCollected + handedIn),
       written_off: writtenOff,
