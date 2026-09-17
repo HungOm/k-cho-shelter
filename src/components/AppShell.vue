@@ -72,6 +72,30 @@ const moreActive = computed(() => moreTabs.value.some(s => s.id === state.screen
 const showMore = ref(false)
 function pick(id) { showMore.value = false; go(id) }
 
+/*
+ * WHICH SELLER YOU ARE, under your own name, where you will see it every time.
+ *
+ * REPORTED BY THE PERSON IT HAPPENED TO. Signed in as a seller, looking at the
+ * tickets in their own book, the screen said "with Amos Hung — check with them"
+ * about the reader, and the sale was refused as "not issued to you". The
+ * account's seller link pointed somewhere else. Every gate in this app turns on
+ * that link — which books you may write in, what you see, whether you can
+ * report back — and NOTHING anywhere showed it. A seller linked correctly, one
+ * linked to the wrong record and one linked to nobody all looked the same until
+ * the moment somebody tried to do their job.
+ *
+ * So it is here, beside the role, because the sidebar is the one thing on every
+ * screen. Only for accounts where it decides anything: an organiser who carries
+ * no books has nothing to check.
+ */
+const sellerLink = computed(() => {
+  const u = state.user
+  if (!u) return null
+  if (u.agentMissing) return { bad: true, text: 'Not linked to a seller' }
+  if (!u.agentId) return null
+  return { bad: false, text: `${u.agentName || 'Seller'} · ${u.agentId}` }
+})
+
 const roleWord = computed(() => {
   // The super admin's stored role is only what their ordinary user record says.
   // Their actual authority comes from SUPER_ADMIN_EMAIL, outside the database,
@@ -118,6 +142,13 @@ defineEmits(['signout'])
         <div class="grow">
           <b>{{ state.user?.name }}</b>
           <small><Bi :text="roleWord" /></small>
+          <!-- The link every gate turns on, said where it cannot be missed.
+               Red when there is none: that account can read the raffle and
+               write nothing, and until now the only way to find that out was
+               to be refused in the middle of a sale. -->
+          <small v-if="sellerLink" :class="['link', { bad: sellerLink.bad }]">
+            {{ sellerLink.text }}
+          </small>
         </div>
         <button class="btn sm ghost" @click="$emit('signout')" title="Sign out"><Bi text="Leave" /></button>
       </div>
@@ -219,6 +250,10 @@ defineEmits(['signout'])
 }
 .who b { display: block; font-size: .95rem; }
 .who small { display: block; color: var(--muted); font-size: .8rem; }
+/* The seller link. Faint by default — it is a fact, not a warning — and red
+   when there isn't one, because then it is the reason nothing will save. */
+.who small.link { margin-top: 2px; font-size: .74rem; opacity: .75; }
+.who small.link.bad { color: var(--bad); opacity: 1; font-weight: 600; }
 
 /* ---------- main column ---------- */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }

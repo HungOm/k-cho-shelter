@@ -245,10 +245,34 @@ async function assertCanWrite(
     }
   }
 
-  // An agent may only write to books they are actually holding.
+  /*
+   * An agent may only write to books they are actually holding.
+   *
+   * THE SENTENCE NAMES BOTH SIDES, because the short one is unanswerable. A
+   * seller looking at the tickets in what they believe is their own book was
+   * told "That book is not issued to you" — true, and with nothing in it they
+   * could act on. The two ids were different; nothing on any screen showed
+   * either of them, so the only reading left was that the app was wrong.
+   *
+   * An account with no seller behind it at all is its own sentence. It is a
+   * different fault with a different fix — somebody has to link the account —
+   * and it is the likelier of the two, because a selling account could be
+   * created without one until the day this was written.
+   */
   if (user.role === 'agent') {
-    if (!user.agentId || book.held_by_agent !== user.agentId) {
-      throw new ApiError('NOT_YOUR_BOOK', 'That book is not issued to you.', null, 403)
+    if (!user.agentId) {
+      throw new ApiError('NOT_A_SELLER',
+        'Your account is marked as a seller but is not linked to anybody on the ' +
+        'sellers list, so no book can be yours. An organiser links it on the ' +
+        'People screen.', null, 403)
+    }
+    if (book.held_by_agent !== user.agentId) {
+      const holder = await agentLabel(ctx, book.held_by_agent ?? null)
+      throw new ApiError('NOT_YOUR_BOOK',
+        `${book.number ?? 'That book'} is with ${holder}` +
+        `${book.held_by_agent ? ` (${book.held_by_agent})` : ''}, and your account is ` +
+        `seller ${user.agentId}. If that is wrong, an organiser can fix the link on ` +
+        'the People screen.', null, 403)
     }
   }
 

@@ -239,7 +239,19 @@ export function bookBlock(b) {
 
   const me = state.user || {}
   if (me.agentId && b.agentId === me.agentId) return null       // it is in their hands
-  if (me.role === 'agent') return 'not your book'
+  /*
+   * NAMES BOTH SIDES, because "not your book" is unanswerable.
+   *
+   * A seller looking at the tickets in what they believed was their own book
+   * was told the book was with somebody — whose name was their own — and then
+   * refused. The two seller ids were different and nothing on any screen showed
+   * either. The same sentence the server now sends, in fewer words, so the
+   * screen and the refusal agree.
+   */
+  if (me.role === 'agent') {
+    if (!me.agentId) return 'your account is not linked to a seller'
+    return `with seller ${b.agentId || 'nobody'}, you are ${me.agentId}`
+  }
   if (me.role === 'admin' && b.agentId) return null             // transcribing a report
   return `with ${b.agentName || 'a seller'}`
 }

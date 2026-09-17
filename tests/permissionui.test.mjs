@@ -50,7 +50,10 @@ console.log('the rule exists once and is asked from both places')
   ok(/with JOHN/.test(bookBlock(asHelper)(out) || ''),
      `a helper is blocked and told who has it (${bookBlock(asHelper)(out)})`)
   ok(bookBlock(asOwner)(out) === null, 'the seller holding it is not blocked')
-  ok(bookBlock(asOther)(out) === 'not your book', 'a different seller is told whose it is')
+  // The assertion this line always claimed to make. "not your book" told a
+  // seller nothing they could act on; both ids do.
+  ok(/A1/.test(bookBlock(asOther)(out) || '') && /A2/.test(bookBlock(asOther)(out) || ''),
+     `a different seller is told whose it is and who they are (${bookBlock(asOther)(out)})`)
   ok(bookBlock(asOrganiser)(out) === null, 'an organiser transcribing a report is not blocked')
   ok(bookBlock(asHelper)({ status: 'Unassigned' }) === null, 'a book in the office is free')
   ok(/settled/.test(bookBlock(asHelper)({ status: 'Settled' }) || ''), 'a closed book says so')

@@ -135,8 +135,18 @@ console.log('the screen says the same thing the backend will')
 
   state.user = { role: 'agent', agentId: 'A001' }
   eq(sellBlock(inBag), null, 'the seller holding it is not blocked')
+  /*
+   * NAMES BOTH SIDES NOW, and the sentence is the point rather than its
+   * wording. It used to be "not your book" — true, unanswerable, and the exact
+   * words a seller met while looking at a book they were certain was theirs.
+   * The two seller ids were different and no screen showed either of them, so
+   * the only reading left was that the app was broken. Asserted as a property:
+   * whose it is, and who the reader is.
+   */
   state.user = { role: 'agent', agentId: 'A002' }
-  eq(sellBlock(inBag), 'not your book', 'another seller is, in their own words')
+  const refused = sellBlock(inBag) || ''
+  ok(/A001/.test(refused), `another seller is told whose it is (${refused})`)
+  ok(/A002/.test(refused), 'and which seller the app thinks they are')
 
   state.user = null
 }

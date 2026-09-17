@@ -491,12 +491,48 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
     }))
     .filter((r: { email: string; name: string }) => r.email && r.name)
 
+  /*
+   * WHICH SELLER THIS ACCOUNT ACTUALLY IS, and whether that link is real.
+   *
+   * REPORTED FROM THE LIVE RAFFLE, by the person it happened to. Signed in as a
+   * seller, looking at the tickets in their own book, the screen said "with
+   * Amos Hung — check with them before selling it to anybody else" about the
+   * person reading it, and the server refused the sale with "That book is not
+   * issued to you." Both were correct and neither was explicable: the account's
+   * `agent_id` was not the seller holding the book.
+   *
+   * THE WHOLE FAILURE IS THAT THE LINK IS INVISIBLE. `agentId` is one nullable
+   * column on app_users and every gate in the system turns on it — which books
+   * you may write in, which tickets you see, whether you can report back at
+   * all. The sidebar showed the name on the ACCOUNT and the word "Seller", so a
+   * seller linked to nobody, and a seller linked to the wrong record, and a
+   * seller linked correctly all looked exactly alike. The only symptom is a
+   * refusal at the moment of doing the work.
+   *
+   * So sign-in now carries the seller's own name and id, and says plainly when
+   * a selling account has no seller behind it. `agentMissing` is deliberately
+   * true for a DANGLING id as well as a null one: a row deleted or re-seeded
+   * out from under an account fails exactly the same way and is harder to spot.
+   */
+  let agentName = ''
+  let agentMissing = false
+  if (user.agentId) {
+    const { data: mine } = await ctx.supabaseAdmin
+      .from('agents').select('name').eq('agent_id', user.agentId).maybeSingle()
+    agentName = String((mine as { name?: string } | null)?.name ?? '')
+    agentMissing = !mine
+  } else if (user.role === 'agent') {
+    agentMissing = true
+  }
+
   return {
     email: user.email,
     name: user.name,
     role: user.role,
     isSuperAdmin: user.isSuperAdmin,
     agentId: user.agentId,
+    agentName,
+    agentMissing,
     staff,
     config: configPayload(cfg),
   }
