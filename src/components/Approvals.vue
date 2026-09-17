@@ -222,7 +222,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
             <div class="item" style="cursor:default">
               <span class="grow">
                 <!-- Its own line. Run together, the summary's full stop met the
-                     next word with no gap: "sign in as Helper.hungom.oct19@…" -->
+                     next word with no gap: "sign in as Helper.<name>.oct19@…" -->
                 <span class="sub" style="white-space:normal;display:block">{{ r.summary }}</span>
                 <span class="sub" style="display:block">
                   Asked by {{ r.requestedBy }} · {{ dateTime(r.decidedAt || r.requestedAt) }}

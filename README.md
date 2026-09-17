@@ -194,7 +194,7 @@ See **[SETUP.md](SETUP.md)**, which starts by asking which backend you are setti
 minutes either way, mostly clicking through Google's console for the sign-in.
 
 It runs on a free `github.io` address, or on your own subdomain (step 7b) — one DNS record plus the
-new address added to the OAuth origins. Buyers trust `shtrtickets.ceamalaysia.org` rather more than a
+new address added to the OAuth origins. Buyers trust a name of your own rather more than a
 `github.io` link.
 
 Ticket numbering — prefix, padding, how many, how many per book, price, currency — is all set
