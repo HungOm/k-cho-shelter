@@ -14,6 +14,11 @@ pay for and nothing to host.
 
 ## How it works
 
+> **Reviewing the architecture?** [ARCHITECTURE-REVIEW.md](ARCHITECTURE-REVIEW.md) is the
+> forensic review of the current implementation — custody, money, authorization,
+> concurrency — with the target ledger design, decision records and the migration roadmap.
+
+
 The raffle runs on **Supabase** — Postgres, with one Edge Function in front of it.
 
 Everything the system does to keep its own figures honest lives in the database: row-level security, the append-only ticket record and
