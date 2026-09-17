@@ -26,6 +26,7 @@ import { money, date, COUNTED_IN_HELP } from '../../lib/format.js'
 // that looks like the real one is how somebody reaches a stranger.
 import { isDialable } from '../../lib/search.js'
 import Sheet from '../ui/Sheet.vue'
+import Pager from '../ui/Pager.vue'
 import Who from '../ui/Who.vue'
 import History from './History.vue'
 
@@ -68,6 +69,8 @@ const st = ref({ loading: true })
 async function load() {
   try {
     st.value = { loading: false, data: await api('agent_statement', { agentId: props.agent.agentId }) }
+    // Land on the closing balance, which is what somebody opened this for.
+    linePage.value = Math.max(1, Math.ceil(entries.value.length / LINES))
   } catch (err) {
     st.value = { loading: false, error: err.message }
   }
@@ -113,6 +116,27 @@ async function toggleAudit() {
  * so. That is what makes it worth trusting — and worth showing to the person
  * whose money it was.
  */
+/*
+ * A STATEMENT IS READ FROM THE BOTTOM, so that is the page it opens on.
+ *
+ * A seller with sixty books has hundreds of lines, and the line that matters is
+ * the last one: a running balance answers "where do I stand now", and the
+ * answer is at the end of it. Opening on page one of nine and making somebody
+ * press Next eight times to reach their own balance is the wrong way round —
+ * and the wrong way round is what every list defaults to.
+ *
+ * The oldest-first ORDER is kept, because a running balance only reads in one
+ * direction. What changes is which page you land on.
+ */
+const LINES = 20
+const entries = computed(() => st.value.data?.entries || [])
+const linePage = ref(1)
+const payPage = ref(1)
+const shownEntries = computed(() =>
+  entries.value.slice((linePage.value - 1) * LINES, linePage.value * LINES))
+const shownPayments = computed(() =>
+  (payments.value || []).slice((payPage.value - 1) * LINES, payPage.value * LINES))
+
 const receipt = ref(null)
 async function openReceipt(ref_) {
   const id = String(ref_ || '').replace(/^#/, '')
@@ -227,7 +251,7 @@ const KINDS = {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(e, i) in (st.data.entries || [])" :key="i"
+            <tr v-for="(e, i) in shownEntries" :key="i"
                 :class="{ writeoff: e.kind === 'writeoff' }">
               <td class="tiny muted">{{ e.at ? date(e.at) : '—' }}</td>
               <!-- "Counted in" is this app's word for the last step of a book,
@@ -254,6 +278,9 @@ const KINDS = {
               <td class="num bal">{{ money(e.balance, currency) }}</td>
             </tr>
           </tbody>
+          <!-- The closing balance is the whole account's, not the page's, and
+               it stays under the table on every page: a running balance whose
+               last line is out of sight is a table with no answer in it. -->
           <tfoot>
             <tr>
               <td colspan="3"><b>Balance due</b></td>
@@ -262,6 +289,7 @@ const KINDS = {
             </tr>
           </tfoot>
         </table>
+        <Pager v-model:page="linePage" :total="entries.length" :size="LINES" noun="entries" />
       </div>
 
       <p class="tiny muted" style="margin-top:8px">
@@ -277,7 +305,7 @@ const KINDS = {
             <tr><th>When</th><th class="num">Amount</th><th>How</th><th>Taken by</th><th>Note</th></tr>
           </thead>
           <tbody>
-            <tr v-for="p in (payments || [])" :key="p.id">
+            <tr v-for="p in shownPayments" :key="p.id">
               <td class="tiny muted">{{ p.receivedAt ? date(p.receivedAt) : '' }}</td>
               <td class="num" :class="p.amount < 0 ? 'bad' : ''">{{ money(p.amount, currency) }}</td>
               <!-- A settlement row and a hand-over row are the same money
@@ -292,6 +320,7 @@ const KINDS = {
             </tr>
           </tbody>
         </table>
+        <Pager v-model:page="payPage" :total="(payments || []).length" :size="LINES" noun="rows" />
         <p v-if="payments && !payments.length" class="tiny muted">
           No payment rows at all for this seller.
         </p>

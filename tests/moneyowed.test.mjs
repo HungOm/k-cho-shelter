@@ -277,5 +277,48 @@ console.log('a seller may not write money down, and is shown what happened to it
      'with the immutability said outright, because that is what makes it worth relying on')
 }
 
+console.log('a hundred sellers and a thousand lines still fit on a phone')
+{
+  /*
+   * WHAT BREAKS FIRST AT SCALE, and it is not the database.
+   *
+   * This screen drew one row per seller and, behind each, every charge and
+   * every payment ever recorded against them. At a dozen sellers that is the
+   * friendliest thing possible. At two hundred it is a wall somebody scrolls
+   * past looking for a name, on the phone of whoever is standing at a desk with
+   * a queue in front of them — and a seller with sixty books has hundreds of
+   * statement lines behind one press.
+   *
+   * THE COUNT IS PART OF THE CONTROL. "Showing 1–25 of 214" is the difference
+   * between a list that is short and a list that has been cut, and a screen
+   * that quietly shows the first 25 of 214 is one somebody acts on believing
+   * they have seen everything.
+   */
+  const pager = read('../src/components/ui/Pager.vue')
+  ok(/Showing/.test(pager) && /of <b>\{\{ total \}\}<\/b>/.test(pager),
+     'the pager says how much of how many is on screen')
+  ok(/v-if="total > size"/.test(pager),
+     'and disappears when everything fits, rather than being furniture under a list of four')
+  ok(/Math\.min\(pages\.value, Math\.max\(1, p\)\)/.test(pager),
+     'a filter that shortens the list cannot leave somebody on an empty page')
+
+  const money = read('../src/components/Money.vue')
+  ok(/<Pager v-model:page="page" :total="matching\.length"/.test(money),
+     'the seller table is paged')
+  ok(/type="search"/.test(money) && /sortBy/.test(money),
+     'with a way to find one seller among two hundred, and to order them')
+  ok(/if \(!x\.agentId\) return -1/.test(money),
+     'the desk line is pinned to the top — it is not a person and cannot be chased')
+  // A total that changes when you turn the page is a total nobody can use.
+  ok(/const n = matching\.value\.reduce/.test(money),
+     'and the column totals cover everything the filter matches, not the page')
+
+  const sheet = read('../src/components/modals/SellerMoney.vue')
+  ok(/<Pager v-model:page="linePage"/.test(sheet), "the statement's lines are paged")
+  ok(/<Pager v-model:page="payPage"/.test(sheet), 'and so is the ledger behind it')
+  ok(/linePage\.value = Math\.max\(1, Math\.ceil\(entries\.value\.length \/ LINES\)\)/.test(sheet),
+     'opening on the closing balance, because that is what a statement is read for')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

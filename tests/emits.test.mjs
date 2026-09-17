@@ -90,12 +90,21 @@ function openingTags(code, tagName) {
   return out
 }
 
-/** Every listener on any tag of this name, anywhere. */
+/**
+ * Every listener on any tag of this name, anywhere.
+ *
+ * `v-model:page` COUNTS AS A LISTENER FOR `update:page`, because that is
+ * precisely what Vue compiles it to. Without this the check reports a dead
+ * control on the one pattern where the binding and the handler are written as a
+ * single attribute — which is a test telling somebody to break working code.
+ */
 function listenersFor(tagName) {
   const found = new Set()
   for (const code of Object.values(source)) {
     for (const attrs of openingTags(code, tagName)) {
       for (const a of attrs.matchAll(/@([a-zA-Z][\w-]*)\s*=/g)) found.add(a[1])
+      for (const m of attrs.matchAll(/v-model:([a-zA-Z][\w-]*)\s*=/g)) found.add('update:' + m[1])
+      if (/\bv-model\s*=/.test(attrs)) found.add('update:modelValue')
     }
   }
   return found

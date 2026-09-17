@@ -3,12 +3,13 @@
  * Money. One number matters most — what each seller still owes — so it is the
  * last column and the only one in colour.
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { state, api, toast, canWrite, isAdmin, isSold } from '../lib/store.js'
 import { money, moneyShort, date } from '../lib/format.js'
 import { waNumber, isDialable } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
 import SellerMoney from './modals/SellerMoney.vue'
+import Pager from './ui/Pager.vue'
 
 const rows = ref(null)
 const scope = ref('all')
@@ -75,6 +76,53 @@ async function load() {
 const openSeller = ref(null)
 
 /*
+ * FINDING ONE SELLER AMONG TWO HUNDRED, which is the size this raffle runs at.
+ *
+ * A full list is the friendliest thing possible at a dozen sellers and a wall
+ * at two hundred — scrolled past, on a phone, by somebody with a queue in front
+ * of them. Three controls make it a tool instead: type a name, choose what to
+ * order by, and take it a page at a time.
+ *
+ * THE DESK LINE IS PINNED TO THE TOP and never filtered out. It is not a
+ * person, it carries money nobody can be chased for, and a reader who filters
+ * to "Daw" and sees the raffle's desk takings vanish would reasonably conclude
+ * the figures had changed.
+ */
+const q = ref('')
+const sortBy = ref('outstanding')
+const page = ref(1)
+const PAGE = 25
+
+const SORTS = [
+  { v: 'outstanding', t: 'Owes most' },
+  { v: 'name', t: 'Name' },
+  { v: 'expected', t: 'Sold most' },
+  { v: 'booksOut', t: 'Books out' },
+]
+
+const matching = computed(() => {
+  const needle = q.value.trim().toLowerCase()
+  const all = rows.value || []
+  const hits = !needle ? all : all.filter(a =>
+    String(a.name || '').toLowerCase().includes(needle) ||
+    String(a.agentId || '').toLowerCase().includes(needle) ||
+    String(a.phone || '').includes(needle))
+  const sorted = [...hits].sort((x, y) => {
+    if (!x.agentId) return -1          // the desk stays at the top
+    if (!y.agentId) return 1
+    if (sortBy.value === 'name') return String(x.name || '').localeCompare(String(y.name || ''))
+    return Number(y[sortBy.value] ?? 0) - Number(x[sortBy.value] ?? 0)
+  })
+  return sorted
+})
+
+/* A filter that shortens the list must not leave somebody on an empty page. */
+watch([q, sortBy, scope], () => { page.value = 1 })
+
+const shownRows = computed(() =>
+  matching.value.slice((page.value - 1) * PAGE, page.value * PAGE))
+
+/*
  * A CAP on the helper's own list of sales, because an afternoon at the desk is
  * hundreds of tickets. It is read to settle an argument about one of them, not
  * scrolled end to end, and rendering every row is how the screen locks up on
@@ -85,7 +133,7 @@ const CAP = 50
 
 /** Column totals for the seller table, rounded once at the end. */
 function totalOf(field) {
-  const n = (rows.value || []).reduce((t, r) => t + Number(r[field] ?? 0), 0)
+  const n = matching.value.reduce((t, r) => t + Number(r[field] ?? 0), 0)
   return Math.round(n * 100) / 100
 }
 
@@ -370,7 +418,26 @@ function waLink(a) {
         behind it.
       </div>
 
-      <div v-else-if="showsSellerLines && rows.length" class="tablewrap" style="margin-top:8px">
+      <!-- ONE BRANCH, holding the controls and the table together. They were
+           two branches of the same v-if for a moment, which meant the controls
+           appeared and the table they control did not. -->
+      <template v-else-if="showsSellerLines && rows.length">
+        <!-- Only once the list is long enough to need them. Three controls
+             above a table of four sellers is furniture. -->
+        <div v-if="rows.length > 8" class="row wrap gap find" style="margin-top:12px">
+          <input v-model="q" class="grow" type="search"
+                 placeholder="Find a seller by name, ID or phone">
+          <select v-model="sortBy" aria-label="Order by" style="max-width:170px">
+            <option v-for="s2 in SORTS" :key="s2.v" :value="s2.v">{{ s2.t }}</option>
+          </select>
+        </div>
+
+        <p v-if="q && !matching.length" class="note info" style="margin-top:12px">
+          Nobody matches “{{ q }}”.
+          <button class="linkish" @click="q = ''">Show everybody</button>
+        </p>
+
+        <div v-else class="tablewrap" style="margin-top:8px">
         <table>
           <thead>
             <tr>
@@ -379,7 +446,7 @@ function waLink(a) {
             </tr>
           </thead>
           <tbody>
-            <template v-for="a in rows" :key="a.agentId">
+            <template v-for="a in shownRows" :key="a.agentId">
               <!--
                 THE DESK IS A LINE AND NOT A PERSON. Tickets sold out of books
                 nobody holds are counted here, and the row carries no agentId
@@ -419,9 +486,12 @@ function waLink(a) {
             ever disagree with the cards above, the disagreement is visible
             rather than hidden in a report nobody can see.
           -->
-          <tfoot v-if="rows.length > 1">
+          <!-- SUMMED OVER EVERYTHING THE FILTER MATCHES, not over the page:
+               a total that changes when you turn the page is a total nobody can
+               use, and the label says which set it covers. -->
+          <tfoot v-if="matching.length > 1">
             <tr>
-              <td><b>{{ rows.length }} sellers</b></td>
+              <td><b>{{ matching.length }} {{ matching.length === 1 ? 'seller' : 'sellers' }}<template v-if="q"> matching</template></b></td>
               <td class="num">{{ totalOf('booksOut') }}</td>
               <td class="num">{{ totalOf('ticketsSold') }}</td>
               <td class="num"><b>{{ money(totalOf('expected'), currency) }}</b></td>
@@ -430,7 +500,9 @@ function waLink(a) {
             </tr>
           </tfoot>
         </table>
-      </div>
+        <Pager v-model:page="page" :total="matching.length" :size="PAGE" noun="sellers" />
+        </div>
+      </template>
 
       <Empty v-else art="💰" title="Nothing given out yet">
         Once books are with sellers, what they owe shows up here.
