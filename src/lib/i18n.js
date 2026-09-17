@@ -244,6 +244,10 @@ export const MY_ERRORS = {
   // anything: the app sends the price it was given at sign-in.
   PRICE_NOT_YOURS: 'လက်မှတ်ဈေးကို စီစဉ်သူက သတ်မှတ်သည် — ဈေးပြောင်းလိုပါက စီစဉ်သူကို ပြောပါ',
   BAD_AMOUNT: 'ငွေပမာဏ မမှန်ပါ',
+  // The paper is not where the screen thought it was — said as a fact about
+  // the tickets rather than as a refusal, because the usual cause is a stale
+  // screen and the answer is to look again, not to ask permission.
+  NOT_THERE: 'ဤလက်မှတ်များသည် ပြောထားသည့်နေရာတွင် မရှိပါ — ပြန်စစ်ပါ',
   NOT_YOUR_BOOK: 'ဤစာအုပ်မှာ သင့်ထံတွင် မရှိပါ',
   BOOK_NOT_ASSIGNED: 'ဤစာအုပ်ကို မထုတ်ပေးရသေးပါ',
   BOOK_CLOSED: 'ဤစာအုပ်ကို ပိတ်ထားပြီးဖြစ်သည်',

@@ -143,6 +143,10 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   issue_books: { group: 'Books', label: 'Give books to a seller' },
   transfer_books: { group: 'Books', label: 'Move books between sellers' },
   return_books: { group: 'Books', label: 'Take books back' },
+  // Tickets rather than a whole book. No screen calls it yet; it is here so
+  // that the capability has a name, a role and a permissions switch before the
+  // screen that uses it exists, rather than after.
+  move_tickets: { group: 'Books', label: 'Move individual tickets', danger: true },
   set_book_status: { group: 'Books', label: 'Mark a book lost, or reopen it', danger: true },
   restock_books: { group: 'Books', label: 'Put unsold tickets back', danger: true },
   book_history: { group: 'Books', label: 'See where a book has been' },
@@ -229,6 +233,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   issue_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.issueBooks },
   transfer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.transferBooks },
   return_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.returnBooks },
+  move_tickets: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.moveTickets },
   settle_book: { roles: ADMIN_ONLY, kind: 'write', fn: books.settleBook },
   // A helper takes cash at the table and must be able to write it down there
   // and then. What they cannot do is record it against somebody else, or close

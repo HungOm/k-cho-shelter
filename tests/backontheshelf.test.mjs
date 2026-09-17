@@ -157,6 +157,12 @@ console.log('5. no action is registered on the server that nothing can call')
     set_ticket_ceiling: 'the ceiling is set by editing config directly',
     return_check: 'declaration against verified returns is computed and never shown',
     chase_today: 'the chase list exists as a handler only',
+    // Deliberate, and the only one here with a date on it. The picker that
+    // calls this is client code; the client deploys on every push and the
+    // backend is frozen behind a hold, so a screen built now would be a dead
+    // one on the live site. The handler ships with the function, which is
+    // frozen too. This line comes out when the picker is built.
+    move_tickets: 'the ticket picker waits for the deploy freeze to lift',
   }
 
   const idx = read('supabase/functions/api/index.ts')

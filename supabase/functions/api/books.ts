@@ -671,6 +671,106 @@ export async function setBookStatus(p: Record<string, unknown>, user: AppUser, c
 }
 
 /**
+ * MOVING TICKETS, WHICH IS WHAT A BOOK MOVE WILL EVENTUALLY BE MADE OF.
+ *
+ * The four operations above move a BOOK: they write `held_by_agent` and a
+ * book_history row, and every ticket inside it is wherever the book is by
+ * implication. That is why a part-sold book cannot be split — there is one
+ * holder column for ten pieces of paper, and the only way to give three of them
+ * to somebody else is to restock the whole book and lose its settlement.
+ *
+ * This is the other model, reachable for the first time: a movement per ticket,
+ * with `tickets.holder` as a cache the ledger can re-derive. move_tickets in
+ * SQL does the work — locks in index order, refuses unless every ticket is
+ * where the caller says it is, writes one row per ticket under one batch, and
+ * updates the projection in the same transaction.
+ *
+ * NOTHING ON ANY SCREEN CALLS THIS YET, deliberately. The picker that would use
+ * it is client code, the client deploys on every push, and the backend is
+ * frozen behind a deliberate hold — so a screen built now would be a dead one
+ * sitting on the live site. The handler ships with the FUNCTION, which is
+ * frozen too, so it changes nothing for anybody until the whole thing moves
+ * together.
+ *
+ * WHY IT IS ADMIN-ONLY. Moving paper between people is what an organiser does;
+ * a seller does not hand their own book to another seller without the office
+ * knowing, and today's issue/transfer/return are all ADMIN_ONLY for that
+ * reason. When the picker exists this may want to widen to a seller returning
+ * their own stubs, and that is a decision to make with the screen rather than
+ * in advance of it.
+ */
+const MOVE_KINDS = ['issue', 'return', 'transfer', 'restock', 'lost', 'found', 'correction']
+
+export async function moveTickets(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const numbers = Array.isArray(p.ticketNumbers)
+    ? p.ticketNumbers.map((n) => String(n).trim()).filter(Boolean)
+    : []
+  if (!numbers.length) throw new ApiError('MISSING_FIELD', 'Which tickets?')
+
+  const kind = String(p.kind ?? '').trim()
+  if (!MOVE_KINDS.includes(kind)) {
+    throw new ApiError('BAD_REQUEST', `A movement is one of: ${MOVE_KINDS.join(', ')}.`)
+  }
+
+  /*
+   * The desk is a holder like any other and is spelled 'desk', never blank and
+   * never null — a blank holder is how "everything except X" gets into a query
+   * that looked exhaustive. Both ends are named, or the movement is refused.
+   */
+  const from = String(p.fromHolder ?? '').trim()
+  const to = String(p.toHolder ?? '').trim()
+  if (!from || !to) throw new ApiError('MISSING_FIELD', 'A movement needs both ends named.')
+
+  for (const who of [from, to]) {
+    if (who === 'desk') continue
+    const { data: agent } = await ctx.supabaseAdmin
+      .from('agents').select('agent_id').eq('agent_id', who).maybeSingle()
+    if (!agent) throw new ApiError('AGENT_NOT_FOUND', `There is no seller with the ID "${who}".`)
+  }
+
+  const { data: rows } = await ctx.supabaseAdmin
+    .from('tickets').select('idx,number').in('number', numbers)
+  const found = (rows ?? []) as Array<{ idx: number; number: string }>
+  if (found.length !== numbers.length) {
+    const have = new Set(found.map((r) => r.number))
+    const missing = numbers.filter((n) => !have.has(n))
+    throw new ApiError('TICKET_NOT_FOUND', `No such ticket: ${missing.slice(0, 5).join(', ')}.`,
+      { missing })
+  }
+
+  const { data, error } = await ctx.supabaseAdmin.rpc('move_tickets', {
+    p_ticket_idxs: found.map((r) => r.idx),
+    p_from_holder: from,
+    p_to_holder: to,
+    p_kind: kind,
+    p_user: user.email,
+    p_reason: String(p.reason ?? ''),
+    p_client_key: p.clientKey ? String(p.clientKey).slice(0, 100) : null,
+  })
+  if (error) {
+    // NOT_THERE is the caller's premise being wrong about where the paper is,
+    // which is a sentence a volunteer can act on, not a database error.
+    const message = String(error.message ?? '')
+    if (message.includes('NOT_THERE')) {
+      throw new ApiError('NOT_THERE', message.replace(/^.*NOT_THERE: /, ''))
+    }
+    throw new ApiError('QUERY_FAILED', message)
+  }
+
+  const result = (data ?? {}) as { batch?: string; moved?: number; replayed?: boolean }
+  if (!result.replayed) {
+    await audit(ctx, 'MOVE_TICKETS',
+      { count: result.moved, from, to, kind, tickets: numbers.slice(0, 20) }, user.email)
+  }
+  return {
+    moved: Number(result.moved ?? 0),
+    batch: String(result.batch ?? ''),
+    replayed: !!result.replayed,
+    from, to, kind,
+  }
+}
+
+/**
  * Where a book has been, and why.
  *
  * This existed as a table from the beginning and was never readable from

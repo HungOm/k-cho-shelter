@@ -806,6 +806,46 @@ export function fakeDb(seed = {}) {
         }
         return Promise.resolve({ data: moved, error: null })
       }
+      if (fn === 'move_tickets') {
+        /*
+         * Modelled, not stubbed: what the handler is tested for is which rows
+         * move. A stub returning a count would let "the ticket changed hands"
+         * pass against a database where nothing did.
+         */
+        const idxs = args.p_ticket_idxs ?? []
+        const moves = db.tables.ticket_movements ??= []
+        const key = args.p_client_key
+        if (key) {
+          const seen = moves.find((m) => m.client_key === key)
+          if (seen) {
+            return Promise.resolve({
+              data: { batch: seen.batch_id, replayed: true,
+                      moved: moves.filter((m) => m.batch_id === seen.batch_id).length },
+              error: null,
+            })
+          }
+        }
+        const wrong = (db.tables.tickets ?? [])
+          .filter((t) => idxs.includes(t.idx) && (t.holder ?? 'desk') !== args.p_from_holder)
+        if (wrong.length) {
+          return Promise.resolve({ data: null, error: {
+            message: `NOT_THERE: ${wrong.length} of ${idxs.length} tickets are not with ` +
+                     `${args.p_from_holder} — ${wrong.map((t) => t.number).join(', ')}` } })
+        }
+        const batch = 'batch-' + (moves.length + 1)
+        let first = true
+        for (const t of (db.tables.tickets ?? []).filter((t) => idxs.includes(t.idx))) {
+          moves.push({
+            id: moves.length + 1, at: new Date().toISOString(), ticket_idx: t.idx,
+            from_holder: args.p_from_holder, to_holder: args.p_to_holder, kind: args.p_kind,
+            batch_id: batch, by_user: args.p_user, reason: args.p_reason ?? '',
+            reverses: null, client_key: first ? (key ?? null) : null, backfilled: false,
+          })
+          t.holder = args.p_to_holder
+          first = false
+        }
+        return Promise.resolve({ data: { batch, moved: idxs.length, replayed: false }, error: null })
+      }
       if (fn === 'active_books') return Promise.resolve({ data: 0, error: null })
 
       return Promise.resolve({ data: null, error: { message: `unknown function ${fn}` } })

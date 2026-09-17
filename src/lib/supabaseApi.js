@@ -25,6 +25,7 @@ const WRITE_TIMEOUT_MS = 45_000
 const WRITES = new Set([
   'sell_ticket', 'reserve_ticket', 'release_ticket', 'correct_ticket', 'void_ticket',
   'bulk_record_sales', 'sell_book', 'issue_books', 'transfer_books', 'return_books',
+  'move_tickets',
   'settle_book', 'set_book_status', 'restock_books', 'upsert_agent', 'upsert_user',
   'set_user_status', 'set_permission', 'request_approval', 'cancel_approval',
   'decide_approval', 'decide_book_request',
