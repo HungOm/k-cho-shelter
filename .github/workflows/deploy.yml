@@ -43,11 +43,14 @@ jobs:
       #
       # Read from repository VARIABLES rather than written here, so the values
       # live in one place the organisation controls and this file carries none
-      # of them. Unset simply means the old per-device setup link still applies,
+      # of them. Unset means the device falls back to a per-device setup link,
       # so a missing variable degrades rather than breaks.
+      #
+      # VITE_BACKEND used to be here and chose between two backends. There is
+      # one now. If the repository variable still exists it is read by nothing —
+      # delete it, so the next person does not go looking for what it does.
       - run: npm run build
         env:
-          VITE_BACKEND: ${{ vars.VITE_BACKEND }}
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}

@@ -24,7 +24,13 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
-      globals: { ...globals.browser, ...globals.es2021 },
+      globals: {
+        ...globals.browser, ...globals.es2021,
+        // Replaced at build time by vite.config.js. Declared readonly so
+        // `no-undef` does not fire on them and nothing tries to assign one.
+        __APP_VERSION__: 'readonly',
+        __APP_SHA__: 'readonly',
+      },
     },
     rules: { 'no-undef': 'error' },
   },

@@ -12,6 +12,15 @@ import { applyBrand, inkFor } from '../lib/brand.js'
 import { toPayload, reject as rejectLogo } from '../lib/logofile.js'
 import Logo from './ui/Logo.vue'
 
+/*
+ * WHICH BUILD THIS IS. Replaced at build time by vite.config.js — the running
+ * app has no other way to know, and an organiser reporting something is
+ * otherwise describing "the latest one", which is the question rather than the
+ * answer.
+ */
+const appVersion = __APP_VERSION__
+const appSha = __APP_SHA__
+
 const emit = defineEmits(['add-user', 'make-tickets', 'tickets-in-play', 'deadlines'])
 
 /**
@@ -246,6 +255,11 @@ function details(d) {
 <template>
   <div>
     <h1>Setup</h1>
+    <!-- Where the person who would ever quote it can see it. Sellers never open
+         this screen, so it costs nobody else any room. -->
+    <p class="muted tiny" style="margin:-8px 0 16px">
+      Raffled v{{ appVersion }} · {{ appSha }}
+    </p>
 
     <div class="card">
       <div class="spread"><h3 style="margin:0">Who can sign in</h3>
