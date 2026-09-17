@@ -68,8 +68,10 @@ DB_ -q -c "
   grant execute on all functions in schema public to authenticated;" >/dev/null 2>&1
 
 DB_ -q -c "
+  -- UPSERT: schema.sql seeds these keys now, so a plain insert duplicates them.
   insert into config(key,value) values
-    ('TOTAL_TICKETS','60'),('TICKETS_PER_BOOK','10'),('TICKET_PRICE','10'),('ACTIVE_TICKETS','30');
+    ('TOTAL_TICKETS','60'),('TICKETS_PER_BOOK','10'),('TICKET_PRICE','10'),('ACTIVE_TICKETS','30')
+  on conflict (key) do update set value = excluded.value;
   insert into agents(agent_id,name,phone) values ('A001','Pa Thang','0125551111'),('A002','Ma Nu','0125552222');
   insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
     select g,'Book-'||lpad(g::text,4,'0'),'KS-'||lpad(((g-1)*10+1)::text,5,'0'),

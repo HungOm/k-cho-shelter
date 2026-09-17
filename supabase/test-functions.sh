@@ -102,8 +102,12 @@ APPLY supabase/functions.sql >/dev/null 2>&1 || { echo "functions.sql failed"; e
 APPLY supabase/rls.sql >/dev/null 2>&1 || { echo "rls.sql failed"; exit 1; }
 
 # 5 books of 10. Books 1-3 with A001, 4-5 with A002.
+# UPSERT, because schema.sql now SEEDS these keys. A fixture that plain-inserts
+# them collided with the defaults the moment a Supabase project could be set up
+# without a spreadsheet — and it failed at setup, before a single case ran.
 P "insert into config(key,value) values
-     ('TOTAL_TICKETS','50'),('TICKETS_PER_BOOK','10'),('TICKET_PRICE','10'),('ACTIVE_TICKETS','');
+     ('TOTAL_TICKETS','50'),('TICKETS_PER_BOOK','10'),('TICKET_PRICE','10'),('ACTIVE_TICKETS','')
+   on conflict (key) do update set value = excluded.value;
    insert into agents(agent_id,name,phone) values
      ('A001','Pa Thang','0125551111'),('A002','Ma Nu','0125552222');
    insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
@@ -829,6 +833,57 @@ ok "$(P "select count(*) from information_schema.role_table_grants where grantee
 ok "$(P "select count(*) from information_schema.role_table_grants where grantee='authenticated' and table_name='prizes' and privilege_type='UPDATE'")" "0" "and may not change it"
 ok "$(P "select count(*) from information_schema.role_table_grants where grantee='anon' and table_name in ('prizes','prize_types')")" "0" "a request with no session gets nothing"
 ok "$(P "select count(*) from information_schema.role_table_grants where grantee='authenticated' and table_name='winners'")" "0" "and the winners table, which carries telephone numbers, stays shut"
+
+# ============ WHAT A RAFFLE IS SET UP AS ============
+#
+# The half of removing the Apps Script backend that had to exist BEFORE it went:
+# a Supabase project built from nothing used to have an EMPTY config table,
+# because every config row in production arrived through the one-off migration
+# out of the Sheet. `expand_tickets` would have generated ten thousand tickets
+# numbered 1 to 10000 with no prefix and no padding.
+
+echo "a project built from nothing knows how to number a ticket"
+ok "$(P "select count(*) from config")" "26" "the defaults are seeded"
+ok "$(P "select value from config where key='TICKET_PREFIX'")" "KS-" "there is a prefix to build a number from"
+ok "$(P "select value from config where key='TICKET_DIGITS'")" "5" "and a width to pad it to"
+# BLANK, and that is the guarantee, not an oversight: a raffle that has not set
+# a logo shows NO logo rather than somebody else's. This was asserted against
+# Config.gs by orgidentity.test.mjs; this is where it lives now.
+ok "$(P "select count(*) from config where key in ('ORG_LOGO','ORG_LOGO_SMALL','BRAND_COLOR') and value=''")" "3" "and no branding it did not choose"
+# Re-running the seed must not restate a raffle that is already running.
+P "update config set value='Spring Draw 2026' where key='EVENT_NAME'" >/dev/null
+APPLY supabase/schema.sql >/dev/null 2>&1
+ok "$(P "select value from config where key='EVENT_NAME'")" "Spring Draw 2026" "and applying it twice does not overwrite a live raffle"
+
+echo "the numbering cannot change under tickets that are already printed"
+# Nothing is stopping an organiser editing config in the Supabase dashboard —
+# there is no set_config action at all — so the guard has to be in the database.
+r=$(P "update config set value='ZZ-' where key='TICKET_PREFIX'")
+has "$r" "cannot change once tickets exist" "the prefix is refused"
+for k in TICKET_START TICKET_DIGITS TICKETS_PER_BOOK BOOK_PREFIX BOOK_DIGITS; do
+  r=$(P "update config set value='9' where key='$k'")
+  has "$r" "cannot change once tickets exist" "$k is refused"
+done
+# The message has to say what actually happens, because nothing throws when it
+# is wrong — the stored numbers simply stop matching the recomputed ones.
+has "$r" "stops them matching" "and says what going wrong would look like"
+
+echo "but the raffle can still grow, which is the one that has to stay possible"
+before=$(P "select value from config where key='TOTAL_TICKETS'")
+r=$(P "update config set value='500' where key='TOTAL_TICKETS'")
+ok "$r" "UPDATE 1" "TOTAL_TICKETS may be raised — expand_tickets does exactly this"
+r=$(P "update config set value='10' where key='TOTAL_TICKETS'")
+has "$r" "cannot be reduced" "and may not be lowered"
+has "$r" "including ones already sold" "because lowering it silently unmakes sold tickets"
+P "update config set value='$before' where key='TOTAL_TICKETS'" >/dev/null 2>&1
+# A write that changes nothing is not a change. settle_book and friends rewrite
+# config rows wholesale; if a no-op tripped the lock, every one of them would
+# fail the moment a ticket existed.
+r=$(P "update config set value=value where key='TICKET_PREFIX'")
+ok "$r" "UPDATE 1" "and rewriting a locked key with its own value is not a change"
+# Everything else stays editable — the lock is about numbering, not about config.
+r=$(P "update config set value='Autumn Draw' where key='EVENT_NAME'")
+ok "$r" "UPDATE 1" "the keys that are not numbering are still editable"
 
 echo
 echo "$pass passed, $fail failed"

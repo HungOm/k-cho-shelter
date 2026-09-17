@@ -53,7 +53,24 @@ online are the same either way — and the rest of the Supabase side is:
    Apps Script**, which is the one way to end up quietly running the other backend.
 7. Turn on the weekly backup — **[Backups](#backups-supabase)** below. The free plan takes none,
    and the job deliberately fails every week until it is set up.
-8. Check it: `./tests/run.sh`, and `./supabase/test-rls.sh` against a throwaway database.
+8. **Set the numbering, then make the tickets.** A new project starts with the 26 settings in the
+   `config` table already filled in and **no tickets at all** — `TOTAL_TICKETS` is `0`. Open
+   Table Editor → `config` and set `TICKET_PREFIX`, `TICKET_DIGITS`, `TICKETS_PER_BOOK`,
+   `BOOK_PREFIX` and `BOOK_DIGITS` to what you are printing, along with `EVENT_NAME`, `ORG_NAME`,
+   `CURRENCY` and `TICKET_PRICE`.
+
+   Then sign in as the System Admin and use **Books → Make more tickets**, which previews the
+   range before it writes anything. Generate the tickets and books in one go.
+
+   **Set the numbering before you generate, not after.** Once a single ticket row exists the
+   database refuses to change any of those five, and it refuses for a reason: every ticket number
+   is a stored string while every lookup recomputes it from these settings. Change the prefix
+   afterwards and the two stop agreeing — searching finds nothing, selling says the ticket does
+   not exist, and the paper in somebody's hand no longer refers to anything. Nothing throws. It
+   simply stops matching.
+
+   `TOTAL_TICKETS` can always be raised later from the same screen. It can never be lowered.
+9. Check it: `./tests/run.sh`, and `./supabase/test-rls.sh` against a throwaway database.
 
 Everything from Step 1 to Step 9 below is the **Apps Script** path, and Step 3 (Google sign-in) and
 Step 7 (putting the app online) are needed for both.
