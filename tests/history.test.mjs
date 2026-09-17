@@ -205,7 +205,39 @@ console.log('every movement the server can record has words for it')
   const books = read('supabase/functions/api/books.ts')
   const verbs = new Set(
     [...books.matchAll(/action:\s*'(\w+)'/g)].map((m) => m[1]))
-  verbs.add('settle')                          // written by the SQL function
+
+  /*
+   * AND THE ONES THE SQL WRITES, which is most of them now.
+   *
+   * issue, return, transfer and restock each used to be an `action: 'issue'`
+   * object literal in books.ts, so grepping that file found them all and one
+   * hand-added 'settle' covered the rest. Those four inserts moved into SQL
+   * functions when the moves became transactions, and this scan quietly found
+   * four fewer verbs — the assertion below caught it, which is the whole reason
+   * it counts rather than trusting the list.
+   *
+   * Read from the source that writes them, so moving a write between layers
+   * cannot make the vocabulary look smaller than it is.
+   */
+  const sql = read('supabase/functions.sql')
+  for (const m of sql.matchAll(/insert into book_history[\s\S]{0,600}?'(\w+)',\s*p_user/g)) {
+    verbs.add(m[1])
+  }
+
+  /*
+   * AND A FOURTH PLACE, which this check did not know about and which is
+   * exactly the failure it was written to prevent.
+   *
+   * acknowledge_books in people.ts writes into book_history too — a seller
+   * confirming they have the books, or an organiser recording a signed paper —
+   * through its own ACK_ACTION map rather than an `action:` literal. So the
+   * regex above never saw them, the trail had no words for them, and a
+   * confirmed handover rendered as the raw column with a capital bolted on:
+   * "Acknowledge_paper", underscore and all.
+   *
+   * Read from the map rather than typed out here, for the reason the comment
+   * above gives: a hand-written list covers what somebody remembered.
+   */
 
   // setBookStatus lower-cases whichever of these somebody sets.
   const valid = books.match(/const valid = \[([^\]]*)\]/)
