@@ -3,13 +3,28 @@
  * Home answers two questions before you touch anything: how is the raffle
  * going, and what needs doing. Every attention row is a shortcut to the fix.
  */
+import { computed } from 'vue'
 import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh } from '../lib/store.js'
 import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
 import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
 
-const emit = defineEmits(['issue', 'add-agent', 'open-book', 'sell-book'])
+const emit = defineEmits(['issue', 'add-agent', 'open-book', 'sell-book', 'report-back'])
+
+/*
+ * A SELLER HAS ONE JOB THIS SCREEN NEVER OFFERED THEM: reporting back.
+ *
+ * The shortcuts are the things a person came here to do, and for a volunteer
+ * carrying books the commonest of those is not writing down a sale — it is the
+ * checkpoint they were given a date for. It had no control anywhere, on any
+ * screen, for anybody holding a book.
+ *
+ * Shown to anybody whose account is linked to a seller, including an organiser
+ * who also carries books, because the question "what am I bringing in" belongs
+ * to whoever is holding the paper.
+ */
+const isSeller = computed(() => !!state.user?.agentId)
 
 function doStep(action) {
   if (action === 'add-agent') emit('add-agent')
@@ -127,6 +142,9 @@ function doStep(action) {
       </button>
       <button v-if="canWrite" @click="emit('sell-book')">
         <Icon name="bookPlus" :size="30" class="em" /><Bi text="Sell a whole book" class="mid" />
+      </button>
+      <button v-if="isSeller" @click="emit('report-back')">
+        <Icon name="clock" :size="30" class="em" /><Bi class="mid" text="Report back" />
       </button>
       <button v-if="isAdmin" @click="emit('issue')">
         <Icon name="books" :size="30" class="em" /><Bi class="mid" text="Give out books" />

@@ -123,6 +123,7 @@ const CALLS = {
   handover_receipt: { agentId: 'A001' },
   acknowledge_books: { agentId: 'A001' },
   acknowledged_books: { agentId: 'A001' },
+  report_draft: { agentId: 'A001' },
   report_outstanding: {}, report_overdue: {}, report_missing_contact: {},
   report_draw_ready: {}, agent_statement: { agentId: 'A001' }, export_entries: {},
 

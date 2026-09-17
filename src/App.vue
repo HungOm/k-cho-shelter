@@ -34,6 +34,7 @@ import BookDetail from './components/modals/BookDetail.vue'
 import Receipt from './components/modals/Receipt.vue'
 import SellBook from './components/modals/SellBook.vue'
 import BookAction from './components/modals/BookAction.vue'
+import ReportBack from './components/modals/ReportBack.vue'
 import MakeTickets from './components/modals/MakeTickets.vue'
 import TicketsInPlay from './components/modals/TicketsInPlay.vue'
 import Deadlines from './components/modals/Deadlines.vue'
@@ -464,7 +465,8 @@ function seeTickets(book) {
                    @tickets-in-play="openModal('inplay')"
                    @deadlines="openModal('deadlines')"
                    @record-check-in="a => openModal('checkin', a)"
-                   @record-payment="a => openModal('payment', a)" />
+                   @record-payment="a => openModal('payment', a)"
+                   @report-back="openModal('reportback')" />
       </KeepAlive>
     </Transition>
   </AppShell>
@@ -493,6 +495,11 @@ function seeTickets(book) {
                 @put-back="afterBookChange" />
     <SellBook v-else-if="modal?.kind === 'sellbook'" :book="modal.payload"
               @close="closeModal" @sold="closeModal" />
+    <!-- The seller's own report. Sending it changes nothing until an
+         organiser accepts it, so closing on 'sent' returns them to a screen
+         that still shows their books exactly as they were. -->
+    <ReportBack v-else-if="modal?.kind === 'reportback'"
+                @close="closeModal" @sent="closeModal" />
     <BookAction v-else-if="modal?.kind === 'bookaction'"
                 :kind="bookAction.kind" :book="bookAction.book"
                 @close="closeModal" @done="closeModal"

@@ -154,6 +154,8 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   acknowledge_books: { group: 'Books', label: 'Confirm you received books' },
   acknowledged_books: { group: 'Books', label: 'See which books were confirmed' },
   return_check: { group: 'Books', label: 'What came back against what was promised' },
+  report_draft: { group: 'Books', label: 'Your report, ready to check' },
+  report_back: { group: 'Books', label: 'Send your report to the organiser' },
   expand_tickets: { group: 'Books', label: 'Make more tickets', danger: true },
   set_active_tickets: { group: 'Books', label: 'Change how many tickets are in play', danger: true },
   set_ticket_ceiling: { group: 'Books', label: 'Change the planned size of the raffle' },
@@ -276,6 +278,23 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // A seller may see their own line; the handler scopes it. An organiser
   // gets everybody, which is the list they work from at a check-in.
   return_check: { roles: null, kind: 'read', fn: books.returnCheck },
+  /*
+   * THE SELLER'S OWN REPORT, both halves.
+   *
+   * report_draft is a read and belongs to whoever is reporting: a seller sees
+   * their own, and staff may build one for a named seller because an organiser
+   * on the telephone with somebody who cannot open the app still needs the
+   * figures in front of them.
+   *
+   * report_back is a WRITE THAT A SELLER MAY NOT PERFORM, and that is the whole
+   * design. It is not on this list for them at all — it is reached only as a
+   * petition through request_approval, and it runs as the organiser who accepts
+   * it. Registering it for 'recorder' is what lets an organiser or helper carry
+   * one out directly, which is the case where the seller is standing at the
+   * table and there is nobody to wait for.
+   */
+  report_draft: { roles: null, kind: 'read', fn: books.reportDraft },
+  report_back: { roles: ['recorder'], kind: 'write', fn: books.reportBack },
   expand_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.expandTickets },
   set_ticket_ceiling: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setTicketCeiling },
 

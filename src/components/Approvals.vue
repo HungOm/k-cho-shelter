@@ -128,6 +128,18 @@ async function copyLink() {
  */
 const isRequest = (r) => r.detail?.runAs === 'approver'
 
+/*
+ * A SELLER'S REPORT IS A PETITION TOO, and it is not a book request.
+ *
+ * Both run as the approver and both are the organiser's to decide, so they
+ * share the queue and the buttons. What they must not share is the sentence
+ * underneath: granting a book request hands paper out, and accepting a report
+ * brings paper back, marks tickets sold and puts money on the ledger. An
+ * approver reading the wrong one of those is exactly the rubber stamp this
+ * screen is written to prevent.
+ */
+const isReport = (r) => r.detail?.kind === 'report_back'
+
 /** Whether this reader can decide THIS row, which is not one answer any more. */
 function canDecide(r) {
   return youDecide.value || (isAdmin.value && isRequest(r))
@@ -210,6 +222,13 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
         <p v-if="r.detail?.voidsTickets" class="stake">
           {{ r.detail.tickets }} {{ r.detail.tickets === 1 ? 'ticket leaves' : 'tickets leave' }} the draw
         </p>
+        <!-- The numbers, not the noun. "A report from Amos" is not a thing
+             anybody can weigh; what accepting it writes is. -->
+        <p v-if="isReport(r)" class="stake">
+          {{ r.detail.ticketsSold }} {{ r.detail.ticketsSold === 1 ? 'ticket' : 'tickets' }}
+          marked sold<template v-if="r.detail.handed > 0">, {{ r.detail.handed.toFixed(2) }}
+          on the ledger</template>
+        </p>
         <p class="what">{{ r.summary }}</p>
         <p class="tiny muted">Asked by {{ r.requestedBy }} · {{ dateTime(r.requestedAt) }}</p>
 
@@ -223,10 +242,11 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
           <input v-model="note" placeholder="A note, if you want (optional)">
           <div class="row mt">
             <button class="btn danger grow" :disabled="busy === r.requestId" @click="decide(r, false)">
-              {{ isRequest(r) ? 'Say no' : 'Turn down' }}
+              {{ isReport(r) ? 'Not yet' : isRequest(r) ? 'Say no' : 'Turn down' }}
             </button>
             <button class="btn primary grow" :disabled="busy === r.requestId" @click="decide(r, true)">
               {{ busy === r.requestId ? 'Working…'
+                 : isReport(r) ? 'Accept the report'
                  : isRequest(r) ? 'Give them the books' : 'Approve and do it' }}
             </button>
           </div>
@@ -234,7 +254,17 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
                runs in the requester's name; granting a book is the organiser
                handing it over, and the book's record will say so. -->
           <p class="hint">
-            <template v-if="isRequest(r)">
+            <!-- SAID BEFORE THE PRESS, because this one moves money. Accepting
+                 is the moment the cash stops being something a seller says they
+                 have and becomes something the raffle has been given. Do it
+                 with the envelope in front of you. -->
+            <template v-if="isReport(r)">
+              Accepting brings those books back, counts in the ones they counted, and
+              records the money against them — all in your name, straight away. Do it
+              when the books and the cash are in front of you; say no if they are not,
+              and they can send it again.
+            </template>
+            <template v-else-if="isRequest(r)">
               Granting hands the books over straight away, in your name, and they
               are nobody else's to sell until they come back.
             </template>

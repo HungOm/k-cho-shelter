@@ -14,8 +14,12 @@
  */
 import { ApiError, agentBooks, seesBuyer, shortPhone, type AppUser } from './gate.ts'
 import {
-  checkInRound, configDate, defaultDueDate, noteReportFromSettle,
+  checkInRound, configDate, defaultDueDate, noteReportFromSettle, recordCheckIn,
 } from './deadlines.ts'
+// The seller's accepted report hands money over the same way every other
+// hand-over does. money.ts imports nothing from here, so this is a leaf edge and
+// not a cycle — deadlines.ts already depends on money.ts the same way.
+import { recordPayment } from './money.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -924,5 +928,268 @@ export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx
         note: sees ? (h.note ?? '') : '',
       }
     }),
+  }
+}
+
+// ============ THE SELLER'S OWN REPORT ============
+/**
+ * WHAT A SELLER COULD DO IN THIS APP BEFORE THIS, at the moment that matters
+ * most: nothing. They carry the books, they hold the stubs and the cash, and
+ * the checkpoint they are given a date for is something that happens TO them —
+ * an organiser types their figures into a screen the seller never sees, from
+ * numbers read out over a telephone or remembered from a car park. The one
+ * record of what the seller actually said is written by somebody else, after
+ * the fact, in the seller's absence.
+ *
+ * So: the seller prepares the report, the organiser accepts it, and the
+ * acceptance is what writes. Nothing the seller submits changes a book, a
+ * ticket or a figure until somebody on the other side of the table says yes.
+ * That is not a new mechanism — it is `pending_approvals`, the same queue a
+ * seller already asks for books through, and a petition runs as the APPROVER
+ * because returning and counting in are the organiser's acts and always were.
+ *
+ * WHAT IS DELIBERATELY NOT HERE.
+ *
+ * A DAILY JOB THAT PREPARES IT. It was asked for and it is the wrong shape: a
+ * report built at 6am is wrong by lunchtime, and this system has no scheduler
+ * (round_snapshots says so in the schema, and says why). The draft is built
+ * from live rows the moment the seller opens the screen, which is the same
+ * promise — "it is ready, just check it" — without a copy that can go stale or
+ * a job that can fail quietly at the weekend.
+ *
+ * MONEY THAT POSTS ITSELF. The cash is a single hand-over recorded against the
+ * seller, not a figure invented per book, and it is written only when an
+ * organiser presses Accept with the sentence in front of them saying what it
+ * will record. A raffle where a tap on a phone creates money rows for cash
+ * nobody is holding is a raffle whose ledger means nothing.
+ */
+
+/** What the seller is about to be asked to confirm, built from live rows. */
+export async function reportDraft(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const own = String(user.agentId ?? '').trim()
+  const asked = String(p.agentId ?? '').trim()
+  const staff = user.isAdmin || user.role === 'recorder'
+  if (asked && asked !== own && !staff) {
+    throw new ApiError('NOT_YOURS', 'That is somebody else\'s report.')
+  }
+  const agentId = staff ? (asked || own) : own
+  if (!agentId) {
+    throw new ApiError(
+      'NOT_A_SELLER',
+      'Reports are made by sellers, and your account is not linked to one. ' +
+      'An organiser can link it on the People screen.',
+    )
+  }
+
+  const { data: agent } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name').eq('agent_id', agentId).maybeSingle()
+  if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No seller with the ID "${agentId}".`, null, 404)
+
+  const { data: cfgRows } = await ctx.supabaseAdmin
+    .from('config').select('key,value').in('key', ['TICKET_PRICE', 'CURRENCY'])
+  const cfg = Object.fromEntries((cfgRows ?? []).map(
+    (r: { key: string; value: string }) => [r.key, r.value]))
+  const price = Number(cfg.TICKET_PRICE || 10) || 10
+
+  const round = await checkInRound(ctx)
+  const checkIn = await configDate(ctx, 'CHECK_IN_DATE')
+
+  // Already answered this round? The draft still builds — a seller who comes
+  // back with more is the case recordCheckIn is written to accept — but the
+  // screen has to say so rather than let somebody report twice by accident.
+  const { data: already } = await ctx.supabaseAdmin
+    .from('check_in_reports').select('reported_at,books_back,amount_paid')
+    .eq('agent_id', agentId).eq('round', round).is('undone_at', null).maybeSingle()
+
+  const { data: held } = await ctx.supabaseAdmin
+    .from('books').select('idx,number,first_ticket,last_ticket,due_at,status')
+    .eq('held_by_agent', agentId).eq('status', 'Out').order('idx')
+
+  const idxs = (held ?? []).map((b: { idx: number }) => Number(b.idx))
+  const { data: tickets } = idxs.length
+    ? await ctx.supabaseAdmin.from('tickets')
+        .select('idx,number,book_idx,status').in('book_idx', idxs).order('idx')
+    : { data: [] }
+
+  const inBook = new Map<number, Array<Record<string, unknown>>>()
+  for (const t of (tickets ?? []) as Array<Record<string, unknown>>) {
+    const k = Number(t.book_idx)
+    if (!inBook.has(k)) inBook.set(k, [])
+    inBook.get(k)!.push(t)
+  }
+
+  const SOLD = ['Sold', 'Donated']
+  const books = (held ?? []).map((b: Record<string, unknown>) => {
+    const rows = inBook.get(Number(b.idx)) ?? []
+    const sold = rows.filter((t) => SOLD.includes(String(t.status)))
+    const unsold = rows.filter((t) => !SOLD.includes(String(t.status)) && String(t.status) !== 'Void')
+    return {
+      book: String(b.number),
+      firstTicket: String(b.first_ticket ?? ''),
+      lastTicket: String(b.last_ticket ?? ''),
+      due: b.due_at ?? null,
+      held: rows.length,
+      recordedSold: sold.length,
+      unsoldNumbers: unsold.map((t) => String(t.number)),
+      /*
+       * WHAT THE SCREEN SHOULD SUGGEST, and it is only a suggestion.
+       *
+       * A book with nothing written down in it is one the seller either never
+       * opened or sold from without recording — the first is a bring-back, and
+       * the second is why the seller gets to change it. A book with sales in it
+       * is one to count in, because the money on it has to be reconciled before
+       * anybody else can carry it.
+       */
+      suggest: sold.length ? 'count' : 'return',
+    }
+  })
+
+  const expected = books.reduce((n, b) => n + b.recordedSold * price, 0)
+
+  // What they have already handed over, so the money box does not ask for it
+  // twice. Reversals are negative rows and net themselves out.
+  const { data: paid } = await ctx.supabaseAdmin
+    .from('payments').select('amount').eq('agent_id', agentId)
+  const collected = (paid ?? []).reduce(
+    (n: number, r: { amount: number }) => n + Number(r.amount ?? 0), 0)
+
+  return {
+    agentId,
+    agentName: String((agent as { name?: string }).name ?? agentId),
+    round,
+    checkInDate: checkIn,
+    // The date on the paper they were given, which is the one they remember.
+    dueBy: books.reduce((soonest: string, b) => {
+      const d = String(b.due ?? '')
+      return d && (!soonest || d < soonest) ? d : soonest
+    }, ''),
+    currency: String(cfg.CURRENCY ?? ''),
+    ticketPrice: price,
+    books,
+    booksOut: books.length,
+    recordedSold: books.reduce((n, b) => n + b.recordedSold, 0),
+    ticketsHeld: books.reduce((n, b) => n + b.held, 0),
+    expected,
+    collected,
+    // What the figures say is outstanding, which is what the money box starts at.
+    owed: Math.round((expected - collected) * 100) / 100,
+    alreadyReported: already
+      ? { at: already.reported_at, booksBack: already.books_back, amountPaid: already.amount_paid }
+      : null,
+  }
+}
+
+/**
+ * The accepted report, carried out.
+ *
+ * RUNS AS THE ORGANISER WHO ACCEPTED IT — see PETITIONS in approvals.ts.
+ * Bringing a book back and counting one in are organiser acts; re-checking them
+ * against the seller who asked would refuse every report at the moment it was
+ * granted, which is the worst place to find out.
+ *
+ * ORDER MATTERS AND IT IS THE ORDER OF THE TABLE. The books come back first,
+ * because a book must be on the desk before it can be counted in. Then each
+ * book named for counting is counted, with the stubs the seller listed. Then
+ * the money, as one hand-over — not split across books, because the seller
+ * hands over one envelope and inventing a per-book share of it would be putting
+ * a figure in the ledger that nobody counted.
+ *
+ * WHAT IS REFUSED RATHER THAN SKIPPED: a book that is not theirs, or is not out
+ * with them any more. A report is judged against the rows as they are NOW, not
+ * as they were when it was written, and half of it landing is worse than none.
+ */
+export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const agentId = String(p.agentId ?? '').trim()
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller is this report from?')
+
+  const { data: agent } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name').eq('agent_id', agentId).maybeSingle()
+  if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No seller with the ID "${agentId}".`, null, 404)
+  const who = String((agent as { name?: string }).name ?? agentId)
+
+  const lines = (Array.isArray(p.books) ? p.books : []) as Array<Record<string, unknown>>
+  const named = lines.map((l) => String(l.book ?? '').trim()).filter(Boolean)
+
+  const { data: rows } = named.length
+    ? await ctx.supabaseAdmin.from('books')
+        .select('idx,number,status,held_by_agent').in('number', named)
+    : { data: [] }
+  const byNumber = new Map((rows ?? []).map(
+    (b: Record<string, unknown>) => [String(b.number), b]))
+
+  // Every book checked before any of them moves.
+  const wrong: string[] = []
+  for (const n of named) {
+    const b = byNumber.get(n) as Record<string, unknown> | undefined
+    if (!b) { wrong.push(`${n} does not exist`); continue }
+    if (String(b.held_by_agent ?? '') !== agentId) { wrong.push(`${n} is not with ${who}`); continue }
+    if (String(b.status) !== 'Out') wrong.push(`${n} is ${String(b.status).toLowerCase()} already`)
+  }
+  if (wrong.length) {
+    throw new ApiError(
+      'REPORT_STALE',
+      `This report no longer matches the books: ${wrong.join(', ')}. ` +
+      'Nothing was changed. Ask them to send it again.',
+      { books: wrong },
+    )
+  }
+
+  const returning = lines.filter((l) => String(l.action) === 'return').map((l) => String(l.book))
+  const counting = lines.filter((l) => String(l.action) === 'count')
+
+  // 1. Onto the desk. Both kinds come back: counting a book in is something
+  //    that happens to a book that is here.
+  const coming = [...returning, ...counting.map((l) => String(l.book))]
+  if (coming.length) {
+    await returnBooks({ bookNumbers: coming, note: `Reported back by ${who}` }, user, ctx)
+  }
+
+  // 2. Counted in, one book at a time, with the stubs the seller listed. The
+  //    money is nought on every one of them: it arrives below as one hand-over,
+  //    which is how it was actually handed over.
+  const counted: Array<Record<string, unknown>> = []
+  for (const line of counting) {
+    const r = await settleBook({
+      bookNumber: String(line.book),
+      unsoldTickets: Array.isArray(line.unsold) ? line.unsold.map(String) : [],
+      amountPaid: 0,
+      note: `Counted in from ${who}'s report`,
+    }, user, ctx) as Record<string, unknown>
+    counted.push({ book: String(line.book), sold: r.declaredSold, due: r.amountDue })
+  }
+
+  // 3. The cash, as one hand-over against the seller. `record_payment` is the
+  //    existing door for money that is not tied to one book, and it is the
+  //    right one: the seller handed over an envelope, not ten envelopes.
+  const handed = Number(p.amountHanded ?? 0) || 0
+  let payment: unknown = null
+  if (handed > 0) {
+    payment = await recordPayment({
+      agentId, amount: handed, method: String(p.method ?? 'cash'),
+      note: `Handed in with their report`,
+    }, user, ctx)
+  }
+
+  // 4. And the declaration itself — what the seller SAID, beside what the rows
+  //    now show. This is the half `return_check` compares, and the half nothing
+  //    else records.
+  await recordCheckIn({
+    agentId,
+    booksBack: coming.length,
+    ticketsSold: Number(p.ticketsSold ?? 0) || 0,
+    amountPaid: handed,
+    stubsReturned: Number(p.stubsReturned ?? 0) || 0,
+    unsoldReturned: Number(p.unsoldReturned ?? 0) || 0,
+    note: String(p.note ?? '').trim(),
+  }, user, ctx)
+
+  await audit(ctx, 'REPORT_BACK', {
+    agent: agentId, returned: returning.length, counted: counted.length, handed,
+  }, user.email)
+
+  return {
+    agentId, agentName: who,
+    returned: returning, counted, handed, payment,
+    books: coming,
   }
 }

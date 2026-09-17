@@ -70,6 +70,7 @@ export const MY = {
   'Finish this book': 'ဤစာအုပ် ပြီးဆုံးရန်',
   'Pass books to someone else': 'စာအုပ်များ လွှဲပြောင်းရန်',
   'Mark books brought back': 'ပြန်ရောက်ကြောင်း မှတ်ရန်',
+  'Report back': 'အစီရင်ခံရန်',
   'Report books lost': 'ပျောက်ဆုံးကြောင်း တင်ပြရန်',
   'Hold it': 'ခဏ သိမ်းထားရန်',
   'Let it go': 'ပြန်လွှတ်ရန',
@@ -260,6 +261,10 @@ export const MY_ERRORS = {
   // Books are handed to a person, and the record has to name which one.
   NOT_A_SELLER: 'သင့်အကောင့်ကို ရောင်းသူတစ်ဦးနှင့် ချိတ်ဆက်မထားပါ — စီစဉ်သူကို ပြောပါ',
   BOOKS_NOT_AVAILABLE: 'ဤစာအုပ်များ မရနိုင်ပါ',
+  // The seller's report named a book that has moved since they sent it, so
+  // nothing was carried out. Composed from the vocabulary already in this file:
+  // စာအုပ် (book), ပြောင်းလဲ (changed), ထပ်ပို့ (send again).
+  REPORT_STALE: 'ဤအစီရင်ခံစာ ပို့ပြီးနောက် စာအုပ်အခြေအနေ ပြောင်းလဲသွားသည် — ဘာမျှ မပြောင်းလဲပါ၊ ထပ်မံ ပို့ပါ',
   TRANSFER_BLOCKED: 'လွှဲပြောင်း၍ မရပါ',
   MONEY_STILL_OWED: 'ငွေ ကျန်ရှိနေသေးသည် — အရင် ရှင်းပါ',
   // Uploading a logo. Short on purpose: the English underneath carries the

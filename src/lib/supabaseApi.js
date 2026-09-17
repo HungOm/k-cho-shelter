@@ -36,6 +36,7 @@ const WRITES = new Set([
   'record_payment', 'reverse_payment',
   'upsert_prize', 'remove_prize', 'upsert_prize_type', 'set_winner_status',
   'acknowledge_books',
+  'report_back',
   'write_off',
 ])
 

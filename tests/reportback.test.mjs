@@ -1,0 +1,283 @@
+/*
+ * A seller reporting back, and an organiser accepting it.
+ *
+ * WHAT A SELLER COULD DO AT A CHECKPOINT BEFORE THIS: nothing. They carry the
+ * books, they hold the stubs and the cash, they are given a date — and then the
+ * checkpoint happens TO them. An organiser types their figures into a screen
+ * the seller never sees, from numbers read out over a telephone or remembered
+ * from a car park, and the only record of what the seller said is written by
+ * somebody else, afterwards, with the seller not in the room.
+ *
+ * IT IS A PETITION, NOT A NEW TABLE, for the same reasons a book request is:
+ * pending_approvals already stores the exact payload with a server-written
+ * summary, lapses it, scopes the list, and executes on decision rather than
+ * unlocking something for later. What is different — and the thing this file
+ * exists to pin — is that ACCEPTING IS WHAT WRITES. Nothing the seller sends
+ * moves a book, marks a ticket or touches the ledger until an organiser says
+ * yes, and then all of it happens at once, in the organiser's name.
+ *
+ * AND THE ORDER IS THE ORDER OF THE TABLE: the books come back first, because a
+ * book has to be on the desk before it can be counted in; then each counted
+ * book, with the stubs the seller listed; then the money, as ONE hand-over
+ * against the seller rather than a share invented per book.
+ */
+import { setEnv, loadModule } from './loadts.mjs'
+import { fakeDb, baseConfig } from './fakedb.mjs'
+
+let pass = 0, fail = 0
+const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
+const eq = (g, w, what) => { String(g) === String(w) ? pass++ : (fail++, console.log(`  FAIL ${what}: got ${g}, want ${w}`)) }
+
+setEnv({ SUPER_ADMIN_EMAIL: 'boss@x.com' })
+const api = (await loadModule('index.ts')).default
+
+const book = (idx, over = {}) => ({
+  idx, number: 'Book-' + String(idx).padStart(3, '0'),
+  first_ticket: 'KS-' + String((idx - 1) * 10 + 1).padStart(5, '0'),
+  last_ticket: 'KS-' + String(idx * 10).padStart(5, '0'),
+  status: 'Unassigned', held_by_agent: null, due_at: null,
+  declared_sold: null, amount_due: null, amount_paid: null, version: 1, ...over,
+})
+const ledger = (idx, over = {}) => ({
+  idx, number: 'Book-' + String(idx).padStart(3, '0'), status: 'Unassigned',
+  held_by_agent: null, agent_name: '', days_overdue: 0, recorded_sold: 0, recorded_amount: 0,
+  counted_sold: 0, counted_expected: 0, counted_collected: 0, available: 10, ...over,
+})
+const ticket = (idx, bookIdx, over = {}) => ({
+  idx, number: 'KS-' + String(idx).padStart(5, '0'), book_idx: bookIdx,
+  status: 'Available', buyer_name: '', buyer_phone: '', buyer_zone: '',
+  sold_by_agent: null, amount: null, payment_status: '', source: '', version: 1, ...over,
+})
+
+/**
+ * One seller, two books out with her.
+ *
+ * Book-001 has two tickets written down as sold — the book she will count in.
+ * Book-002 was never opened — the one she is bringing back. That pair is the
+ * whole of a checkpoint and the reason the draft suggests different things for
+ * each.
+ */
+const world = () => fakeDb({
+  config: baseConfig({ TOTAL_TICKETS: '30', ACTIVE_TICKETS: '30', TICKETS_PER_BOOK: '10',
+                       TICKET_PRICE: '10', CHECK_IN_DATE: '2026-10-01', CHECK_IN_ROUND: '1' }),
+  app_users: [
+    { email: 'boss@x.com', name: 'Boss', role: 'admin', active: true, agent_id: null },
+    { email: 'org@x.com', name: 'Hung Om', role: 'admin', active: true, agent_id: null },
+    { email: 'seller@x.com', name: 'Daw Hla', role: 'agent', active: true, agent_id: 'A001' },
+    { email: 'other@x.com', name: 'U Kyaw', role: 'agent', active: true, agent_id: 'A002' },
+  ],
+  agents: [
+    { agent_id: 'A001', name: 'Daw Hla', phone: '0125551111', zone: 'KL', active: true },
+    { agent_id: 'A002', name: 'U Kyaw', phone: '0125552222', zone: 'KL', active: true },
+  ],
+  books: [
+    book(1, { status: 'Out', held_by_agent: 'A001', due_at: '2026-10-01' }),
+    book(2, { status: 'Out', held_by_agent: 'A001', due_at: '2026-10-01' }),
+    book(3),
+  ],
+  book_ledger_all: [
+    ledger(1, { status: 'Out', held_by_agent: 'A001', agent_name: 'Daw Hla',
+                recorded_sold: 2, recorded_amount: 20, counted_sold: 2,
+                counted_expected: 20, available: 8 }),
+    ledger(2, { status: 'Out', held_by_agent: 'A001', agent_name: 'Daw Hla' }),
+    ledger(3),
+  ],
+  tickets: [
+    ...Array.from({ length: 10 }, (_, i) => ticket(i + 1, 1)),
+    ...Array.from({ length: 10 }, (_, i) => ticket(i + 11, 2)),
+    ...Array.from({ length: 10 }, (_, i) => ticket(i + 21, 3)),
+  ],
+  check_in_reports: [],
+  payments: [],
+})
+
+// Two sold in Book-001, written down by the seller as she went.
+const withSales = () => {
+  const w = world()
+  for (const n of ['KS-00001', 'KS-00002']) {
+    Object.assign(w.db.tables.tickets.find((t) => t.number === n),
+                  { status: 'Sold', buyer_name: 'Ko Zaw', buyer_phone: '0125550100',
+                    sold_by_agent: 'A001', amount: 10, payment_status: 'Paid' })
+  }
+  return w
+}
+
+async function call(action, payload, email, w) {
+  const req = new Request('https://x/api', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, payload: payload ?? {} }),
+  })
+  const res = await api.fetch(req, { ...w.ctx, userClaims: { id: 'u1', email } })
+  return { status: res.status, body: await res.json() }
+}
+
+console.log('1. the report is ready when the seller opens it, not a blank form')
+{
+  const w = withSales()
+  const { body } = await call('report_draft', {}, 'seller@x.com', w)
+  ok(body.ok, `a seller can build their own (${body.error?.code ?? ''} ${body.error?.message ?? ''})`)
+  const d = body.data
+  eq(d.agentId, 'A001', 'and it is theirs, without asking for it by id')
+  eq(d.books.length, 2, 'both books they are holding')
+
+  const one = d.books.find((b) => b.book === 'Book-001')
+  const two = d.books.find((b) => b.book === 'Book-002')
+  eq(one.recordedSold, 2, 'what is already written down in the part-sold one')
+  eq(one.unsoldNumbers.length, 8, 'and the stubs that leaves')
+  eq(one.suggest, 'count', 'a book with sales in it is one to count in')
+  eq(two.suggest, 'return', 'and an untouched one is simply coming back')
+  eq(d.expected, 20, 'the money those sales come to')
+  eq(d.owed, 20, 'none of it handed over yet')
+  eq(d.round, 1, 'the round it answers')
+}
+
+console.log('2. and it is nobody else\'s to read')
+{
+  const w = withSales()
+  const { body } = await call('report_draft', { agentId: 'A001' }, 'other@x.com', w)
+  ok(!body.ok, 'another seller is refused')
+  eq(body.error.code, 'NOT_YOURS', 'by name')
+
+  const staff = await call('report_draft', { agentId: 'A001' }, 'org@x.com', w)
+  ok(staff.body.ok, 'an organiser may build one for somebody on the telephone')
+  eq(staff.body.data.agentId, 'A001', 'for the seller they named')
+}
+
+console.log('3. sending it changes NOTHING until somebody accepts')
+{
+  const w = withSales()
+  const { body } = await call('request_approval', {
+    action: 'report_back',
+    payload: {
+      books: [
+        { book: 'Book-001', action: 'count', unsold: ['KS-00003', 'KS-00004', 'KS-00005',
+          'KS-00006', 'KS-00007', 'KS-00008', 'KS-00009', 'KS-00010'] },
+        { book: 'Book-002', action: 'return' },
+      ],
+      ticketsSold: 2, stubsReturned: 2, unsoldReturned: 8, amountHanded: 20,
+    },
+  }, 'seller@x.com', w)
+
+  ok(body.ok, `the report is accepted into the queue (${body.error?.message ?? ''})`)
+  ok(/Daw Hla/.test(body.data.summary), 'the sentence names who is reporting')
+  ok(/count in/.test(body.data.summary), 'and what accepting it would do')
+  ok(/20/.test(body.data.summary), 'including the money')
+
+  const row = w.table('pending_approvals')[0]
+  eq(row.action, 'report_back', 'one row, naming the action it would run')
+  eq(row.detail.runAs, 'approver', 'marked as the organiser\'s act to perform')
+  eq(row.payload.agentId, 'A001', 'and pinned to whoever sent it')
+
+  // THE WHOLE POINT. Every one of these is still exactly as it was.
+  eq(w.db.tables.books.find((b) => b.idx === 1).status, 'Out', 'the counted book has not moved')
+  eq(w.db.tables.books.find((b) => b.idx === 2).status, 'Out', 'nor the returned one')
+  eq(w.db.tables.tickets.filter((t) => t.status === 'Sold').length, 2,
+     'no ticket has been marked sold')
+  eq(w.table('payments').length, 0, 'and not a penny is on the ledger')
+  eq(w.table('check_in_reports').length, 0, 'nothing is recorded as reported either')
+}
+
+console.log('4. a seller cannot carry out their own report')
+{
+  const w = withSales()
+  const { body } = await call('report_back', {
+    agentId: 'A001', books: [{ book: 'Book-002', action: 'return' }],
+  }, 'seller@x.com', w)
+  ok(!body.ok, 'the direct call is refused')
+  eq(body.error.code, 'INSUFFICIENT_ROLE', 'because carrying it out is the organiser\'s act')
+  eq(w.db.tables.books.find((b) => b.idx === 2).status, 'Out', 'and the book did not move')
+}
+
+console.log('5. accepting is what writes — all of it, at once, in the organiser\'s name')
+{
+  const w = withSales()
+  const asked = await call('request_approval', {
+    action: 'report_back',
+    payload: {
+      books: [
+        { book: 'Book-001', action: 'count', unsold: ['KS-00003', 'KS-00004', 'KS-00005',
+          'KS-00006', 'KS-00007', 'KS-00008', 'KS-00009', 'KS-00010'] },
+        { book: 'Book-002', action: 'return' },
+      ],
+      ticketsSold: 2, stubsReturned: 2, unsoldReturned: 8, amountHanded: 20, note: 'all in',
+    },
+  }, 'seller@x.com', w)
+  const id = asked.body.data.requestId
+
+  const decided = await call('decide_book_request', { requestId: id, approve: true }, 'org@x.com', w)
+  ok(decided.body.ok, `an organiser decides it (${decided.body.error?.code ?? ''} ${decided.body.error?.message ?? ''})`)
+  ok(decided.body.data.executed, 'and accepting carries it out there and then')
+
+  /*
+   * BOTH BOOKS ARE ON THE DESK, which is the half this fake can prove.
+   *
+   * The count-in itself is settle_book, and the fake models only the part of it
+   * a handler can observe — the ledger. It does not move the book row or write
+   * declared_sold, on purpose, because the arithmetic is proven against real
+   * Postgres in supabase/test-functions.sh and a JavaScript re-implementation
+   * of settlement here would be the fake agreeing with itself.
+   *
+   * So what is pinned here is what this file is actually about: that accepting
+   * put BOTH books back on the desk, and that the one marked for counting went
+   * through the count-in path with its own stubs and nobody else's.
+   */
+  const one = w.db.tables.books.find((b) => b.idx === 1)
+  const two = w.db.tables.books.find((b) => b.idx === 2)
+  eq(two.status, 'Returned', 'the untouched book is simply back')
+  ok(one.status !== 'Out', 'and the counted one is off the seller too')
+
+  const result = decided.body.data.result
+  eq(result.counted.length, 1, 'one book went through the count-in')
+  eq(result.counted[0].book, 'Book-001', 'the one with sales in it')
+  eq(result.returned.length, 1, 'and one simply came back')
+  eq(result.returned[0], 'Book-002', 'the one that was never opened')
+
+  // The money is ONE hand-over against the seller, not a share split across
+  // books nobody counted that way.
+  const paid = w.table('payments')
+  eq(paid.length, 1, 'one payment row')
+  eq(Number(paid[0].amount), 20, 'for what she handed over')
+  eq(paid[0].agent_id, 'A001', 'against her')
+  eq(paid[0].received_by, 'org@x.com', 'taken by the organiser who accepted it')
+
+  // And the declaration itself, which is the half nothing else records.
+  const said = w.table('check_in_reports')
+  eq(said.length, 1, 'she is recorded as having reported')
+  eq(said[0].agent_id, 'A001', 'by name')
+  eq(said[0].books_back, 2, 'with both books accounted for')
+  eq(said[0].stubs_returned, 2, 'the stubs she handed in')
+  eq(said[0].unsold_returned, 8, 'and the tickets that came back unsold')
+}
+
+console.log('6. a report that no longer matches the books is refused whole')
+{
+  const w = withSales()
+  const asked = await call('request_approval', {
+    action: 'report_back',
+    payload: { books: [{ book: 'Book-001', action: 'return' },
+                       { book: 'Book-002', action: 'return' }], amountHanded: 0 },
+  }, 'seller@x.com', w)
+
+  // Somebody transferred Book-001 away while the report sat in the queue.
+  Object.assign(w.db.tables.books.find((b) => b.idx === 1), { held_by_agent: 'A002' })
+
+  const decided = await call('decide_book_request',
+    { requestId: asked.body.data.requestId, approve: true }, 'org@x.com', w)
+  ok(!decided.body.ok, 'accepting it fails rather than doing half of it')
+  ok(/Book-001/.test(JSON.stringify(decided.body.error ?? {})), 'naming the book that moved')
+  eq(w.db.tables.books.find((b) => b.idx === 2).status, 'Out',
+     'and the book that was still fine did not move either')
+}
+
+console.log('7. an empty report is not a report')
+{
+  const w = world()
+  const { body } = await call('request_approval', {
+    action: 'report_back', payload: { books: [], amountHanded: 0 },
+  }, 'seller@x.com', w)
+  ok(!body.ok, 'refused')
+  eq(body.error.code, 'NOTHING_TO_DO', 'with the reason said plainly')
+}
+
+console.log(`\n${pass} passed, ${fail} failed`)
+process.exit(fail ? 1 : 0)

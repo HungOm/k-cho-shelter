@@ -29,6 +29,22 @@ type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unkn
 
 const TTL_HOURS = 24
 
+/*
+ * A SELLER'S REPORT OUTLIVES A DAY, because the person deciding it is not
+ * sitting at a desk waiting.
+ *
+ * Twenty-four hours is right for a two-person control: an organiser is stopped
+ * mid-act and somebody has to agree quickly or the act should not happen at
+ * all. A report is the opposite — it is finished work, submitted on a Saturday
+ * by somebody who has done what was asked of them, and the organiser may not
+ * open the app until Monday. Lapsing it overnight would mean the seller who
+ * reported on time is the one told to do it again.
+ *
+ * A fortnight, which is longer than any gap between checkpoints in this raffle.
+ */
+const TTL_FOR: Record<string, number> = { report_back: 24 * 14 }
+const ttlFor = (action: string) => TTL_FOR[action] ?? TTL_HOURS
+
 /**
  * How many books a payload names, resolved the way the handlers resolve them:
  * an explicit list, or everything between two book numbers by index.
@@ -293,10 +309,65 @@ export async function approvalNeeded(
  * books.held_by_agent and a ticket's owner is derived from its book. Find
  * answers "3291 is in Book-330, at the office" and offers the book.
  */
-export const PETITIONS = new Set(['issue_books'])
+export const PETITIONS = new Set(['issue_books', 'report_back'])
 
 /** As many books as one person can sensibly be handed in one go. */
 const MOST_BOOKS_ASKED = 20
+
+/**
+ * A SELLER'S REPORT, TURNED INTO THE SENTENCE AN ORGANISER DECIDES ON.
+ *
+ * The same shape as a book request and for the same reason: bringing books
+ * back, counting them in and taking money are the organiser's acts, so this
+ * runs as the approver. What the seller is doing is telling the truth about
+ * what they are holding and handing over; the acceptance is what writes.
+ *
+ * THE SENTENCE CARRIES THE NUMBERS, not a word like "a report". Somebody
+ * deciding this is agreeing to books coming back, tickets being marked sold and
+ * money going on the ledger — an approval screen that says only who sent it is
+ * a rubber stamp with extra steps.
+ */
+function reportPetition(
+  payload: Record<string, unknown>,
+  user: AppUser,
+): { text: string; kind: string; runAs: string; [k: string]: unknown } {
+  const lines = (Array.isArray(payload.books) ? payload.books : []) as Array<Record<string, unknown>>
+  const returning = lines.filter((l) => String(l.action) === 'return').map((l) => String(l.book))
+  const counting = lines.filter((l) => String(l.action) === 'count').map((l) => String(l.book))
+  const handed = Number(payload.amountHanded ?? 0) || 0
+
+  if (!returning.length && !counting.length && handed <= 0) {
+    throw new ApiError('NOTHING_TO_DO',
+      'There is nothing in this report — no books coming back and no money. ' +
+      'Say what you are bringing before you send it.')
+  }
+
+  const said = []
+  if (counting.length) {
+    said.push(`${counting.length} ${counting.length === 1 ? 'book' : 'books'} to count in`)
+  }
+  if (returning.length) {
+    said.push(`${returning.length} ${returning.length === 1 ? 'book' : 'books'} coming back unsold`)
+  }
+  if (handed > 0) said.push(`${handed.toFixed(2)} handed over`)
+
+  const all = [...counting, ...returning].sort()
+
+  return {
+    kind: 'report_back',
+    runAs: 'approver',
+    agentId: user.agentId,
+    books: all.length,
+    counting, returning, handed,
+    stubsReturned: Number(payload.stubsReturned ?? 0) || 0,
+    unsoldReturned: Number(payload.unsoldReturned ?? 0) || 0,
+    ticketsSold: Number(payload.ticketsSold ?? 0) || 0,
+    // The Approvals screen keys its "look before you decide" link on these.
+    firstBook: all[0] ?? '',
+    lastBook: all[all.length - 1] ?? '',
+    text: `${user.name || user.email} is reporting back: ${said.join(', ')}.`,
+  }
+}
 
 export async function requestable(
   action: string,
@@ -304,7 +375,7 @@ export async function requestable(
   user: AppUser,
   ctx: Ctx,
 ): Promise<{ text: string; kind: string; runAs: string; [k: string]: unknown } | null> {
-  if (action !== 'issue_books') return null
+  if (action !== 'issue_books' && action !== 'report_back') return null
 
   /*
    * TO THEMSELVES, ALWAYS. A seller asking for books they will carry is the
@@ -321,6 +392,8 @@ export async function requestable(
       'An organiser can link it on the People screen.',
     )
   }
+
+  if (action === 'report_back') return reportPetition(payload, user)
 
   const list = Array.isArray(payload.bookNumbers) ? payload.bookNumbers.map(String) : []
   const first = String(payload.fromBook ?? list[0] ?? '')
@@ -391,18 +464,18 @@ export async function requestApproval(p: Record<string, unknown>, user: AppUser,
   }
 
   const requestId = newId()
+  const expiresAt = new Date(Date.now() + ttlFor(action) * 3600_000).toISOString()
   const { error } = await ctx.supabaseAdmin.from('pending_approvals').insert({
     request_id: requestId, action, payload, summary: need.text, detail: need,
     requested_by: user.email,
-    expires_at: new Date(Date.now() + TTL_HOURS * 3600_000).toISOString(),
+    expires_at: expiresAt,
   })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'APPROVAL_REQUESTED', details: { requestId, action, summary: need.text }, email: user.email,
   })
-  return { requestId, action, summary: need.text, detail: need,
-           expiresAt: new Date(Date.now() + TTL_HOURS * 3600_000).toISOString() }
+  return { requestId, action, summary: need.text, detail: need, expiresAt }
 }
 
 export async function listApprovals(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
@@ -530,8 +603,11 @@ export async function decideApproval(
     await ctx.supabaseAdmin.from('pending_approvals')
       .update({ status: 'Expired', note: `Nobody decided within ${TTL_HOURS} hours.` })
       .eq('request_id', requestId)
+    const hours = ttlFor(r.action)
     throw new ApiError('APPROVAL_EXPIRED',
-      `That request is more than ${TTL_HOURS} hours old. Ask for it again.`)
+      hours >= 48
+        ? `That was submitted more than ${Math.round(hours / 24)} days ago. Ask for it again.`
+        : `That request is more than ${hours} hours old. Ask for it again.`)
   }
 
   if (!p.approve) {
