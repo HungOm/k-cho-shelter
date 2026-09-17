@@ -54,11 +54,19 @@ screen.
    before it:
 
    ```
-   supabase db push --linked                     # schema and migrations
-   psql "$SUPABASE_DB_URL" -f supabase/functions.sql   # the functions
+   supabase db push --linked                          # schema and migrations
+   psql "$SUPABASE_DB_URL" -f supabase/functions.sql  # the functions
+   psql "$SUPABASE_DB_URL" -f supabase/rls.sql        # the views and the policies
    supabase functions deploy api --project-ref ruadqxxfvbqsdhwkkejl
-   git push                                      # deploys the browser app
+   git push                                           # deploys the browser app
    ```
+
+   `rls.sql` was missing from this list until 17 September, and it is not
+   optional here for the same reason it is not optional in SETUP.md: the money
+   views — `agent_money`, `book_ledger_all`, `book_ledger` — live in it, not in
+   `functions.sql`. Pushing the migrations and the functions and stopping there
+   leaves the balances being read through whatever version of those views the
+   database happened to have.
 
    Deploy the Edge Function **from a clean checkout of the pushed commit**, never
    from the shared working tree. Both of 17 September's production faults came

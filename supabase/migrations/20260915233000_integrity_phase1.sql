@@ -692,7 +692,21 @@ grant select on book_ledger to authenticated;
  * has to, being above the policies. Explicitly revoked from anon and
  * authenticated so the unfiltered one can never be reached from a browser.
  */
-drop view if exists book_ledger_all;
+/*
+ * CASCADE, because agent_money is built on this one and a clean build has
+ * already created it. The order SETUP.md now documents applies rls.sql before
+ * the migrations — it has to, since six migrations call app_role() and read
+ * book_ledger_all and config_readable, all of which live there — so by the time
+ * this line runs, rls.sql's agent_money is sitting on top of the view being
+ * replaced. Postgres refuses a plain drop with "other objects depend on it",
+ * and the whole build stops here.
+ *
+ * Dropping it is safe rather than lossy: a view holds no rows, and
+ * 20260916210000 creates agent_money again a few migrations later, with
+ * 20260917150000 replacing it with the version this repository now calls
+ * canonical. The end state of a full push is the same either way.
+ */
+drop view if exists book_ledger_all cascade;
 create view book_ledger_all as
 select
   b.idx, b.number, b.first_ticket, b.last_ticket,

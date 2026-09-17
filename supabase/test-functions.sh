@@ -1001,6 +1001,103 @@ ok "$(P "select coalesce(expected,0) from agent_money where agent_id='AM'")" "$s
    "clearing the holder of a settled book does not move its money"
 P "update books set held_by_agent='AM' where idx=3" >/dev/null
 
+
+# ============ A PROJECT BUILT BY FOLLOWING THE README ============
+#
+# Everything above runs against a database this file built its own way. That
+# proves the SQL works; it does not prove the INSTRUCTIONS do, and for most of
+# the time this suite has existed they did not.
+#
+# SETUP.md said: schema.sql, then `supabase db push`, then functions.sql, then
+# rls.sql. Six migrations call app_role() or read book_ledger_all and
+# config_readable, and every one of those lives in rls.sql — two steps later. A
+# project built by following the README stopped with "function app_role() does
+# not exist", which reads like a broken migration and is really a build run out
+# of order. Nothing here noticed, because nothing here had ever applied a
+# migration: this file goes straight from schema.sql to functions.sql.
+#
+# Production was never affected. It was built incrementally, a migration at a
+# time, with rls.sql re-applied along the way — so the order it happened to go
+# in was a working one. The exposure was a staging restore, a contributor
+# setting up locally, or anybody rebuilding after a loss, which is exactly when
+# a broken build is most expensive.
+#
+# So: a SECOND, empty database, built in the order SETUP.md now gives, from the
+# files as they stand. It is the only case here that runs the migrations at all.
+echo "a project built by following SETUP.md comes up"
+if [ "$MODE" = docker ]; then
+  docker exec "$NAME" psql -U postgres -d postgres -q -c "create database cleanbuild" >/dev/null 2>&1
+  C()  { docker exec "$NAME" psql -U postgres -d cleanbuild -tAc "$1" 2>&1; }
+  CA() { docker cp "$1" "$NAME":/tmp/c.sql >/dev/null && docker exec "$NAME" psql -U postgres -d cleanbuild -q -v ON_ERROR_STOP=1 -f /tmp/c.sql 2>&1; }
+else
+  CLEAN="${DB}_clean"
+  # shellcheck disable=SC2064
+  trap "psql -d postgres -q -c 'drop database if exists $CLEAN' >/dev/null 2>&1; cleanup" EXIT
+  psql -d postgres -q -c "create database $CLEAN" >/dev/null 2>&1
+  C()  { psql -d "$CLEAN" -tAc "$1" 2>&1; }
+  CA() { psql -d "$CLEAN" -q -v ON_ERROR_STOP=1 -f "$1" 2>&1; }
+fi
+
+# THE PLATFORM'S HALF, stubbed. realtime.send, realtime.messages and
+# realtime.topic are Supabase's, not this repository's, and a bare Postgres has
+# none of them — so two migrations fail here for a reason that says nothing
+# about our SQL. Stubbing them keeps those migrations IN the check: what is
+# being asserted is that our statements parse and apply against the objects
+# Supabase provides, which is the part we can get wrong.
+C "create schema if not exists realtime;
+   create table if not exists realtime.messages(topic text, extension text, payload jsonb);
+   alter table realtime.messages enable row level security;
+   create or replace function realtime.topic() returns text as \$\$ select ''::text \$\$ language sql stable;
+   create or replace function realtime.send(payload jsonb, event text, topic text, private boolean default false)
+     returns void as \$\$ begin end \$\$ language plpgsql;" >/dev/null
+C "do \$\$ begin
+     if not exists (select 1 from pg_roles where rolname='anon') then create role anon; end if;
+     if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
+   end \$\$;" >/dev/null
+
+broke=""
+for f in supabase/schema.sql supabase/functions.sql supabase/rls.sql; do
+  out=$(CA "$f") || { broke="$f"; break; }
+done
+if [ -z "$broke" ]; then
+  pass=$((pass+1))
+else
+  fail=$((fail+1))
+  echo "  FAIL SETUP.md step 3: $broke would not apply to an empty project"
+  echo "$out" | grep -o 'ERROR:.*' | head -2 | sed 's/^/    /'
+fi
+
+# `supabase db push`, one file at a time, in the order the CLI takes them. Named
+# individually when they fail: "a migration failed" sends somebody to thirty
+# files, and the one that stopped the build is the whole of the information.
+bad=0
+for m in supabase/migrations/*.sql; do
+  out=$(CA "$m") || {
+    bad=$((bad+1))
+    [ "$bad" = 1 ] && echo "  FAIL a migration would not apply to a project built by following SETUP.md"
+    echo "    $(basename "$m"): $(echo "$out" | grep -o 'ERROR:.*' | head -1)"
+  }
+done
+if [ "$bad" = 0 ]; then
+  pass=$((pass+1)); echo "  every migration applies to a project built this way"
+else
+  fail=$((fail+1))
+fi
+
+# AND IT IS THE SAME DATABASE, not merely one that did not error. These are the
+# three things the drift between functions.sql and the migrations could silently
+# get wrong, checked on the build rather than on the files.
+ok "$(C "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='sell_books'")" "1" \
+   "one sell_books, so a sale is not ambiguous between two signatures"
+ok "$(C "select bool_or(pg_get_functiondef(p.oid) ~ 'settled_by_agent') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='settle_book'")" "t" \
+   "and it can write down who a settled book's money belongs to"
+ok "$(C "select count(*) from information_schema.columns where table_name='books' and column_name='settled_by_agent'")" "1" \
+   "with a column for it to write to"
+ok "$(C "select count(*) from information_schema.views where table_schema='public' and table_name in ('agent_money','book_ledger_all','book_ledger')")" "3" \
+   "the three money views survived the push that replaces them"
+ok "$(C "select count(*) from config")" "26" \
+   "and the raffle knows how to number a ticket"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1

@@ -23,10 +23,15 @@ static page on GitHub Pages. Two of the steps below — **Creating the Google si
 2. `cp supabase/.env.local.example supabase/.env.local` and fill in the URL and the **secret** key
    from Settings → API. `./supabase/connect.sh` checks it and refuses the publishable key, which
    otherwise appears to work for reads and fails on every write.
-3. Apply the database: `./supabase/connect.sh --schema`, then `supabase db push` for the
-   migrations, then `supabase/functions.sql` and `supabase/rls.sql`. **`rls.sql` is not optional** —
-   it is what makes the database default-deny, and without it the browser's key can read every
-   table directly.
+3. Apply the database **in this order**: `./supabase/connect.sh --schema`, then
+   `supabase/functions.sql`, then `supabase/rls.sql`, and `supabase db push` for the migrations
+   LAST. The order is not a preference — six migrations call `app_role()` or read
+   `book_ledger_all` and `config_readable`, and all of those live in `rls.sql`. Pushing the
+   migrations before it fails with `function app_role() does not exist`, which reads like a broken
+   migration and is really a build run out of order. `supabase/test-functions.sh` builds a project
+   this way on every run, so if this list is ever wrong again the suite says so.
+   **`rls.sql` is not optional** — it is what makes the database default-deny, and without it the
+   browser's key can read every table directly.
 4. `supabase functions deploy api`, and set its secrets — including `SUPER_ADMIN_EMAIL`, which is
    the one thing that must live outside the database.
 5. Enable Google under Authentication → Providers and paste in the client ID from **Creating the Google sign-in ID** below.
