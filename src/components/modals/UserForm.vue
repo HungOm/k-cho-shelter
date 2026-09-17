@@ -3,6 +3,22 @@ import { ref, computed } from 'vue'
 import { state, api, toast, refresh, isSuper } from '../../lib/store.js'
 import Sheet from '../ui/Sheet.vue'
 
+/*
+ * ONE SHEET, TWO JOBS, because upsert_user has always done both.
+ *
+ * It is keyed on the email address, so saving an address that already exists
+ * UPDATES that account — including the seller it is linked to. That has been
+ * true since it was written and there was no way to reach it: the People screen
+ * offered "Add someone", and per row Pause and Stop. An account linked to the
+ * wrong seller could not be corrected from anywhere in this app.
+ *
+ * That is not a small gap. The link decides which books a seller may write in,
+ * and a mislinked account refuses every sale its owner tries to make while the
+ * screen tells them the book is with somebody else — whose name is their own.
+ * The only repair was to guess that re-adding the same address would overwrite
+ * it.
+ */
+const props = defineProps({ user: Object })
 const emit = defineEmits(['close', 'saved', 'needs-approval'])
 
 /*
@@ -28,10 +44,12 @@ const emit = defineEmits(['close', 'saved', 'needs-approval'])
  */
 const NEW_SELLER = '__new'
 
-const email = ref('')
-const name = ref('')
-const role = ref('recorder')
-const agentId = ref('')
+const editing = computed(() => !!props.user?.email)
+
+const email = ref(props.user?.email || '')
+const name = ref(props.user?.name || '')
+const role = ref(props.user?.role || 'recorder')
+const agentId = ref(props.user?.agentId || '')
 const phone = ref('')
 const zone = ref('')
 const busy = ref(false)
@@ -138,7 +156,9 @@ async function save() {
       throw err
     }
 
-    toast(madeAgent.value ? `Added, and ${name.value.trim()} is on the sellers list` : 'Added', 'ok')
+    toast(madeAgent.value
+      ? `Saved, and ${name.value.trim()} is on the sellers list`
+      : editing.value ? 'Saved' : 'Added', 'ok')
     emit('saved')
   } catch (err) {
     toast(err.message, 'bad', err.code)
@@ -147,12 +167,18 @@ async function save() {
 </script>
 
 <template>
-  <Sheet title="Let someone sign in"
-         subtitle="They sign in with this exact Google account." @close="emit('close')">
+  <Sheet :title="editing ? 'Change this account' : 'Let someone sign in'"
+         :subtitle="editing
+           ? 'Who they are, and which seller their books belong to.'
+           : 'They sign in with this exact Google account.'" @close="emit('close')">
     <div class="field">
       <label for="ue">Their Google email <span class="req">*</span></label>
+      <!-- READ-ONLY WHEN EDITING. The address is the key: typing over it here
+           would quietly create a SECOND account and leave the first exactly as
+           it was, which is the opposite of what somebody came to this sheet to
+           do. -->
       <input id="ue" v-model="email" type="email" inputmode="email" autocomplete="off"
-             placeholder="name@gmail.com" autofocus>
+             placeholder="name@gmail.com" :readonly="editing" :autofocus="!editing">
     </div>
     <div class="field">
       <label for="un">Their name <span v-if="makingNew" class="req">*</span></label>
@@ -222,7 +248,9 @@ async function save() {
 
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
-      <button class="btn primary" :disabled="busy" @click="save">{{ busy ? 'Adding…' : 'Add' }}</button>
+      <button class="btn primary" :disabled="busy" @click="save">
+        {{ busy ? 'Saving…' : editing ? 'Save' : 'Add' }}
+      </button>
     </template>
   </Sheet>
 </template>

@@ -453,6 +453,7 @@ function seeTickets(book) {
                    @open-agent="a => openModal('agent', a)"
                    @add-agent="openModal('agent', null)"
                    @add-user="openModal('user')"
+                   @edit-user="u => openModal('user', u)"
                    @issue="openModal('issue')"
                    @sell-book="b => openModal('sellbook', b)"
                    @transfer="openModal('bookaction', 'transfer')"
@@ -478,7 +479,8 @@ function seeTickets(book) {
                @close="closeModal" @saved="closeModal"
                @receipt="id => openModal('receipt', id)"
                @check-in="a => openModal('checkin', a)" />
-    <UserForm v-else-if="modal?.kind === 'user'" @close="closeModal" @saved="closeModal"
+    <UserForm v-else-if="modal?.kind === 'user'" :user="modal.payload"
+              @close="closeModal" @saved="closeModal"
               @needs-approval="r => openModal('askapproval', r)" />
     <IssueBooks v-else-if="modal?.kind === 'issue'"
                 @close="closeModal" @issued="id => openModal('receipt', id)" />

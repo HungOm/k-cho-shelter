@@ -6,7 +6,7 @@
  * the spreadsheet, so nothing in this screen can grant it or take it away.
  */
 import { ref, onMounted, computed, watch } from 'vue'
-import { state, setConfig, api, toast, isSuper, go } from '../lib/store.js'
+import { state, setConfig, api, toast, isAdmin, isSuper, go } from '../lib/store.js'
 import { money, date, dateTime, ROLE_WORDS } from '../lib/format.js'
 import { applyBrand, inkFor } from '../lib/brand.js'
 import { toPayload, reject as rejectLogo } from '../lib/logofile.js'
@@ -21,7 +21,7 @@ import Logo from './ui/Logo.vue'
 const appVersion = __APP_VERSION__
 const appSha = __APP_SHA__
 
-const emit = defineEmits(['add-user', 'make-tickets', 'tickets-in-play', 'deadlines'])
+const emit = defineEmits(['add-user', 'edit-user', 'make-tickets', 'tickets-in-play', 'deadlines'])
 
 /**
  * Three numbers, and keeping them apart is the whole point of this card.
@@ -202,6 +202,25 @@ function actionsFor(u) {
   return mine
 }
 
+/** The seller a selling account is tied to, by name rather than by id alone. */
+function sellerName(id) {
+  return state.agents.find(a => a.id === id)?.name || ''
+}
+
+/*
+ * WHO MAY CHANGE AN ACCOUNT, matching what the server will accept rather than
+ * what the table can draw. upsert_user is the owner's; an organiser's attempt
+ * comes back as a request for the owner to approve, which is a real path and
+ * not an error — so they are offered it too, for the accounts they may ask
+ * about. Nobody is offered it against an organiser or the owner: that is the
+ * owner's alone and would be refused.
+ */
+function canEdit(u) {
+  if (u.isSuperAdmin) return isSuper.value
+  if (u.role === 'admin') return isSuper.value
+  return isAdmin.value
+}
+
 const SAID = {
   active: 'Let in — they can sign in now',
   suspended: 'Paused — they lose access within a minute',
@@ -269,7 +288,7 @@ function details(d) {
       <div v-if="users === null" class="col" style="gap:10px"><div v-for="i in 3" :key="i" class="skel"></div></div>
       <div v-else class="tablewrap">
         <table>
-          <thead><tr><th>Email</th><th>Can do</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Email</th><th>Can do</th><th>As seller</th><th>Status</th><th></th></tr></thead>
           <tbody>
             <tr v-for="u in users" :key="u.email">
               <td>
@@ -282,6 +301,19 @@ function details(d) {
                    and outranks every role here. Printing "Organiser" against
                    their name read as a ceiling, which it is not. -->
               <td>{{ u.isSuperAdmin ? 'Everything' : (ROLE_WORDS[u.role] || u.role) }}</td>
+              <!-- WHICH SELLER THIS ACCOUNT IS, which decides everything a
+                   selling account can do and was shown nowhere at all. A seller
+                   with no link refuses every sale its owner tries to make, on a
+                   screen that tells them the book is with somebody else — whose
+                   name is their own. Red, because it is the reason. -->
+              <td>
+                <template v-if="u.role === 'agent'">
+                  <span v-if="u.agentId">{{ sellerName(u.agentId) }}
+                    <span class="muted">{{ u.agentId }}</span></span>
+                  <span v-else class="bad">no seller</span>
+                </template>
+                <span v-else class="muted">—</span>
+              </td>
               <td>
                 <span :class="['pill', statusOf(u) === 'active' ? 'ok'
                                      : statusOf(u) === 'pending' ? 'info' : 'bad']">
@@ -292,6 +324,10 @@ function details(d) {
                 <!-- Only what this person may actually do to this row. An
                      organiser is not shown "Let in" at all, rather than being
                      shown it and refused. -->
+                <!-- upsert_user is keyed on the address, so this is the
+                     mechanism that has always existed and had no button. -->
+                <button v-if="canEdit(u)" class="btn sm" style="margin-right:6px"
+                        @click="emit('edit-user', u)">Change</button>
                 <button v-for="a in actionsFor(u)" :key="a.status"
                         :class="['btn', 'sm', a.tone || '']" style="margin-right:6px"
                         @click="setStatus(u, a.status)">{{ a.label }}</button>

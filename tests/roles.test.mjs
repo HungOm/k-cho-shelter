@@ -210,5 +210,35 @@ export const isSuper = computed(() => false)
   }
 }
 
+console.log('an account that is linked to the wrong seller can be put right')
+{
+  /*
+   * THE REPAIR THAT DID NOT EXIST, reported by somebody who could not sell from
+   * their own book. The link between an account and a seller decides everything
+   * a selling account can do, and the People screen showed email, role and
+   * status — never the link — with Pause and Stop as the only per-row actions.
+   * An account pointed at the wrong seller could not be corrected from anywhere
+   * in the app. upsert_user is keyed on the address and has always updated an
+   * existing row; nothing could reach it.
+   */
+  const admin = read('../src/components/Admin.vue')
+  ok(/<th>As seller<\/th>/.test(admin), 'the People table shows the link')
+  ok(/no seller/.test(admin), 'and says when there is not one, which is the reason nothing saves')
+  ok(/emit\('edit-user', u\)/.test(admin), 'each row can be changed')
+  ok(/defineEmits\(\[[^\]]*'edit-user'/.test(admin), 'and the event is declared, or Vue drops it')
+
+  const app = read('../src/App.vue')
+  ok(/@edit-user="u => openModal\('user', u\)"/.test(app), 'the app opens the sheet on it')
+  ok(/<UserForm[^>]*:user="modal\.payload"/.test(app), 'handing it the account to change')
+
+  const form = read('../src/components/modals/UserForm.vue')
+  ok(/defineProps\(\{ user: Object \}\)/.test(form), 'the sheet takes an account')
+  ok(/const editing = computed\(\(\) => !!props\.user\?\.email\)/.test(form), 'and knows which job it is doing')
+  // The address is the key. Typing over it would create a SECOND account and
+  // leave the wrong one exactly as it was.
+  ok(/:readonly="editing"/.test(form), 'the address cannot be typed over while editing')
+  ok(/props\.user\?\.agentId \|\| ''/.test(form), 'and the seller picker opens on the current link')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
