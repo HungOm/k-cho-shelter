@@ -7,6 +7,22 @@ opens a deploy window does not have to reconstruct it at speed.
 **Nothing here is a request to deploy.** It is what to check and in what order
 when somebody decides to.
 
+## What was true when this was last checked
+
+A handover document goes wrong by going stale invisibly, so every claim below is
+dated and every one of them is re-derivable in a line. If these four disagree
+with the database, trust the database and treat the rest of this file as a
+starting point rather than a report.
+
+| Checked | Value | How to re-derive |
+|---|---|---|
+| production migration head | `20260917150000` | `select max(version) from supabase_migrations.schema_migrations` |
+| migrations unapplied | **13** | `git ls-tree -r --name-only HEAD supabase/migrations/` against the above |
+| the four `*_books_tx` functions | **absent** from production | `select proname from pg_proc where proname like '%_books_tx'` |
+| Postgres | **17.6** | `show server_version` |
+
+Last revised 2026-09-17, on top of master `018734a`, with the hold still in force.
+
 ## The live site is ahead of the live backend
 
 `.github/workflows/deploy.yml` publishes the CLIENT to Pages on every push to
@@ -45,24 +61,53 @@ the thing organisers do most.
 
 ## What is in the set
 
-At the time of writing, twelve migrations are unapplied; production's
-`schema_migrations` head is `20260917150000`. Read the count again before
-deploying rather than trusting this number — it went from ten to twelve during
-the hour it took to review it, which is the best argument for a deliberate
-window rather than a gap between two commits.
+**THIRTEEN** migrations are unapplied as of the last revision of this file;
+production's `schema_migrations` head is `20260917150000`, and has not moved
+since the hold began.
 
-Reviewed across all twelve:
+**Do not trust that number — derive it.** It has been ten, twelve and thirteen
+on three successive readings of this document, because the set grows while it is
+being reviewed. That is the single best argument for a deploy window somebody
+chooses rather than a gap between two commits:
+
+    psql "$SUPABASE_DB_URL" -At -c "select max(version) from supabase_migrations.schema_migrations;"
+    git ls-tree -r --name-only HEAD supabase/migrations/ | sed 's|.*/||' \
+      | awk -F_ -v a="<that version>" '$1>a'
+
+Re-verified across all thirteen, not carried over from the twelve:
 
 - **Nothing destructive.** No `drop table`, no `drop column`, no `truncate`, no
-  `delete`. Every grep hit for "truncate" is *creating* an anti-truncate trigger.
+  top-level `delete`. Every grep hit for "truncate" is *creating* an
+  anti-truncate trigger.
 - **Exactly one statement writes rows**: `20260917180000_config_defaults`, and it
   is `on conflict (key) do nothing`. That one word is the whole of its safety —
   the same insert with `do update` would write `TOTAL_TICKETS = 0` over a live
-  20,000-ticket raffle. Check it is still `do nothing` before applying.
+  raffle currently holding 20,000 tickets and 2,000 books. Check it is still
+  `do nothing` before applying.
 - Everything else installs functions and triggers: written, not executed.
-- Two create new empty tables: `ticket_movements`, `money_entries`.
-- One existing table changes shape: `book_history`'s foreign key moves from
-  `on delete cascade` to `on delete restrict`.
+- **Two create new empty tables**: `ticket_movements`, `money_entries`.
+- **Five existing tables change shape**, and all but the first are additive:
+
+  | Table | Change | In |
+  |---|---|---|
+  | `book_history` | FK `on delete cascade` → `on delete restrict` | `20260917211000` |
+  | `check_in_reports` | `+ undone_at`, `+ undone_by` | `20260918050000` |
+  | `check_in_dates` | `+ cleared_at`, `+ cleared_by` | `20260918050000` |
+  | `prizes` | `+ removed_at`, `+ removed_by` | `20260918050000` |
+  | `tickets` | `+ holder text not null default 'desk'` | `20260918100000` |
+
+  The last is the only one worth a second look: a `not null default` on the
+  20,000-row tickets table. On Postgres 11 and later that is metadata only — no
+  rewrite, no long lock — and this project runs **17.6**, checked. On an older
+  server it would rewrite the table.
+
+**`move_tickets` is SQL only.** `20260918400000` installs the function and its
+custody helper, and there is no handler, no `REGISTRY` entry and no client entry
+for it anywhere. So applying these migrations and deploying the function does
+**not** make it reachable from a browser, and nothing in the app calls it. That
+is deliberate — it is inert until the screen half is built — but somebody
+deploying and then looking for a behaviour change should know not to expect one
+from that migration.
 
 ## Before any `db push`, from whichever tree
 
