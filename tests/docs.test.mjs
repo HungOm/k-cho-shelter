@@ -124,9 +124,37 @@ console.log('5. every file the docs tell somebody to run is a file that exists')
    * out. git answers that, and it answers it from .gitignore rather than from
    * a list here that would drift the first time one changed.
    */
+  /*
+   * AND GIT IS NOT ALWAYS THERE TO ASK. `git check-ignore` answers this
+   * exactly, and it answers nothing at all in a tree unpacked from
+   * `git archive` — which has no .git, exits 128, and fails this case for a
+   * reason that has nothing to do with the documentation. That matters because
+   * archiving HEAD and running the suite in it is how a commit in this shared
+   * worktree gets checked against what was actually committed rather than
+   * against what happens to be lying in the tree. A check that cannot run there
+   * quietly takes that away.
+   *
+   * So: git where there is a repository, and .gitignore read directly where
+   * there is not. Status 1 means git looked and said no; only 128 means it
+   * could not look.
+   */
+  const ignoredByFile = (() => {
+    let patterns = []
+    try {
+      patterns = readFileSync(join(root, '.gitignore'), 'utf8')
+        .split('\n').map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('#') && !l.startsWith('!'))
+    } catch { /* no .gitignore: nothing is claimed to be ignored */ }
+    return (p) => patterns.some((pat) => {
+      const rx = new RegExp('^' + pat.replace(/^\//, '').replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\u0000/g, '.*') + '(/|$)')
+      return p.split('/').some((_, i) => rx.test(p.split('/').slice(i).join('/')))
+    })
+  })()
   for (const p of claimed) {
     if (existsSync(join(root, p))) { pass++; continue }
-    const ignored = spawnSync('git', ['check-ignore', '-q', p], { cwd: root }).status === 0
+    const git = spawnSync('git', ['check-ignore', '-q', p], { cwd: root }).status
+    const ignored = git === 128 ? ignoredByFile(p) : git === 0
     ok(ignored, `${p} exists, or is a file .gitignore says the reader makes themselves`)
   }
 }
