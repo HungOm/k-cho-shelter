@@ -103,39 +103,6 @@ async function bookRowsIn(
   return data ?? []
 }
 
-/**
- * A COUNT-IN AT NOUGHT HAS NOTHING FOR A SECOND PERSON TO SIGN OFF.
- *
- * Restocking needs two people because it CLEARS A DECLARED FIGURE: somebody
- * counted a book in, somebody else's money is recorded against it, and undoing
- * that quietly is exactly the act that wants a witness. All of that is still
- * true and none of it is true of a book that was counted in with nothing sold.
- *
- * That book is the trap this exemption exists for. A seller hands back a book
- * untouched, it is counted in at nought — no sales, no money, no ledger row —
- * and every ticket in it freezes, because a settled book cannot be sold from.
- * Putting it back is the only way to sell those tickets again, and an organiser
- * who has just made a nought-value mistake had to find the owner and wait to
- * undo it. Two people to sign off the reversal of nothing.
- *
- * EVERY named book, and only from the figures themselves: nothing sold, nothing
- * declared, nothing expected, nothing handed in. One book in the range with a
- * real sale on it and the whole request goes to the owner as before. A book the
- * view does not carry cannot be judged and counts against the exemption too —
- * the count and the rows must agree, or the range holds something unexamined.
- */
-async function clearsNothing(
-  payload: Record<string, unknown>,
-  named: number,
-  ctx: Ctx,
-): Promise<boolean> {
-  const rows = await bookRowsIn(payload, ctx)
-  if (!rows.length || rows.length !== named) return false
-  const nought = (v: unknown) => !Number(v ?? 0)
-  return rows.every((r) =>
-    nought(r.recorded_sold) && nought(r.counted_sold) &&
-    nought(r.counted_expected) && nought(r.counted_collected))
-}
 
 /**
  * Decides whether an action needs two people, and if so writes the sentence the
@@ -170,19 +137,30 @@ export async function approvalNeeded(
     }
   }
 
-  if (action === 'restock_books') {
-    const n = await countBooks()
-    if (!n) return null
-    // Nothing was sold, declared, expected or handed in, so there is no figure
-    // to clear and nothing to witness. See clearsNothing.
-    if (await clearsNothing(payload, n, ctx)) return null
-    return {
-      kind: 'restock_books', books: n,
-      firstBook: String(payload.fromBook ?? ''), lastBook: String(payload.toBook ?? ''),
-      text: `Put ${n} book${n === 1 ? '' : 's'} back on the shelf. The settlement figures ` +
-        `already recorded against ${n === 1 ? 'it' : 'them'} are cleared.`,
-    }
-  }
+  /*
+   * RESTOCKING IS THE ORGANISER'S OWN ACT, and used to need the System Admin.
+   *
+   * The reasoning was that it clears a declared figure: somebody counted a book
+   * in, money is recorded against it, and undoing that quietly wants a witness.
+   * Two things were wrong with it in practice.
+   *
+   * It did not work. The handler refused any book with money outstanding, and
+   * the books an organiser needed to put back were exactly those — counted in
+   * at 8 of 10 with nothing handed in. So the System Admin saw the request,
+   * pressed Approve, and the action threw at the moment of approval. The
+   * control was not protecting the act; it was hiding a refusal behind it.
+   *
+   * And the figure is not destroyed. Money follows the sale: the sold tickets
+   * keep their seller and their amount, so a restock moves the debt from the
+   * book to the tickets and the same person still owes the same sum. What the
+   * handler now refuses is the one case where money really would vanish — a
+   * count-in declaring more than the tickets account for.
+   *
+   * The raffle's owner was shown the trade and chose this: an organiser puts a
+   * book back on their own. What is given up is a second pair of eyes on a
+   * mistyped RANGE, where several books go back at once and the first anybody
+   * knows is the Books screen. audit_log still records who did it.
+   */
 
   if (action === 'upsert_user') {
     const role = String(payload.role ?? 'viewer').toLowerCase()

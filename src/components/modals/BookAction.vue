@@ -121,13 +121,19 @@ async function go() {
       return
     }
     if (err.code === 'TRANSFER_BLOCKED' && err.details?.blocked) blocked.value = err.details.blocked
-    // The server refuses to restock a book somebody still owes on, because that
-    // would take the debt off the chase list silently. It names them; so do we,
-    // rather than showing one sentence and leaving the organiser to guess which.
-    else if (err.code === 'MONEY_STILL_OWED' && err.details?.books) {
+    /*
+     * The server no longer refuses a book merely because money is owed on it —
+     * the debt follows the sold tickets and survives the restock. What it does
+     * refuse is a book counted in for MORE than its tickets account for, where
+     * the difference exists only on the book and clearing it destroys it. It
+     * names them; so do we, rather than one sentence and a guess.
+     */
+    else if (err.code === 'MONEY_WOULD_BE_LOST' && err.details?.books) {
       blocked.value = err.details.books.map((b) => ({
         book: b.book,
-        reason: `${b.agent || 'somebody'} still owes ${money(b.owed, cfg.value?.currency)} on it — count it in first`,
+        reason: `counted in for ${money(b.declared, cfg.value?.currency)} but only ` +
+                `${money(b.onTickets, cfg.value?.currency)} is written on its tickets — ` +
+                `${money(b.lost, cfg.value?.currency)} would be lost`,
       }))
     }
     else toast(err.message, 'bad', err.code)

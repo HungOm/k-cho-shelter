@@ -394,13 +394,39 @@ console.log('restock_books guards the money')
   eq(r.restocked, 1, 'restocked without settling first')
   eq(clean.row('books', (b) => b.idx === 1).status, 'Unassigned', 'and is free to give out')
 
-  // One with money owed is refused: restocking clears held_by_agent, and the
-  // outstanding report finds debts by who holds a book.
-  const owing = mk()
-  owing.db.tables.book_ledger_all = [{ idx: 1, number: 'Book-001', status: 'Returned', agent_name: 'Daw Hla', held_by_agent: 'A001', counted_expected: 30, counted_collected: 0 }]
-  eq(await codeOf(() => books.restockBooks({ fromBook: 'Book-001', dryRun: false }, users.admin, owing.ctx)),
-    'MONEY_STILL_OWED', 'a book with unpaid sales is refused')
-  eq(owing.row('books', (b) => b.idx === 1).status, 'Returned', 'and nothing changed')
+  /*
+   * MONEY OWED IS NOT A REFUSAL, AND THAT IS THE CHANGE.
+   *
+   * This used to refuse any book with an unpaid balance, on the reasoning that
+   * restocking clears held_by_agent and the outstanding report finds debts by
+   * who holds a book. That stopped being how the report works when money began
+   * following the sale: agent_money adds sold tickets on OPEN books to
+   * amount_due on CLOSED ones, so a restock moves the same debt from the second
+   * half to the first and the seller still owes it.
+   *
+   * The advice was also impossible to follow. The books it refused were counted
+   * in already, and it told the organiser to count them in first.
+   */
+  const owed = mk()
+  owed.db.tables.book_ledger_all = [{ idx: 1, number: 'Book-001', status: 'Settled', agent_name: 'Daw Hla', held_by_agent: 'A001', counted_expected: 80, counted_collected: 0, recorded_amount: 80 }]
+  await books.restockBooks({ fromBook: 'Book-001', dryRun: false }, users.admin, owed.ctx)
+  eq(owed.row('books', (b) => b.idx === 1).status, 'Unassigned',
+    'a book counted in with nothing handed in CAN go back on the shelf — the debt is on its tickets')
+
+  /*
+   * WHAT IS STILL REFUSED: a count-in that declared more than the tickets
+   * account for. Somebody typed "8 sold" while only three were ever written
+   * down, and that difference lives on the book and nowhere else — clearing it
+   * destroys it. RM80 declared against RM30 on the tickets loses RM50.
+   */
+  const losing = mk()
+  losing.db.tables.book_ledger_all = [{ idx: 1, number: 'Book-001', status: 'Settled', agent_name: 'Daw Hla', held_by_agent: 'A001', counted_expected: 80, counted_collected: 0, recorded_amount: 30 }]
+  // Read, not assumed: the fixture's own starting status, so this asserts
+  // "unchanged" rather than a literal that is true of some other fixture.
+  const wasStatus = losing.row('books', (b) => b.idx === 1).status
+  eq(await codeOf(() => books.restockBooks({ fromBook: 'Book-001', dryRun: false }, users.admin, losing.ctx)),
+    'MONEY_WOULD_BE_LOST', 'a book counted in for more than its tickets carry is refused')
+  eq(losing.row('books', (b) => b.idx === 1).status, wasStatus, 'and nothing changed')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

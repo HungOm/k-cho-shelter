@@ -55,9 +55,13 @@ console.log('2. the sheet turns it into the action the server has always had')
   ok(/'Returned'/.test(relevant) && /'Settled'/.test(relevant),
      'and it offers the books that are back at the desk, not the ones out with sellers')
 
-  // The server refuses to restock a book still owing money, and names them.
-  ok(/MONEY_STILL_OWED/.test(sheet),
-     'a refusal that names which books still owe is shown as that list, not one sentence')
+  // Money merely OWED is no longer a refusal — the debt follows the sold
+  // tickets through a restock. What is refused is a book counted in for more
+  // than its tickets carry, where the difference would be destroyed.
+  ok(/MONEY_WOULD_BE_LOST/.test(sheet),
+     'a refusal that names which books would lose money is shown as that list, not one sentence')
+  ok(!/MONEY_STILL_OWED/.test(sheet),
+     'and the old refusal is gone rather than left beside it, because both branches cannot be right')
 }
 
 const store = `

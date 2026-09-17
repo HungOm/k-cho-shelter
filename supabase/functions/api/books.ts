@@ -742,23 +742,51 @@ export async function restockBooks(p: Record<string, unknown>, user: AppUser, ct
   // that records what was sold and what was handed in.
   const { data: ledger } = await ctx.supabaseAdmin
     .from('book_ledger_all')
-    .select('number,status,agent_name,held_by_agent,counted_expected,counted_collected')
+    .select('number,status,agent_name,held_by_agent,counted_expected,counted_collected,recorded_amount')
     .in('idx', ids)
 
-  const owing = (ledger ?? [])
+  /*
+   * MONEY OWED IS NOT A REASON TO REFUSE. MONEY THAT WOULD VANISH IS.
+   *
+   * This used to refuse any book with an unpaid balance — "settle them first,
+   * or the amount owed disappears from the outstanding report" — and the
+   * advice was impossible to follow, because the books it refused were the
+   * ones that HAD been settled. A book counted in at 8 of 10 with nothing
+   * handed in could not be put back on the shelf by anybody, and the message
+   * told the organiser to do the thing they had already done.
+   *
+   * The premise stopped being true when money began following the sale.
+   * agent_money adds up two halves: sold tickets whose book is open, and
+   * amount_due on books that are closed. Restocking moves a book from the
+   * second half to the first — the tickets keep sold_by_agent and their
+   * amount, so the same figure is still owed by the same person, through the
+   * tickets rather than through the book. Verified against Postgres rather
+   * than argued: 8 sold of 10, RM80 expected, nothing handed in, and
+   * agent_money still reads RM80 after the restock.
+   *
+   * WHAT WOULD ACTUALLY LOSE MONEY is a count-in that declared MORE than the
+   * tickets carry — somebody typed "8 sold" while only three tickets were ever
+   * written down. That difference lives nowhere but the book's own figure, and
+   * clearing it does destroy it. That, and only that, is refused here.
+   */
+  const losing = (ledger ?? [])
     .map((r: Record<string, unknown>) => ({
       book: r.number, status: r.status,
       agent: r.agent_name ?? r.held_by_agent ?? '',
-      owed: Math.round((Number(r.counted_expected ?? 0) - Number(r.counted_collected ?? 0)) * 100) / 100,
+      declared: Math.round(Number(r.counted_expected ?? 0) * 100) / 100,
+      onTickets: Math.round(Number(r.recorded_amount ?? 0) * 100) / 100,
+      lost: Math.round((Number(r.counted_expected ?? 0) - Number(r.recorded_amount ?? 0)) * 100) / 100,
     }))
-    .filter((r: { owed: number }) => r.owed > 0.005)
+    .filter((r: { lost: number }) => r.lost > 0.005)
 
-  if (owing.length) {
+  if (losing.length) {
     throw new ApiError(
-      'MONEY_STILL_OWED',
-      `${owing.length} of these books still have money owed on them. Settle them first, ` +
-      'or the amount owed disappears from the outstanding report. Nothing was changed.',
-      { books: owing },
+      'MONEY_WOULD_BE_LOST',
+      `${losing.length} of these books were counted in for more than their tickets ` +
+      'account for. Putting them back would destroy the difference, because it is ' +
+      'recorded on the book and nowhere else. Write the missing sales onto the ' +
+      'tickets first. Nothing was changed.',
+      { books: losing },
     )
   }
 

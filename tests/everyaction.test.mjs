@@ -147,7 +147,14 @@ const CALLS = {
   upsert_user: { email: 'new@x.com', role: 'recorder' },
   set_user_status: { email: 'rec@x.com', active: false },
   set_permission: { action: 'report_overdue', role: 'agent', allowed: true },
-  request_approval: { action: 'restock_books', payload: { fromBook: 'Book-002' } },
+  /*
+   * NOT restock_books any more. Putting a book back stopped needing a second
+   * person, so this fixture began returning NOTHING_TO_DO — which is on the
+   * DELIBERATE list, so the case went on passing while testing nothing at all.
+   * Marking a book Lost still needs approval, so the happy path is exercised
+   * again rather than the refusal.
+   */
+  request_approval: { action: 'set_book_status', payload: { fromBook: 'Book-002', status: 'Lost' } },
   cancel_approval: { requestId: 'nope' },
   decide_approval: { requestId: 'nope', approve: false },
   record_winner: { ticketNumber: 'KS-00006', prizeId: 'grand-hilux' },
@@ -197,7 +204,7 @@ const DELIBERATE = new Set([
   'NOTHING_TO_DO', 'NO_CHANGE', 'CONFIRM_REQUIRED', 'APPROVAL_REQUIRED',
   'NOT_FOUND', 'BOOK_NOT_FOUND', 'TICKET_NOT_FOUND', 'AGENT_NOT_FOUND',
   'USER_NOT_FOUND', 'NOT_AVAILABLE', 'ALREADY_SOLD', 'ALREADY_SETTLED',
-  'BOOKS_NOT_AVAILABLE', 'TRANSFER_BLOCKED', 'MONEY_STILL_OWED',
+  'BOOKS_NOT_AVAILABLE', 'TRANSFER_BLOCKED', 'MONEY_WOULD_BE_LOST',
   'NO_FINAL_DEADLINE', 'NO_CHECK_IN_DATE', 'FINAL_PASSED', 'IN_THE_PAST', 'CANNOT_MOVE_BACK',
   'TOO_FAR', 'BAD_DATE', 'AFTER_DRAW', 'DUE_AFTER_FINAL', 'PARTIAL_BOOK',
   'TICKETS_IN_USE', 'BOOKS_IN_USE', 'NOT_GENERATED', 'ABOVE_CEILING',
