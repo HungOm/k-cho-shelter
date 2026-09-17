@@ -122,6 +122,41 @@ and need none — a check that cries wolf is one nobody runs twice.
 It prints nothing today, and it prints `RESET WILL FAIL ON: audit_log` when the
 fix in `66d6549` is removed, which is the only way to know it works.
 
+**THE SECOND CLASS IS QUIETER AND WORSE.** The check above catches a table the
+reset tries to clear and cannot. It does not catch a table the reset never
+mentions — and a new table simply absent from the delete list SURVIVES. No
+error, nothing rolls back, and the last raffle's rows are sitting in the new
+one. `money_entries` was exactly that until `66d6549`: no foreign key to
+anything, so nothing would have refused, and the money journal would have
+carried over with the figures quietly wrong.
+
+`ticket_movements` had the loud version of the same gap — it references
+`tickets(idx)` with no on-delete clause, so once it holds a row
+`delete from tickets` is refused and the whole reset rolls back. Nothing is
+destroyed, which is the safe failure, but the reset does not happen and it is
+found at the moment somebody has taken a backup and told everyone to stop.
+
+Both are fixed: `reset.sql` now clears `money_entries` (line 102) and
+`ticket_movements` (106) before `tickets` (112). The check for the class:
+
+    made=$(grep -rhoE "create table if not exists [a-z_]+" \
+             supabase/schema.sql supabase/migrations/*.sql | awk '{print $NF}' | sort -u)
+    for t in $made; do
+      grep -qE "^\s*delete from $t\b" supabase/reset.sql || echo "SURVIVES THE RESET: $t"
+    done
+
+`delete from $t\b` rather than `delete from $t;` on purpose: `app_users` is
+cleared conditionally, keeping one account, and a check that demanded the
+semicolon would report the one deliberate exemption in the file every time it
+ran. It prints nothing today and prints `money_entries` when that line is
+removed.
+
+Run BOTH checks after any migration that creates a table or adds a trigger, and
+run them against a COPY of `reset.sql` in a scratch directory — not against the
+file in the worktree. Several sessions share this tree, and breaking the real
+file to prove a check fails will overwrite whatever somebody else has in flight
+there. That has already cost one session twenty minutes of rewriting.
+
 `20260917211000` also changes `book_history`'s foreign key from `cascade` to
 `restrict`, so `books` can no longer be deleted while it has history rows.
 `reset.sql` deletes children before parents and still works. A runbook that
