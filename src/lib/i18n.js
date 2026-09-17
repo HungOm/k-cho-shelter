@@ -230,6 +230,9 @@ export const MY_ERRORS = {
   NOT_AUTHORIZED: 'ခွင့်ပြုချက် မရှိပါ',
   ACCOUNT_DISABLED: 'ဤအကောင့်ကို ပိတ်ထားသည်',
   INSUFFICIENT_ROLE: 'ဤအရာကို သင့်အကောင့်အတွက် ဖွင့်မထားပါ',
+  // Not a permission level but an ownership one: the sale belongs to whoever
+  // wrote it down, so the words say whose it is rather than what rank you are.
+  NOT_YOURS: 'ဤအရောင်းကို အခြားသူက မှတ်သားထားသည် — သင်ပြင်ခွင့် မရှိပါ',
   SUPER_ADMIN_ONLY: 'အဓိက စီမံခန့်ခွဲသူသာ လုပ်နိုင်သည်',
   ALREADY_SOLD: 'ဤလက်မှတ်ကို ရောင်းပြီးဖြစ်သည်',
   ALREADY_SETTLED: 'ဤစာအုပ်ကို ပြီးဆုံးပြီးဖြစ်သည်',

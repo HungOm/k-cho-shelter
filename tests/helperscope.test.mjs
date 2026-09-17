@@ -90,6 +90,18 @@ async function snapshot(email) {
   return body.data
 }
 
+/** Any action, through the router, as a given signed-in person. */
+async function act(email, action, payload, w = world()) {
+  const res = await api.default.fetch(
+    new Request('https://x/api', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, payload }),
+    }),
+    { ...w.ctx, userClaims: { id: 'u1', email } })
+  const body = await res.json()
+  return body.ok ? { ok: true, data: body.data } : { ok: false, code: body.error?.code, message: body.error?.message }
+}
+
 console.log('a helper reading the whole table sees only the buyers they wrote down')
 {
   const snap = await snapshot('rec@x.com')
@@ -184,6 +196,66 @@ console.log('the seller stays reachable, which is what makes the narrowing worka
      'agents_readable hides a seller phone from viewers')
   ok(!/recorder/.test(phoneRule),
      'and NOT from a helper — otherwise the narrowing removes the route to the buyer too')
+}
+
+console.log('a helper may fix a name on anybody\'s sale — that is office work')
+{
+  /*
+   * THE FENCE THAT WAS TRIED FIRST AND WAS WRONG.
+   *
+   * The first version refused a helper any correction to a sale somebody else
+   * had written down, reasoning that mask() already hides the buyer on those
+   * rows and a write should not be wider than a read. whoholds.test.mjs caught
+   * it and had already written the answer: "Correcting a spelling on a ticket
+   * in a book that is out with somebody is ordinary office work. If those were
+   * fenced too, the fence would be the thing people work around."
+   *
+   * It is right, and the reason is that the information does not come from the
+   * screen. A seller stands at the desk and says the name is spelled wrong. The
+   * helper never needs to read the stored value to replace it, so the read rule
+   * does not transfer.
+   *
+   * Kept as a test rather than deleted, because the next person to notice that
+   * writes are wider than reads here will reach for exactly the fence I did.
+   */
+  const theirs = await act('rec@x.com', 'correct_ticket',
+    { ticketNumber: 'KS-00002', reason: 'seller spelled it out at the desk', buyerName: 'Corrected' })
+  ok(theirs.ok, `a helper may correct somebody else's sale (${theirs.code || 'ok'})`)
+
+  const mine = await act('rec@x.com', 'correct_ticket',
+    { ticketNumber: 'KS-00001', reason: 'buyer spelled it for me again', buyerName: 'Corrected' })
+  ok(mine.ok, `and their own, obviously (${mine.code || 'ok'})`)
+}
+
+console.log('but cannot move money through a correction form')
+{
+  /*
+   * TWO FIELDS ON THIS FORM ARE MONEY AND THE REST ARE PAPERWORK.
+   *
+   * sold_by_agent decides whose balance the price of the ticket sits on — it is
+   * the field that put RM100 on a volunteer for tickets sold at the office
+   * after she had handed the book back. payment_status decides whether the cash
+   * counts as in. Neither is a typo, and neither belongs to the same permission
+   * as a misspelled name sitting next to it in the same form.
+   */
+  const recredit = await act('rec@x.com', 'correct_ticket',
+    { ticketNumber: 'KS-00001', reason: 'crediting this to the other seller', agentId: 'A002' })
+  ok(!recredit.ok, 'a helper cannot re-credit a sale, even one they wrote down themselves')
+  eq(recredit.code, 'INSUFFICIENT_ROLE', 'and is told it is a role limit, not a typo')
+  ok(/moves money/i.test(recredit.message || ''), 'with the reason named')
+
+  // The Apps Script spelling of the same field is the same field.
+  const viaSheetName = await act('rec@x.com', 'correct_ticket',
+    { ticketNumber: 'KS-00001', reason: 'crediting this to the other seller', Sold_By_Agent: 'A002' })
+  eq(viaSheetName.code, 'INSUFFICIENT_ROLE', 'and the sheet spelling is not a way around it')
+
+  const paid = await act('rec@x.com', 'correct_ticket',
+    { ticketNumber: 'KS-00001', reason: 'they paid after all', paymentStatus: 'Paid' })
+  eq(paid.code, 'INSUFFICIENT_ROLE', 'nor can they flip whether the buyer has paid')
+
+  const boss = await act('boss@x.com', 'correct_ticket',
+    { ticketNumber: 'KS-00001', reason: 'sold at the desk after the book came back', agentId: 'A002' })
+  ok(boss.ok, `an organiser may re-credit — it is how the four books get fixed (${boss.code || 'ok'})`)
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

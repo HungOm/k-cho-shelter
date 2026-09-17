@@ -51,7 +51,7 @@ const num = (v: unknown, d: number) => {
 async function loadTicket(ctx: Ctx, number: string) {
   const { data, error } = await ctx.supabaseAdmin
     .from('tickets')
-    .select('idx,number,status,version,book_idx,buyer_name,buyer_phone,books(number,status,held_by_agent)')
+    .select('idx,number,status,version,book_idx,buyer_name,buyer_phone,recorded_by,books(number,status,held_by_agent)')
     .eq('number', number)
     .maybeSingle()
   if (error) throw new ApiError('QUERY_FAILED', error.message)
@@ -403,6 +403,48 @@ export async function correctTicket(p: Record<string, unknown>, user: AppUser, c
     }
     if (!user.isAdmin) {
       throw new ApiError('INSUFFICIENT_ROLE', 'Only an organiser can change a ticket status.', null, 403)
+    }
+  }
+
+  /*
+   * THE FENCE IS ON MONEY, NOT ON WHOSE HANDWRITING IT IS.
+   *
+   * The first version of this refused a helper any correction to a sale they
+   * had not written down themselves. It was wrong, and the test that caught it
+   * had already said why: "Correcting a spelling on a ticket in a book that is
+   * out with somebody is ordinary office work. If those were fenced too, the
+   * fence would be the thing people work around." A seller stands at the desk
+   * and says the name is spelled wrong; the helper types it. The information
+   * comes from the person, not from the screen, so the read rule does not
+   * transfer to the write.
+   *
+   * WHAT DOES NEED A FENCE IS THE TWO FIELDS THAT MOVE MONEY.
+   *
+   *   sold_by_agent   whose balance the price of this ticket sits on
+   *   payment_status  whether the cash for it is counted as in
+   *
+   * Neither is a typo. sold_by_agent is the one that put RM100 on a volunteer
+   * for tickets sold at the office after she had handed the book back, and a
+   * correction form whose other fields are a misspelled name is not where that
+   * should be reachable. An organiser keeps both, because somebody has to be
+   * able to put attribution right — at the cost of a reason and an audit line
+   * naming the value before and after.
+   */
+  const MONEY_FIELDS: Record<string, string> = {
+    agentId: 'who a sale is credited to',
+    Sold_By_Agent: 'who a sale is credited to',
+    paymentStatus: 'whether the buyer has paid',
+    Payment_Status: 'whether the buyer has paid',
+  }
+  for (const [field, what] of Object.entries(MONEY_FIELDS)) {
+    if (p[field] !== undefined && !user.isAdmin) {
+      throw new ApiError(
+        'INSUFFICIENT_ROLE',
+        `Only an organiser can change ${what}. It moves money between the raffle's ` +
+        'figures, which is not the same as fixing a name or a number.',
+        null,
+        403,
+      )
     }
   }
 

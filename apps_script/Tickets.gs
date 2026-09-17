@@ -559,6 +559,28 @@ function handleCorrectTicket(payload, user) {
     }
   }
 
+  /*
+   * THE FENCE IS ON MONEY, NOT ON WHOSE HANDWRITING IT IS.
+   *
+   * Correcting a spelling on somebody else's sale is ordinary office work — the
+   * seller is standing there saying it. What needs a fence is the two fields
+   * that move money: Sold_By_Agent, whose balance the price sits on, and
+   * Payment_Status, whether the cash counts as in. Neither is a typo, and a
+   * correction form whose other fields are a misspelled name is not where they
+   * should be reachable by a helper.
+   */
+  var MONEY_FIELDS = {
+    Sold_By_Agent: 'who a sale is credited to',
+    Payment_Status: 'whether the buyer has paid'
+  };
+  for (var mf in MONEY_FIELDS) {
+    if (payload[mf] !== undefined && !user.isAdmin) {
+      throw new ApiError('INSUFFICIENT_ROLE',
+        'Only an organiser can change ' + MONEY_FIELDS[mf] + '. It moves money between ' +
+        "the raffle's figures, which is not the same as fixing a name or a number.");
+    }
+  }
+
   var version = writeTicketRow_(ctx.sheet, ctx.map, ctx.row, t, patch, user);
   logAudit('CORRECT', { ticket: ticketNumber, reason: reason, before: before, after: patch }, user.email);
   return { ticketNumber: ticketNumber, version: version };
