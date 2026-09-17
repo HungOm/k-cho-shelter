@@ -1104,6 +1104,99 @@ create unique index if not exists payments_client_key_idx
   on payments (client_key) where client_key is not null;
 -- ============ THE SAME MONEY, RECORDED TWICE (end) ============
 
+
+/*
+ * EVERY MOVEMENT OF MONEY, IN ONE PLACE — the financial journal, generalising
+ * payments. ARCHITECTURE-REVIEW.md §15, added empty by 20260918300000.
+ *
+ * FOUR THINGS payments CANNOT SAY, each of which has cost something:
+ *   the DESK cannot hold money — payments.agent_id is `not null references
+ *     agents`, which is why desk_money() reconstructs the office's takings from
+ *     tickets and books instead of reading them;
+ *   NOBODY AUTHORISED ANYTHING — two-person control sits in approvals, beside
+ *     the money rather than on it;
+ *   A RECEIPT CANNOT SAY WHAT IT WAS FOR — book_idx is the only reference, so a
+ *     settlement, a sale and a batch all look alike;
+ *   AND `source` ANSWERS TWO QUESTIONS AT ONCE. 'hand' and 'settlement' are both
+ *     cash and differ in what they were for; 'writeoff' is not cash at all.
+ *     payments' own comment above concedes the cost: every caller has to
+ *     remember which kinds are money.
+ *
+ * NOTHING READS OR WRITES IT YET, and payments remains the table the raffle runs
+ * on. Dual-write is §22 step 3, two phases away.
+ */
+create table if not exists money_entries (
+  id          bigint generated always as identity primary key,
+  -- Settable, not just defaulted: the backfill carries payments.received_at
+  -- across, and a journal whose `at` is all one afternoon cannot be reconciled
+  -- against a week's takings.
+  at          timestamptz not null default now(),
+  -- An agent_id, or 'desk'. Plain text and not a reference: the desk is not an
+  -- agent, and an entry that happened must stay readable after the seller who
+  -- made it is deleted.
+  party       text not null,
+  -- What happened to the money, and only that. What it was FOR is the
+  -- reference below.
+  kind        text not null check (kind in
+                ('receipt','refund','write_off','adjustment','reversal')),
+  -- Never zero. Negative is how a refund or a reversal is expressed, so the sum
+  -- of the journal is the answer without a case statement.
+  amount      numeric(12,2) not null check (amount <> 0),
+  -- Stored, not read from config at display time: an entry from a raffle that
+  -- ran in another currency must not silently become RM because a setting moved.
+  currency    text not null,
+  method      text not null default 'cash',
+  -- Deliberately not a foreign key: it points at different tables by kind, and a
+  -- soft reference that survives is worth more than one that blocks a delete
+  -- elsewhere.
+  reference_kind text check (reference_kind is null or reference_kind in
+                   ('book','settlement','sale','batch','ticket')),
+  reference_id   bigint,
+  check ((reference_kind is null) = (reference_id is null)),
+  by_user     text not null,
+  reason      text not null default '',
+  -- The second person, on the row they agreed to rather than in a table beside
+  -- it. Nullable: most entries need nobody, and the rule belongs to the handler.
+  authorised_by text,
+  reverses    bigint references money_entries(id),
+  client_key  text,
+  -- Which payments row this came from, so the two can be reconciled against
+  -- each other during dual-write without matching on amount and time.
+  backfilled  boolean not null default false,
+  legacy_id   bigint,
+  -- A reversal names what it undoes, and only a reversal claims to.
+  check ((kind = 'reversal') = (reverses is not null))
+);
+-- Partial, both of them. Every NULL is distinct in Postgres, so a plain unique
+-- column would be relying on that by accident.
+create unique index if not exists money_entries_client_key_idx
+  on money_entries (client_key) where client_key is not null;
+-- This one is what makes an interrupted backfill safe to re-run.
+create unique index if not exists money_entries_legacy_idx
+  on money_entries (legacy_id) where legacy_id is not null;
+create index if not exists money_entries_party_idx on money_entries (party, at desc);
+create index if not exists money_entries_reference_idx
+  on money_entries (reference_kind, reference_id) where reference_kind is not null;
+
+-- Append only, all three ways. Truncate is the one people leave off.
+create or replace function money_entries_append_only() returns trigger as $$
+begin
+  raise exception 'money_entries is append only — % is not allowed on it', tg_op
+    using errcode = 'restrict_violation',
+          hint = 'Write the opposite entry instead, as a reversal pointing at the row it undoes.';
+end $$ language plpgsql;
+
+drop trigger if exists money_entries_no_change on money_entries;
+create trigger money_entries_no_change before update or delete on money_entries
+  for each row execute function money_entries_append_only();
+
+drop trigger if exists money_entries_no_truncate on money_entries;
+create trigger money_entries_no_truncate before truncate on money_entries
+  for each statement execute function money_entries_append_only();
+
+alter table money_entries enable row level security;
+revoke all on money_entries from anon, authenticated;
+
 -- ============ ONE REQUEST, ONE THREAD THROUGH THE TABLES (begin) ============
 -- Counting a book in writes to four tables: the tickets it marks sold (through
 -- the history trigger), the payments row for the cash, the book's custody line,
