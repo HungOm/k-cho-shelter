@@ -469,19 +469,51 @@ export async function loadSnapshot() {
 
 export async function loadDelta() {
   if (!state.lastSync) return loadSnapshot()
-  const d = await api('read_delta', { since: state.lastSync })
-  if (d.version) state.ticketVersion = d.version
-  // The server's clock, never the phone's — a device running fast would set a
-  // cursor in the future and silently skip every row written in between.
-  if (d.serverTime) state.lastSync = d.serverTime
-  if (!d.rows.length) return
-  for (const row of d.rows) {
-    const t = toTicket(d.fields, row)
-    const existing = state.byNumber[t.number]
-    if (existing) Object.assign(existing, t)
-    else state.tickets.push(t)
+  /*
+   * FOLLOW THE CURSOR UNTIL THE SERVER SAYS THERE IS NO MORE.
+   *
+   * One call, one page, and the clock moved to the server's answer — so a
+   * device that had missed more than one page of changes took the oldest of
+   * them, set its clock past the rest, and never asked for them again. The
+   * screen then stayed wrong without looking wrong, which a volunteer meets as
+   * "the sale I just made is not on here".
+   *
+   * Bounded, because a loop driven by a server's own answer is how a bad deploy
+   * hangs the app. Twenty pages is twenty thousand changed tickets in one gap;
+   * past that a full reload is cheaper and likelier to be what somebody wants.
+   */
+  let since = state.lastSync
+  let serverTime = ''
+  let applied = 0
+
+  for (let page = 0; page < 20; page++) {
+    const d = await api('read_delta', { since })
+    if (d.version) state.ticketVersion = d.version
+    // The server's clock, never the phone's — a device running fast would set a
+    // cursor in the future and silently skip every row written in between.
+    if (d.serverTime) serverTime = d.serverTime
+
+    for (const row of d.rows ?? []) {
+      const t = toTicket(d.fields, row)
+      const existing = state.byNumber[t.number]
+      if (existing) Object.assign(existing, t)
+      else state.tickets.push(t)
+      applied++
+    }
+
+    // nextSince repeats the last row's timestamp, so rows sharing it arrive
+    // again. Applying a row twice is applying it once; losing one is not.
+    if (!d.hasMore || !d.nextSince) break
+    since = d.nextSince
   }
-  reindex()
+
+  /*
+   * The clock moves only once every page has been applied. Moving it per page
+   * would leave a hole if a later page failed: those rows would be missed and
+   * the cursor would already be past them.
+   */
+  if (serverTime) state.lastSync = serverTime
+  if (applied) reindex()
 }
 
 /**

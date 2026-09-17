@@ -770,6 +770,43 @@ ok "$(P "select count(*) from payments where agent_id='RS' and source='settlemen
 has "$(P "select note from payments where agent_id='RS' and source='hand'")" "went back on the shelf" "and the cash is re-entered saying where it came from"
 P "update config set value='50' where key='TOTAL_TICKETS'" >/dev/null
 
+echo "the custody ledger refuses to be edited, emptied, or doubled"
+# ff's Phase 1A tables, exercised in the database rather than read from source:
+# the triggers, the partial unique index and the check are the whole of what
+# ticket_movements promises while nothing reads it yet. The truncate one is the
+# one people forget, and it empties a table without firing either of the others.
+P "insert into ticket_movements(ticket_idx,from_holder,to_holder,kind,batch_id,by_user,reason)
+   values (1,'desk','A001','issue',gen_random_uuid(),'admin@x.com','a test')" >/dev/null
+r=$(P "update ticket_movements set reason='changed' where ticket_idx=1")
+has "$r" "append only" "a movement cannot be rewritten"
+r=$(P "delete from ticket_movements where ticket_idx=1")
+has "$r" "append only" "nor deleted"
+r=$(P "truncate ticket_movements")
+has "$r" "append only" "nor the whole ledger emptied — the one that fires per statement"
+ok "$(P "select count(*) from ticket_movements where ticket_idx=1")" "1" "and the movement is still there"
+
+# Idempotency: two rows with no key are two facts; two rows with the same key
+# are one fact submitted twice.
+P "insert into ticket_movements(ticket_idx,from_holder,to_holder,kind,batch_id,by_user)
+   values (2,'desk','A001','issue',gen_random_uuid(),'x'),(3,'desk','A001','issue',gen_random_uuid(),'x')" >/dev/null
+ok "$(P "select count(*) from ticket_movements where from_holder='desk' and client_key is null")" "3" "a null key never collides with another null"
+P "insert into ticket_movements(ticket_idx,from_holder,to_holder,kind,batch_id,by_user,client_key)
+   values (4,'desk','A001','issue',gen_random_uuid(),'x','same-key')" >/dev/null
+r=$(P "insert into ticket_movements(ticket_idx,from_holder,to_holder,kind,batch_id,by_user,client_key)
+   values (5,'desk','A001','issue',gen_random_uuid(),'x','same-key')")
+has "$r" "duplicate key" "the same submission twice is refused"
+
+# A movement from somewhere to the same somewhere is not a movement, unless it
+# is the row that says an earlier one was wrong.
+r=$(P "insert into ticket_movements(ticket_idx,from_holder,to_holder,kind,batch_id,by_user)
+   values (6,'A001','A001','issue',gen_random_uuid(),'x')")
+has "$r" "violates check constraint" "a book cannot be issued to whoever already holds it"
+P "insert into ticket_movements(ticket_idx,from_holder,to_holder,kind,batch_id,by_user)
+   values (7,'A001','A001','correction',gen_random_uuid(),'x')" >/dev/null
+ok "$(P "select count(*) from ticket_movements where kind='correction'")" "1" "but a correction may name the same holder at both ends"
+
+ok "$(P "select has_table_privilege('anon','ticket_movements','select')")" "f" "and the browser cannot read it at all"
+
 echo "the ledger cannot be edited or erased"
 P "insert into payments(agent_id,amount,received_by,note) values ('A001',50,'me@x.com','cash at the desk')" >/dev/null
 n0=$(P "select count(*) from payments")

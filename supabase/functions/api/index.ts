@@ -282,11 +282,21 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // organiser to be free is a report that gets written on the back of an
   // envelope instead.
   record_check_in: { roles: ['recorder'], kind: 'write', fn: deadlines.recordCheckIn },
+  // The same roles as agent_statement, which is the same document with less on
+  // it: a seller may print their own and an organiser or helper may print
+  // anybody's. A viewer may not — the sheet is a seller's whole position, and
+  // the role that exists to see totals without names is not owed one by name.
   check_in_sheet: { roles: ['agent', 'recorder'], kind: 'report', fn: deadlines.checkInSheet },
+  // Moving a reporting date is moving what a dozen people were told to do, so
+  // it sits where roll_check_in sits rather than with the ordinary writes.
   set_check_in_date: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setCheckInDate },
-  set_sales_close: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setSalesClose },
   round_snapshot: { roles: null, kind: 'read', fn: deadlines.readRoundSnapshot },
   set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline },
+  // The organisers', not the owner's. Moving the final deadline moves the draw
+  // and every countdown to it; closing the books is the ordinary running of a
+  // raffle, decided at a meeting, and a single unreachable person should not
+  // stand between the committee and a decision they have already taken.
+  set_sales_close: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setSalesClose },
   // Organisers only, enforced HERE rather than by hiding a button. Branding is
   // what a buyer sees on a receipt; it is not a thing a desk volunteer changes.
   upload_logo: { roles: ADMIN_ONLY, kind: 'write', fn: branding.uploadLogo },
@@ -670,21 +680,79 @@ async function readDelta(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const active = await activeTickets(ctx)
 
   const holds = await agentBooks(user, ctx)
+  /*
+   * THE THOUSANDTH ROW WAS THE LAST ANYBODY HEARD OF.
+   *
+   * This capped at 1000 and said nothing about it. A device shut for an
+   * afternoon in which more than a thousand tickets changed — one bulk import,
+   * one sale of a large book range, one settlement of twenty books — was sent
+   * the oldest thousand, moved its clock to the newest of THOSE, and asked
+   * again from a point it had already passed. Everything after the cap was
+   * never sent and never asked for again; the screen stayed confidently wrong
+   * until somebody reloaded the app.
+   *
+   * That is the worst shape of staleness, because nothing looks broken. The
+   * rows that arrived are right, the count is plausible, and the sale the
+   * volunteer is standing there querying is simply not on the screen.
+   */
+  const LIMIT = 1000
   const { data, error } = await ctx.supabaseAdmin
     .from('tickets')
     .select(WIRE_SELECT)
     .gt('modified_at', since)
     .lte('idx', active)
     .order('modified_at')
-    .limit(1000)
+    .limit(LIMIT)
   if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  const rows = data ?? []
+  let last = rows.length ? String(rows[rows.length - 1].modified_at ?? '') : ''
+
+  /*
+   * FINISH THE LAST GROUP, which is the half that makes the cursor safe.
+   *
+   * modified_at is not unique: everything written in one transaction shares it
+   * to the microsecond. If the cap falls inside such a group, the next ask —
+   * "everything after this timestamp" — skips the rest of that group for ever.
+   * That is the original bug with an extra step, and it would be harder to find
+   * because it needs a bulk write to land across a page boundary.
+   *
+   * So a full page is completed: every remaining row carrying the last
+   * timestamp is fetched and appended, and only then does the cursor point at
+   * it. The page can come back slightly larger than the cap, which is the right
+   * trade — a page that is a few rows long is a smaller problem than a ticket
+   * nobody ever hears about again.
+   */
+  if (rows.length === LIMIT && last) {
+    const seen = new Set(rows.map((r: Record<string, unknown>) => Number(r.idx)))
+    const { data: tail } = await ctx.supabaseAdmin
+      .from('tickets')
+      .select(WIRE_SELECT)
+      .eq('modified_at', last)
+      .lte('idx', active)
+      .order('idx')
+    for (const r of (tail ?? []) as Array<Record<string, unknown>>) {
+      if (!seen.has(Number(r.idx))) rows.push(r)
+    }
+    last = String(rows[rows.length - 1].modified_at ?? last)
+  }
+
+  /*
+   * A full page means ask again. The last ask returns nothing and stops the
+   * loop, which costs one empty round trip and needs no second count query to
+   * decide — and a wrong "there is no more" is the failure this whole change
+   * exists to remove.
+   */
+  const hasMore = rows.length >= LIMIT && !!last
 
   // Same shape as a snapshot page. A delta that spoke a different dialect would
   // work on first load and quietly break every incremental refresh after it.
   return {
     fields: WIRE_FIELDS,
-    rows: (data ?? []).map((r: Record<string, unknown>) => toWire(mask(r, user, holds))),
-    count: data?.length ?? 0,
+    rows: rows.map((r: Record<string, unknown>) => toWire(mask(r, user, holds))),
+    count: rows.length,
+    hasMore,
+    nextSince: hasMore ? last : '',
     serverTime: new Date().toISOString(),
   }
 }
