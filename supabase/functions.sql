@@ -869,6 +869,208 @@ begin
   return moved;
 end $$ language plpgsql;
 
+-- ============================================================================
+-- OFFERING A BOOK, WHICH TAKES TWO PEOPLE
+--
+-- Verbatim from 20260918800000. Kept here because this file is what a deploy
+-- re-applies and what a fresh install gets; a function that lives only in its
+-- migration is a function a re-run of this file silently reverts.
+-- ============================================================================
+-- ============ OFFER ============
+--
+-- ALL OR NOTHING, like every other book operation here. A batch whose premise
+-- is wrong for one book is a batch somebody has misread, and offering the other
+-- nine hides it. The offenders are named, because "3 books are not free" sends
+-- somebody to a list and "Book-041, Book-042" sends them to the shelf.
+create or replace function offer_books_tx(
+  p_idxs     integer[],
+  p_agent_id text,
+  p_due_at   date,
+  p_user     text,
+  p_note     text default ''
+) returns table (idx integer, number text) as $$
+declare
+  wrong     integer;
+  offenders text;
+  offered   integer[];
+begin
+  if p_idxs is null or array_length(p_idxs, 1) is null then
+    raise exception 'NOTHING_TO_OFFER: no books were named';
+  end if;
+  if coalesce(trim(p_agent_id), '') = '' then
+    raise exception 'MISSING_HOLDER: an offer needs somebody to offer it to';
+  end if;
+  if not exists (select 1 from agents where agent_id = p_agent_id) then
+    raise exception 'AGENT_NOT_FOUND: no seller with id %', p_agent_id;
+  end if;
+
+  -- In book order, so two overlapping batches queue rather than deadlock.
+  perform 1 from books b where b.idx = any(p_idxs) order by b.idx for update;
+
+  select count(*), string_agg(b.number, ', ' order by b.idx)
+    into wrong, offenders
+    from books b
+   where b.idx = any(p_idxs) and b.status <> 'Unassigned';
+
+  if wrong > 0 then
+    raise exception 'BOOKS_NOT_FREE: % of % are not on the shelf — %',
+      wrong, array_length(p_idxs, 1), left(offenders, 200)
+      using errcode = 'check_violation';
+  end if;
+
+  -- RETURNING, not a re-read. What this wrote is the only honest answer to
+  -- "what did this write"; asking the table afterwards which books are Offered
+  -- also collects books somebody else offered a moment ago.
+  with written as (
+    update books b set
+      status = 'Offered',
+      offered_to_agent = p_agent_id,
+      offered_at = now(),
+      offered_by = p_user,
+      due_at = p_due_at,
+      modified_by = p_user
+     where b.idx = any(p_idxs) and b.status = 'Unassigned'
+    returning b.idx
+  )
+  select array_agg(w.idx order by w.idx) into offered from written w;
+
+  if offered is null then return; end if;
+
+  insert into book_history (book_idx, to_agent, action, by_user, note)
+  select i, p_agent_id, 'offer', p_user,
+         coalesce(nullif(p_note, ''), 'Offered, waiting for the seller to accept')
+    from unnest(offered) i order by i;
+
+  return query select b.idx, b.number from books b where b.idx = any(offered) order by b.idx;
+end $$ language plpgsql;
+
+-- ============ ACCEPT ============
+--
+-- The seller's half. Everything issue_books_tx does, from the Offered state
+-- rather than from the shelf, and only for the seller the books were offered
+-- to — an acceptance by anybody else is not an acceptance.
+create or replace function accept_offer_tx(
+  p_idxs     integer[],
+  p_agent_id text,
+  p_user     text,
+  p_note     text default ''
+) returns table (idx integer, number text) as $$
+declare
+  wrong     integer;
+  offenders text;
+  taken     integer[];
+begin
+  if p_idxs is null or array_length(p_idxs, 1) is null then
+    raise exception 'NOTHING_TO_ACCEPT: no books were named';
+  end if;
+
+  perform 1 from books b where b.idx = any(p_idxs) order by b.idx for update;
+
+  /*
+   * NOT OFFERED TO YOU IS NOT AN ACCEPTANCE. Checked as one question — offered,
+   * and offered to this seller — because splitting them into "is it offered"
+   * and "is it yours" invites a later edit that answers only the first.
+   */
+  select count(*), string_agg(b.number, ', ' order by b.idx)
+    into wrong, offenders
+    from books b
+   where b.idx = any(p_idxs)
+     and (b.status <> 'Offered' or b.offered_to_agent is distinct from p_agent_id);
+
+  if wrong > 0 then
+    raise exception 'NOT_OFFERED_TO_YOU: % of % are not waiting for you — %',
+      wrong, array_length(p_idxs, 1), left(offenders, 200)
+      using errcode = 'check_violation';
+  end if;
+
+  with written as (
+    update books b set
+      status = 'Out',
+      held_by_agent = p_agent_id,
+      issued_at = now(),
+      offered_to_agent = null,
+      offered_at = null,
+      offered_by = '',
+      modified_by = p_user
+     where b.idx = any(p_idxs) and b.status = 'Offered'
+       and b.offered_to_agent = p_agent_id
+    returning b.idx
+  )
+  select array_agg(w.idx order by w.idx) into taken from written w;
+
+  if taken is null then return; end if;
+
+  insert into book_history (book_idx, to_agent, action, by_user, note)
+  select i, p_agent_id, 'issue', p_user,
+         coalesce(nullif(p_note, ''), 'Accepted by the seller')
+    from unnest(taken) i order by i;
+
+  return query select b.idx, b.number from books b where b.idx = any(taken) order by b.idx;
+end $$ language plpgsql;
+
+-- ============ RELEASE ============
+--
+-- ONE FUNCTION FOR EVERY WAY AN OFFER ENDS WITHOUT BEING ACCEPTED: the seller
+-- declines, the organiser withdraws, or nobody answers and it expires. Three
+-- callers, one behaviour — because an offer released two ways is an offer
+-- released two slightly different ways by next year, and the difference will be
+-- whether the book got back on the shelf.
+--
+-- It does NOT care who the book was offered to. An offer whose seller has since
+-- been deleted is exactly the one somebody needs to clear.
+create or replace function release_offer_tx(
+  p_idxs   integer[],
+  p_user   text,
+  p_reason text default ''
+) returns integer as $$
+declare
+  freed integer[];
+begin
+  if p_idxs is null or array_length(p_idxs, 1) is null then
+    return 0;
+  end if;
+
+  perform 1 from books b where b.idx = any(p_idxs) order by b.idx for update;
+
+  -- Silent about books that are not Offered. Unlike offering and accepting,
+  -- this is a cleanup that runs from three places including an expiry sweep,
+  -- and a sweep that raises on a book somebody already dealt with is a sweep
+  -- that stops halfway.
+  -- RETURNING is load-bearing here rather than tidy. Re-reading for "books
+  -- that are now Unassigned" collects every book that was ALREADY on the shelf
+  -- and was never part of this offer, and would write a release into their
+  -- history and count them in the total. The UPDATE knows; the table does not.
+  with written as (
+    update books b set
+      status = 'Unassigned',
+      offered_to_agent = null,
+      offered_at = null,
+      offered_by = '',
+      due_at = null,
+      modified_by = p_user
+     where b.idx = any(p_idxs) and b.status = 'Offered'
+    returning b.idx
+  )
+  select array_agg(w.idx order by w.idx) into freed from written w;
+
+  if freed is null then return 0; end if;
+
+  insert into book_history (book_idx, action, by_user, note)
+  select i, 'release', p_user,
+         coalesce(nullif(p_reason, ''), 'Offer ended without being accepted')
+    from unnest(freed) i order by i;
+
+  return array_length(freed, 1);
+end $$ language plpgsql;
+
+revoke execute on function offer_books_tx(integer[], text, date, text, text)
+  from public, anon, authenticated;
+revoke execute on function accept_offer_tx(integer[], text, text, text)
+  from public, anon, authenticated;
+revoke execute on function release_offer_tx(integer[], text, text)
+  from public, anon, authenticated;
+
+
 -- Called by the Edge Function under the service role, and by nobody else: these
 -- take an already-judged list of books and do not re-check who may move them.
 revoke execute on function issue_books_tx(integer[], integer[], text, date, text, text, boolean) from public, anon, authenticated;

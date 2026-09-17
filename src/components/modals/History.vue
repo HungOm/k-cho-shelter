@@ -81,6 +81,13 @@ async function load() {
  * `unassigned` without anybody having listed them anywhere.
  */
 const WORDS = {
+  // Two people now. An organiser OFFERS and nothing moves; the seller accepts
+  // and the book becomes theirs, which is written as 'issue' so the history of
+  // a book that changed hands reads the same however it got there. A release is
+  // an offer that ended without being taken up — declined, withdrawn, or nobody
+  // answered in time.
+  offer: 'Offered',
+  release: 'Offer ended',
   issue: 'Given out',
   transfer: 'Passed on',
   return: 'Brought back',

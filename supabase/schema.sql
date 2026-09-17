@@ -119,8 +119,25 @@ create table if not exists books (
   first_ticket   text not null,
   last_ticket    text not null,
   status         text not null default 'Unassigned'
-                   check (status in ('Unassigned','Out','Returned','Settled','Lost','Void')),
+                   check (status in ('Unassigned','Offered','Out','Returned','Settled','Lost','Void')),
   held_by_agent  text references agents(agent_id) on delete set null,
+  /*
+   * OFFERED IS NOT HELD, AND THE DIFFERENCE IS WHOSE MONEY IT IS.
+   *
+   * An organiser offering books to a seller reserves them and moves nothing.
+   * held_by_agent stays null, so book_ledger, agent_money and the chase list
+   * are all already correct without knowing this feature exists — which is why
+   * the reservation is its own column rather than held_by_agent with a flag
+   * beside it. A flag has to be remembered by every reader; a null cannot be
+   * forgotten.
+   *
+   * The seller accepts and the book becomes theirs. Nobody answers and it
+   * expires back onto the shelf. Either way nobody is charged for stock they
+   * never agreed to take.
+   */
+  offered_to_agent text references agents(agent_id) on delete set null,
+  offered_at     timestamptz,
+  offered_by     text not null default '',
   issued_at      timestamptz,
   -- A DATE, not an instant. A due date is a whole local day: stored as a
   -- timestamp it comes back as the previous calendar day anywhere west of here,
@@ -142,7 +159,11 @@ create table if not exists books (
   notes          text not null default '',
   version        integer not null default 1,
   modified_by    text not null default '',
-  modified_at    timestamptz not null default now()
+  modified_at    timestamptz not null default now(),
+  -- The money invariant as a constraint rather than as a habit: an offered book
+  -- is on nobody's balance. Named so the failure says what was violated.
+  constraint books_offered_is_on_nobodys_balance
+    check (status <> 'Offered' or held_by_agent is null)
 );
 
 create table if not exists tickets (
@@ -565,9 +586,21 @@ create table if not exists pending_approvals (
                  check (status in ('Pending','Approved','Rejected','Expired','Cancelled')),
   decided_by   text,
   decided_at   timestamptz,
-  note         text not null default ''
+  note         text not null default '',
+  -- WHO HAS TO ANSWER, when it is not an organiser. Null on every two-person
+  -- control and every petition, which are answered by an organiser or the
+  -- system admin as they always were. Set only on an offer of books, where the
+  -- person who must decide is the SELLER the books are being offered to.
+  -- Not a foreign key: a decided row is history, and history has to survive
+  -- the seller being deleted.
+  decide_by_agent text
 );
 create index if not exists pending_status_idx on pending_approvals (status, requested_at desc);
+
+create index if not exists books_offered_to_idx
+  on books (offered_to_agent) where status = 'Offered';
+create index if not exists pending_approvals_decide_by_idx
+  on pending_approvals (decide_by_agent) where status = 'Pending';
 
 -- ============ THE PRIZE SCHEDULE ============
 --

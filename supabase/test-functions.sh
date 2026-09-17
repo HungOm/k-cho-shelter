@@ -1245,6 +1245,68 @@ ok "$(P "select count(distinct buyer_name) from tickets where book_idx=5 and sta
 ok "$(P "select buyer_name from tickets where number='KS-00041'")" "Book First" "and it is the one who got there first"
 P "update books set status='Out', held_by_agent='A002' where idx=5" >/dev/null
 
+echo "a book offered is a book on nobody's balance"
+# THE HANDSHAKE THAT ONLY EXISTED IN ONE DIRECTION. A seller could ASK for books
+# and an organiser granted it. An organiser giving books out needed nobody's
+# agreement: held_by_agent named the seller, so the money was theirs, they were
+# on the chase list when it went overdue, and the settle screen asked them to
+# account for stock they might never have touched. A mistyped seller was liable.
+#
+# So an offer reserves and moves nothing. The assertion that matters is not the
+# status — it is that the money views cannot see it, because held_by_agent is
+# what every one of them reads.
+P "update books set status='Unassigned', held_by_agent=null, offered_to_agent=null where idx in (4,5)" >/dev/null
+before=$(P "select count(*) from book_ledger_all where held_by_agent='A001'")
+P "select offer_books_tx(array[4,5],'A001',current_date+7,'org@x.com')" >/dev/null
+ok "$(P "select status from books where idx=4")" "Offered" "the book is Offered"
+ok "$(P "select coalesce(held_by_agent,'-') from books where idx=4")" "-" "and on nobody's balance, which is the point"
+ok "$(P "select offered_to_agent from books where idx=4")" "A001" "reserved for the seller it was offered to"
+ok "$(P "select count(*) from book_ledger_all where held_by_agent='A001'")" "$before" "and the money views are unmoved by an offer"
+
+echo "and it cannot be offered twice, or to two sellers at once"
+# Book 6's state is READ, not assumed. Written as a literal it said 'Out', which
+# was true of book 6 several hundred lines earlier and is 'Settled' by the time
+# the suite reaches here — a test that has to be right about unrelated state is
+# a test that goes red for reasons that are nothing to do with it.
+was6=$(P "select status from books where idx=6")
+r=$(P "select offer_books_tx(array[5,6],'A002',current_date+7,'org@x.com')")
+has "$r" "BOOKS_NOT_FREE" "a second offer over a reserved book is refused"
+ok "$(P "select offered_to_agent from books where idx=5")" "A001" "the reserved book still belongs to the first offer"
+ok "$(P "select status from books where idx=6")" "$was6" "and the other book in that batch is untouched — all or nothing"
+
+echo "only the seller it was offered to can accept it"
+r=$(P "select accept_offer_tx(array[4],'A002','manu@x.com')")
+has "$r" "NOT_OFFERED_TO_YOU" "somebody else accepting is refused"
+ok "$(P "select status from books where idx=4")" "Offered" "and the offer is still standing"
+
+echo "accepting is the moment the money becomes theirs"
+P "select accept_offer_tx(array[4,5],'A001','pathang@x.com')" >/dev/null
+ok "$(P "select status from books where idx=4")" "Out" "the book goes Out"
+ok "$(P "select held_by_agent from books where idx=4")" "A001" "held by the seller who accepted"
+ok "$(P "select coalesce(offered_to_agent,'-') from books where idx=4")" "-" "and the reservation is cleared"
+ok "$(P "select count(*) from book_ledger_all where held_by_agent='A001'")" "$((before + 2))" "NOW the money views carry them"
+ok "$(P "select count(*) from book_history where book_idx=4 and action='offer'")" "1" "the offer is in the book's history"
+ok "$(P "select count(*) from book_history where book_idx=4 and action='issue'")" "1" "and so is the acceptance"
+
+echo "an offer that ends without being accepted puts the book back"
+P "update books set status='Unassigned', held_by_agent=null where idx in (4,5)" >/dev/null
+P "select offer_books_tx(array[4],'A001',current_date+7,'org@x.com')" >/dev/null
+# NAMED WITH BOOKS THAT WERE NEVER OFFERED, on purpose. Releasing by re-reading
+# "which books are Unassigned now" instead of by RETURNING would free-and-log
+# every book that was already on the shelf. Two of the three below are.
+ok "$(P "select release_offer_tx(array[4,5,6],'org@x.com','declined')")" "1" "only the book that was actually offered is released"
+ok "$(P "select status from books where idx=4")" "Unassigned" "back on the shelf"
+ok "$(P "select coalesce(due_at::text,'-') from books where idx=4")" "-" "with the due date cleared, so it is not born overdue"
+ok "$(P "select count(*) from book_history where action='release'")" "1" "and exactly one release written, not three"
+
+echo "the database itself refuses an offered book on somebody's balance"
+# A CONSTRAINT RATHER THAN A HABIT. Every money view reads held_by_agent, so
+# this one column being null is what makes all of them correct without knowing
+# the feature exists. A future edit that sets both is refused by Postgres.
+r=$(P "update books set status='Offered', held_by_agent='A001' where idx=4")
+has "$r" "books_offered_is_on_nobodys_balance" "setting both is refused"
+P "update books set status='Out', held_by_agent='A002', offered_to_agent=null where idx in (4,5)" >/dev/null
+
 echo "a project built by following SETUP.md comes up"
 if [ "$MODE" = docker ]; then
   docker exec "$NAME" psql -U postgres -d postgres -q -c "create database cleanbuild" >/dev/null 2>&1
