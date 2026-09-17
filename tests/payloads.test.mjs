@@ -220,6 +220,15 @@ console.log('list_books carries the counts the home screen reads')
     'book', 'firstTicket', 'lastTicket', 'status', 'agentId', 'agentName',
     'due', 'daysOverdue', 'sold', 'available', 'expected', 'paid',
     'variance', 'missingContact',
+    // Added deliberately, per the paragraph above. Without it the book sheet
+    // cannot tell "counted in, and nothing was handed over" from "nobody has
+    // counted it in yet" — both arrive as paid: 0, and it was printing the
+    // first sentence for books that were simply still out.
+    'countedIn',
+    // Also deliberate: who took the money when the book was counted in.
+    // settle_book has written it since it existed and nothing read it back, so
+    // "Handed in RM100" named an amount and no counterparty.
+    'settledBy',
   ]
 
   ok(expected.length >= 12, `the book row contract names ${expected.length} keys`)

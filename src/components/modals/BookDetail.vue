@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import { state, isAdmin, go, bookBlock, isSold } from '../../lib/store.js'
 import { money, date, BOOK_WORDS, COUNTED_IN_HELP } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
+import RoleTag from '../ui/RoleTag.vue'
+import Who from '../ui/Who.vue'
 import StatusPill from '../ui/StatusPill.vue'
 import History from './History.vue'
 
@@ -73,6 +75,35 @@ const canPrintReceipt = computed(() =>
 
 const blocked = computed(() => bookBlock(props.book))
 
+/**
+ * TWO GAPS ON THIS SHEET, AND THEY WERE BEING SHOWN AS ONE.
+ *
+ * "Difference" sat directly under Should have and Handed in, so every reader
+ * took it for the third row of that sum — the cash shortfall. It was not. It
+ * was `variance_amount`, the seller's declared count against the ticket numbers
+ * actually written down, which is a different question with a different answer.
+ * The two diverge the moment a seller reports ten sold and nine are on paper.
+ *
+ * So they are two rows now, each saying which question it answers:
+ *
+ *   Still owed                  should have  −  handed in     (cash)
+ *   Sold but not written down   declared     −  recorded      (paper)
+ *
+ * ONLY ONCE THE BOOK HAS BEEN COUNTED IN. Before that there is no declared
+ * figure and no handed-in figure — `amount_due` and `amount_paid` are both null
+ * — and printing "Handed in RM0.00" against a book that is simply still out
+ * accuses a seller of having paid nothing. The server now says which it is.
+ *
+ * The count gap is signed and the sign matters, so the label follows it rather
+ * than the number carrying a minus into a row headed with a positive noun.
+ */
+const owed = computed(() => Number(props.book.expected || 0) - Number(props.book.paid || 0))
+const owedLabel = computed(() => (owed.value < 0 ? 'Over by' : 'Still owed'))
+const countGap = computed(() => Number(props.book.variance || 0))
+const countGapLabel = computed(() => (countGap.value > 0
+  ? 'Sold but not written down'
+  : 'Written down but not declared'))
+
 /*
  * Opened ON TOP of this sheet rather than instead of it, so closing the history
  * puts you back on the book you were looking at. Replacing it would make "where
@@ -98,7 +129,7 @@ const showHistory = ref(false)
            followed by "Who has it: nobody" is the same fact twice, and the
            second one is phrased as if something were missing. -->
       <div v-if="book.agentName" class="f">
-        <span>{{ holderLabel }}</span><b>{{ book.agentName }}</b>
+        <span>{{ holderLabel }}</span><b>{{ book.agentName }}<RoleTag seller /></b>
       </div>
 
       <!-- Only while it is actually out. A due date on a book already back is an
@@ -111,10 +142,26 @@ const showHistory = ref(false)
       </div>
       <div class="f"><span>Sold</span><b>{{ book.sold }} of {{ state.cfg.ticketsPerBook }}</b></div>
       <div class="f"><span>Should have</span><b>{{ money(book.expected, currency) }}</b></div>
-      <div class="f"><span>Handed in</span><b>{{ money(book.paid, currency) }}</b></div>
-      <div v-if="Math.abs(book.variance) > 0.005" class="f">
-        <span>Difference</span><b style="color:var(--bad)">{{ money(book.variance, currency) }}</b>
-      </div>
+      <template v-if="book.countedIn">
+        <div class="f"><span>Handed in</span><b>{{ money(book.paid, currency) }}</b></div>
+        <!-- A→B. Counting a book in is cash moving from the person who was
+             holding it to the person who took it, and this sheet named only the
+             amount. The holder is two rows above; this is the other end, and
+             the column it comes from has been written since settle_book existed
+             and read back by nothing. -->
+        <div v-if="book.settledBy" class="f">
+          <span>Counted in by</span><b><Who :email="book.settledBy" /></b>
+        </div>
+        <div v-if="Math.abs(owed) > 0.005" class="f">
+          <span>{{ owedLabel }}</span>
+          <b :style="owed > 0 ? 'color:var(--bad)' : ''">{{ money(Math.abs(owed), currency) }}</b>
+        </div>
+        <div v-if="Math.abs(countGap) > 0.005" class="f">
+          <span>{{ countGapLabel }}</span>
+          <b style="color:var(--warn)">{{ money(Math.abs(countGap), currency) }}</b>
+        </div>
+      </template>
+      <div v-else class="f"><span>Handed in</span><b class="pending">not counted in yet</b></div>
       <div v-if="book.missingContact" class="f">
         <span>No phone number</span><b style="color:var(--bad)">{{ book.missingContact }} tickets</b>
       </div>
@@ -161,4 +208,6 @@ const showHistory = ref(false)
 .f { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
 .f span { color: var(--muted); }
 .f b { text-align: right; }
+/* A stated absence, not a figure. It must not read as an amount. */
+.pending { color: var(--muted); font-weight: 400; }
 </style>

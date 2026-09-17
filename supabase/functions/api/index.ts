@@ -188,10 +188,14 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   remove_prize: { group: 'Reports', label: 'Take a prize off the list', danger: true },
   upsert_prize_type: { group: 'Reports', label: 'Add or change a kind of prize' },
   list_permissions: { group: 'Access', label: 'See who can do what' },
-  request_approval: { group: 'Access', label: 'Ask the organiser to approve something' },
+  request_approval: { group: 'Access', label: 'Ask for a book, or for something to be approved' },
   list_approvals: { group: 'Access', label: 'See what is waiting for approval' },
   cancel_approval: { group: 'Access', label: 'Withdraw your own request' },
   decide_approval: { group: 'Access', label: 'Approve or refuse a request', danger: true },
+  // Not marked dangerous, unlike the one above it: this hands a book to a
+  // seller who asked for it, which is the ordinary running of the raffle and
+  // is undone by taking the book back.
+  decide_book_request: { group: 'Books', label: 'Give a seller the books they asked for' },
   set_permission: { group: 'Access', label: 'Change who can do what', danger: true },
 }
 
@@ -321,11 +325,31 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // already assumes about cash.
   set_winner_status: { roles: ['recorder'], kind: 'write', fn: prizes.setWinnerStatus },
 
-  // --- two-person control ---
-  request_approval: { roles: ADMIN_ONLY, kind: 'write', fn: approvals.requestApproval },
-  list_approvals: { roles: ADMIN_ONLY, kind: 'read', fn: approvals.listApprovals },
-  cancel_approval: { roles: ADMIN_ONLY, kind: 'write', fn: approvals.cancelApproval },
+  // --- two-person control, and asking for a book ---
+  /*
+   * OPEN TO HELPERS AND SELLERS, which closes an inconsistency rather than
+   * opening a door. AppShell already shows those roles the Approvals tab, so
+   * today they open it and are told the action is not switched on for their
+   * account — a screen the app offers them and then refuses.
+   *
+   * What they can actually lodge is decided by approvals.ts, not here:
+   * approvalNeeded for something they may do and are stopped from doing alone,
+   * requestable for something they may not do and are asking somebody who can.
+   * A seller sees only their own requests — listApprovals scopes on
+   * requested_by for anybody but the super admin — and cancel_approval refuses
+   * a row that is not theirs.
+   *
+   * decide_approval is NOT on this list and does not move. Granting is the
+   * organiser's, which is the whole point of asking.
+   */
+  request_approval: { roles: ['recorder', 'agent'], kind: 'write', fn: approvals.requestApproval },
+  list_approvals: { roles: ['recorder', 'agent'], kind: 'read', fn: approvals.listApprovals },
+  cancel_approval: { roles: ['recorder', 'agent'], kind: 'write', fn: approvals.cancelApproval },
   decide_approval: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: decideApproval },
+  // Granting a book is the organiser's, which is the whole point of asking one.
+  // It can only reach a seller's request for books; approvals.ts refuses it a
+  // two-person control, so the bar above is not reachable through this door.
+  decide_book_request: { roles: ADMIN_ONLY, kind: 'write', fn: decideBookRequest },
 }
 
 /**
@@ -335,6 +359,27 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
  * a direct restock takes.
  */
 async function decideApproval(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  return decideWith(p, user, ctx, {})
+}
+
+/**
+ * The organiser's half of the queue: a seller asking for a book, granted or
+ * refused by the person whose job it is to hand books out.
+ *
+ * A SECOND ACTION rather than a softer bar on the first. decide_approval
+ * decides two-person controls, which exist to put somebody above an organiser —
+ * relaxing it would make the registry say something untrue about the most
+ * dangerous action in the list. This one can only reach petitions, and
+ * approvals.ts refuses it anything else.
+ */
+async function decideBookRequest(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  return decideWith(p, user, ctx, { petitionsOnly: true })
+}
+
+function decideWith(
+  p: Record<string, unknown>, user: AppUser, ctx: Ctx,
+  opts: { petitionsOnly?: boolean },
+) {
   return approvals.decideApproval(
     p, user, ctx,
     async (action, payload, asUser) => {
@@ -358,6 +403,7 @@ async function decideApproval(p: Record<string, unknown>, user: AppUser, ctx: Ct
     },
     (action) => REGISTRY[action],
     (ctx as unknown as { _overrides?: Record<string, Partial<Record<Role, boolean>>> })._overrides ?? {},
+    opts,
   )
 }
 
@@ -404,11 +450,29 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
    * they can already see into a name they can use.
    */
   const { data: staffRows } = await ctx.supabaseAdmin
-    .from('app_users').select('email,name').eq('active', true)
+    .from('app_users').select('email,name,role').eq('active', true)
   const staff = (staffRows ?? [])
     .map((r: Record<string, unknown>) => ({
       email: String(r.email ?? '').trim().toLowerCase(),
       name: String(r.name ?? '').trim(),
+      /*
+       * THE ROLE, SO A NAME CAN SAY WHAT THE PERSON IS. "Written down by Amos
+       * Hung" answers who to ask; "Amos Hung helper" answers why they were the
+       * one writing it down, which is the question an organiser reading a
+       * disputed sale actually has.
+       *
+       * THIS IS NEW EXPOSURE, unlike the addresses beside it. An address on
+       * this list is one every reader could already see on a ticket row; a role
+       * is not, and this puts it in front of viewers and sellers too. On a
+       * raffle run by a dozen people who know each other that is the point.
+       *
+       * 'superadmin' IS DELIBERATELY REPORTED AS 'admin'. list_users hides that
+       * row from everybody but its owner (people.ts), and a directory that
+       * quietly undid it would be the leak wearing a helpful hat. It is also
+       * not a lie: the row resolves to role 'admin' plus a flag held outside
+       * the database, and the flag is what is being withheld, not the role.
+       */
+      role: String(r.role ?? '') === 'superadmin' ? 'admin' : String(r.role ?? ''),
     }))
     .filter((r: { email: string; name: string }) => r.email && r.name)
 
@@ -456,6 +520,24 @@ async function readVersion(_p: Record<string, unknown>, user: AppUser, ctx: Ctx)
     const { count } = await ctx.supabaseAdmin
       .from('pending_approvals')
       .select('request_id', { count: 'exact', head: true })
+      .eq('status', 'Pending')
+      .gt('expires_at', new Date().toISOString())
+    waiting = count ?? 0
+  } else if (user.isAdmin) {
+    /*
+     * AN ORGANISER IS TOLD ABOUT TWO THINGS, and they are both theirs to act on:
+     * their own requests waiting on the System Admin, and every seller asking
+     * for a book — which is the organiser's to grant. A badge that counted only
+     * the first would leave sellers' requests sitting unanswered behind a tab
+     * showing nothing, which is the same as not having the feature.
+     *
+     * The same pair listApprovals returns them, so the number on the tab and
+     * the list behind it cannot disagree.
+     */
+    const { count } = await ctx.supabaseAdmin
+      .from('pending_approvals')
+      .select('request_id', { count: 'exact', head: true })
+      .or(`requested_by.eq.${user.email},action.in.(${[...approvals.PETITIONS].join(',')})`)
       .eq('status', 'Pending')
       .gt('expires_at', new Date().toISOString())
     waiting = count ?? 0
@@ -699,6 +781,29 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
     expected: r.counted_expected ?? 0,
     paid: r.counted_collected ?? 0,
     variance: r.variance_amount ?? 0,
+    /*
+     * HAS ANYBODY COUNTED THIS BOOK IN. Without it the browser cannot tell
+     * "counted in, and the seller handed over nothing" from "nobody has counted
+     * it yet", because both arrive as paid: 0. The book sheet was printing
+     * "Handed in RM0.00" against books that were simply still out.
+     *
+     * declared_sold, not the status: a book marked Lost after a count still has
+     * a declared figure and a real shortfall, and Settled is not the only way
+     * to get one.
+     */
+    countedIn: r.declared_sold !== null && r.declared_sold !== undefined,
+    /*
+     * WHO TOOK THE MONEY, and when. settle_book has written settled_by since it
+     * existed and nothing has ever read it back — so the book sheet said
+     * "Handed in RM100" and named no counterparty, on the one screen where
+     * somebody is checking a figure against the person who wrote it down.
+     *
+     * The EMAIL, not a resolved name: the browser already carries the staff
+     * directory from whoami and resolves addresses to names and roles itself,
+     * the same way every other "who did this" on the screen works.
+     */
+    settledBy: r.settled_by ?? '',
+    settledAt: r.settled_at ?? null,
     missingContact: r.missing_contact ?? 0,
     pastFinal: !!r.past_final,
   }))

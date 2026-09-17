@@ -76,6 +76,11 @@ export const refresh = async () => {}
 export const agentMap = computed(() => ({}))
 export const whereIs = () => ({ book: 'Book-084', status: 'Settled', out: false })
 export const sellBlock = () => 'book is settled'
+// The organiser's override asks why; these screens import the predicate that
+// decides whether to ask. Default false: no stub here puts a book in somebody
+// else's hands, and a stub that says yes would make every render demand a reason.
+export const overrideReasonNeeded = () => false
+export const sellOverrideNeeded = () => false
 export const bookBlock = () => 'book is settled'
 export const isAdmin = computed(() => true)
 export const isSuper = computed(() => true)

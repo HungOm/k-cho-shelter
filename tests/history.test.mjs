@@ -54,6 +54,11 @@ export const whereIs = () => null
 export const optimistic = async () => {}
 export const setSellMode = () => {}
 export const sellBlock = () => null
+// The organiser's override asks why; these screens import the predicate that
+// decides whether to ask. Default false: no stub here puts a book in somebody
+// else's hands, and a stub that says yes would make every render demand a reason.
+export const overrideReasonNeeded = () => false
+export const sellOverrideNeeded = () => false
 export const bookBlock = () => null
 export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
 `
@@ -78,7 +83,23 @@ console.log('a book that has moved')
   ok(/from JOHN to MARY/.test(said), 'naming both ends — that is the whole question')
   ok(/Brought back/.test(said), 'and the return')
   ok(/went back to the village/.test(said), 'the note somebody typed is kept, not dropped')
-  ok(/organiser@example\.org/.test(said), 'who recorded each movement')
+  /*
+   * WHO RECORDED IT, asserted on the WIRING rather than on the address.
+   *
+   * This row used to print by_user raw — "by organiser@example.org" — and this
+   * assertion matched that string. It now goes through <Who>, which resolves
+   * the address to a name and a role, and the screen harness stubs child
+   * components: a <Who> inside this sheet renders as an empty fragment, so an
+   * assertion aimed at the name would pass or fail on the stub. The component
+   * itself is tested in whowrote.test.mjs, rendered on its own.
+   *
+   * What is checked here is what this file can honestly check: that the step
+   * hands the address to something, and no longer prints it itself.
+   */
+  ok(!/organiser@example\.org/.test(said),
+     'a movement no longer prints the raw address of whoever recorded it')
+  ok(/<Who :email="s\.by" \/>/.test(read('src/components/modals/History.vue')),
+     'it hands it to the component that resolves a person instead')
   ok(!/undefined/.test(said) && !/null/.test(said), 'nothing on it reads as a missing value')
 }
 
@@ -238,6 +259,18 @@ console.log('every movement the server can record has words for it')
    * Read from the map rather than typed out here, for the reason the comment
    * above gives: a hand-written list covers what somebody remembered.
    */
+  const people = read('supabase/functions/api/people.ts')
+  const ack = people.match(/const ACK_ACTION = \{([^}]*)\}/)
+  ok(!!ack, 'found the acknowledgement verbs people.ts writes')
+  for (const m of (ack?.[1] ?? '').matchAll(/'(\w+)'/g)) verbs.add(m[1])
+
+  // AND A FIFTH. tickets.ts writes one when an organiser records a sale into a
+  // book that is out with somebody else — a custody fact rather than a movement,
+  // which is why it lives in this table and not in the ticket's own trail.
+  const tix = read('supabase/functions/api/tickets.ts')
+  const override = tix.match(/const OVERRIDE_ACTION = '(\w+)'/)
+  ok(!!override, 'found the verb tickets.ts writes when an organiser reaches into a book')
+  if (override) verbs.add(override[1])
 
   // setBookStatus lower-cases whichever of these somebody sets.
   const valid = books.match(/const valid = \[([^\]]*)\]/)
@@ -258,6 +291,95 @@ console.log('every movement the server can record has words for it')
     untranslated.length
       ? `these would render as raw server verbs: ${untranslated.join(', ')}`
       : `all ${verbs.size} read as English`)
+}
+
+console.log('a movement that ended at the office says so')
+{
+  /*
+   * FIVE OF THE SERVER'S SEVEN VERBS leave to_agent null, and the trail rendered
+   * every one of them as "from MARY" — a movement with a source and no
+   * destination. It reads as a half-recorded step, or as the book having gone
+   * nowhere. Null is not missing: nobody holds the book, and a book nobody
+   * holds is in the office, which is what the Books screen calls it.
+   *
+   * AND THE TWO THAT MUST NOT SAY IT. A book reported lost has the same null
+   * and is emphatically not in the office; nor is a cancelled one. Those are
+   * the two books somebody is actually looking for, and a trail confidently
+   * sending them to the office would be worse than one that said nothing.
+   */
+  const desk = `return { book: { number: 'Book-031', status: 'Returned' },
+    history: [
+      { at: '2026-09-10T11:00:00Z', action: 'return', from: 'MARY', to: null,
+        fromWho: { id: 'A1', name: 'MARY', zone: 'CCFM', phone: '' }, toWho: null,
+        by: 'organiser@example.org', note: '' },
+      { at: '2026-09-11T11:00:00Z', action: 'restock', from: 'MARY', to: null,
+        fromWho: { id: 'A1', name: 'MARY', zone: 'CCFM', phone: '' }, toWho: null,
+        by: 'organiser@example.org', note: '' },
+      { at: '2026-09-12T11:00:00Z', action: 'lost', from: 'MARY', to: null,
+        fromWho: { id: 'A1', name: 'MARY', zone: 'CCFM', phone: '' }, toWho: null,
+        by: 'organiser@example.org', note: 'seller says it went missing' },
+    ] }`
+  const said = visibleText(await renderScreen('src/components/modals/History.vue',
+    storeFor(desk), { props: { book: 'Book-031' }, drive: (b) => b.load() }))
+
+  ok(/Brought back from MARY \(CCFM\) to the office/.test(said.replace(/\s+/g, ' ')),
+     `a book handed back ends somewhere (${said.replace(/\s+/g, ' ').slice(0, 120)})`)
+  ok(/Put back in stock from MARY \(CCFM\) to the office/.test(said.replace(/\s+/g, ' ')),
+     'and so does a restock')
+  ok(!/Reported lost from MARY \(CCFM\) to the office/.test(said.replace(/\s+/g, ' ')),
+     'a book reported lost is NOT sent to the office')
+  ok(/Reported lost/.test(said), 'though the step is still there, saying what happened')
+}
+
+console.log('a confirmed handover reads as English, not as a column name')
+{
+  const ack = `return { book: { number: 'Book-031', status: 'Out' },
+    history: [
+      { at: '2026-08-02T09:00:00Z', action: 'acknowledge', from: null, to: 'JOHN',
+        fromWho: null, toWho: { id: 'A1', name: 'JOHN', zone: '', phone: '' },
+        by: 'seller@example.org', note: 'Confirmed by the seller' },
+      { at: '2026-08-03T09:00:00Z', action: 'acknowledge_paper', from: null, to: 'JOHN',
+        fromWho: null, toWho: { id: 'A1', name: 'JOHN', zone: '', phone: '' },
+        by: 'organiser@example.org', note: 'Signed paper, witnessed by Hung Om' },
+    ] }`
+  const said = visibleText(await renderScreen('src/components/modals/History.vue',
+    storeFor(ack), { props: { book: 'Book-031' }, drive: (b) => b.load() }))
+
+  ok(/Confirmed received/.test(said), 'the seller confirming is said in words')
+  ok(/Signed for/.test(said), 'and so is a signed paper')
+  ok(!/Acknowledge/.test(said), 'neither renders as "Acknowledge_paper", underscore and all')
+  ok(!/_/.test(said), 'nothing on the screen carries an underscore from a column name')
+}
+
+console.log('a sale reconstructed at a count-in does not pass for one somebody took')
+{
+  /*
+   * ticket_history.source has reached the browser since the trail existed and
+   * was rendered nowhere. The value that matters is `settlement`: nobody wrote
+   * the buyer down at the table and somebody reconstructed the sale from a
+   * declared count afterwards, so the name on it is a name nobody checked.
+   * Every other row on the screen looks identical to it.
+   */
+  const withSource = `return { book: { number: 'Book-031', status: 'Settled' },
+    history: [],
+    tickets: [
+      { at: '2026-09-10T12:00:00Z', ticket: 'KS-00305', fromStatus: 'Available', toStatus: 'Sold',
+        fromSeller: '', toSeller: 'MARY', fromSellerWho: null,
+        toSellerWho: { id: 'A1', name: 'MARY', zone: 'CCFM', phone: '' },
+        fromBuyer: '', toBuyer: 'Pa Thang', fromPhone: '', toPhone: '',
+        fromAmount: null, toAmount: 10, fromPayment: '', toPayment: 'Paid',
+        source: 'settlement', by: 'organiser@example.org', note: '' },
+    ] }`
+  const said = visibleText(await renderScreen('src/components/modals/History.vue',
+    storeFor(withSource), { props: { book: 'Book-031' }, drive: (b) => b.load() }))
+
+  ok(/nobody wrote the buyer down at the table/.test(said),
+     `the row says where it came from (${said.replace(/\s+/g, ' ').slice(-140)})`)
+  // AND THE SELLER IS A PERSON. The server has always sent toSellerWho beside
+  // the bare name; this line read only the name, so the one row where somebody
+  // decides whose debt a ticket is was the one they could not act on.
+  ok(/Credited to MARY \(CCFM\)/.test(said.replace(/\s+/g, ' ')),
+     'and the seller it is credited to carries their zone, like every other person on this screen')
 }
 
 console.log('a verb nobody planned for still appears')

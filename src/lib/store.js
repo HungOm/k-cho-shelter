@@ -204,8 +204,15 @@ export function whoIs(email) {
   const want = String(email || '').trim().toLowerCase()
   if (!want) return null
   const me = state.user || {}
-  const name = (me.staff || []).find((s) => s.email === want)?.name || ''
-  return { email: want, name, you: String(me.email || '').trim().toLowerCase() === want }
+  const row = (me.staff || []).find((s) => s.email === want)
+  return {
+    email: want,
+    name: row?.name || '',
+    // Blank on an older backend that sends no role, which is how the tag stays
+    // absent rather than wrong while a deploy catches up.
+    role: row?.role || '',
+    you: String(me.email || '').trim().toLowerCase() === want,
+  }
 }
 
 export function sellBlock(ticket) {
@@ -235,6 +242,35 @@ export function bookBlock(b) {
   if (me.role === 'agent') return 'not your book'
   if (me.role === 'admin' && b.agentId) return null             // transcribing a report
   return `with ${b.agentName || 'a seller'}`
+}
+
+/**
+ * Whether this write is the ORGANISER'S OVERRIDE, and so has to say why.
+ *
+ * bookBlock answers "may I", and for this case the answer is yes — writing down
+ * what a seller telephoned in is ordinary and has to keep working. This answers
+ * the question directly underneath it: am I allowed to do this only because of
+ * who I am, rather than because the paper is here.
+ *
+ * SEPARATE FROM bookBlock ON PURPOSE. Folding it in would make one function
+ * mean two things — "you cannot" and "you can, with a sentence" — and the
+ * screens that render a block as a disabled button with a reason on it would
+ * start disabling the case that is allowed.
+ *
+ * A COURTESY, like bookBlock. The Edge Function refuses a reasonless override
+ * whatever this says; this is so somebody is asked before pressing rather than
+ * after, and so the box appears beside the sale rather than as an error on top
+ * of it. The two must agree — see whoholds.test.mjs for the server's half.
+ */
+export function overrideReasonNeeded(b) {
+  if (!b || b.status !== 'Out' || !b.agentId) return false
+  const me = state.user || {}
+  return b.agentId !== me.agentId
+}
+
+/** The same question about a ticket, via the book it lives in. */
+export function sellOverrideNeeded(ticket) {
+  return overrideReasonNeeded(whereIs(ticket))
 }
 
 export const searchResults = computed(() => {

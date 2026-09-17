@@ -51,6 +51,11 @@ export function sellBlock(t) {
   return ${JSON.stringify(answer)}
 }
 export function whereIs() { return { status: 'Out', agentId: 'A001', agentName: 'Daw Hla', out: true } }
+// This stub's book IS out with somebody else, which is exactly the case the
+// organiser's override covers — so the predicate says so rather than lying to
+// make the screen quieter.
+export const overrideReasonNeeded = (b) => b?.status === 'Out' && !!b?.agentId
+export const sellOverrideNeeded = (t) => overrideReasonNeeded(whereIs(t))
 export const agentMap = computed(() => ({}))
 export const canWrite = computed(() => true)
 export const isAdmin = computed(() => false)

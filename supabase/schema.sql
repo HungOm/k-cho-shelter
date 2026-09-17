@@ -245,12 +245,28 @@ select
   case when b.status in ('Settled','Lost') and b.declared_sold is not null
        then greatest(coalesce(b.amount_due, 0) - r.recorded_amount, 0) else 0 end as unidentified_amount,
   coalesce(b.amount_paid, 0)                         as counted_collected,
-  coalesce(b.declared_sold, 0) - r.recorded_sold     as variance_sold,
-  coalesce(b.amount_due, 0) - r.recorded_amount      as variance_amount,
+  -- NOUGHT UNTIL SOMEBODY HAS COUNTED THE BOOK IN. A null declared_sold means
+  -- "not counted yet", and coalescing it to nought read that as "the seller
+  -- says nothing was sold" — so every unsettled book with sales in it carried
+  -- a variance of minus its own takings. Seven books in production did, and the
+  -- book sheet drew each one as a red discrepancy. Same guard as counted_sold
+  -- three lines up, for the same reason.
+  case when b.declared_sold is not null
+       then b.declared_sold - r.recorded_sold
+       else 0::bigint end                            as variance_sold,
+  case when b.declared_sold is not null
+       then coalesce(b.amount_due, 0) - r.recorded_amount
+       else 0::numeric end                           as variance_amount,
   -- Whole days between calendar days, now that due_at is a date.
   case when b.status = 'Out' and b.due_at is not null and b.due_at < current_date
        then (current_date - b.due_at)::int
-       else 0 end                                    as days_overdue
+       else 0 end                                    as days_overdue,
+  -- WHO TOOK THE MONEY. settle_book has written settled_by since it existed and
+  -- nothing read it back, so "Handed in RM100" named an amount and no
+  -- counterparty — on the one screen where somebody is checking a figure
+  -- against the person who wrote it. Appended at the END of the column list,
+  -- which is what create or replace view will accept.
+  b.settled_by, b.settled_at
 from books b
 left join agents a on a.agent_id = b.held_by_agent
 left join lateral (
@@ -297,7 +313,11 @@ create trigger audit_log_no_truncate before truncate on audit_log
 create table if not exists book_history (
   id           bigserial primary key,
   at           timestamptz not null default now(),
-  book_idx     integer not null references books(idx) on delete cascade,
+  -- RESTRICT, not cascade. A cascade lets a book take the record of its own
+  -- movements with it, which is the one moment that record matters most. The
+  -- reset script deletes book_history before books, in that order and on
+  -- purpose, so the only deletion this raffle actually performs still works.
+  book_idx     integer not null references books(idx) on delete restrict,
   from_agent   text,
   to_agent     text,
   action       text not null,
@@ -305,6 +325,37 @@ create table if not exists book_history (
   note         text not null default ''
 );
 create index if not exists book_history_book_idx on book_history (book_idx, at desc);
+
+-- APPEND ONLY, like the other three. payments, ticket_history and
+-- round_snapshots each refuse an update, a delete and a truncate at the
+-- database; book_history was the one history table defended by nothing but the
+-- absence of a handler that changes it.
+--
+-- It is the table that answers "who had this book, and who did they give it
+-- to" — the custody trail. A trail that can be quietly rewritten answers that
+-- question no better than having no trail, and the Edge Function holds the
+-- secret key, so every grant and policy here is irrelevant to the one caller
+-- that can reach it. A trigger is not.
+--
+-- A MOVEMENT IS UNDONE BY MOVING IT BACK, which appends. Handing a book to the
+-- wrong seller is corrected by taking it back and issuing it again: both acts
+-- stay in the trail, and that is the record anybody arguing about a book needs.
+create or replace function book_history_append_only() returns trigger as $$
+begin
+  raise exception 'book_history is append only — % is not allowed on it', tg_op
+    using errcode = 'restrict_violation',
+          hint = 'Move the book instead: the correcting move is appended, and what happened before stays readable.';
+end $$ language plpgsql;
+
+drop trigger if exists book_history_no_change on book_history;
+create trigger book_history_no_change before update or delete on book_history
+  for each row execute function book_history_append_only();
+
+-- Truncate is neither an update nor a delete and would empty the table without
+-- firing either. Statement-level, because that is the only level it has.
+drop trigger if exists book_history_no_truncate on book_history;
+create trigger book_history_no_truncate before truncate on book_history
+  for each statement execute function book_history_append_only();
 
 -- ============ TICKET HISTORY (begin) ============
 -- A ticket row keeps only its LATEST state. A correction, a settlement or a

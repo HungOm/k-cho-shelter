@@ -30,6 +30,25 @@ type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unkn
 const TTL_HOURS = 24
 
 /**
+ * How many books a payload names, resolved the way the handlers resolve them:
+ * an explicit list, or everything between two book numbers by index.
+ *
+ * Lifted out of approvalNeeded because a request for books reads the same field
+ * pair, and two copies of "which books does this mean" is how an approval
+ * summary comes to describe something other than what runs.
+ */
+async function booksIn(payload: Record<string, unknown>, ctx: Ctx): Promise<number> {
+  if (Array.isArray(payload.bookNumbers)) return payload.bookNumbers.length
+  const from = String(payload.fromBook ?? '')
+  const to = String(payload.toBook ?? '') || from
+  if (!from) return 0
+  const { data } = await ctx.supabaseAdmin.from('books').select('idx,number').in('number', [from, to])
+  const idxs = (data ?? []).map((b: { idx: number }) => b.idx)
+  if (idxs.length === 0) return 0
+  return Math.abs(Math.max(...idxs) - Math.min(...idxs)) + 1
+}
+
+/**
  * Decides whether an action needs two people, and if so writes the sentence the
  * approver will read — here, at request time, so the words come from the same
  * code that made the decision. Deriving them again in the browser would let the
@@ -42,16 +61,7 @@ export async function approvalNeeded(
   payload: Record<string, unknown>,
   ctx: Ctx,
 ): Promise<{ text: string; kind: string; [k: string]: unknown } | null> {
-  const countBooks = async () => {
-    if (Array.isArray(payload.bookNumbers)) return payload.bookNumbers.length
-    const from = String(payload.fromBook ?? '')
-    const to = String(payload.toBook ?? '') || from
-    if (!from) return 0
-    const { data } = await ctx.supabaseAdmin.from('books').select('idx,number').in('number', [from, to])
-    const idxs = (data ?? []).map((b: { idx: number }) => b.idx)
-    if (idxs.length === 0) return 0
-    return Math.abs(Math.max(...idxs) - Math.min(...idxs)) + 1
-  }
+  const countBooks = () => booksIn(payload, ctx)
 
   if (action === 'set_book_status') {
     // A preview writes nothing, so it needs nobody's permission.
@@ -195,6 +205,88 @@ export async function approvalNeeded(
   return null
 }
 
+/**
+ * ASKING FOR A BOOK, WHICH IS NOT THE SAME SHAPE AS TWO-PERSON CONTROL.
+ *
+ * approvalNeeded above answers "does this need a second pair of eyes" — a
+ * permitted person about to do something that cannot be undone, who is stopped
+ * until somebody else agrees. The queue, the stored payload, the 24-hour lapse
+ * and the audit pair all exist for that, and all of them suit this equally.
+ *
+ * What is different is WHOSE ACT IT IS. A seller asking for Book-330 is not
+ * permitted to issue it and never will be; issuing books is the organiser's.
+ * The request is a petition — the seller says what they want, and if an
+ * organiser agrees, THE ORGANISER hands it over. So a petition runs as the
+ * approver, not as the requester, and decideApproval says so where it matters.
+ *
+ * KEPT APART FROM approvalNeeded ON PURPOSE. That function is also what the
+ * router reads to BLOCK a direct call (index.ts), so adding issue_books to it
+ * would stop organisers issuing books at all — the one thing this feature must
+ * not break. Two questions, two functions, one queue.
+ *
+ * BOOK-LEVEL ONLY. A ticket has no custody of its own: exclusivity is
+ * books.held_by_agent and a ticket's owner is derived from its book. Find
+ * answers "3291 is in Book-330, at the office" and offers the book.
+ */
+export const PETITIONS = new Set(['issue_books'])
+
+/** As many books as one person can sensibly be handed in one go. */
+const MOST_BOOKS_ASKED = 20
+
+export async function requestable(
+  action: string,
+  payload: Record<string, unknown>,
+  user: AppUser,
+  ctx: Ctx,
+): Promise<{ text: string; kind: string; runAs: string; [k: string]: unknown } | null> {
+  if (action !== 'issue_books') return null
+
+  /*
+   * TO THEMSELVES, ALWAYS. A seller asking for books they will carry is the
+   * whole of this feature; a seller asking that books be issued to somebody
+   * else is a different act with different consequences for that person's
+   * balance, and nothing here should let one be typed as the other. The
+   * requester's own id is written into the payload at request time, so what is
+   * stored cannot disagree with who asked.
+   */
+  if (!user.agentId) {
+    throw new ApiError(
+      'NOT_A_SELLER',
+      'Books are given out to sellers, and your account is not linked to one. ' +
+      'An organiser can link it on the People screen.',
+    )
+  }
+
+  const list = Array.isArray(payload.bookNumbers) ? payload.bookNumbers.map(String) : []
+  const first = String(payload.fromBook ?? list[0] ?? '')
+  const last = String(payload.toBook ?? list[list.length - 1] ?? '') || first
+  if (!first) throw new ApiError('MISSING_FIELD', 'Which book are you asking for?')
+
+  const n = await booksIn(payload, ctx)
+  if (!n) throw new ApiError('BOOK_NOT_FOUND', `Book ${first} does not exist.`, null, 404)
+  if (n > MOST_BOOKS_ASKED) {
+    throw new ApiError('RANGE_TOO_LARGE',
+      `Ask for at most ${MOST_BOOKS_ASKED} books at a time.`)
+  }
+
+  const one = n === 1
+  return {
+    kind: 'book_request',
+    // Read by decideApproval. Stored with the row so an old request decided
+    // after a deploy still runs the way it was made.
+    runAs: 'approver',
+    books: n,
+    agentId: user.agentId,
+    // firstBook/lastBook are what the Approvals screen keys its "look before you
+    // decide" link on, so a book request gets that link without a second shape.
+    firstBook: first,
+    lastBook: last,
+    text: one
+      ? `${user.name || user.email} is asking for ${first}.`
+      : `${user.name || user.email} is asking for ${n} books — ${first} to ${last}.`,
+  }
+}
+
 const newId = () =>
   'R' + Date.now().toString(36).toUpperCase() + '-' +
   Math.floor(Math.random() * 1679616).toString(36).toUpperCase()
@@ -210,14 +302,32 @@ export async function requestApproval(p: Record<string, unknown>, user: AppUser,
       'You can do this yourself — an approval request would only come back to you.')
   }
 
-  const need = await approvalNeeded(action, inner, ctx)
+  /*
+   * TWO REASONS A REQUEST CAN EXIST, and they are asked in order.
+   *
+   * approvalNeeded first: something the caller may do and is stopped from doing
+   * alone. Then requestable: something the caller may NOT do and is asking
+   * somebody who can. An organiser is refused the second, because they can
+   * simply hand the book over — a queue entry there would be a message to
+   * themselves dressed as a control.
+   */
+  let need = await approvalNeeded(action, inner, ctx)
+  let payload = inner
+  if (!need && !user.isAdmin) {
+    need = await requestable(action, inner, user, ctx)
+    if (need) {
+      // PINNED HERE, not taken from the request. The books go to whoever asked,
+      // and what is stored cannot disagree with who that was.
+      payload = { ...inner, agentId: user.agentId }
+    }
+  }
   if (!need) {
     throw new ApiError('NOTHING_TO_DO', 'That action does not need anybody else to approve it.')
   }
 
   const requestId = newId()
   const { error } = await ctx.supabaseAdmin.from('pending_approvals').insert({
-    request_id: requestId, action, payload: inner, summary: need.text, detail: need,
+    request_id: requestId, action, payload, summary: need.text, detail: need,
     requested_by: user.email,
     expires_at: new Date(Date.now() + TTL_HOURS * 3600_000).toISOString(),
   })
@@ -232,8 +342,23 @@ export async function requestApproval(p: Record<string, unknown>, user: AppUser,
 
 export async function listApprovals(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   let q = ctx.supabaseAdmin.from('pending_approvals').select('*').order('requested_at', { ascending: false })
-  // Anybody but the super admin sees only what they asked for themselves.
-  if (!user.isSuperAdmin) q = q.eq('requested_by', user.email)
+  /*
+   * WHO SEES WHAT.
+   *
+   *   super admin  everything — they are the one who decides the controls
+   *   organiser    their own requests, AND every petition, because granting a
+   *                book is theirs to do and a queue they cannot see is a queue
+   *                nobody answers
+   *   anybody else their own, and nothing else
+   *
+   * A petition names its asker and the books they want, which an organiser can
+   * already read on the Books screen. It carries nothing about anybody else.
+   */
+  if (user.isAdmin && !user.isSuperAdmin) {
+    q = q.or(`requested_by.eq.${user.email},action.in.(${[...PETITIONS].join(',')})`)
+  } else if (!user.isSuperAdmin) {
+    q = q.eq('requested_by', user.email)
+  }
   if (p.status) q = q.eq('status', String(p.status))
 
   const { data, error } = await q
@@ -297,6 +422,21 @@ export async function decideApproval(
   run: (action: string, payload: Record<string, unknown>, asUser: AppUser) => Promise<unknown>,
   specOf: (action: string) => ActionSpec | undefined,
   overrides: Record<string, Partial<Record<Role, boolean>>>,
+  /*
+   * WHICH QUEUE THIS CALL IS ALLOWED TO TOUCH.
+   *
+   * decide_approval is the super admin's and stays that way: it decides
+   * two-person controls, which exist precisely to put somebody above an
+   * organiser. decide_book_request is the organiser's and can only reach
+   * petitions — a seller asking for a book, which is the organiser's to grant
+   * and nobody else's business.
+   *
+   * TWO ACTIONS RATHER THAN ONE WITH A SOFTER BAR. The registry is where this
+   * app declares who may do what, in one readable list; moving that bar into a
+   * handler would make the list say something untrue about the most dangerous
+   * action in it.
+   */
+  opts: { petitionsOnly?: boolean } = {},
 ) {
   const requestId = String(p.requestId ?? '')
   if (p.approve === undefined) {
@@ -307,6 +447,17 @@ export async function decideApproval(
     .from('pending_approvals').select('*').eq('request_id', requestId).maybeSingle()
   if (!r) throw new ApiError('NOT_FOUND', 'No request with that id.', null, 404)
   if (r.status !== 'Pending') throw new ApiError('NOTHING_TO_DO', 'That request has already been decided.')
+
+  const petition = PETITIONS.has(r.action) &&
+    (r.detail as { runAs?: string } | null)?.runAs === 'approver'
+
+  // An organiser reaching a two-person control through the wrong door. The
+  // registry refuses them decide_approval; this refuses them the other one.
+  if (opts.petitionsOnly && !petition) {
+    throw new ApiError('SUPER_ADMIN_ONLY',
+      'That request is not somebody asking for a book. Only the system admin can decide it.',
+      null, 403)
+  }
 
   // Checked here as well as on read: a row that went stale while nobody was
   // looking must not execute because somebody finally opened the screen.
@@ -345,12 +496,34 @@ export async function decideApproval(
 
   const spec = specOf(r.action)
   if (!spec) throw new ApiError('UNKNOWN_ACTION', 'That request names an action that no longer exists.')
-  if (!isActionAllowed(r.action, spec, requester, overrides)) {
+
+  /*
+   * WHOSE ACT IS BEING PERFORMED, which depends on which kind of request it is.
+   *
+   * A two-person control runs as the REQUESTER: they are permitted the action
+   * and were stopped until somebody agreed, so it is still their act and their
+   * permissions are re-checked at this moment. If they were demoted or disabled
+   * while it sat in the queue it fails rather than running on authority they no
+   * longer have.
+   *
+   * A PETITION runs as the APPROVER. A seller asking for a book is not
+   * permitted to issue one and never will be — issuing books is the
+   * organiser's — so re-checking the requester would refuse every book request
+   * at the moment it was granted, which is the worst place to find out. The
+   * organiser granting it IS the person handing the book over, and the act is
+   * theirs.
+   *
+   * The requester is still resolved above either way: a book issued to somebody
+   * who has been disabled since they asked is not a book anybody is carrying,
+   * and the payload names them.
+   */
+  if (!petition && !isActionAllowed(r.action, spec, requester, overrides)) {
     throw new ApiError('REQUESTER_NOT_ALLOWED',
       `${r.requested_by} can no longer do that, so their request cannot run.`)
   }
 
-  const result = await run(r.action, r.payload as Record<string, unknown>, requester)
+  const result = await run(r.action, r.payload as Record<string, unknown>,
+                           petition ? user : requester)
 
   await ctx.supabaseAdmin.from('pending_approvals')
     .update({ status: 'Approved', decided_by: user.email, decided_at: new Date().toISOString(),

@@ -8,9 +8,9 @@
  * those blank, so the two look very different in the missing-contact report.
  */
 import { ref, computed } from 'vue'
-import { state, api, toast, loadDelta, refresh, isAdmin, bookBlock } from '../../lib/store.js'
+import { state, api, toast, loadDelta, refresh, isAdmin, bookBlock, overrideReasonNeeded } from '../../lib/store.js'
 import { phoneDigits } from '../../lib/search.js'
-import { money } from '../../lib/format.js'
+import { money, COUNTED_IN_HELP } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ book: Object })
@@ -85,9 +85,35 @@ const blocked = computed(() => {
   }
   return out
 })
+/**
+ * WHICH OF THESE BOOKS IS IN SOMEBODY ELSE'S BAG, named the same way as the
+ * blocked list above and for the same reason: a count sends somebody back to
+ * the grid to work out which.
+ *
+ * This is the case bookBlock lets through — an organiser may write into a book
+ * that is out, because writing down what a seller telephoned in is ordinary.
+ * A whole book is ten of those at once, credited to the holder, and the seller
+ * meets all ten at settlement. So it says why, and the sentence goes onto each
+ * book's own record where they will see it.
+ */
+const onBehalfBooks = computed(() => {
+  const a = parseInt(from.value, 10)
+  if (isNaN(a) || !count.value || tooMany.value) return []
+  const b = parseInt(to.value || from.value, 10)
+  const lo = Math.min(a, isNaN(b) ? a : b)
+  const out = []
+  for (let n = lo; n < lo + count.value; n++) {
+    const book = state.books.find(x => x.book === bookNum(String(n)))
+    if (overrideReasonNeeded(book)) out.push(book)
+  }
+  return out
+})
+const onBehalf = ref('')
+
 const ok = computed(() =>
   count.value > 0 && !tooMany.value && !blocked.value.length &&
-  name.value.trim() && phoneDigits(phone.value).length >= 7)
+  name.value.trim() && phoneDigits(phone.value).length >= 7 &&
+  (!onBehalfBooks.value.length || !!onBehalf.value.trim()))
 
 function bookNum(raw) {
   const d = String(raw).replace(/\D/g, '')
@@ -104,7 +130,8 @@ async function sell() {
       buyerName: name.value.trim(),
       buyerPhone: phone.value.trim(),
       buyerZone: zone.value.trim(),
-      soldBy: soldBy.value || ''
+      soldBy: soldBy.value || '',
+      reason: onBehalf.value.trim()
     })
     result.value = r
     loadDelta().then(refresh)
@@ -158,6 +185,20 @@ async function sell() {
       <div v-else-if="count" class="note info">
         <b>{{ count }} {{ count === 1 ? 'book' : 'books' }}</b> ·
         {{ tickets }} tickets · <b>{{ money(amount, cfg.currency) }}</b>
+      </div>
+
+      <!-- Ten tickets at once out of paper somebody else is carrying. The names
+           are here because "1 book is with a seller" is a number, and which one
+           is the question. -->
+      <div v-if="onBehalfBooks.length" class="note warn">
+        <b>{{ onBehalfBooks.length === 1 ? 'This book is' : 'These books are' }} out with a seller</b> —
+        {{ onBehalfBooks.map(b => `${b.book} (${b.agentName || b.agentId})`).join(', ') }}.
+        You can record this, and every ticket is credited to whoever is holding the book.
+        Say why, and it goes onto the book's record where they will see it when the book is
+        <span class="helpword" :title="COUNTED_IN_HELP">counted in</span>.
+        <label class="why" for="sbob">Why are you recording this for them? <span class="req">*</span></label>
+        <input id="sbob" v-model="onBehalf" autocomplete="off"
+               placeholder="e.g. they phoned in the sale from the market">
       </div>
 
       <div class="field">
@@ -217,6 +258,9 @@ async function sell() {
 </template>
 
 <style scoped>
+/* The question sits inside the warning it belongs to, so the answer is given
+   where the reason for asking is still on screen. */
+.why { margin-top: 12px; }
 .done { text-align: center; padding: 20px 0 12px; }
 .done .tick {
   width: 72px; height: 72px; margin: 0 auto 14px; border-radius: 50%;

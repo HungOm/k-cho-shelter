@@ -11,10 +11,11 @@
  * A sold ticket nobody can telephone is a winner you cannot find.
  */
 import { ref, computed, nextTick, watch } from 'vue'
-import { state, optimistic, toast, setSellMode, agentMap, whereIs, sellBlock, isSold } from '../lib/store.js'
+import { state, optimistic, toast, setSellMode, agentMap, whereIs, sellBlock, sellOverrideNeeded, isSold } from '../lib/store.js'
 import { phoneDigits } from '../lib/search.js'
 import { money, STATUS_WORDS, plainName, isSellerContact, COUNTED_IN_HELP } from '../lib/format.js'
 import Sheet from './ui/Sheet.vue'
+import RoleTag from './ui/RoleTag.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Bi from './ui/Bi.vue'
 import History from './modals/History.vue'
@@ -58,6 +59,23 @@ const place = computed(() => whereIs(t.value))
  */
 const blocked = computed(() => (done.value ? null : sellBlock(t.value)))
 
+/**
+ * WRITING INTO A BOOK SOMEBODY ELSE IS CARRYING, which an organiser may do and
+ * which now says why.
+ *
+ * The note underneath has always warned that the seller may have sold this
+ * already — advice, with the button live. That was the whole of the record:
+ * "sold", credited to the holder, indistinguishable from a sale invented at
+ * this desk, which the seller meets at settlement with nothing to check it
+ * against. The sentence goes into the book's own trail, where they will see it.
+ *
+ * A SEPARATE FIELD FROM `reason`, which belongs to the correction flow in the
+ * already-sold branch. One ref serving two unrelated questions is how a
+ * sentence typed about a spelling correction ends up on somebody's book.
+ */
+const onBehalf = ref('')
+const needsReason = computed(() => !done.value && !blocked.value && sellOverrideNeeded(t.value))
+
 /*
  * On top of this sheet, not instead of it: the answer to "who had this?" is
  * something you check and come back from, and losing the ticket you were
@@ -79,6 +97,9 @@ function next() {
 
 async function sell() {
   if (!canSell.value) return toast('A name and phone number are both needed', 'bad')
+  if (needsReason.value && !onBehalf.value.trim()) {
+    return toast('Say why you are recording this for them', 'bad')
+  }
   busy.value = true
   try {
     await optimistic(t.value.number, {
@@ -87,7 +108,7 @@ async function sell() {
     }, 'sell_ticket', {
       ticketNumber: t.value.number, buyerName: name.value.trim(),
       buyerPhone: phone.value.trim(), buyerZone: zone.value.trim(),
-      expectedVersion: t.value.version
+      reason: onBehalf.value.trim(), expectedVersion: t.value.version
     })
     done.value = true
     toast(`${t.value.number} sold`, 'ok')
@@ -101,13 +122,19 @@ async function sell() {
 
 async function hold() {
   if (!nameOk.value) return toast('Who is it being held for?', 'bad')
+  // Holding a number in somebody else's book has the same hazard as selling one
+  // out of it — two people believe they have it — so it asks the same question.
+  if (needsReason.value && !onBehalf.value.trim()) {
+    return toast('Say why you are holding this one from their book', 'bad')
+  }
   busy.value = true
   try {
     await optimistic(t.value.number, {
       status: 'Reserved', name: name.value.trim(), phone: phone.value.trim()
     }, 'reserve_ticket', {
       ticketNumber: t.value.number, buyerName: name.value.trim(),
-      buyerPhone: phone.value.trim(), expectedVersion: t.value.version
+      buyerPhone: phone.value.trim(), reason: onBehalf.value.trim(),
+      expectedVersion: t.value.version
     })
     toast(`${t.value.number} is being held`, 'ok')
     emit('saved')
@@ -174,6 +201,13 @@ async function correct() {
       <b>This one is with {{ place.agentName || place.agentId }}.</b>
       The ticket itself is not here, and they may already have sold it without
       writing it down. Check with them before selling it to anybody else.
+      <!-- The sentence goes on the BOOK's record, not into a log nobody opens,
+           so the seller meets it beside their own sales when it is counted in.
+           Asked here rather than after the press, because a question that
+           arrives as an error reads as the app having gone wrong. -->
+      <label v-if="needsReason" class="why" for="onbehalf">Why are you recording this for them?</label>
+      <input v-if="needsReason" id="onbehalf" v-model="onBehalf" autocomplete="off"
+             :placeholder="`e.g. ${place.agentName || 'they'} phoned it in`">
     </div>
     <div v-else-if="!done && place?.status === 'Lost' && !isSold(t)" class="note bad">
       <b>This book was reported lost.</b> The ticket cannot win.
@@ -230,7 +264,7 @@ async function correct() {
         <div class="fact"><span>Book</span><b>{{ t.book }}</b></div>
         <!-- Who sold it was recorded from the first version and shown nowhere.
              It is the first thing asked about a sale somebody is querying. -->
-        <div v-if="agent" class="fact"><span>Sold by</span><b>{{ agent.name }}</b></div>
+        <div v-if="agent" class="fact"><span>Sold by</span><b>{{ agent.name }}<RoleTag seller /></b></div>
         <!-- A sale at the desk is credited to nobody unless somebody was named,
              and then this panel had nothing to say about who handled it — while
              the email of the person who typed it has been on the row since the
@@ -351,6 +385,9 @@ async function correct() {
 </template>
 
 <style scoped>
+/* The question sits inside the warning it belongs to, so the answer is given
+   where the reason for asking is still on screen. */
+.why { margin-top: 12px; }
 .seller-note { margin: -6px 0 10px; }
 .steps-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
 .q { font-size: 1.4rem; margin-bottom: 16px; }

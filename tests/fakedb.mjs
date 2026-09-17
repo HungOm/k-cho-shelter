@@ -338,12 +338,34 @@ class Query {
     this.filters.push((r) => rx.test(String(r[col] ?? '')))
     return this
   }
-  /** `or('a.eq.,b.eq.')` — only the forms these handlers actually use. */
+  /**
+   * `or('a.eq.x,b.in.(p,q)')` — only the forms these handlers actually use.
+   *
+   * SPLIT ON TOP-LEVEL COMMAS ONLY. PostgREST separates or-clauses with commas
+   * AND writes an `in` list as (a,b,c), so a plain split tore
+   * `action.in.(x,y)` into two clauses and the second was nonsense. The bracket
+   * depth is the whole of the difference.
+   */
   or(expr) {
-    const clauses = String(expr).split(',').map((c) => {
+    const parts = []
+    let depth = 0, cur = ''
+    for (const ch of String(expr)) {
+      if (ch === '(') depth++
+      if (ch === ')') depth--
+      if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue }
+      cur += ch
+    }
+    if (cur) parts.push(cur)
+
+    const clauses = parts.map((c) => {
       const [col, operator, ...rest] = c.split('.')
       const raw = rest.join('.')
       if (operator === 'eq') return (r) => String(r[col] ?? '') === raw
+      if (operator === 'in') {
+        const wanted = new Set(raw.replace(/^\(|\)$/g, '').split(',')
+          .map((v) => v.trim().replace(/^"|"$/g, '')))
+        return (r) => wanted.has(String(r[col] ?? ''))
+      }
       if (operator === 'ilike') {
         const rx = new RegExp('^' + raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*') + '$', 'i')
         return (r) => rx.test(String(r[col] ?? ''))
@@ -738,23 +760,6 @@ export function fakeDb(seed = {}) {
             source: 'settlement', reverses: r.id, received_at: new Date().toISOString(),
             note: 'Reversed: book put back on the shelf',
           })
-          /*
-           * AND THE SAME MONEY BACK AS A HAND-OVER, which is the half a seller
-           * notices. The reversal is bookkeeping — the book's amount_paid is
-           * being cleared and that row is the same cash. The sales survive the
-           * restock and still name their seller, so without this the charge
-           * stays and the credit goes, and somebody who paid ninety on the 14th
-           * is shown owing ninety. Modelled here because the money screen tests
-           * read these rows.
-           */
-          if (Number(r.amount) !== 0) {
-            pays.push({
-              id: pays.length + 1, agent_id: r.agent_id, amount: Number(r.amount),
-              received_by: args.p_user, method: r.method ?? 'cash', book_idx: r.book_idx,
-              source: 'hand', reverses: null, received_at: new Date().toISOString(),
-              note: 'Cash kept from the count-in of a book, which went back on the shelf',
-            })
-          }
         }
         let moved = 0
         for (const b of db.tables.books ?? []) {

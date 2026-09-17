@@ -10,7 +10,7 @@
  * later would let the payload change in between.
  */
 import { ref, onMounted, onActivated, computed, watch } from 'vue'
-import { api, toast, state, go } from '../lib/store.js'
+import { api, toast, state, go, isAdmin } from '../lib/store.js'
 import { dateTime, relative } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 
@@ -113,13 +113,36 @@ async function copyLink() {
   }
 }
 
+/**
+ * A SELLER ASKING FOR A BOOK, which is a different thing from a two-person
+ * control and is decided by a different person.
+ *
+ * The controls in this queue exist to put somebody above an organiser, so the
+ * System Admin decides them. A book request is the opposite shape: somebody who
+ * cannot issue books is asking somebody whose job that is. So an organiser
+ * decides it, through its own action, and the bar on the controls does not move.
+ *
+ * Read off `detail.runAs`, which the server wrote when the request was made —
+ * not guessed from the action name, so a request made before a deploy is still
+ * decided the way it was made.
+ */
+const isRequest = (r) => r.detail?.runAs === 'approver'
+
+/** Whether this reader can decide THIS row, which is not one answer any more. */
+function canDecide(r) {
+  return youDecide.value || (isAdmin.value && isRequest(r))
+}
+
 const pending = computed(() => (rows.value || []).filter(r => r.status === 'Pending'))
 const settled = computed(() => (rows.value || []).filter(r => r.status !== 'Pending'))
 
 async function decide(r, approve) {
   busy.value = r.requestId
   try {
-    const res = await api('decide_approval', {
+    // The organiser's door, not the System Admin's. Both end in the same
+    // handler; which one is called is what decides whether this reader is
+    // allowed to touch the row, and the server refuses the wrong pairing.
+    const res = await api(youDecide.value ? 'decide_approval' : 'decide_book_request', {
       requestId: r.requestId, approve, note: note.value.trim()
     })
     note.value = ''
@@ -162,10 +185,14 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 <template>
   <div>
     <h1>Waiting for approval</h1>
+    <!-- THREE READERS, THREE SENTENCES. The System Admin decides the controls;
+         an organiser decides who gets which books and may also be waiting on
+         the System Admin themselves; everybody else is waiting. One sentence
+         for all three described the wrong screen to two of them. -->
     <p class="muted">
-      {{ youDecide
-        ? 'Changes big enough to need two people. Nothing has happened yet.'
-        : 'Things you have asked the System Admin to approve.' }}
+      <template v-if="youDecide">Changes big enough to need two people. Nothing has happened yet.</template>
+      <template v-else-if="isAdmin">Sellers asking for books, and anything you have asked the System Admin to approve.</template>
+      <template v-else>Books you have asked for, and anything waiting on the System Admin.</template>
     </p>
 
     <div v-if="rows === null" class="card">
@@ -192,17 +219,29 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
           {{ subjectOf(r).label }} →
         </button>
 
-        <div v-if="youDecide" class="mt">
+        <div v-if="canDecide(r)" class="mt">
           <input v-model="note" placeholder="A note, if you want (optional)">
           <div class="row mt">
             <button class="btn danger grow" :disabled="busy === r.requestId" @click="decide(r, false)">
-              Turn down
+              {{ isRequest(r) ? 'Say no' : 'Turn down' }}
             </button>
             <button class="btn primary grow" :disabled="busy === r.requestId" @click="decide(r, true)">
-              {{ busy === r.requestId ? 'Working…' : 'Approve and do it' }}
+              {{ busy === r.requestId ? 'Working…'
+                 : isRequest(r) ? 'Give them the books' : 'Approve and do it' }}
             </button>
           </div>
-          <p class="hint">Approving carries it out straight away, in {{ r.requestedBy }}'s name.</p>
+          <!-- WHOSE ACT IT IS, said plainly, because the two differ. A control
+               runs in the requester's name; granting a book is the organiser
+               handing it over, and the book's record will say so. -->
+          <p class="hint">
+            <template v-if="isRequest(r)">
+              Granting hands the books over straight away, in your name, and they
+              are nobody else's to sell until they come back.
+            </template>
+            <template v-else>
+              Approving carries it out straight away, in {{ r.requestedBy }}'s name.
+            </template>
+          </p>
         </div>
         <div v-else class="mt">
           <button class="btn" :disabled="busy === r.requestId" @click="withdraw(r)">Withdraw</button>
@@ -211,7 +250,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
     </template>
 
     <Empty v-else art="✅" title="Nothing waiting">
-      {{ youDecide ? 'No one has asked for anything.' : 'You have not asked for anything.' }}
+      {{ youDecide || isAdmin ? 'No one has asked for anything.' : 'You have not asked for anything.' }}
     </Empty>
 
     <template v-if="settled.length">

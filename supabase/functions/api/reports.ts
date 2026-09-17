@@ -734,7 +734,7 @@ export async function agentStatement(p: Record<string, unknown>, user: AppUser, 
 
   const { data: closed } = await ctx.supabaseAdmin
     .from('books')
-    .select('number,declared_sold,amount_due,amount_paid,settled_at,status')
+    .select('number,declared_sold,amount_due,amount_paid,settled_at,settled_by,status')
     .eq('settled_by_agent', agentId)
     .in('status', ['Settled', 'Lost'])
     .not('declared_sold', 'is', null)
@@ -766,9 +766,22 @@ export async function agentStatement(p: Record<string, unknown>, user: AppUser, 
     byBook.set(name, e)
   }
 
+  /*
+   * `by` IS THE OTHER HALF OF EVERY LINE ON THIS STATEMENT.
+   *
+   * "Handed in RM100" and "Counted in, 10 declared sold" each describe a
+   * transaction with two people in it, and this document named one of them.
+   * Both columns were already being read — books.settled_by is written by
+   * settle_book, payments.received_by by every handler that takes cash — and
+   * neither reached the browser from here. A seller querying a figure had to
+   * ask an organiser who they had given it to.
+   *
+   * Empty on a sale line, which has no counterparty: a ticket sold to a member
+   * of the public is money owed, not money moved between two people here.
+   */
   type Entry = {
     at: string | null; kind: string; ref: string; description: string
-    charge: number; credit: number; balance: number; reversed?: boolean
+    charge: number; credit: number; balance: number; by?: string; reversed?: boolean
   }
   const entries: Entry[] = []
 
@@ -782,7 +795,8 @@ export async function agentStatement(p: Record<string, unknown>, user: AppUser, 
 
   type Closed = {
     number: string; declared_sold: number | null; amount_due: number | null
-    amount_paid: number | null; settled_at: string | null; status: string
+    amount_paid: number | null; settled_at: string | null; settled_by: string | null
+    status: string
   }
   for (const b of ((closed ?? []) as Closed[])) {
     const due = round2(Number(b.amount_due ?? 0))
@@ -790,7 +804,7 @@ export async function agentStatement(p: Record<string, unknown>, user: AppUser, 
     entries.push({
       at: b.settled_at, kind: 'settlement', ref: b.number,
       description: `Counted in · ${b.declared_sold ?? 0} declared sold`,
-      charge: due, credit: 0, balance: 0,
+      charge: due, credit: 0, balance: 0, by: b.settled_by ?? '',
     })
     // The cash that came with the count-in is its own line. Netting it against
     // the charge would hide a book counted in and not paid for, which is the
@@ -799,7 +813,7 @@ export async function agentStatement(p: Record<string, unknown>, user: AppUser, 
       entries.push({
         at: b.settled_at, kind: 'settlement-cash', ref: b.number,
         description: 'Cash handed in when counted in',
-        charge: 0, credit: paid, balance: 0,
+        charge: 0, credit: paid, balance: 0, by: b.settled_by ?? '',
       })
     }
   }
@@ -816,17 +830,47 @@ export async function agentStatement(p: Record<string, unknown>, user: AppUser, 
    */
   type Pay = {
     id: number; amount: number | null; method: string | null; note: string | null
-    source: string | null; received_at: string | null; book_idx: number | null
-    reverses: number | null
+    source: string | null; received_at: string | null; received_by: string | null
+    book_idx: number | null; reverses: number | null
   }
   const reversed = new Set(((pays ?? []) as Pay[]).map((r) => r.reverses).filter(Boolean) as number[])
+
+  /*
+   * WHICH BOOK A HAND PAYMENT WAS AGAINST.
+   *
+   * payments.book_idx records it, and this statement printed the payment's own
+   * row id instead — "#41", which identifies a row in a table nobody reading a
+   * statement can open. The branch meant to print the book number was there:
+   *
+   *     ref: r.book_idx ? `#${r.id}` : `#${r.id}`
+   *
+   * Both arms returned the same string, so the condition had never once
+   * changed the answer and the bug was invisible in review.
+   *
+   * Looked up rather than joined onto the payments read, because the set is the
+   * handful of books that hand payments were tagged with — usually none at all,
+   * in which case this costs nothing. The id remains the fallback: a book_idx
+   * pointing at a book this query cannot see is better shown as the payment it
+   * is than as a book number invented for it.
+   */
+  const taggedBooks = [...new Set(((pays ?? []) as Pay[])
+    .map((r) => r.book_idx)
+    .filter((i): i is number => typeof i === 'number' && i > 0))]
+  const bookNumber = new Map<number, string>()
+  if (taggedBooks.length) {
+    const { data: named } = await ctx.supabaseAdmin
+      .from('books').select('idx,number').in('idx', taggedBooks)
+    for (const b of ((named ?? []) as { idx: number; number: string }[])) {
+      bookNumber.set(b.idx, b.number)
+    }
+  }
   for (const r of ((pays ?? []) as Pay[])) {
     if (r.source === 'settlement') continue
     const amount = round2(Number(r.amount ?? 0))
     const isWriteOff = r.source === 'writeoff'
     entries.push({
       at: r.received_at, kind: isWriteOff ? 'writeoff' : 'hand',
-      ref: r.book_idx ? `#${r.id}` : `#${r.id}`,
+      ref: (r.book_idx ? bookNumber.get(r.book_idx) : '') || `#${r.id}`,
       description: isWriteOff
         ? (r.note || 'Written off')
         : (r.note || `Handed in${r.method ? ` (${r.method})` : ''}`),
@@ -836,6 +880,7 @@ export async function agentStatement(p: Record<string, unknown>, user: AppUser, 
       charge: amount < 0 ? Math.abs(amount) : 0,
       credit: amount > 0 ? amount : 0,
       balance: 0,
+      by: r.received_by ?? '',
       reversed: reversed.has(r.id) || undefined,
     })
   }

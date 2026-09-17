@@ -12,9 +12,17 @@
  * A screen that shows only a resolved name hides the fact that the row is keyed
  * on an address, and the day somebody's name changes in app_users the history
  * would silently re-attribute work that was already done.
+ *
+ * AND THE ROLE, in one lowercase word after the name. "Written down by Amos
+ * Hung" says who to ask; "Amos Hung helper" says why they were the one writing
+ * it down, which is the question somebody reading a queried sale actually has.
+ * It is absent rather than guessed when the backend does not send one — an
+ * older Edge Function sends no role, and a tag invented from nothing would be
+ * worse than no tag.
  */
 import { computed } from 'vue'
 import { whoIs } from '../../lib/store.js'
+import RoleTag from './RoleTag.vue'
 
 const props = defineProps({ email: String })
 
@@ -24,14 +32,14 @@ const line = computed(() => {
   if (!w) return null
   // No name on file: the address is all there is, so it is shown once as the
   // name rather than twice as both lines.
-  if (!w.name) return { main: w.email, sub: '' }
-  return { main: w.you ? `You (${w.name})` : w.name, sub: w.email }
+  if (!w.name) return { main: w.email, sub: '', role: w.role }
+  return { main: w.you ? `You (${w.name})` : w.name, sub: w.email, role: w.role }
 })
 </script>
 
 <template>
   <span v-if="line" class="person">
-    <b class="nm">{{ line.main }}</b>
+    <b class="nm">{{ line.main }}<RoleTag :role="line.role" /></b>
     <span v-if="line.sub" class="em">{{ line.sub }}</span>
   </span>
 </template>

@@ -9,6 +9,7 @@ import { money, moneyShort, date, COUNTED_IN_HELP } from '../lib/format.js'
 import { waNumber, isDialable } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
 import History from './modals/History.vue'
+import Who from './ui/Who.vue'
 
 const rows = ref(null)
 const scope = ref('all')
@@ -581,6 +582,11 @@ function waLink(a) {
                                       @click.stop="showHistory = e.ref">{{ e.ref }}</button>
                               <template v-else>{{ e.ref }}</template>
                               <template v-if="e.description"> · {{ e.description }}</template>
+                              <!-- Who the money went to, on the line that says
+                                   it moved. A sale has no counterparty and
+                                   carries none; a hand-over and a count-in both
+                                   do, and this statement named neither. -->
+                              <div v-if="e.by" class="muted">to <Who :email="e.by" /></div>
                             </td>
                             <td class="num">{{ e.charge ? money(e.charge, currency) : '' }}</td>
                             <td class="num">{{ e.credit ? money(e.credit, currency) : '' }}</td>
@@ -610,7 +616,7 @@ function waLink(a) {
                     <div v-if="audit === a.agentId" class="tablewrap">
                       <table class="inner">
                         <thead>
-                          <tr><th>When</th><th class="num">Amount</th><th>How</th><th>Note</th></tr>
+                          <tr><th>When</th><th class="num">Amount</th><th>How</th><th>Taken by</th><th>Note</th></tr>
                         </thead>
                         <tbody>
                           <tr v-for="p in (payments[a.agentId] || [])" :key="p.id">
@@ -623,6 +629,13 @@ function waLink(a) {
                                 :title="p.source === 'settlement' ? COUNTED_IN_HELP : undefined">
                               {{ p.source === 'settlement' ? 'counted in with a book' : (p.source || 'handed in') }}
                             </td>
+                            <!-- A→B. Every row here is cash moving from a seller
+                                 to somebody who took it, and the ledger named
+                                 only the seller. received_by has reached the
+                                 browser since this panel was written and was
+                                 printed nowhere; a treasurer querying a figure
+                                 had to ask who it had been given to. -->
+                            <td class="tiny"><Who v-if="p.receivedBy" :email="p.receivedBy" /></td>
                             <td class="tiny muted">{{ p.note || '' }}</td>
                           </tr>
                         </tbody>

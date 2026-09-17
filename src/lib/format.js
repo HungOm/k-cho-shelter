@@ -143,6 +143,29 @@ export const ROLE_WORDS = {
   viewer: 'Can only look',
 }
 
+/**
+ * The word that follows a name, lowercase and one word.
+ *
+ * SEPARATE FROM ROLE_WORDS on purpose. Those are the labels on the Access
+ * screen, where somebody is choosing what to make a person — "Seller who signs
+ * in" tells them what they are picking. After a name it would read as part of
+ * the name. This is a tag, so it is short, lowercase, and stays out of the way
+ * of the thing it describes: "Amos Hung helper", not "Amos Hung Helper".
+ *
+ * superadmin resolves to organiser, matching what the server sends and what
+ * list_users already does — the top role is not announced on a ticket row.
+ */
+export const ROLE_TAG = {
+  superadmin: 'organiser',
+  admin: 'organiser',
+  recorder: 'helper',
+  agent: 'seller',
+  viewer: 'viewer',
+}
+
+/** A seller who carries paper but never signs in is still a seller. */
+export const SELLER_TAG = 'seller'
+
 export const ROLE_BLURB = {
   superadmin: 'Decides who else can sign in, and approves the big changes',
   admin: 'Runs the raffle day to day',

@@ -115,16 +115,109 @@ async function assertStillSelling(
   )
 }
 
+/*
+ * WRITING INTO A BOOK THAT IS IN SOMEBODY ELSE'S BAG.
+ *
+ * An organiser may, and the reason it is allowed is narrow: a seller telephones
+ * in the sales they made at the market and somebody at the office writes them
+ * down. That is ordinary and has to keep working.
+ *
+ * Everything else of that shape is a sale invented at a desk against paper the
+ * organiser is not holding — credited to the holder, as it must be, so the
+ * volunteer meets it as a discrepancy when their book is counted in and has
+ * nothing to check it against. The two cases were indistinguishable in the
+ * record, because the record held nothing but "sold".
+ *
+ * So the override costs a sentence now: who reported it, and why this sale is
+ * being written by somebody who is not holding the book.
+ *
+ * WHERE THE SENTENCE GOES: book_history, one row per book.
+ *
+ *   - One row, not one per ticket. Sixty counterfoils entered at once would
+ *     otherwise repeat the same sentence sixty times, permanently —
+ *     ticket_history is append only and cannot be tidied afterwards.
+ *   - It is a fact about the book's CUSTODY, which is what that table holds:
+ *     this book was out with MARY and an organiser wrote into it anyway.
+ *   - History.vue merges a book's movements with its tickets' changes into one
+ *     list, so somebody reading the ticket sees it without looking elsewhere.
+ *
+ * NOT AN AUTHORISATION CHANGE. Who may do this is decided in three places —
+ * here, bulk_record_sales and sell_books — and none of them moves. This is the
+ * Edge Function, which is the only caller those two have, declining to pass on
+ * a write that would leave no explanation behind it.
+ */
+const OVERRIDE_ACTION = 'record_for_holder'
+
+/** What the caller said, or nothing. */
+const reasonOf = (p: Record<string, unknown>) => String(p.reason ?? '').trim()
+
+/** Refused by NAME, because "a book" is not something anybody can go and check. */
+function refuseOverride(numbers: string[]): never {
+  const one = numbers.length === 1
+  throw new ApiError(
+    'REASON_REQUIRED',
+    `${one ? 'Book' : 'Books'} ${numbers.join(', ')} ${one ? 'is' : 'are'} out with a seller. ` +
+      'An organiser writing down what a seller reported is ordinary, so this is allowed — ' +
+      'but say why, in a few words. It goes on the book\'s record where the seller can see it.',
+    { books: numbers },
+    400,
+  )
+}
+
+/**
+ * One line in each book's own trail, so the override is never silent.
+ *
+ * AFTER the write, not before: a sale refused for some other reason must not
+ * leave an explanation of something that did not happen. book_history is append
+ * only, so there is no taking it back.
+ */
+async function noteOverride(
+  ctx: Ctx, user: AppUser, reason: string,
+  books: { idx: number; holder: string | null }[],
+) {
+  if (!books.length || !reason) return
+  await ctx.supabaseAdmin.from('book_history').insert(books.map((b) => ({
+    book_idx: b.idx, from_agent: b.holder, action: OVERRIDE_ACTION,
+    by_user: user.email, note: reason,
+  })))
+}
+
+/**
+ * The books in a write that are out with somebody other than the caller.
+ *
+ * Asked BEFORE the work, because the answer decides whether the work may
+ * happen at all and neither bulk_record_sales nor sell_books can be taken back
+ * once it has run. Both of those already refuse the write outright for anybody
+ * but an organiser — this does not repeat that decision, it collects the books
+ * the organiser is about to reach into so they can be named in the refusal and
+ * afterwards in each book's own trail.
+ *
+ * Empty for a seller writing into their own books, which is every ordinary
+ * call, and it costs one query to find that out.
+ */
+async function booksOutWithSomebodyElse(
+  ctx: Ctx, user: AppUser, idxs: number[],
+): Promise<{ idx: number; number: string; holder: string | null }[]> {
+  if (!idxs.length) return []
+  const { data } = await ctx.supabaseAdmin
+    .from('books').select('idx,number,status,held_by_agent')
+    .in('idx', idxs).eq('status', 'Out')
+  return ((data ?? []) as { idx: number; number: string; held_by_agent: string | null }[])
+    .filter((b) => b.held_by_agent && b.held_by_agent !== user.agentId)
+    .map((b) => ({ idx: b.idx, number: b.number, holder: b.held_by_agent }))
+}
+
 async function assertCanWrite(
   ctx: Ctx,
   user: AppUser,
   ticket: {
     idx: number
     number: string
+    book_idx: number
     books?: { number?: string; status: string; held_by_agent: string | null } | null
   },
-  opts: { force?: boolean; claiming?: boolean } = {},
-) {
+  opts: { force?: boolean; claiming?: boolean; reason?: string } = {},
+): Promise<{ override: { idx: number; holder: string | null } | null }> {
   const cfg = await config(ctx)
   const generated = num(cfg.TOTAL_TICKETS, 0)
   const activeRaw = num(cfg.ACTIVE_TICKETS, 0)
@@ -208,7 +301,14 @@ async function assertCanWrite(
         403,
       )
     }
+    // Permitted, and permitted only because of who is asking. That is the case
+    // that has to say why — see the note above OVERRIDE_ACTION.
+    if (!holdsIt) {
+      if (!opts.reason) refuseOverride([book.number ?? ticket.number])
+      return { override: { idx: ticket.book_idx, holder: book.held_by_agent } }
+    }
   }
+  return { override: null }
 }
 
 function normalisePhone(v: unknown): string {
@@ -339,7 +439,8 @@ export async function sellTicket(p: Record<string, unknown>, user: AppUser, ctx:
   const { name, phone } = requireBuyer(p)
 
   const t = await loadTicket(ctx, number)
-  await assertCanWrite(ctx, user, t, { force: !!p.force, claiming: true })
+  const reason = reasonOf(p)
+  const { override } = await assertCanWrite(ctx, user, t, { force: !!p.force, claiming: true, reason })
 
   if (SOLD.includes(t.status)) {
     throw new ApiError(
@@ -378,7 +479,8 @@ export async function sellTicket(p: Record<string, unknown>, user: AppUser, ctx:
     recorded_by: user.email,
   }, number)
 
-  await audit(ctx, 'SELL', { ticket: number, buyer: name }, user.email)
+  if (override) await noteOverride(ctx, user, reason, [override])
+  await audit(ctx, 'SELL', { ticket: number, buyer: name, reason: reason || undefined }, user.email)
   return { ticketNumber: number, status: row.status, version: row.version }
 }
 
@@ -389,7 +491,10 @@ export async function reserveTicket(p: Record<string, unknown>, user: AppUser, c
   if (!name) throw new ApiError('MISSING_FIELD', 'Buyer name is required.')
 
   const t = await loadTicket(ctx, number)
-  await assertCanWrite(ctx, user, t, { force: !!p.force, claiming: true })
+  const reason = reasonOf(p)
+  // Holding a number in somebody else's book has the same hazard as selling one
+  // out of it — two people believe they have it — so it asks the same question.
+  const { override } = await assertCanWrite(ctx, user, t, { force: !!p.force, claiming: true, reason })
   if (t.status !== 'Available') {
     throw new ApiError('NOT_AVAILABLE', `Ticket ${number} is ${t.status.toLowerCase()}.`)
   }
@@ -401,7 +506,8 @@ export async function reserveTicket(p: Record<string, unknown>, user: AppUser, c
     recorded_by: user.email,
   }, number)
 
-  await audit(ctx, 'RESERVE', { ticket: number, buyer: name }, user.email)
+  if (override) await noteOverride(ctx, user, reason, [override])
+  await audit(ctx, 'RESERVE', { ticket: number, buyer: name, reason: reason || undefined }, user.email)
   return { ticketNumber: number, status: row.status, version: row.version }
 }
 
@@ -597,6 +703,28 @@ export async function bulkRecordSales(p: Record<string, unknown>, user: AppUser,
     throw new ApiError('RANGE_TOO_LARGE', 'Record at most 500 sales at a time.')
   }
 
+  /*
+   * The same question the single-ticket path asks, asked once for the batch.
+   *
+   * The ticket numbers are resolved to their books here rather than trusting
+   * the caller to say which books they are in — a batch of counterfoils is
+   * typed from paper, and which book a number belongs to is a fact about the
+   * raffle rather than a field on the request.
+   */
+  // TRIMMED AND NOTHING ELSE, which is exactly what bulk_record_sales compares:
+  // `where tk.number = trim(sale->>'ticketNumber')`. Upper-casing here would be
+  // a second, different resolution — and the one that matters is the one that
+  // decides which books are about to be written into.
+  const numbers = sales
+    .map((r) => String((r as Record<string, unknown>)?.ticketNumber ?? '').trim())
+    .filter(Boolean)
+  const { data: inBooks } = await ctx.supabaseAdmin
+    .from('tickets').select('book_idx').in('number', numbers)
+  const reason = reasonOf(p)
+  const reaching = await booksOutWithSomebodyElse(ctx, user,
+    [...new Set(((inBooks ?? []) as { book_idx: number }[]).map((t) => t.book_idx))])
+  if (reaching.length && !reason) refuseOverride(reaching.map((b) => b.number))
+
   const { data, error } = await ctx.supabaseAdmin.rpc('bulk_record_sales', {
     p_sales: sales,
     p_user: user.email,
@@ -614,7 +742,11 @@ export async function bulkRecordSales(p: Record<string, unknown>, user: AppUser,
     )
   }
 
-  await audit(ctx, 'BULK_SELL', { count: data?.recorded ?? 0 }, user.email)
+  await noteOverride(ctx, user, reason, reaching)
+  await audit(ctx, 'BULK_SELL',
+    { count: data?.recorded ?? 0, reason: reason || undefined,
+      intoBooksOut: reaching.length ? reaching.map((b) => b.number) : undefined },
+    user.email)
   return { recorded: data?.recorded ?? 0 }
 }
 
@@ -655,6 +787,32 @@ export async function sellBook(p: Record<string, unknown>, user: AppUser, ctx: C
     }
   }
 
+  /*
+   * WHICH BOOKS, RESOLVED THE WAY sell_books RESOLVES THEM — by idx, from a
+   * named list or from a range between two book numbers. Rewriting that
+   * resolution here would be a second copy of it, and the two would disagree
+   * the day somebody changes how a range is read; so it asks the books table
+   * the same questions, in the same order, and stops at the first answer.
+   */
+  const named = Array.isArray(p.bookNumbers) ? p.bookNumbers.map(String) : []
+  let reaching: { idx: number; number: string; holder: string | null }[] = []
+  if (named.length) {
+    const { data: rows } = await ctx.supabaseAdmin.from('books').select('idx').in('number', named)
+    reaching = await booksOutWithSomebodyElse(ctx, user,
+      ((rows ?? []) as { idx: number }[]).map((b) => b.idx))
+  } else if (p.fromBook) {
+    const ends = [String(p.fromBook), String(p.toBook ?? p.fromBook)]
+    const { data: rows } = await ctx.supabaseAdmin.from('books').select('idx').in('number', ends)
+    const idxs = ((rows ?? []) as { idx: number }[]).map((b) => b.idx).sort((a, b) => a - b)
+    if (idxs.length) {
+      const span: number[] = []
+      for (let i = idxs[0]; i <= idxs[idxs.length - 1]; i++) span.push(i)
+      reaching = await booksOutWithSomebodyElse(ctx, user, span)
+    }
+  }
+  const reason = reasonOf(p)
+  if (reaching.length && !reason) refuseOverride(reaching.map((b) => b.number))
+
   const { data, error } = await ctx.supabaseAdmin.rpc('sell_books', {
     p_from_book: p.fromBook ?? null,
     p_to_book: p.toBook ?? null,
@@ -676,9 +834,11 @@ export async function sellBook(p: Record<string, unknown>, user: AppUser, ctx: C
       'Every ticket in those books was already sold or voided. Nothing was changed.')
   }
 
+  await noteOverride(ctx, user, reason, reaching)
   await audit(ctx, 'SELL_BOOK',
     { books: data.books, buyer: name, sold: data.sold, skipped: data.skipped?.length ?? 0,
-      soldBy: soldBy || user.agentId || null },
+      soldBy: soldBy || user.agentId || null, reason: reason || undefined,
+      intoBooksOut: reaching.length ? reaching.map((b) => b.number) : undefined },
     user.email)
   return data
 }

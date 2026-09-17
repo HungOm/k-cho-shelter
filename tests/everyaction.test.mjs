@@ -200,6 +200,11 @@ const DELIBERATE = new Set([
   'CANNOT_SHRINK', 'SCHEMA_DRIFT', 'NOT_ELIGIBLE', 'NOT_IN_BOOK',
   'NOT_RESERVED', 'MISSING_FIELD', 'BAD_REQUEST', 'RANGE_TOO_LARGE',
   'BELOW_GENERATED', 'NOT_YOUR_BOOK', 'BOOK_WITH_SELLER', 'BOOK_CLOSED',
+  // An organiser writing into a book that is out with a seller: allowed, and
+  // now asked to say why. This fixture's books are out with A001 and the caller
+  // is the super admin, so the two selling actions land on it — which is the
+  // rule working rather than a gap in the fixture.
+  'REASON_REQUIRED',
   'DUPLICATE_IN_BATCH', 'BATCH_REJECTED',
 ])
 

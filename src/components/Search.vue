@@ -4,7 +4,7 @@
  * you opened, so you can work down a stack without losing where you were.
  */
 import { ref, computed } from 'vue'
-import { state, searchResults, agentMap, whereIs, isSold } from '../lib/store.js'
+import { state, searchResults, agentMap, whereIs, isSold, isAdmin, api, toast, go } from '../lib/store.js'
 import { STATUS_WORDS } from '../lib/format.js'
 import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
@@ -71,6 +71,59 @@ function place(t) {
   if (w.status === 'Returned') return { text: 'brought back', tone: 'warn' }
   if (w.status === 'Lost') return { text: 'book lost', tone: 'bad' }
   return null
+}
+
+/**
+ * ASKING FOR THE BOOK A TICKET IS IN.
+ *
+ * WHY THE BOOK AND NOT THE TICKET. A ticket has no custody of its own: what
+ * makes a ticket somebody's to sell is books.held_by_agent, and its owner is
+ * derived from its book. So this screen answers "3291 is in Book-330, in the
+ * office" and offers the book — asking for one ticket out of a book would be
+ * asking for a thing the raffle has no way to give.
+ *
+ * WHO IS OFFERED IT. Somebody who cannot issue books to themselves and whose
+ * account is linked to a seller, which is exactly the person the fence stops:
+ * they may only sell from books they are carrying. An organiser is not offered
+ * it because they can simply take the book.
+ *
+ * AND ONLY FOR A BOOK THAT CAN ACTUALLY BE GIVEN. Asking for one already in
+ * somebody's bag produces a refusal at the moment of granting, which is the
+ * worst place to discover it.
+ *
+ * "In the office" and nothing wider, for now. A book brought back with nothing
+ * sold from it is physically just as available, and issue_books still refuses
+ * it — it has to be counted in and restocked first. Offering it here would be
+ * a button whose refusal arrives in front of an organiser who has already said
+ * yes. When that rule changes, this widens with it.
+ */
+const canAsk = computed(() => !isAdmin.value && !!state.user?.agentId)
+
+function askable(t) {
+  const w = whereIs(t)
+  return canAsk.value && w?.status === 'Unassigned' ? w : null
+}
+
+const asking = ref('')
+
+async function askFor(t) {
+  const book = askable(t)
+  if (!book) return
+  asking.value = t.number
+  try {
+    const r = await api('request_approval', {
+      action: 'issue_books',
+      payload: { bookNumbers: [book.book] },
+    })
+    // Named, and pointed at where the answer will arrive. "Request sent" leaves
+    // somebody refreshing the list they are already on.
+    toast(`Asked for ${book.book} — ${r.summary}`, 'ok')
+    go('approvals')
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+  } finally {
+    asking.value = ''
+  }
 }
 </script>
 
@@ -156,6 +209,14 @@ function place(t) {
                does two things from one tap does the wrong one eventually. -->
           <button class="rowhist" :title="`Where ${t.number} has been`"
                   :aria-label="`Where ${t.number} has been`" @click="showHistory = t">🕘</button>
+          <!-- A THIRD CONTROL, for the same reason the second one exists: a row
+               that does several things from one tap does the wrong one
+               eventually. A seller may only sell out of books they are
+               carrying, and until now the screen showed them a ticket they
+               could not have with no way to ask for it. -->
+          <button v-if="askable(t)" class="rowhist ask" :disabled="asking === t.number"
+                  :title="`Ask for ${askable(t).book}`"
+                  :aria-label="`Ask for ${askable(t).book}`" @click="askFor(t)">🙋</button>
         </li>
       </TransitionGroup>
 
@@ -178,6 +239,9 @@ function place(t) {
 
 <style scoped>
 .searchcard { padding: 16px; }
+/* The same shape as the history control beside it: a small square that does one
+   named thing, rather than a word competing with the row itself. */
+.ask:disabled { opacity: .5; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .count { margin: 0 4px 8px; min-height: 22px; }
 .skelrow { padding: 18px; }

@@ -33,6 +33,7 @@
  *
  * Both backends, because they have disagreed before.
  */
+import { readFileSync } from 'node:fs'
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
 import { fakeDb, baseConfig, users, codeOf, errOf } from './fakedb.mjs'
 
@@ -132,11 +133,44 @@ console.log('the seller holding the book can sell from it')
 }
 
 // ============ 3. the organiser, and the credit that keeps it honest ============
-console.log('an organiser may write down what the seller reported')
+console.log('an organiser writing into somebody else\'s book says why')
 {
+  /*
+   * THE TWO CASES THIS TELLS APART, which the record could not.
+   *
+   * A seller telephones in six sales from the market and somebody at the office
+   * writes them down. That is ordinary, it is most of what the recording screen
+   * is for, and blocking it pushes people into marking books returned when they
+   * are not — which corrupts the ledger worse than the thing being prevented.
+   *
+   * A sale invented at a desk, against paper the organiser is not holding, is
+   * the same three database writes. It lands on the holder's balance and the
+   * seller meets it at settlement with nothing to check it against.
+   *
+   * They are indistinguishable in the data and always were. So the override
+   * costs a sentence, and the sentence goes where the seller will see it.
+   */
+  const bare = world()
+  const e = await errOf(() => sell(bare, 'KS-00003', users.admin))
+  eq(e?.code, 'REASON_REQUIRED', 'an organiser reaching into a seller\'s book is asked why')
+  eq(e?.status, 400, 'as a question, not a refusal — they may do this')
+  ok(/Book-001/.test(e?.message ?? ''), 'and the book is named, so it can be checked')
+  eq(bare.db.tables.tickets.find((t) => t.number === 'KS-00003').status, 'Available',
+     'and nothing is written until there is one')
+
   const w = world()
-  const r = await sell(w, 'KS-00003', users.admin)
+  const r = await sell(w, 'KS-00003', users.admin, { reason: 'Daw Hla phoned in six sales' })
   eq(r.status, 'Sold', 'transcription keeps working')
+
+  // IN THE BOOK'S OWN TRAIL, one row, not one per ticket. It is a fact about
+  // the book's custody, and History.vue shows a book's movements beside its
+  // tickets' changes — so somebody reading the ticket meets it either way.
+  const trail = w.db.tables.book_history.filter((h) => h.action === 'record_for_holder')
+  eq(trail.length, 1, 'the override is written into the book\'s record')
+  eq(trail[0].book_idx, 1, 'against the book it reached into')
+  eq(trail[0].from_agent, 'A001', 'naming who was holding it')
+  eq(trail[0].by_user, 'admin@x.com', 'and who reached in')
+  eq(trail[0].note, 'Daw Hla phoned in six sales', 'with the reason they gave')
 
   const row = w.db.tables.tickets.find((t) => t.number === 'KS-00003')
   eq(row.sold_by_agent, 'A001', 'and the sale is credited to whoever holds the book')
@@ -150,7 +184,7 @@ console.log('and cannot quietly credit the sale to somebody else')
   // surfaces at settlement, because settlement reconciles what a seller owes
   // against what was sold IN THEIR NAME.
   const w = world()
-  await sell(w, 'KS-00004', users.admin, { agentId: 'A002' })
+  await sell(w, 'KS-00004', users.admin, { agentId: 'A002', reason: 'phoned in' })
   const row = w.db.tables.tickets.find((t) => t.number === 'KS-00004')
   eq(row.sold_by_agent, 'A001', 'the holder is credited, not the agent named in the request')
 
@@ -168,8 +202,8 @@ console.log('an Out book with nobody recorded is refused, even to an organiser')
   // it would go unnoticed for a month.
   const w = world()
   w.db.tables.books.find((b) => b.idx === 1).held_by_agent = null
-  eq(await codeOf(() => sell(w, 'KS-00005', users.admin)), 'BOOK_WITH_SELLER',
-     'out with nobody is not a licence')
+  eq(await codeOf(() => sell(w, 'KS-00005', users.admin, { reason: 'phoned in' })), 'BOOK_WITH_SELLER',
+     'out with nobody is not a licence — and no reason buys it')
 }
 
 // ============ 4. what the rule does NOT touch ============
@@ -289,6 +323,104 @@ console.log('widening the input did not widen what a helper may do')
   }
 }
 
+// ============ 4b. the same question on the two paths that write in bulk ============
+console.log('a batch and a whole book ask it too, or the question is a suggestion')
+{
+  /*
+   * WHY BOTH, AND WHY IT MATTERS MORE HERE. A rule enforced on one of three
+   * doors is not a rule: an organiser who met the question on the ticket screen
+   * would find the counterfoil screen did not ask, and sixty sales would go
+   * into somebody's book with nothing on the record to say who reported them.
+   * This repository has produced two halves of one fact drifting five times.
+   *
+   * The whole-book path is the same act ten times over, credited to the holder,
+   * and the seller meets all ten at settlement.
+   */
+  const bare = world()
+  eq(await codeOf(() => tickets.bulkRecordSales({ sales: [
+       { ticketNumber: 'KS-00006', buyerName: 'Ma Nu', buyerPhone: '0125550100' }] }, users.admin, bare.ctx)),
+     'REASON_REQUIRED', 'a batch reaching into a seller\'s book is asked why')
+  eq(bare.table('book_history').length, 0, 'and nothing is written before there is an answer')
+
+  const w = world()
+  await tickets.bulkRecordSales({ sales: [
+    { ticketNumber: 'KS-00006', buyerName: 'Ma Nu', buyerPhone: '0125550100' },
+    { ticketNumber: 'KS-00007', buyerName: 'U Ba', buyerPhone: '0125550101' },
+  ], reason: 'Daw Hla read them out over the telephone' }, users.admin, w.ctx)
+  const trail = w.table('book_history').filter((h) => h.action === 'record_for_holder')
+  // ONE ROW FOR THE BATCH, not one per ticket: sixty counterfoils would
+  // otherwise repeat the same sentence sixty times, permanently.
+  eq(trail.length, 1, 'one line on the book, however many tickets were in the batch')
+  eq(trail[0].book_idx, 1, 'against the book it reached into')
+  eq(trail[0].note, 'Daw Hla read them out over the telephone', 'carrying the reason')
+
+  // A batch entirely within the caller's own reach asks nothing at all.
+  const own = world()
+  const r = await tickets.bulkRecordSales({ sales: [
+    { ticketNumber: 'KS-00012', buyerName: 'Ma Nu', buyerPhone: '0125550100' }] }, users.admin, own.ctx)
+  ok(r, 'a batch in a book on the shelf goes through')
+  eq(own.table('book_history').length, 0, 'with nothing added to anybody\'s custody line')
+
+  // The whole-book path. The fake's sell_books writes nothing, so what is being
+  // proven is which refusal arrives: REASON_REQUIRED without one, and something
+  // past it with one.
+  const bookBare = world()
+  eq(await codeOf(() => tickets.sellBook(
+       { fromBook: 'Book-001', ...buyer }, users.admin, bookBare.ctx)),
+     'REASON_REQUIRED', 'selling a whole book out of somebody\'s bag is asked why')
+
+  const bookWith = world()
+  const code = await codeOf(() => tickets.sellBook(
+    { fromBook: 'Book-001', ...buyer, reason: 'she rang it in' }, users.admin, bookWith.ctx))
+  ok(code !== 'REASON_REQUIRED', `and with a reason the question is not what stops it (got ${code})`)
+}
+
+// ============ 5. and the screens ask before the server has to refuse ============
+console.log('the screens ask why, rather than letting the refusal arrive as an error')
+{
+  /*
+   * A COURTESY THAT HAS TO AGREE WITH THE SERVER. The Edge Function refuses a
+   * reasonless override whatever the browser does; the point of asking in the
+   * browser is that the question appears beside the sale, with the seller's
+   * name still on screen, instead of arriving as a red box after the press.
+   *
+   * Read rather than rendered: what is being checked is that the client's
+   * predicate is the same rule as the one tested above it, and that both
+   * selling screens send what they collect. The server's half is sections 1–4.
+   */
+  const store = readFileSync(new URL('../src/lib/store.js', import.meta.url), 'utf8')
+  const fn = store.slice(store.indexOf('export function overrideReasonNeeded'),
+                         store.indexOf('export function sellOverrideNeeded'))
+  ok(!!fn, 'the client has a predicate for it')
+  // The server's rule, in the same three parts: the book is Out, somebody holds
+  // it, and that somebody is not me.
+  ok(/status !== 'Out'/.test(fn), 'it only applies to a book that is out')
+  ok(/!b\.agentId/.test(fn), 'and only when somebody is actually holding it')
+  ok(/b\.agentId !== me\.agentId/.test(fn), 'and not when that somebody is me')
+
+  // SEPARATE FROM bookBlock, which answers "may I" — folding the two together
+  // would make the screens disable the case that is allowed.
+  // The BODY, not everything up to the next export: the prose above
+  // overrideReasonNeeded explains why the two are apart, and slicing to its
+  // name swept that comment in — so this passed or failed on the wording.
+  const start = store.indexOf('export function bookBlock')
+  const blockFn = store.slice(start, store.indexOf('\n}\n', start))
+  ok(!/reason/i.test(blockFn), 'and bookBlock itself still answers only whether you may')
+
+  const sellTicket = readFileSync(new URL('../src/components/SellTicket.vue', import.meta.url), 'utf8')
+  ok(/sellOverrideNeeded/.test(sellTicket), 'the ticket screen asks the question')
+  ok((sellTicket.match(/reason: onBehalf\.value\.trim\(\)/g) || []).length === 2,
+     'and sends the answer on both the sale and the hold')
+
+  const sellBook = readFileSync(new URL('../src/components/modals/SellBook.vue', import.meta.url), 'utf8')
+  ok(/overrideReasonNeeded/.test(sellBook), 'the whole-book screen asks it too')
+  ok(/reason: onBehalf\.value\.trim\(\)/.test(sellBook), 'and sends it')
+  // NAMED, not counted: "1 book is with a seller" sends somebody back to the
+  // grid to work out which — the same reasoning as the blocked list beside it.
+  ok(/onBehalfBooks\.map\(b =>/.test(sellBook), 'naming the books it is reaching into')
+  ok(/!onBehalfBooks\.value\.length \|\| !!onBehalf\.value\.trim\(\)/.test(sellBook),
+     'and the button stays shut until there is an answer')
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()

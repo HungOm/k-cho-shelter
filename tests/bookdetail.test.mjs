@@ -17,6 +17,7 @@
  * Rendered rather than read, because the defect was in what a person sees
  * assembled, not in any one value. Every assertion here is on visible text.
  */
+import { readFileSync } from 'node:fs'
 import { renderScreen, visibleText } from './screen.mjs'
 
 let pass = 0, fail = 0
@@ -29,6 +30,11 @@ export const state = reactive({ cfg: { ticketsPerBook: 10, currency: 'RM' }, boo
 export const isAdmin = computed(() => false)
 export function go() {}
 export function bookBlock() { return null }
+// The organiser's override asks why; these screens import the predicate that
+// decides whether to ask. Default false: no stub here puts a book in somebody
+// else's hands, and a stub that says yes would make every render demand a reason.
+export const overrideReasonNeeded = () => false
+export const sellOverrideNeeded = () => false
 export const agentMap = computed(() => ({}))
 export function toast() {}
 // Behaviour stub of the store's own helper; the real one is the single place
@@ -88,6 +94,83 @@ console.log('no row says "nobody" where the status already said it')
      'an unheld book drops the holder row rather than filling it with nobody')
   ok(!/Who has it|Brought back by|Was with/.test(free.text),
      'and shows no holder label at all')
+}
+
+console.log('the money block says which gap is which, and does not invent either')
+{
+  /*
+   * WHAT THIS SHEET WAS SAYING. Under "Should have" and "Handed in" sat a row
+   * headed "Difference", which every reader took for the third line of that
+   * sum — the cash still owed. It was not. It was `variance_amount`, the
+   * seller's declared count against the ticket numbers actually written down,
+   * which is a different question with a different answer, and the two diverge
+   * the moment a seller reports ten sold and nine are on paper.
+   *
+   * WORSE THAN MISLABELLED. variance_amount was coalesce(amount_due,0) minus
+   * recorded_amount, and amount_due is null on every book nobody has counted
+   * in. So a book that was simply still out, with its sales properly recorded,
+   * came back as minus its own takings: Book-004 in the live fundraiser read
+   * "Difference RM-100.00" in red, as did six others. None of them had a
+   * discrepancy. The view is fixed at source; this is the screen half.
+   *
+   * "Handed in RM0.00" was the same lie in the other direction — nought
+   * because nobody had counted the book, printed as though a seller had
+   * handed over nothing.
+   */
+  const paid = await sheet({ status: 'Settled', countedIn: true, sold: 10, expected: 100, paid: 100 })
+  ok(/Handed in RM\s?100\.00/.test(paid.text), 'a book counted in and paid for says so')
+  ok(!/Still owed/.test(paid.text), 'and nothing is owed on it')
+  ok(!/Difference/.test(paid.text), 'the word that meant two things is gone')
+
+  const short = await sheet({ status: 'Settled', countedIn: true, sold: 10, expected: 100, paid: 90 })
+  ok(/Still owed RM\s?10\.00/.test(short.text),
+     `a tenner short is a tenner still owed (${short.text.replace(/\s+/g, ' ').slice(-90)})`)
+  ok(!/-10/.test(short.text), 'stated as a positive amount under a label that carries the sign')
+
+  const over = await sheet({ status: 'Settled', countedIn: true, sold: 10, expected: 100, paid: 110 })
+  ok(/Over by RM\s?10\.00/.test(over.text), 'and too much is not "still owed" with a minus in front of it')
+
+  // The count gap is its own row, named for the question it answers.
+  const gap = await sheet({ status: 'Settled', countedIn: true, sold: 9, expected: 100, paid: 100, variance: 10 })
+  ok(/Sold but not written down RM\s?10\.00/.test(gap.text),
+     `declared more than is on paper (${gap.text.replace(/\s+/g, ' ').slice(-110)})`)
+  ok(!/Still owed/.test(gap.text), 'and the cash is not owed — those are different facts on different rows')
+
+  const extra = await sheet({ status: 'Settled', countedIn: true, sold: 11, expected: 100, paid: 100, variance: -10 })
+  ok(/Written down but not declared RM\s?10\.00/.test(extra.text), 'and the gap the other way reads the other way')
+
+  // A BOOK NOBODY HAS COUNTED IN HAS NO HANDED-IN FIGURE AT ALL.
+  const open_ = await sheet({ status: 'Out', countedIn: false, sold: 10, expected: 100, paid: 0 })
+  ok(!/Handed in RM/.test(open_.text), 'a book still out does not claim an amount was handed in')
+  ok(/not counted in yet/.test(open_.text), 'it says why there is no figure instead')
+  ok(!/Still owed/.test(open_.text), 'and does not compute a debt from a number that is not there')
+}
+
+console.log('and it says who took the money, not only how much')
+{
+  /*
+   * A→B, WHICH THIS SHEET HAD ONLY THE A OF. Counting a book in is cash moving
+   * from whoever was holding it to whoever took it; the holder is two rows up
+   * and the taker was nowhere. books.settled_by has been written by settle_book
+   * since it existed and read back by nothing at all.
+   *
+   * The NAME is asserted in whowrote.test.mjs, where <Who> is rendered on its
+   * own — the screen harness stubs child components, so a name checked through
+   * this sheet would be checked against the stub. What is checked here is that
+   * the row is there when there is somebody to name, absent when there is not,
+   * and that the address is handed to the thing that resolves it.
+   */
+  const counted = await sheet({ status: 'Settled', countedIn: true, sold: 10,
+    expected: 100, paid: 100, settledBy: 'organiser@example.org' })
+  ok(/Counted in by/.test(counted.text), 'a book counted in says who took the money')
+
+  const anon = await sheet({ status: 'Settled', countedIn: true, sold: 10, expected: 100, paid: 100 })
+  ok(!/Counted in by/.test(anon.text),
+     'a book with nobody recorded against it draws no empty row')
+
+  const src = readFileSync(new URL('../src/components/modals/BookDetail.vue', import.meta.url), 'utf8')
+  ok(/<Who :email="book\.settledBy" \/>/.test(src),
+     'the address goes to the component that resolves a person, not onto the screen raw')
 }
 
 console.log('closing does not compete with the things that do something')

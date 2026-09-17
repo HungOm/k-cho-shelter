@@ -270,8 +270,16 @@ select
   case when b.status in ('Settled','Lost') and b.declared_sold is not null
        then greatest(coalesce(b.amount_due,0) - r.recorded_amount, 0) else 0 end as unidentified_amount,
   coalesce(b.amount_paid,0) as counted_collected,
-  coalesce(b.declared_sold,0) - r.recorded_sold as variance_sold,
-  coalesce(b.amount_due,0) - r.recorded_amount as variance_amount,
+  -- NOUGHT UNTIL SOMEBODY HAS COUNTED THE BOOK IN. A null declared_sold means
+  -- "not counted yet", and coalescing it to nought read that as "the seller
+  -- says nothing was sold" — so every unsettled book with sales in it carried
+  -- a variance of minus its own takings. Seven books in production did, and the
+  -- book sheet drew each one as a red discrepancy. Same guard as counted_sold
+  -- three lines up, for the same reason.
+  case when b.declared_sold is not null
+       then b.declared_sold - r.recorded_sold else 0::bigint end as variance_sold,
+  case when b.declared_sold is not null
+       then coalesce(b.amount_due,0) - r.recorded_amount else 0::numeric end as variance_amount,
   -- Whole days, from a date. Instant arithmetic made a book due today overdue
   -- from 8am, which is not something you can defend to the person being chased.
   case when b.status = 'Out' and b.due_at is not null and b.due_at < current_date
@@ -280,7 +288,13 @@ select
   (b.status = 'Out' and (select nullif(value,'') from config where key = 'FINAL_DEADLINE') is not null
    and b.due_at is not null
    and (select nullif(value,'')::date from config where key = 'FINAL_DEADLINE') < current_date)
-    as past_final
+    as past_final,
+  -- WHO TOOK THE MONEY. settle_book has written settled_by since it existed and
+  -- nothing read it back, so "Handed in RM100" named an amount and no
+  -- counterparty — on the one screen where somebody is checking a figure
+  -- against the person who wrote it. Appended at the END of the column list,
+  -- which is what create or replace view will accept.
+  b.settled_by, b.settled_at
 from books b
 left join agents a on a.agent_id = b.held_by_agent
 left join lateral (
@@ -339,8 +353,16 @@ select
   case when b.status in ('Settled','Lost') and b.declared_sold is not null
        then greatest(coalesce(b.amount_due,0) - r.recorded_amount, 0) else 0 end as unidentified_amount,
   coalesce(b.amount_paid,0) as counted_collected,
-  coalesce(b.declared_sold,0) - r.recorded_sold as variance_sold,
-  coalesce(b.amount_due,0) - r.recorded_amount as variance_amount,
+  -- NOUGHT UNTIL SOMEBODY HAS COUNTED THE BOOK IN. A null declared_sold means
+  -- "not counted yet", and coalescing it to nought read that as "the seller
+  -- says nothing was sold" — so every unsettled book with sales in it carried
+  -- a variance of minus its own takings. Seven books in production did, and the
+  -- book sheet drew each one as a red discrepancy. Same guard as counted_sold
+  -- three lines up, for the same reason.
+  case when b.declared_sold is not null
+       then b.declared_sold - r.recorded_sold else 0::bigint end as variance_sold,
+  case when b.declared_sold is not null
+       then coalesce(b.amount_due,0) - r.recorded_amount else 0::numeric end as variance_amount,
   -- Whole days, from a date. Instant arithmetic made a book due today overdue
   -- from 8am, which is not something you can defend to the person being chased.
   case when b.status = 'Out' and b.due_at is not null and b.due_at < current_date
@@ -349,7 +371,13 @@ select
   (b.status = 'Out' and (select nullif(value,'') from config where key = 'FINAL_DEADLINE') is not null
    and b.due_at is not null
    and (select nullif(value,'')::date from config where key = 'FINAL_DEADLINE') < current_date)
-    as past_final
+    as past_final,
+  -- WHO TOOK THE MONEY. settle_book has written settled_by since it existed and
+  -- nothing read it back, so "Handed in RM100" named an amount and no
+  -- counterparty — on the one screen where somebody is checking a figure
+  -- against the person who wrote it. Appended at the END of the column list,
+  -- which is what create or replace view will accept.
+  b.settled_by, b.settled_at
 from books b
 left join agents a on a.agent_id = b.held_by_agent
 left join lateral (

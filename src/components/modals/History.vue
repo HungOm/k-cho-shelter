@@ -86,11 +86,59 @@ const WORDS = {
   return: 'Brought back',
   settle: 'Counted in',
   restock: 'Put back in stock',
+  // Written by acknowledge_books in people.ts, not by the book handlers — which
+  // is why they were missing. Untranslated they rendered as the raw column with
+  // a capital on the front: "Acknowledge_paper", underscore and all.
+  acknowledge: 'Confirmed received',
+  acknowledge_paper: 'Signed for',
+  // Written by tickets.ts, not by the book handlers: an organiser recorded a
+  // sale into this book while it was out with somebody else. Nothing moved, so
+  // it has a `from` and no destination — which is why the office set above is
+  // named one verb at a time rather than inferred from a null.
+  record_for_holder: 'Recorded for the seller',
   lost: 'Reported lost',
   void: 'Cancelled',
   out: 'Marked as out',
   returned: 'Marked as brought back',
   unassigned: 'Marked as back in stock',
+}
+
+/**
+ * THE MOVES THAT END AT THE OFFICE, named one at a time.
+ *
+ * Five of the server's verbs leave to_agent null, and the trail rendered every
+ * one of them as "from JOHN" — a movement with a source and no destination,
+ * which reads as though the book went nowhere or as though the screen lost the
+ * other half. It did not: null IS the destination. Nobody holds the book, and
+ * in this raffle a book nobody holds is in the office, which is what the Books
+ * screen has always called it.
+ *
+ * NAMED RATHER THAN INFERRED FROM "to_agent IS NULL", because two other verbs
+ * have the same null and mean the opposite of it. A book reported lost is not
+ * in the office and neither is a cancelled one, and a trail that said they were
+ * would be confidently wrong about the two books somebody is actually looking
+ * for. Adding a verb to this list is a decision; being added to it by accident
+ * is what this shape prevents.
+ */
+const ENDS_AT_THE_OFFICE = new Set(['return', 'returned', 'settle', 'restock', 'unassigned'])
+
+/**
+ * How a ticket's row came to be written, where that is not the ordinary way.
+ *
+ * `settlement` is the one that changes what a reader should believe: the buyer
+ * was not written down at the table, somebody reconstructed the sale from a
+ * count afterwards, and the name on it is a name nobody checked. The others say
+ * which screen it came from, which answers "why does this row look different
+ * from the ones around it".
+ *
+ * An empty source and one nobody has heard of both render nothing, rather than
+ * a confident sentence about a value this build does not understand.
+ */
+const SOURCE_WORDS = {
+  app: 'entered one ticket at a time',
+  'book sale': 'sold as a whole book',
+  bulk: 'entered from counterfoils in a batch',
+  settlement: 'filled in when the book was counted in — nobody wrote the buyer down at the table',
 }
 
 /** Unknown verbs read as themselves rather than vanishing from the trail. */
@@ -213,11 +261,20 @@ function changeStep(c) {
   // is the one somebody came to this screen to find.
   if (moved && c.fromStatus && c.fromStatus !== 'Available') lines.push(`Was ${statusWord(c.fromStatus)}`)
 
-  if (c.toSeller !== c.fromSeller) {
-    lines.push(c.toSeller
-      ? `Credited to ${c.toSeller}${c.fromSeller ? `, was ${c.fromSeller}` : ''}`
-      : `No longer credited to ${c.fromSeller}`)
-  }
+  /*
+   * WHO THE MONEY IS AGAINST, as a person rather than a name in a sentence.
+   *
+   * The server has always sent fromSellerWho/toSellerWho beside the bare names
+   * — the same zone-and-telephone shape the book's own movements use — and this
+   * screen read only the names. So "Credited to JOHN" on a ticket sat beside
+   * "Given out to Josh (CCFM)" two rows above it, and the one line where
+   * somebody is deciding whose debt this is was the one they could not act on.
+   * There are two sellers called JOHN in this raffle.
+   */
+  const credited = (c.toSeller !== c.fromSeller)
+    ? { to: c.toSellerWho || null, from: c.fromSellerWho || null,
+        toName: c.toSeller, fromName: c.fromSeller }
+    : null
   if (c.toBuyer !== c.fromBuyer) {
     lines.push(c.toBuyer
       ? `Buyer ${buyerWords(c.toBuyer)}${c.fromBuyer ? `, was ${buyerWords(c.fromBuyer)}` : ''}`
@@ -238,10 +295,12 @@ function changeStep(c) {
     kind: 'change', at: c.at, title: moved ? statusWord(c.toStatus) : 'Corrected',
     // Named only where the reader did not arrive holding one ticket.
     ticket: props.ticket ? '' : c.ticket,
-    lines, by: c.by, note: c.note,
+    lines, credited, source: SOURCE_WORDS[c.source] || '', by: c.by, note: c.note,
     // A note this reader may see IS the visible change — saying the details are
     // withheld while printing one of them contradicts itself on the same step.
-    hidden: lines.length === 0 && !c.note,
+    // A credited seller counts as a visible change for the same reason: it is
+    // the one thing on this step that is shown to every role.
+    hidden: lines.length === 0 && !credited && !c.note,
   }
 }
 
@@ -274,6 +333,9 @@ const steps = computed(() => {
     // The same movement as structured people, so the names can carry their
     // zone and be rung. `detail` stays for anything that has no people in it.
     from: h.fromWho || null, to: h.toWho || null,
+    // Only when nobody took it. A verb on this list that DOES name a receiving
+    // agent has a real destination and must say that one instead.
+    toOffice: !h.toWho && ENDS_AT_THE_OFFICE.has(h.action),
     by: h.by, note: h.note,
   }))
   for (const c of changes.value) list.push(changeStep(c))
@@ -374,11 +436,36 @@ const movedAlready = computed(() => {
             <b>{{ s.title }}</b>
             <span v-if="s.ticket" class="muted">{{ s.ticket }}</span>
           </div>
+          <!-- WHOSE SALE IT IS, first and as a person. Everything under it is
+               detail about the ticket; this is the line an organiser settling
+               an argument is looking for, and it is rendered the same way a
+               book's movements render the people in them. -->
+          <div v-if="s.credited" class="who">
+            <template v-if="s.credited.toName">
+              Credited to
+              <a v-if="canContact(s.credited.to)" class="person" :href="contactLink(s.credited.to)"
+                 target="_blank" rel="noopener"
+                 :title="`Message ${s.credited.to.name} on WhatsApp`">{{ personWords(s.credited.to) }}</a>
+              <span v-else class="person plain">{{ personWords(s.credited.to) || s.credited.toName }}</span>
+              <template v-if="s.credited.fromName">, was
+                <span class="person plain">{{ personWords(s.credited.from) || s.credited.fromName }}</span>
+              </template>
+            </template>
+            <template v-else>
+              No longer credited to
+              <span class="person plain">{{ personWords(s.credited.from) || s.credited.fromName }}</span>
+            </template>
+          </div>
           <div v-for="(line, j) in s.lines" :key="j" class="who">{{ line }}</div>
           <div v-if="s.hidden" class="who">
             The buyer's details were changed. You are not shown them on this ticket.
           </div>
           <div v-if="s.by" class="who">Written down by <Who :email="s.by" /></div>
+          <!-- How the row came to be written, under who wrote it, because it
+               qualifies them: "filled in when the book was counted in" is the
+               difference between a name somebody took at the table and a name
+               reconstructed from a count afterwards. -->
+          <div v-if="s.source" class="note-line muted">{{ s.source }}</div>
           <div v-if="s.note" class="note-line">{{ s.note }}</div>
         </template>
 
@@ -405,10 +492,19 @@ const movedAlready = computed(() => {
                    :title="`Message ${s.to.name} on WhatsApp`">{{ personWords(s.to) }}</a>
                 <span v-else class="person plain">{{ personWords(s.to) }}</span>
               </template>
+              <!-- NOT A PERSON, AND NOT STYLED AS ONE. The office is where the
+                   book went; there is nobody to ring about it, and a name-shaped
+                   span would invite somebody to try. -->
+              <template v-if="s.toOffice"> to the office</template>
             </template>
-            <template v-else>{{ s.detail }}</template>
+            <template v-else>
+              {{ s.detail }}<template v-if="s.toOffice"> to the office</template>
+            </template>
           </div>
-          <div v-if="s.by" class="who">by {{ s.by }}</div>
+          <!-- The person, not the address. This row printed by_user raw — "by
+               helper.someone.oct19@gmail.com" — two lines below a sale row that
+               resolved the very same column to a name and a role. -->
+          <div v-if="s.by" class="who">by <Who :email="s.by" /></div>
           <div v-if="s.note" class="note-line">{{ s.note }}</div>
         </template>
       </li>

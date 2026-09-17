@@ -178,6 +178,11 @@ export const refresh = async () => {}
 export const loadDelta = async () => {}
 export const isAdmin = computed(() => false)
 export const bookBlock = () => null
+// The organiser's override asks why; these screens import the predicate that
+// decides whether to ask. Default false: no stub here puts a book in somebody
+// else's hands, and a stub that says yes would make every render demand a reason.
+export const overrideReasonNeeded = () => false
+export const sellOverrideNeeded = () => false
 `
   const { setupOf } = await import('./screen.mjs')
   const { ctx, cleanup } = await setupOf('src/components/modals/SellBook.vue', store, { book: null })

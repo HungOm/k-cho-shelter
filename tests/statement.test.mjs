@@ -45,7 +45,7 @@ function world() {
         first_ticket: 'KS-00001', last_ticket: 'KS-00010' },
       { idx: 2, number: 'Book-002', status: 'Settled', held_by_agent: null,
         settled_by_agent: 'A001', declared_sold: 9, amount_due: 90, amount_paid: 20,
-        settled_at: '2026-09-17T02:00:00.000Z',
+        settled_at: '2026-09-17T02:00:00.000Z', settled_by: 'boss@x.com',
         first_ticket: 'KS-00011', last_ticket: 'KS-00020' },
     ],
     tickets: [
@@ -110,6 +110,65 @@ console.log('3. each kind of line is there, and says which it is')
   eq(byKind('settlement')[0].charge, 90, 'the counted-in book charges what was declared')
   eq(byKind('settlement-cash')[0].credit, 20, 'and credits the cash that came with it')
   eq(byKind('hand')[0].credit, 10, 'a hand-over is its own credit')
+}
+
+console.log('3b. and each one says which book it was against')
+{
+  /*
+   * WHAT THE LINE SAID. payments.book_idx records the book a cash hand-over was
+   * for, and the statement printed the payment's own row id in its place — a
+   * line reading "#41", which identifies a row in a table nobody holding a
+   * statement can open. The code meant to print the book number was there:
+   *
+   *     ref: r.book_idx ? `#${r.id}` : `#${r.id}`
+   *
+   * Both arms of the condition returned the same string, so the branch had
+   * never once run and the defect was invisible to anybody reading it quickly.
+   * Every other line on this statement is referenced by its book; this is the
+   * one that quietly was not.
+   */
+  const w = world()
+  w.db.tables.payments.push({ id: 6, agent_id: 'A001', amount: 30, source: 'hand',
+    method: 'cash', note: '', received_at: '2026-09-18T00:00:00.000Z',
+    received_by: 'admin@x.com', book_idx: 2, reverses: null })
+  const r = await call(w)
+
+  const tagged = r.entries.find((e) => e.kind === 'hand' && e.credit === 30)
+  ok(!!tagged, 'the hand-over is on the statement')
+  eq(tagged.ref, 'Book-002', 'referenced by the book it was against, like every other line')
+
+  // AND THE UNTAGGED ONE STILL HAS SOMETHING TO SAY. A payment against no
+  // particular book keeps the id, which is at least a row somebody with
+  // database access can find — better than a book number invented for it.
+  const loose = r.entries.find((e) => e.kind === 'hand' && e.credit === 10)
+  eq(loose.ref, '#1', 'a hand-over against no book falls back to the payment itself')
+
+  /*
+   * AND WHO TOOK IT. Every line on this statement but one describes a
+   * transaction with two people in it, and the document named one of them —
+   * payments.received_by and books.settled_by were both being selected and
+   * neither reached the browser. A seller querying a figure had to ask an
+   * organiser who they had handed it to.
+   */
+  eq(tagged.by, 'admin@x.com', 'a hand-over names who took the cash')
+  eq(r.entries.find((e) => e.kind === 'settlement').by, 'boss@x.com',
+     'and a count-in names who counted it')
+  eq(r.entries.find((e) => e.kind === 'settlement-cash').by, 'boss@x.com',
+     'including the cash that came with it')
+  // A sale has no counterparty: a ticket sold to a member of the public is
+  // money owed, not money moved between two people in this raffle.
+  ok(!r.entries.find((e) => e.kind === 'sale').by,
+     'a sale names nobody, because there is nobody on the other side of it')
+
+  // A book_idx pointing at a book this query cannot see falls back the same
+  // way, rather than rendering "undefined" into a statement of account.
+  const w2 = world()
+  w2.db.tables.payments.push({ id: 7, agent_id: 'A001', amount: 5, source: 'hand',
+    method: 'cash', note: '', received_at: '2026-09-19T00:00:00.000Z',
+    received_by: 'admin@x.com', book_idx: 9999, reverses: null })
+  const r2 = await call(w2)
+  eq(r2.entries.find((e) => e.kind === 'hand' && e.credit === 5).ref, '#7',
+     'and a book that cannot be resolved does not become the word undefined')
 }
 
 console.log('4. a write-off moves the balance and is never called cash')

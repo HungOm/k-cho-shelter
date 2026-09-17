@@ -37,8 +37,8 @@ console.log('1. the lookup answers the three ways a reader needs')
     user: {
       email: 'Me@Example.com',
       staff: [
-        { email: 'me@example.com', name: 'Hung Om' },
-        { email: 'helper@example.com', name: 'Thang Ling' },
+        { email: 'me@example.com', name: 'Hung Om', role: 'admin' },
+        { email: 'helper@example.com', name: 'Thang Ling', role: 'recorder' },
       ],
     },
   })
@@ -63,15 +63,16 @@ import { reactive, computed } from 'vue'
 export const state = reactive({
   cfg: { currency: 'RM', ticketPrice: 10 }, agents: [], sellMode: 'quick',
   user: { role: 'admin', email: 'me@example.com', staff: [
-    { email: 'me@example.com', name: 'Hung Om' },
-    { email: 'helper@example.com', name: 'Thang Ling' },
+    { email: 'me@example.com', name: 'Hung Om', role: 'admin' },
+    { email: 'helper@example.com', name: 'Thang Ling', role: 'recorder' },
+    { email: 'noname@example.com', name: '', role: 'recorder' },
   ] },
 })
 export const whoIs = (email) => {
   const want = String(email || '').trim().toLowerCase()
   if (!want) return null
-  const name = (state.user.staff || []).find((s) => s.email === want)?.name || ''
-  return { email: want, name, you: state.user.email === want }
+  const row = (state.user.staff || []).find((s) => s.email === want)
+  return { email: want, name: row?.name || '', role: row?.role || '', you: state.user.email === want }
 }
 export const api = async () => ({ book: {}, history: [], tickets: [] })
 export const optimistic = async () => {}
@@ -81,6 +82,11 @@ export const refresh = async () => {}
 export const agentMap = computed(() => ({}))
 export const whereIs = () => null
 export const sellBlock = () => null
+// The organiser's override asks why; these screens import the predicate that
+// decides whether to ask. Default false: no stub here puts a book in somebody
+// else's hands, and a stub that says yes would make every render demand a reason.
+export const overrideReasonNeeded = () => false
+export const sellOverrideNeeded = () => false
 export const bookBlock = () => null
 export const isAdmin = computed(() => true)
 export const isSuper = computed(() => true)
@@ -139,9 +145,44 @@ console.log('4b. the screens that show a recorder hand it the address they hold'
   ok(!/\{\{ t\.by \}\}/.test(sell), 'and no longer prints the raw address itself')
 
   const hist = read('src/components/modals/History.vue')
-  eq((hist.match(/<Who :email="(sale|s)\.by"/g) || []).length, 2,
-     'both places the trail names a recorder go through it')
-  ok(!/Written down by \{\{/.test(hist), 'and neither prints the address raw')
+  // Three: the sale, the ticket's own recorded change, and the book's movement.
+  // The third was the one still printing the address raw — "by
+  // organiser@example.org" — two rows under a sale that resolved the same
+  // column to a name. All three read the same column and now read it the same
+  // way.
+  eq((hist.match(/<Who :email="(sale|s)\.by"/g) || []).length, 3,
+     'all three places the trail names a person go through it')
+  ok(!/Written down by \{\{/.test(hist), 'and none prints the address raw')
+  ok(!/by \{\{ s\.by \}\}/.test(hist), 'including the book movement, which did')
+}
+
+console.log('4c. and so do the screens that show who took money')
+{
+  /*
+   * A→B ON THE MONEY, which was the half these screens did not have. Every row
+   * on the payments ledger and every line on a seller's statement but the sale
+   * describes cash moving from a seller to somebody who took it; both columns —
+   * payments.received_by and books.settled_by — were already being read by the
+   * server and printed by nothing, so a treasurer querying a figure had to ask
+   * an organiser who it had been handed to.
+   *
+   * Read rather than rendered, for the reason at the top of this file: the
+   * harness stubs child components, so a <Who> inside the Money screen comes
+   * back empty and an assertion aimed at the name would pass on the stub.
+   */
+  const money = read('src/components/Money.vue')
+  ok(/<Who v-if="p\.receivedBy" :email="p\.receivedBy" \/>/.test(money),
+     'the payments ledger names who took each one')
+  ok(/<Who :email="e\.by" \/>/.test(money), "and the seller's statement names who took it")
+  ok(/<th>Taken by<\/th>/.test(money), 'under a column that says what it is')
+
+  const sheet = read('src/components/modals/BookDetail.vue')
+  ok(/<Who :email="book\.settledBy" \/>/.test(sheet),
+     'and the book sheet names who counted the money in')
+
+  for (const f of ['src/components/Money.vue', 'src/components/modals/BookDetail.vue']) {
+    ok(/import Who from/.test(read(f)), `${f} imports it rather than printing an address`)
+  }
 }
 
 console.log('5. the names ride along with sign-in, not with every ticket')
@@ -167,6 +208,89 @@ console.log('6. the desk line is not a person, and stops pretending to be one')
   ok(/v-if="a\.agentId" class="chev"/.test(money),
      'and shows no chevron, which is what invited the press')
   ok(/nobody to chase/.test(money), 'it says why instead')
+}
+
+console.log('7. a name says what the person is, in one lowercase word')
+{
+  /*
+   * WHY. "Written down by Amos Hung" answers who to go and ask. It does not
+   * answer why that person and not another, which is the question somebody
+   * reading a queried sale actually has — a helper writing down a desk sale and
+   * a seller handing back their own book are different acts, and the two names
+   * read identically without it.
+   *
+   * RENDERED ON ITS OWN, for the reason stated at the top of this file: the
+   * harness stubs child components, so a RoleTag inside Who comes back empty
+   * and an assertion aimed at the pair would pass on the stub. The word is
+   * checked here; that the screens hand it the right thing is checked below.
+   *
+   * The first attempt at this asserted /helper/ against the whole rendered Who
+   * — which matched helper@example.com, the ADDRESS, and would have passed with
+   * the tag entirely absent.
+   */
+  const tagOf = async (props) =>
+    visibleText(await renderScreen('src/components/ui/RoleTag.vue', store, { props })).trim()
+
+  eq(await tagOf({ role: 'recorder' }), 'helper', 'a recorder is a helper')
+  eq(await tagOf({ role: 'admin' }), 'organiser', 'an admin is an organiser')
+  eq(await tagOf({ role: 'agent' }), 'seller', 'an agent is a seller')
+  eq(await tagOf({ seller: true }), 'seller', 'and so is somebody who carries paper and never signs in')
+
+  const word = await tagOf({ role: 'recorder' })
+  eq(word, word.toLowerCase(), 'lowercase — it qualifies the name rather than joining it')
+  ok(!/Seller who signs in|Can only look/.test(word),
+     'and is its own word, not the label the Access screen uses for choosing a role')
+}
+
+console.log('8. a tag is never invented')
+{
+  /*
+   * THE FAILURE THIS PREVENTS IS A DEPLOY LAG, not a bug. An older Edge
+   * Function sends a staff list with no roles at all — that is exactly what was
+   * live when this was asked for — and a tag guessed from nothing would put a
+   * confident, wrong word after somebody's name on every ticket row.
+   */
+  const tagOf = async (props) =>
+    visibleText(await renderScreen('src/components/ui/RoleTag.vue', store, { props })).trim()
+
+  eq(await tagOf({ role: '' }), '', 'no role means no tag')
+  eq(await tagOf({}), '', 'and neither does nothing at all')
+  eq(await tagOf({ role: 'something_new' }), '', 'nor a role this build has never heard of')
+}
+
+console.log('8b. and the screens hand it the right thing')
+{
+  // The pair cannot be rendered together, so the wiring is read instead.
+  const who = read('src/components/ui/Who.vue')
+  ok(/<RoleTag :role="line\.role"/.test(who), 'Who passes the role it looked up')
+  ok(/role: row\?\.role \|\| ''/.test(read('src/lib/store.js')),
+     'and whoIs carries a role through for it to pass')
+
+  for (const f of ['src/components/modals/BookDetail.vue', 'src/components/SellTicket.vue']) {
+    // `seller`, not a role: somebody who carries paper has no app_users row.
+    ok(/<RoleTag seller \/>/.test(read(f)), `${f} tags the seller as a seller`)
+  }
+}
+
+console.log('9. the top role is not announced on a ticket row')
+{
+  /*
+   * list_users hides the System Admin's row from everybody but its owner. A
+   * directory that tagged them would undo that quietly, so the server reports
+   * the row as an ordinary admin — which is also what it resolves to, the flag
+   * being held outside the database.
+   */
+  const src = read('supabase/functions/api/index.ts')
+  const block = src.slice(src.indexOf('const { data: staffRows }'), src.indexOf('return {', src.indexOf('const { data: staffRows }')))
+  ok(/superadmin'\s*\?\s*'admin'/.test(block),
+     'whoami reports a superadmin row as admin in the staff directory')
+
+  const { ROLE_TAG } = await import('../src/lib/format.js')
+  eq(ROLE_TAG.superadmin, 'organiser', 'and the tag for it says organiser, never the top word')
+  ok(!Object.values(ROLE_TAG).some((w) => /admin/i.test(w)),
+     'no tag says admin at all — the app does not call anybody that')
+  ok(Object.values(ROLE_TAG).every((w) => w === w.toLowerCase()),
+     'every tag is lowercase')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
