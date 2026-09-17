@@ -274,6 +274,100 @@ console.log('5. a book\'s history carries every change to its tickets, and whoev
      'with the telephone number shortened exactly as mask() shortens the live one')
 }
 
+console.log('a function the migrations install matches the one the repo calls canonical')
+{
+  /*
+   * THE GAP THIS CLOSES, raised by another session and real.
+   *
+   * 20260917150000 changed how a closed book's money is READ — it follows
+   * books.settled_by_agent now — while the only thing that WRITES that column
+   * is settle_book, which lives in supabase/functions.sql. `supabase db push`
+   * does not read that file. So the migration set carried the new reading model
+   * and a settle_book from before the column existed.
+   *
+   * SETUP.md applies functions.sql AFTER the migrations, so a clean build built
+   * by following it is fine. The exposure is an EXISTING project updated with
+   * db push alone, which is the ordinary incremental path and the one
+   * production is on. There the new views arrive and the old writer stays, and
+   * nothing fails: a settlement simply stores no seller, and under closed-book
+   * rules that money goes to the desk instead of to whoever sold it. The
+   * seller's line reads zero.
+   *
+   * THE RULE, which is checkable and would have caught it: if a function is
+   * defined both in functions.sql and in any migration, the newest migration
+   * defining it must define it the same way. When they agree, db push alone
+   * leaves the database with the canonical function. When they drift, whether
+   * the database is right depends on somebody having remembered to re-apply a
+   * file — which is not a mechanism.
+   */
+  const { readFileSync, readdirSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const ROOT = fileURLToPath(new URL('../', import.meta.url))
+
+  const bodies = (sql) => {
+    const out = new Map()
+    const re = /create\s+or\s+replace\s+function\s+([a-z_][a-z0-9_]*)\s*\(/gi
+    for (const m of sql.matchAll(re)) {
+      const start = m.index
+      const lang = sql.indexOf('language ', start)
+      if (lang < 0) continue
+      const end = sql.indexOf(';', lang)
+      if (end < 0) continue
+      // Whitespace-insensitive, so reindenting a function is not a failure.
+      out.set(m[1].toLowerCase(), sql.slice(start, end + 1).replace(/\s+/g, ' ').trim())
+    }
+    return out
+  }
+
+  /*
+   * ONE VERSION, ONE MIGRATION. Supabase keys applied migrations by the leading
+   * timestamp, not by the filename, so two files sharing a version are one
+   * migration as far as the database is concerned — the second is recorded as
+   * already applied and silently never runs.
+   *
+   * Nearly shipped here: a migration written in this session was dated
+   * 20260917180000, which a peer's config_defaults.sql already had. Both files
+   * looked fine side by side in the directory.
+   */
+  const versions = new Map()
+  const dupes = []
+  for (const f of readdirSync(join(ROOT, 'supabase/migrations')).filter((x) => x.endsWith('.sql'))) {
+    const v = f.slice(0, f.indexOf('_'))
+    if (versions.has(v)) dupes.push(`${v}: ${versions.get(v)} and ${f}`)
+    else versions.set(v, f)
+  }
+  ok(dupes.length === 0,
+     `no two migrations share a version${dupes.length ? ' — ' + dupes.join('; ') : ''}`)
+
+  const canonical = bodies(readFileSync(join(ROOT, 'supabase/functions.sql'), 'utf8'))
+  ok(canonical.size >= 5, `functions.sql parsed (${canonical.size} functions)`)
+
+  // Newest migration wins, because that is the one db push leaves behind.
+  const newest = new Map()
+  for (const f of readdirSync(join(ROOT, 'supabase/migrations')).filter((x) => x.endsWith('.sql')).sort()) {
+    for (const [name, body] of bodies(readFileSync(join(ROOT, 'supabase/migrations', f), 'utf8'))) {
+      newest.set(name, { body, file: f })
+    }
+  }
+  ok(newest.size > 0, `migrations parsed (${newest.size} functions defined across them)`)
+
+  const drifted = []
+  for (const [name, { body, file }] of newest) {
+    if (!canonical.has(name)) continue
+    if (canonical.get(name) !== body) drifted.push(`${name} (newest in ${file})`)
+  }
+  ok(drifted.length === 0,
+     `every function a migration installs matches functions.sql${drifted.length ? ' — drifted: ' + drifted.join(', ') : ''}`)
+
+  // The specific one that started this, named so a future reader can see the
+  // case rather than only the rule.
+  ok(/settled_by_agent/.test(canonical.get('settle_book') ?? ''),
+     'settle_book writes settled_by_agent in functions.sql')
+  ok(/settled_by_agent/.test(newest.get('settle_book')?.body ?? ''),
+     'and a migration carries that same writer, so db push alone installs it')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)

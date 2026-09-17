@@ -580,7 +580,14 @@ export async function restockBooks(p: Record<string, unknown>, user: AppUser, ct
     status: 'Unassigned', held_by_agent: null,
     issued_at: null, due_at: null,
     declared_sold: null, amount_due: null, amount_paid: null,
-    settled_at: null, settled_by: '', notes: '',
+    // settled_by_agent goes with the rest of the settlement. It is filtered out
+    // today anyway — both the closed-book lateral in agent_money and
+    // desk_money's closed half also require status in ('Settled','Lost'), and
+    // restock sets Unassigned — so leaving it would not move a figure. Cleared
+    // because a row should not carry a claim that is no longer true: the next
+    // person to write a query over settled_by_agent without also checking
+    // status would find a settler on a book that has never been settled.
+    settled_at: null, settled_by: '', settled_by_agent: null, notes: '',
     modified_by: user.email,
   }).in('idx', ids)
 
