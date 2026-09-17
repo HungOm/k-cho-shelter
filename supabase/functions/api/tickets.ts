@@ -276,6 +276,63 @@ async function updateIfUnchanged(
 
 // ============ HANDLERS ============
 
+/**
+ * WHAT A TICKET COSTS, DECIDED BY THE RAFFLE AND NOT BY THE CALLER.
+ *
+ * This was `Number(p.amount ?? cfg.TICKET_PRICE ?? 10)` — the price of a ticket
+ * taken from the request body, unbounded, by whoever was posting it. A seller
+ * could record their own sale at any figure, including a negative one, and the
+ * balance they owe is the sum of those figures. Nothing in the database
+ * disagreed: `tickets.amount` has no check constraint, so -500 was a valid
+ * ticket and a seller who sold ten of them was owed money by the raffle.
+ *
+ * Nobody did it. The point is that the screen never offered the field, so the
+ * only way to reach it was to post the action by hand — which is exactly the
+ * threat an authorisation rule exists for, and it was the one place the money
+ * was taken on trust.
+ *
+ * THE PRICE IS NOW THE CONFIGURED ONE. An organiser may still override it,
+ * because a raffle does discount a book for a church that took twenty, and that
+ * decision is theirs to make and is written to the log by the caller. The
+ * override is bounded either way: never negative, never more than ten times the
+ * configured price, which is a typo guard rather than a policy — a zero-price
+ * sale is a donation and has its own path.
+ */
+const priceFor = (
+  p: Record<string, unknown>,
+  cfg: Record<string, string>,
+  user: AppUser,
+): number => {
+  const listed = Number(cfg.TICKET_PRICE ?? 10)
+  const price = Number.isFinite(listed) && listed >= 0 ? listed : 10
+  if (p.amount === undefined || p.amount === null || p.amount === '') return price
+
+  const asked = Number(p.amount)
+  if (!Number.isFinite(asked)) {
+    throw new ApiError('BAD_AMOUNT', 'That is not an amount.')
+  }
+  if (!user.isAdmin) {
+    if (asked !== price) {
+      throw new ApiError(
+        'PRICE_NOT_YOURS',
+        `A ticket is ${price}. Changing what one costs is an organiser's to do.`,
+      )
+    }
+    return price
+  }
+  if (asked < 0) {
+    throw new ApiError('BAD_AMOUNT', 'A ticket cannot cost less than nothing.')
+  }
+  if (price > 0 && asked > price * 10) {
+    throw new ApiError(
+      'BAD_AMOUNT',
+      `${asked} is more than ten times the ${price} a ticket costs. If that is right, ` +
+      'change the price in Setup first.',
+    )
+  }
+  return asked
+}
+
 export async function sellTicket(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const number = String(p.ticketNumber ?? '').trim()
   if (!number) throw new ApiError('MISSING_FIELD', 'Ticket number is required.')
@@ -314,7 +371,7 @@ export async function sellTicket(p: Record<string, unknown>, user: AppUser, ctx:
     buyer_phone: phone,
     buyer_zone: String(p.buyerZone ?? ''),
     sold_by_agent: heldBy ?? p.agentId ?? user.agentId ?? null,
-    amount: donated ? 0 : Number(p.amount ?? cfg.TICKET_PRICE ?? 10),
+    amount: donated ? 0 : priceFor(p, cfg, user),
     payment_status: String(p.paymentStatus ?? 'Paid'),
     sold_at: new Date().toISOString(),
     source: 'app',

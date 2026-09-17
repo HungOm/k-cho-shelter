@@ -274,6 +274,26 @@ create table if not exists audit_log (
 );
 create index if not exists audit_log_at_idx on audit_log (at desc);
 
+/*
+ * APPEND ONLY, like the other four. This is where every override, forced
+ * settlement, permission change and write-off is recorded — the one record an
+ * administrator would reach for if they wanted something they did to stop
+ * having happened, and the only one of the five that had no trigger.
+ */
+create or replace function audit_log_append_only() returns trigger as $$
+begin
+  raise exception 'audit_log is append only — % is not allowed on it', tg_op
+    using hint = 'A correction is another row saying what was corrected, not an edit to this one.';
+end $$ language plpgsql;
+
+drop trigger if exists audit_log_no_change on audit_log;
+create trigger audit_log_no_change before update or delete on audit_log
+  for each row execute function audit_log_append_only();
+
+drop trigger if exists audit_log_no_truncate on audit_log;
+create trigger audit_log_no_truncate before truncate on audit_log
+  execute function audit_log_append_only();
+
 create table if not exists book_history (
   id           bigserial primary key,
   at           timestamptz not null default now(),

@@ -133,12 +133,53 @@ console.log('with the permissions table overriding')
           ok(b === false, `${action} is super-only and must stay ungrantable (${role}, set ${allowed})`)
         } else if (role === 'admin' && gate.LOCKED_FOR_ADMIN.includes(action)) {
           ok(b === true, `${action} must stay with admins whatever the table says`)
+        } else if (!allowed) {
+          ok(b === false, `${action} / ${role}: a revoking row must always be obeyed`)
         } else {
-          ok(b === allowed, `${action} / ${role}: table said ${allowed}, gate said ${b}`)
+          /*
+           * A GRANTING ROW MAY NOT WIDEN A WRITE, which is the rule that
+           * changed. It used to be final: one row could hand settle_book or
+           * record_payment to `viewer`, the role whose whole definition is that
+           * it changes nothing. set_permission is superadmin-only, so this was
+           * never a path from outside — what it bought was doing it QUIETLY,
+           * leaving a viewer account settling books with nothing on screen or
+           * in the registry to say why.
+           *
+           * Reads stay grantable: they show something, the masking views decide
+           * what is visible whatever the role, and a raffle does want to show a
+           * viewer a report nobody thought of when the registry was written.
+           */
+          const writes = spec.kind !== 'read' && spec.kind !== 'report'
+          const registryAllows = !spec.roles || spec.roles.includes(role) || role === 'admin'
+          const want = writes ? registryAllows : true
+          ok(b === want,
+             `${action} / ${role}: granting row, ${writes ? 'write' : 'read'}, ` +
+             `registry ${registryAllows ? 'allows' : 'does not allow'} — gate said ${b}`)
         }
       }
     }
   }
+}
+
+console.log('and the widening a granting row can no longer do')
+{
+  /*
+   * Stated as the concrete case rather than left to the sweep above, because
+   * this is the one somebody will try: the quietest way to give an account that
+   * cannot change anything the ability to close books and take money.
+   */
+  const viewer = user('viewer', false)
+  for (const action of ['settle_book', 'restock_books', 'record_payment', 'write_off']) {
+    const spec = REGISTRY[action]
+    if (!spec) continue
+    ok(gate.isActionAllowed(action, spec, viewer, { [action]: { viewer: true } }) === false,
+       `${action} cannot be granted to a viewer by a row`)
+  }
+  // And the other direction still works, or the table would be pointless.
+  const recorder = user('recorder', false)
+  ok(gate.isActionAllowed('record_payment', REGISTRY.record_payment, recorder,
+       { record_payment: { recorder: false } }) === false,
+     'taking a capability away from a role that has it still works')
 }
 
 console.log('the super admin comes from the environment, never a row')

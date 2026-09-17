@@ -238,10 +238,23 @@ export const MY_ERRORS = {
   NOT_AVAILABLE: 'မရနိုင်ပါ',
   NOT_RESERVED: 'သိမ်းထားခြင်း မရှိပါ',
   TICKET_VOID: 'ဤလက်မှတ်ကို ပယ်ဖျက်ထားသည်',
+  // The price is the raffle's, not the seller's. Said as "the organiser sets
+  // it" rather than "you are not allowed", because a seller meeting this has
+  // almost certainly hit a stale screen after a price change, not tried
+  // anything: the app sends the price it was given at sign-in.
+  PRICE_NOT_YOURS: 'လက်မှတ်ဈေးကို စီစဉ်သူက သတ်မှတ်သည် — ဈေးပြောင်းလိုပါက စီစဉ်သူကို ပြောပါ',
+  BAD_AMOUNT: 'ငွေပမာဏ မမှန်ပါ',
   NOT_YOUR_BOOK: 'ဤစာအုပ်မှာ သင့်ထံတွင် မရှိပါ',
   BOOK_NOT_ASSIGNED: 'ဤစာအုပ်ကို မထုတ်ပေးရသေးပါ',
   BOOK_CLOSED: 'ဤစာအုပ်ကို ပိတ်ထားပြီးဖြစ်သည်',
   BOOK_WITH_SELLER: 'ဤစာအုပ်သည် ရောင်းသူထံတွင် ရှိနေသည် — အရင် ပြန်အပ်ကြောင်း မှတ်ပါ',
+  // Not a refusal: the organiser MAY do this, and is being asked to say why.
+  // The English underneath carries the rest; this has to read as a question
+  // rather than as a wall, or somebody stops recording the sale at all.
+  REASON_REQUIRED: 'ဤစာအုပ်သည် ရောင်းသူထံတွင် ရှိနေသည် — အဘယ်ကြောင့်ဟု အကြောင်းပြချက် ရေးပါ',
+  // Asking for a book, by somebody whose account is not linked to a seller.
+  // Books are handed to a person, and the record has to name which one.
+  NOT_A_SELLER: 'သင့်အကောင့်ကို ရောင်းသူတစ်ဦးနှင့် ချိတ်ဆက်မထားပါ — စီစဉ်သူကို ပြောပါ',
   BOOKS_NOT_AVAILABLE: 'ဤစာအုပ်များ မရနိုင်ပါ',
   TRANSFER_BLOCKED: 'လွှဲပြောင်း၍ မရပါ',
   MONEY_STILL_OWED: 'ငွေ ကျန်ရှိနေသေးသည် — အရင် ရှင်းပါ',

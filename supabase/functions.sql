@@ -55,9 +55,29 @@ declare
   live integer;
   price numeric;
   written integer := 0;
+  touched integer;
 begin
   live := active_tickets();
   select coalesce(nullif(value, '')::numeric, 10) into price from config where key = 'TICKET_PRICE';
+
+
+  /*
+   * PASS ZERO: TAKE THE LOCKS, IN INDEX ORDER, IN ONE STATEMENT.
+   *
+   * Everything below reads these rows and then writes them, and between those
+   * two moments another session must not be able to sell one. Before this, two
+   * batches naming the same ticket both read 'Available', both passed, and both
+   * wrote — the second overwriting the first buyer's name and telephone number.
+   *
+   * Ordered by idx so that every caller locks the same rows in the same order
+   * whatever order their batch arrived in: overlapping batches queue instead of
+   * deadlocking. Rows that do not exist simply do not lock, and pass one still
+   * reports them as TICKET_NOT_FOUND.
+   */
+  perform 1 from tickets
+   where number in (select trim(s->>'ticketNumber') from jsonb_array_elements(p_sales) s)
+   order by idx
+     for update;
 
   -- Pass one: judge every row, write nothing.
   for sale in select * from jsonb_array_elements(p_sales) loop
@@ -176,7 +196,18 @@ begin
       sold_at = now(),
       source = 'bulk',
       recorded_by = p_user
-    where number = trim(sale->>'ticketNumber');
+    where number = trim(sale->>'ticketNumber')
+      -- Belt to the lock's braces. This cannot be false while the row is held,
+      -- and it is what refuses to overwrite a sale if a later edit ever loses
+      -- the lock: the write finds nothing, and the check below turns a silent
+      -- no-op into an error.
+      and status not in ('Sold', 'Donated', 'Void');
+
+    get diagnostics touched = row_count;
+    if touched = 0 then
+      raise exception 'LOST_RACE: % was sold by somebody else while this batch was being checked',
+        trim(sale->>'ticketNumber') using errcode = 'serialization_failure';
+    end if;
     written := written + 1;
   end loop;
 
@@ -226,6 +257,7 @@ declare
   price numeric;
   sold_numbers text[] := '{}';
   skipped jsonb := '[]'::jsonb;
+  touched integer;
   book_numbers text[] := '{}';
 begin
   live := active_tickets();
@@ -298,7 +330,13 @@ begin
     end if;
   end loop;
 
-  for t in select * from tickets where book_idx = any(idxs) order by idx loop
+  /*
+   * `for update` on the loop's OWN select, so the row that is judged is the row
+   * that is held. Already ordered by idx, so the deadlock-free lock order comes
+   * free here. Without it two sessions selling the same book both read every
+   * stub as available and the second overwrote the first buyer.
+   */
+  for t in select * from tickets where book_idx = any(idxs) order by idx for update loop
     if t.status in ('Sold', 'Donated') then
       skipped := skipped || jsonb_build_object('ticketNumber', t.number, 'reason', 'already sold');
       continue;
@@ -344,7 +382,14 @@ begin
       sold_at = now(),
       source = 'book sale',
       recorded_by = p_user
-    where idx = t.idx;
+    where idx = t.idx
+      and status not in ('Sold', 'Donated', 'Void');
+
+    get diagnostics touched = row_count;
+    if touched = 0 then
+      raise exception 'LOST_RACE: % was sold by somebody else while this book was being sold',
+        t.number using errcode = 'serialization_failure';
+    end if;
 
     sold_numbers := sold_numbers || t.number;
   end loop;

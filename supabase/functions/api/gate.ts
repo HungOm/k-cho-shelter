@@ -98,7 +98,41 @@ export function isActionAllowed(
   if (user.isAdmin && LOCKED_FOR_ADMIN.includes(action)) return true
 
   const override = overrides[action]?.[user.role]
-  if (override === true || override === false) return override
+
+  /*
+   * AN OVERRIDE MAY NARROW. IT MAY NOT WIDEN A WRITE ONTO A ROLE THE REGISTRY
+   * NEVER GAVE IT.
+   *
+   * `allowed = true` used to be final: one row in the permissions table could
+   * hand `settle_book`, `restock_books` or `record_payment` to `viewer` — the
+   * role whose entire definition is that it cannot change anything and sees
+   * masked telephone numbers. The registry, every roles: [...] list in it, and
+   * the reasoning written beside each one, could all be undone by a row.
+   *
+   * That is not a hypothetical escalation path: set_permission is superadmin
+   * only, so it takes the one account that can already do everything. What it
+   * bought was doing it QUIETLY — after the row, an ordinary viewer account
+   * settles books, and nothing on the screen or in the registry says why.
+   *
+   * So a `true` override is honoured only where the registry already allows the
+   * role, which leaves it useful for exactly what it was built for: switching a
+   * capability OFF for a role that has it, and back on again. Widening now
+   * means changing the registry, in a commit, with the reason written down.
+   *
+   * Reads are left alone. `kind: 'read'` and 'report' grant sight of something,
+   * the masking views decide what is visible whatever the role, and a raffle
+   * genuinely does want to show a viewer a report the registry did not think of.
+   */
+  if (override === false) return false
+  if (override === true) {
+    if (!spec.roles) return true
+    if (spec.kind === 'read' || spec.kind === 'report') return true
+    // An admin passes the registry defaults with or without a row, so a row
+    // must not be the thing that takes it away from them.
+    if (user.isAdmin) return true
+    if (spec.roles.includes(user.role)) return true
+    return false
+  }
 
   if (!spec.roles) return true      // any signed-in user
   if (user.isAdmin) return true     // admins pass the registry defaults

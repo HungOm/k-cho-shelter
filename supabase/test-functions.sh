@@ -66,6 +66,9 @@ if [ "$MODE" = docker ]; then
     sleep 1
   done
   P() { docker exec "$NAME" psql -U postgres -d kcho -tAc "$1" 2>&1; }
+  # A second session, in the background, so one can hold a row while the other
+  # tries for it. The concurrency cases below are the only reason this exists.
+  PBG() { docker exec "$NAME" psql -U postgres -d kcho -tAc "$1" >/dev/null 2>&1 & }
   APPLY() { docker cp "$1" "$NAME":/tmp/f.sql >/dev/null &&             docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/f.sql; }
   # Supabase creates these; a bare Postgres does not, and rls.sql grants to them.
   P "do \$\$ begin
@@ -87,6 +90,7 @@ else
       if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
     end \$\$;" >/dev/null 2>&1 || true
   P() { psql -d "$DB" -tAc "$1" 2>&1; }
+  PBG() { psql -d "$DB" -tAc "$1" >/dev/null 2>&1 & }
   APPLY() { psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$1"; }
 fi
 
@@ -669,6 +673,19 @@ ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent='A002'"
 r=$(P "select sell_books('Book-0008',null,null,'Another Buyer','0125558888','',false,'me@x.com','admin',null)")
 ok "$(P "select count(*) from tickets where book_idx=8 and status='Sold' and sold_by_agent='A002'")" "10" "a book out with a seller is still credited to them"
 
+echo "and neither can the record of who did it"
+# audit_log is where an override is written down. Whoever made the override is
+# the person with the most reason to edit it, so the table refuses them the way
+# the four ledgers already do.
+P "insert into audit_log(action,details,email) values ('TEST_OVERRIDE','{\"why\":\"a test\"}'::jsonb,'someone@x.com')" >/dev/null
+r=$(P "update audit_log set email='somebody.else@x.com' where action='TEST_OVERRIDE'")
+has "$r" "append only" "an entry cannot be rewritten to name a different person"
+r=$(P "delete from audit_log where action='TEST_OVERRIDE'")
+has "$r" "append only" "nor deleted"
+r=$(P "truncate audit_log")
+has "$r" "append only" "nor the whole log emptied"
+ok "$(P "select email from audit_log where action='TEST_OVERRIDE'")" "someone@x.com" "and the original entry is untouched"
+
 echo "the ledger cannot be edited or erased"
 P "insert into payments(agent_id,amount,received_by,note) values ('A001',50,'me@x.com','cash at the desk')" >/dev/null
 n0=$(P "select count(*) from payments")
@@ -1024,6 +1041,39 @@ P "update books set held_by_agent='AM' where idx=3" >/dev/null
 #
 # So: a SECOND, empty database, built in the order SETUP.md now gives, from the
 # files as they stand. It is the only case here that runs the migrations at all.
+echo "two tills cannot sell the same ticket"
+# THE RACE THIS CLOSES. Both bulk paths judge every ticket and then write the
+# ones that passed. Before the lock, a second session read 'Available' behind
+# the first session's uncommitted sale, passed its own check, blocked on the
+# write, and then overwrote the first buyer's name and phone the moment the
+# first committed. One ticket, two buyers, and only the second could be
+# telephoned at the draw.
+#
+# So: session A sells a ticket and HOLDS the transaction open for three seconds.
+# Session B tries the same ticket one second in. B must wait for the row, see
+# the sale once A commits, and refuse — not queue behind a stale read.
+P "update books set status='Unassigned', held_by_agent=null where idx=5" >/dev/null
+P "update tickets set status='Available', buyer_name='', buyer_phone='', sold_by_agent=null where book_idx=5" >/dev/null
+PBG "begin; select bulk_record_sales('[{\"ticketNumber\":\"KS-00041\",\"buyerName\":\"First In\",\"buyerPhone\":\"0125550201\"}]'::jsonb,'a@x.com','admin',null,false); select pg_sleep(3); commit;"
+sleep 1
+r=$(P "select bulk_record_sales('[{\"ticketNumber\":\"KS-00041\",\"buyerName\":\"Second In\",\"buyerPhone\":\"0125550202\"}]'::jsonb,'b@x.com','admin',null,false)")
+wait
+has "$r" "ALREADY_SOLD" "the second till is refused rather than overwriting"
+ok "$(P "select buyer_name from tickets where number='KS-00041'")" "First In" "the buyer who got there first is the one on the ticket"
+ok "$(P "select count(*) from ticket_history where ticket_idx=41 and to_status='Sold' and to_buyer in ('First In','Second In')")" "1" "and exactly one of the two tills wrote a buyer"
+
+echo "and neither can two whole-book sales"
+P "update books set status='Unassigned', held_by_agent=null where idx=5" >/dev/null
+P "update tickets set status='Available', buyer_name='', buyer_phone='', sold_by_agent=null where book_idx=5" >/dev/null
+PBG "begin; select sell_books('Book-0005',null,null,'Book First','0125550203','',false,'a@x.com','admin',null,null); select pg_sleep(3); commit;"
+sleep 1
+r=$(P "select sell_books('Book-0005',null,null,'Book Second','0125550204','',false,'b@x.com','admin',null,null)")
+wait
+has "$r" "already sold" "the second seller is told every stub had gone"
+ok "$(P "select count(distinct buyer_name) from tickets where book_idx=5 and status='Sold'")" "1" "one buyer for the whole book, not two"
+ok "$(P "select buyer_name from tickets where number='KS-00041'")" "Book First" "and it is the one who got there first"
+P "update books set status='Out', held_by_agent='A002' where idx=5" >/dev/null
+
 echo "a project built by following SETUP.md comes up"
 if [ "$MODE" = docker ]; then
   docker exec "$NAME" psql -U postgres -d postgres -q -c "create database cleanbuild" >/dev/null 2>&1
