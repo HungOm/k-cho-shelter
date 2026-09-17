@@ -283,10 +283,10 @@ console.log('12. and the screens offer it to the right person, in the right plac
   // whose account is linked to a seller. An organiser can simply take the book.
   ok(/!isAdmin\.value && !!state\.user\?\.agentId/.test(find),
      'Find offers it to a seller and not to an organiser')
-  // AND ONLY FOR A BOOK AN ORGANISER CAN ACTUALLY HAND OVER. issue_books takes
-  // an Unassigned book and nothing else, so anything wider would be a button
-  // whose refusal lands after somebody has agreed to it.
-  ok(/w\?\.status === 'Unassigned'/.test(find), 'and only for a book that is in the office')
+  // AND ONLY FOR A BOOK THAT CAN ACTUALLY BE GIVEN, using the same rule the
+  // issuing screen uses rather than a second copy of it.
+  ok(/isFreeToIssue\(w\)/.test(find), 'and only for a book that is free to hand out')
+  ok(/from '\.\.\/lib\/books\.js'/.test(find), 'imported, not retyped')
   // THE BOOK, NOT THE TICKET: a ticket has no custody of its own.
   ok(/bookNumbers: \[book\.book\]/.test(find), 'it asks for the book the ticket is in')
   // Its own control, like the history button beside it: a row that does several

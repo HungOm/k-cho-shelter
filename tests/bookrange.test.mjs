@@ -117,6 +117,44 @@ console.log('reversed and messy input')
   eq(inspectRange('abc', ''), null, 'letters alone are not a range')
 }
 
+console.log('a book handed back with nothing sold from it is free to hand out')
+{
+  /*
+   * WHAT THIS REPLACES. "Free" was status Unassigned and nothing else, so a
+   * book a seller took, sold nothing from and handed straight back could not be
+   * given to anybody until it had been counted in — a settlement declaring
+   * nought sold — and restocked. Two screens and a signed-off figure, for paper
+   * that never left the desk.
+   *
+   * AND THE HALF THAT MUST NOT SOFTEN: one with sales on it stays shut. Handing
+   * it on carries the first seller's money to the second and takes their debt
+   * off the chase list with nobody deciding it. The server refuses it either
+   * way (integrity.test.mjs); the point of this rule is not to OFFER what will
+   * be refused.
+   */
+  const { isFreeToIssue } = await import('../src/lib/books.js')
+  ok(isFreeToIssue({ status: 'Unassigned' }), 'a book in the office is free')
+  ok(isFreeToIssue({ status: 'Returned', sold: 0 }), 'and so is one handed back untouched')
+  ok(isFreeToIssue({ status: 'Returned' }), 'including one whose count has not loaded as a number')
+  ok(!isFreeToIssue({ status: 'Returned', sold: 3 }), 'but not one with sales recorded on it')
+  ok(!isFreeToIssue({ status: 'Settled', sold: 0 }), 'nor a counted-in book, however empty')
+  ok(!isFreeToIssue({ status: 'Out' }), 'nor one in somebody\'s bag')
+  ok(!isFreeToIssue({ status: 'Lost' }) && !isFreeToIssue({ status: 'Void' }), 'nor a lost or cancelled one')
+  ok(!isFreeToIssue(null), 'and nothing at all is not free')
+
+  // Through the range reader, which is what the issuing screen actually calls.
+  const kept = state.books
+  state.books = [
+    { book: 'Book-101', status: 'Returned', sold: 0, agentId: 'A001', agentName: 'JOHN', available: 10 },
+    { book: 'Book-102', status: 'Returned', sold: 3, agentId: 'A001', agentName: 'JOHN', available: 7 },
+  ]
+  const r = inspectRange('101', '102')
+  eq(r.freeCount, 1, 'the empty one is offered')
+  eq(String(r.free), '101', 'and it is the right one')
+  eq(String(r.taken), '102', 'the part-sold one is not')
+  state.books = kept
+}
+
 console.log('what counts as free depends on the job')
 {
   // Transferring only makes sense for books that are out.

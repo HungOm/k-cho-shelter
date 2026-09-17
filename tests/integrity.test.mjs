@@ -124,6 +124,72 @@ console.log('2. two organisers issuing the same run: the second does not overwri
   eq(gone.table('book_history').length, 0, 'writing nothing')
 }
 
+console.log('2b. a book that came back untouched goes out again without a settlement of nought')
+{
+  /*
+   * WHAT THIS REPLACES. Only an Unassigned book could be issued, so a seller
+   * who took ten books, sold nothing from three and handed those three back had
+   * to have each one counted in — a settlement declaring nought sold — and then
+   * restocked, before anybody else could carry them. Three acts, two screens
+   * and a figure signed off, to move paper that never left the desk.
+   *
+   * AND THE HALF THAT MUST NOT MOVE. A book with sales on it still goes through
+   * the office. Issuing a part-sold book to somebody else carries the first
+   * seller's money to the second and takes their debt off the chase list with
+   * nobody deciding it — the fault that put RM400 on the wrong volunteer across
+   * Books 001, 002, 003 and 116. It is the same condition transferBooks refuses
+   * as BOOK_HAS_SALES, read from the same view, so the two cannot drift.
+   */
+  const w = fakeDb({
+    config: baseConfig(), agents,
+    books: [book(1, { status: 'Returned' }), book(2, { status: 'Returned' })],
+    book_ledger_all: [
+      ledger(1, { status: 'Returned' }),
+      ledger(2, { status: 'Returned', recorded_sold: 3, recorded_amount: 30 }),
+    ],
+  })
+
+  const r = await books.issueBooks({ bookNumbers: ['Book-001'], agentId: 'A002' }, users.admin, w.ctx)
+  eq(r.issued, 1, 'a book handed back with nothing sold from it can be given out again')
+  eq(w.row('books', (b) => b.idx === 1).status, 'Out', 'it goes out')
+  eq(w.row('books', (b) => b.idx === 1).held_by_agent, 'A002', 'to whoever is taking it')
+  eq(w.table('book_history').filter((h) => h.book_idx === 1 && h.action === 'issue').length, 1,
+     'and the handover is on its record')
+
+  const e = await errOf(() =>
+    books.issueBooks({ bookNumbers: ['Book-002'], agentId: 'A002' }, users.admin, w.ctx))
+  eq(e?.code, 'BOOKS_NOT_AVAILABLE', 'one with sales on it is still refused')
+  // The refusal has to say which rule, because "returned" on its own sends
+  // somebody looking for one.
+  ok(/count it in first/.test(e?.details?.blocked?.[0]?.status ?? ''),
+     `and names the way out (got "${e?.details?.blocked?.[0]?.status}")`)
+  eq(w.row('books', (b) => b.idx === 2).status, 'Returned', 'and it did not move')
+
+  // A range that mixes the two leaves nothing half issued, like every other
+  // refusal on this handler.
+  const both = fakeDb({
+    config: baseConfig(), agents,
+    books: [book(1, { status: 'Returned' }), book(2, { status: 'Returned' })],
+    book_ledger_all: [ledger(1, { status: 'Returned' }),
+                      ledger(2, { status: 'Returned', recorded_sold: 3, recorded_amount: 30 })],
+  })
+  eq(await codeOf(() => books.issueBooks(
+       { fromBook: 'Book-001', toBook: 'Book-002', agentId: 'A002' }, users.admin, both.ctx)),
+     'BOOKS_NOT_AVAILABLE', 'a range with one part-sold book in it is refused whole')
+  eq(both.row('books', (b) => b.idx === 1).status, 'Returned', 'the empty one stayed put too')
+  eq(both.table('book_history').length, 0, 'and nothing was written')
+
+  // A SETTLED book is a different case and stays shut: its figures are declared
+  // and its money reconciled, so it is restocked rather than re-issued.
+  const settled = fakeDb({
+    config: baseConfig(), agents,
+    books: [book(1, { status: 'Settled', declared_sold: 0, amount_due: 0, amount_paid: 0 })],
+    book_ledger_all: [ledger(1, { status: 'Settled' })],
+  })
+  eq(await codeOf(() => books.issueBooks({ bookNumbers: ['Book-001'], agentId: 'A002' }, users.admin, settled.ctx)),
+     'BOOKS_NOT_AVAILABLE', 'a counted-in book is restocked first, however empty it was')
+}
+
 // ============ 3. the draw is not ready over what cannot be drawn ============
 
 console.log('3. sales nobody can draw, and requests nobody decided, keep the draw closed')

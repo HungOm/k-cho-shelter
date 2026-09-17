@@ -6,6 +6,7 @@
 import { ref, computed } from 'vue'
 import { state, searchResults, agentMap, whereIs, isSold, isAdmin, api, toast, go } from '../lib/store.js'
 import { STATUS_WORDS } from '../lib/format.js'
+import { isFreeToIssue } from '../lib/books.js'
 import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
 import History from './modals/History.vue'
@@ -89,19 +90,14 @@ function place(t) {
  *
  * AND ONLY FOR A BOOK THAT CAN ACTUALLY BE GIVEN. Asking for one already in
  * somebody's bag produces a refusal at the moment of granting, which is the
- * worst place to discover it.
- *
- * "In the office" and nothing wider, for now. A book brought back with nothing
- * sold from it is physically just as available, and issue_books still refuses
- * it — it has to be counted in and restocked first. Offering it here would be
- * a button whose refusal arrives in front of an organiser who has already said
- * yes. When that rule changes, this widens with it.
+ * worst place to discover it — so the offer follows the same rule the issuing
+ * screen uses.
  */
 const canAsk = computed(() => !isAdmin.value && !!state.user?.agentId)
 
 function askable(t) {
   const w = whereIs(t)
-  return canAsk.value && w?.status === 'Unassigned' ? w : null
+  return canAsk.value && !!w && isFreeToIssue(w) ? w : null
 }
 
 const asking = ref('')

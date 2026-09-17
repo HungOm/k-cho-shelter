@@ -168,7 +168,30 @@ export function holderLabel(book) {
  * @param isFree      what counts as available for this job
  * @returns { count, free, taken, missing, holders, message, nextRun }
  */
-export function inspectRange(from, to, isFree = b => b.status === 'Unassigned') {
+/**
+ * WHAT COUNTS AS FREE TO HAND OUT, which is no longer just "in the office".
+ *
+ * A book that came back with nothing sold from it can go straight out again —
+ * see issueBooks in books.ts, which reads the same condition off the ledger.
+ * Until then it had to be counted in with a settlement declaring nought sold
+ * and then restocked, which is two screens and a signed-off figure to move
+ * paper that never left the desk.
+ *
+ * WITH SALES ON IT, NO, and this is the half that must not soften. Handing a
+ * part-sold book to somebody else carries the first seller's money to the
+ * second and takes their debt off the chase list with nobody deciding it.
+ *
+ * `sold` on a book row is counted_sold, which for a Returned book is the count
+ * of tickets actually written down in it. Absent or nought means untouched.
+ *
+ * A COURTESY, like every other client-side rule here: the server decides, and
+ * offering a book it would refuse is the wasted typing this exists to remove.
+ */
+export const isFreeToIssue = (b) =>
+  b?.status === 'Unassigned' ||
+  (b?.status === 'Returned' && !Number(b?.sold || 0))
+
+export function inspectRange(from, to, isFree = isFreeToIssue) {
   const cfg = state.cfg
   const a = parseInt(String(from ?? '').replace(/\D/g, ''), 10)
   const bRaw = String(to ?? '').replace(/\D/g, '')
@@ -237,12 +260,14 @@ function buildMessage(taken, missing, free, holders, count) {
  * them everything, and a run is also how books are actually handed over — one
  * unbroken stretch to one person.
  *
- * "Free" is status Unassigned only. A Returned or Settled book is physically
- * back in the office but cannot be handed out again until it is restocked, and
- * offering it here would produce a refusal at save time — which is exactly the
- * wasted typing this is meant to remove.
+ * "Free" is isFreeToIssue: in the office, or handed back with nothing sold from
+ * it. A Settled book is not — its figures are declared and its money
+ * reconciled, so it is restocked rather than re-issued — and neither is a
+ * Returned book with sales on it, which has to be counted in first. Offering
+ * either here would produce a refusal at save time, which is exactly the wasted
+ * typing this is meant to remove.
  */
-export function freeRuns(isFree = b => b.status === 'Unassigned') {
+export function freeRuns(isFree = isFreeToIssue) {
   if (!state.books.length) return { runs: [], total: 0 }
   const sorted = [...state.books].sort((x, y) => num(x.book) - num(y.book))
   const runs = []

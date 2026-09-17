@@ -85,14 +85,53 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
   const { data: books } = await ctx.supabaseAdmin
     .from('books').select('idx,number,status,held_by_agent').in('idx', idxs).order('idx')
 
+  /*
+   * A BOOK THAT CAME BACK UNTOUCHED CAN GO STRAIGHT OUT AGAIN.
+   *
+   * Until now only an Unassigned book could be issued, so a seller who took ten
+   * books, sold nothing from three of them and handed those three back had to
+   * have them counted in — a settlement of nought — and restocked before
+   * anybody else could carry them. Three acts, two screens and a figure signed
+   * off, to move paper that never left the desk.
+   *
+   * WITH SALES ON IT, NO. That is the rule transferBooks already states and
+   * enforces as BOOK_HAS_SALES: handing a part-sold book to somebody else
+   * carries the first seller's money to the second, and the first seller's debt
+   * leaves the chase list with nobody deciding it. It is the fault that put
+   * RM400 on the wrong volunteer across Books 001, 002, 003 and 116. So the
+   * same view column and the same condition are read here, rather than a second
+   * rule that can drift from it.
+   *
+   * The empty ones are collected separately because the write treats them
+   * separately: its status predicate is what makes the update its own
+   * concurrency check, and 'Unassigned' and 'Returned' are different values.
+   */
+  const { data: ledger } = await ctx.supabaseAdmin
+    .from('book_ledger_all').select('idx,recorded_sold').in('idx', idxs)
+  const soldIn = new Map((ledger ?? []).map(
+    (r: { idx: number; recorded_sold: number | null }) => [Number(r.idx), Number(r.recorded_sold ?? 0)]))
+  const emptyReturned = new Set<number>()
+
   // Every book checked before any is written, so a range that is half
   // unavailable leaves nothing half issued.
   const blocked = []
   for (const b of books ?? []) {
     if (b.idx > liveBooks) {
       blocked.push({ book: b.number, status: 'not released yet', agentId: '' })
-    } else if (b.status !== 'Unassigned' && !p.force) {
-      blocked.push({ book: b.number, status: String(b.status).toLowerCase(), agentId: b.held_by_agent ?? '' })
+    } else if (b.status === 'Unassigned') {
+      // free
+    } else if (b.status === 'Returned' && (soldIn.get(Number(b.idx)) ?? 0) === 0) {
+      emptyReturned.add(Number(b.idx))
+    } else if (!p.force) {
+      blocked.push({
+        book: b.number,
+        // Named for what to DO about it, not merely for what it is. "returned"
+        // on its own sends somebody to look for a rule; this says which one.
+        status: b.status === 'Returned'
+          ? 'brought back with sales on it — count it in first'
+          : String(b.status).toLowerCase(),
+        agentId: b.held_by_agent ?? '',
+      })
     }
   }
   if (blocked.length) {
@@ -144,10 +183,9 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
   const { data: changed, error } = await ctx.supabaseAdmin.rpc('issue_books_tx', {
     p_idxs: idxs,
     // A book brought back with nothing sold out of it is free to go again
-    // although its status says Returned. That judgement is being added
-    // separately; the function takes the list so landing it is a one-line
-    // change here rather than another rewrite of the write path.
-    p_empty_returned: [],
+    // although its status says Returned. Collected above, from the same ledger
+    // column transferBooks reads, so the two rules cannot drift apart.
+    p_empty_returned: [...emptyReturned],
     p_agent_id: agentId,
     p_due_at: dueAt,
     p_user: user.email,
