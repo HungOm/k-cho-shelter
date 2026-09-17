@@ -51,12 +51,34 @@ setEnv({ SUPER_ADMIN_EMAIL: 'boss@x.com' })
 const D = await loadModule('deadlines.ts')
 const T = await loadModule('tickets.ts')
 
-/** A day n days from today, as the app writes them. */
+/*
+ * ANCHORED ON THE APP'S OWN today(), NOT ON THIS MACHINE'S CLOCK.
+ *
+ * The obvious version of this helper — new Date(), setHours(0,0,0,0),
+ * setDate(+n) — builds days in whatever timezone the runner happens to be in.
+ * The app does not: deadlines.ts works in the raffle's zone, Asia/Singapore, so
+ * that "today" means the day it is where the books are rather than the day it is
+ * on the server. Those two agree on a laptop in Malaysia and disagree in CI,
+ * which runs UTC — and for the eight hours after 16:00 UTC it is already
+ * tomorrow where the raffle is, so every date built here lands a day out and the
+ * grace-period arithmetic comes back off by one.
+ *
+ * THAT IS NOT HYPOTHETICAL AND IT COST A DAY'S DEPLOYS. On 2026-09-17 the Pages
+ * workflow began failing at 16:43 UTC on `Run tests` and published nothing after
+ * 14:12, while the same suite was green on every machine anybody checked it on.
+ * Six commits sat on master looking deployed, including the fix for a seller
+ * being refused their own book. The failure was not in any of them: this helper
+ * had been fragile since it was written and had simply never been run in the
+ * part of the day where it breaks.
+ *
+ * Deriving from D.today() means the test cannot disagree with the code about
+ * what day it is, because it is asking the code.
+ */
 const day = (n) => {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() + n)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const [y, m, d] = D.today().split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1, d))
+  t.setUTCDate(t.getUTCDate() + n)
+  return t.toISOString().slice(0, 10)
 }
 
 const agents = [
