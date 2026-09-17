@@ -59,10 +59,33 @@ select 'DESTROYING: '
   || (select count(*) from ticket_history) || ' ticket history rows, '
   || (select count(*) from book_history)   || ' book history rows, '
   || (select count(*) from payments)       || ' payments, '
+  -- Empty today and not for much longer. Somebody confirming a reset should be
+  -- told what the money journal holds, not only what payments holds.
+  || (select count(*) from money_entries)   || ' journal entries, '
+  || (select count(*) from ticket_movements)|| ' custody movements, '
   || (select count(*) from agents)         || ' sellers, '
   || (select count(*) from winners)        || ' winners' as about_to_go;
 
 -- ---- 1. THE GUARDS COME OFF, IN THE OPEN ---------------------------------
+-- audit_log joined this list on 17 September, when it was given the same
+-- append-only triggers the other four already had. It is deleted below like
+-- everything else, and a BEFORE DELETE trigger refuses that outright — so
+-- without this line the whole reset raises and rolls back at the audit_log
+-- delete, having destroyed nothing but having got nowhere either.
+alter table audit_log       disable trigger user;
+-- THE TWO LEDGERS ADDED ON 18 SEPTEMBER, here for two different reasons.
+-- ticket_movements references tickets(idx) with no on-delete clause, so once it
+-- holds a row `delete from tickets` below is REFUSED and the reset stops —
+-- verified: "Key (idx)=(1) is still referenced from table ticket_movements".
+-- money_entries has no foreign key and would simply survive, carrying the last
+-- raffle's money into the new one, which is worse: nothing fails and the
+-- figures are just wrong.
+--
+-- Both are empty today because nothing writes either of them yet. That is
+-- exactly why the line is easy to forget, and why it is written now rather than
+-- the morning after the backfill runs.
+alter table ticket_movements disable trigger user;
+alter table money_entries    disable trigger user;
 alter table payments        disable trigger user;
 alter table ticket_history  disable trigger user;
 alter table book_history    disable trigger user;
@@ -76,8 +99,11 @@ delete from winners;
 delete from prizes;
 delete from prize_types;
 delete from payments;
+delete from money_entries;
 delete from ticket_history;
 delete from book_history;
+-- Before tickets, which it references.
+delete from ticket_movements;
 delete from round_snapshots;
 delete from check_in_reports;
 delete from check_in_dates;
@@ -227,6 +253,9 @@ begin
 end $$;
 
 -- ---- 5. THE GUARDS GO BACK ON --------------------------------------------
+alter table audit_log       enable trigger user;
+alter table ticket_movements enable trigger user;
+alter table money_entries    enable trigger user;
 alter table payments        enable trigger user;
 alter table ticket_history  enable trigger user;
 alter table book_history    enable trigger user;
