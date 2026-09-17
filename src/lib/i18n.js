@@ -274,6 +274,7 @@ export const MY_ERRORS = {
   // စာအုပ် (book), ပြောင်းလဲ (changed), ထပ်ပို့ (send again).
   REPORT_STALE: 'ဤအစီရင်ခံစာ ပို့ပြီးနောက် စာအုပ်အခြေအနေ ပြောင်းလဲသွားသည် — ဘာမျှ မပြောင်းလဲပါ၊ ထပ်မံ ပို့ပါ',
   TRANSFER_BLOCKED: 'လွှဲပြောင်း၍ မရပါ',
+  BOOK_NOT_WHOLE: 'ဤစာအုပ်သည် မပြည့်စုံတော့ပါ — လက်မှတ်အချို့ ရောင်းပြီးဖြစ်သည်။ ကျန်လက်မှတ်များကို တစ်ခုချင်း ရောင်းပါ',
   MONEY_WOULD_BE_LOST: 'စာရင်းသွင်းထားသည့် ငွေပမာဏသည် လက်မှတ်များတွင် မှတ်တမ်းတင်ထားသည်ထက် ပိုများနေသည် — ကျန်ငွေ ပျောက်သွားမည်',
   // Uploading a logo. Short on purpose: the English underneath carries the
   // detail, and these are read by an organiser at a desk, not in the field.

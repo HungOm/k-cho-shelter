@@ -263,6 +263,7 @@ declare
   skipped jsonb := '[]'::jsonb;
   touched integer;
   book_numbers text[] := '{}';
+  part_sold integer;
 begin
   live := active_tickets();
   select coalesce(nullif(value, '')::numeric, 10) into price from config where key = 'TICKET_PRICE';
@@ -331,6 +332,37 @@ begin
         'code', 'BOOK_WITH_SELLER',
         'message', 'Book ' || b.number || ' is out with a seller, so it is not here to sell. ' ||
                    'If it is back, ask an organiser to mark it returned first.'));
+    end if;
+
+    /*
+     * A WHOLE BOOK MEANS A WHOLE BOOK.
+     *
+     * The loop below skips tickets that are already sold and sells the rest, so
+     * a book with 8 of its 10 gone was sold "whole" to a buyer who got two
+     * stubs. Nothing said so: the sale reported 2 sold and 8 skipped, and the
+     * screen offered the button as though the book were untouched.
+     *
+     * A whole-book sale is one act with one buyer, one price and one receipt.
+     * If somebody wants the two that are left they are selling two tickets,
+     * which the Sell screen does properly — it names them and prices them.
+     *
+     * Refused here rather than filtered, because the caller asked for a book
+     * and there is no book to give them. Selling them the remainder is
+     * answering a different question from the one they asked.
+     */
+    -- `tk`, not `t`: this function already declares a RECORD variable called t
+    -- for the loop below, and `from tickets t` binds to that variable instead
+    -- of aliasing the table. It is not assigned yet here, so every call raised
+    -- "record t is not assigned yet" — a body that compiled and could not run,
+    -- which is the same shape as the idx shadowing in the offer functions.
+    select count(*) into part_sold from tickets tk
+     where tk.book_idx = b.idx and tk.status in ('Sold', 'Donated');
+    if part_sold > 0 then
+      return jsonb_build_object('error', jsonb_build_object(
+        'code', 'BOOK_NOT_WHOLE',
+        'message', 'Book ' || b.number || ' is not whole — ' || part_sold ||
+                   ' of its tickets are already sold. A whole-book sale is for a book ' ||
+                   'nobody has sold from. Sell the remaining tickets one at a time instead.'));
     end if;
   end loop;
 

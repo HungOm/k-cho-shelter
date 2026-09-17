@@ -156,10 +156,20 @@ echo "a duplicate inside one batch is caught"
 r=$(P "select bulk_record_sales('[{\"ticketNumber\":\"KS-00006\",\"buyerName\":\"A\",\"buyerPhone\":\"0125550100\"},{\"ticketNumber\":\"KS-00006\",\"buyerName\":\"B\",\"buyerPhone\":\"0125550101\"}]'::jsonb,'admin@x.com','admin',null,false)")
 has "$r" "DUPLICATE_IN_BATCH" "the same ticket twice is refused"
 
-echo "a whole-book sale skips rather than overwrites"
+echo "a whole-book sale refuses rather than selling what is left"
+# THIS USED TO SELL THE REMAINDER. Two of Book-0001's ten were already gone, and
+# the whole-book sale took the other eight and reported the two as skipped — so
+# somebody who asked for a book got eight stubs, and the only trace was a
+# "skipped" list nobody reads. The raffle's owner asked for the button to be
+# unavailable on a book that is not whole; this is the same rule at the only
+# place that can actually enforce it.
+#
+# The earlier buyer surviving is still asserted, because that was never the
+# problem and a refusal must not undo it either.
 r=$(P "select sell_books('Book-0001',null,null,'Ma Hlaing','0125550999','',false,'admin@x.com','admin',null)")
-has "$r" '"sold": 8'      "eight of ten sold"
-has "$r" "already sold"   "and the other two reported as already sold"
+has "$r" "BOOK_NOT_WHOLE"  "a part-sold book cannot be sold whole"
+has "$r" "already sold"    "and it says how many of its tickets are gone"
+ok "$(P "select count(*) from tickets where book_idx=1 and buyer_name='Ma Hlaing'")" "0" "nobody got the remainder"
 ok "$(P "select buyer_name from tickets where number='KS-00001'")" "Ma Nu" "the earlier buyer's name survives"
 
 echo "agents can only reach their own books"
@@ -1261,6 +1271,31 @@ has "$r" "already sold" "the second seller is told every stub had gone"
 ok "$(P "select count(distinct buyer_name) from tickets where book_idx=5 and status='Sold'")" "1" "one buyer for the whole book, not two"
 ok "$(P "select buyer_name from tickets where number='KS-00041'")" "Book First" "and it is the one who got there first"
 P "update books set status='Out', held_by_agent='A002' where idx=5" >/dev/null
+
+echo "a book that is not whole cannot be sold whole"
+# WHAT THIS STOPS. sell_books skipped tickets that were already sold and sold
+# the rest, so a book with 8 of its 10 gone was sold "whole" to somebody who got
+# two stubs. The sale reported 2 sold and 8 skipped and nobody read it; the
+# screen offered the button as though the book were untouched.
+#
+# A whole-book sale is one act, one buyer, one price, one receipt. Selling the
+# caller the remainder answers a different question from the one they asked.
+P "update books set status='Unassigned', held_by_agent=null, offered_to_agent=null where idx=3" >/dev/null
+P "update tickets set status='Available', buyer_name='', buyer_phone='', sold_by_agent=null, amount=null, payment_status='', sold_at=null where book_idx=3" >/dev/null
+# One ticket sold out of ten is enough to make it not whole.
+P "select bulk_record_sales('[{\"ticketNumber\":\"KS-00021\",\"buyerName\":\"Early Bird\",\"buyerPhone\":\"0125550301\"}]'::jsonb,'me@x.com','admin',null,false)" >/dev/null
+ok "$(P "select count(*) from tickets where book_idx=3 and status='Sold'")" "1" "one of its ten is gone"
+r=$(P "select sell_books('Book-0003',null,null,'Whole Buyer','0125550302','',false,'me@x.com','admin',null,null)")
+has "$r" "BOOK_NOT_WHOLE" "the whole-book sale is refused"
+has "$r" "1 of its tickets are already sold" "and it says how many, so the number is not a guess"
+ok "$(P "select count(*) from tickets where book_idx=3 and buyer_name='Whole Buyer'")" "0" "nothing was sold to the buyer who asked for a book"
+ok "$(P "select buyer_name from tickets where number='KS-00021'")" "Early Bird" "and the ticket that was already gone is untouched"
+
+echo "but a book nobody has sold from still sells whole"
+P "update tickets set status='Available', buyer_name='', buyer_phone='', sold_by_agent=null, amount=null, payment_status='', sold_at=null where book_idx=3" >/dev/null
+r=$(P "select sell_books('Book-0003',null,null,'Whole Buyer','0125550302','',false,'me@x.com','admin',null,null)")
+ok "$(P "select count(*) from tickets where book_idx=3 and buyer_name='Whole Buyer'")" "10" "all ten go to the one buyer"
+P "update books set status='Out', held_by_agent='A001' where idx=3" >/dev/null
 
 echo "a book offered is a book on nobody's balance"
 # THE HANDSHAKE THAT ONLY EXISTED IN ONE DIRECTION. A seller could ASK for books

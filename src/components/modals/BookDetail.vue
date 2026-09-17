@@ -94,6 +94,27 @@ const canPrintReceipt = computed(() =>
 const blocked = computed(() => bookBlock(props.book))
 
 /**
+ * A WHOLE-BOOK SALE NEEDS A WHOLE BOOK.
+ *
+ * The button only asked whether any ticket was still available, so a book with
+ * 8 of its 10 gone offered "Sell it whole" — and the server sold the remaining
+ * two to somebody who had asked for a book, reporting the other eight as
+ * skipped. One act, one buyer, one price and one receipt is what a whole-book
+ * sale means; two stubs out of a book is not that.
+ *
+ * The server refuses it now as BOOK_NOT_WHOLE, which is where the rule has to
+ * live. This is so the control is not offered in the first place — disabled
+ * with the reason on it, which is this file's own rule about the difference
+ * between hiding a button and explaining one.
+ */
+const notWhole = computed(() => Number(props.book?.sold || 0) > 0
+  ? `${props.book.sold} of its tickets are already sold`
+  : '')
+
+/** Either reason, whichever applies, for the one control that has both. */
+const cannotSellWhole = computed(() => blocked.value || notWhole.value)
+
+/**
  * THE WAY BACK OUT, ON THE BOOK IT IS ABOUT.
  *
  * Putting a book back on the shelf has existed on the server since the
@@ -246,8 +267,8 @@ const showHistory = ref(false)
            people for no stated reason; letting them press it makes the server
            refuse after they have committed to the action. Disabled with the
            reason on it is the only one of the three that tells them anything. -->
-      <button v-if="book.available" class="btn" :disabled="!!blocked"
-              :title="blocked ? `Cannot sell — ${blocked}` : undefined"
+      <button v-if="book.available" class="btn" :disabled="!!cannotSellWhole"
+              :title="cannotSellWhole ? `Cannot sell it whole — ${cannotSellWhole}` : undefined"
               @click="emit('sell-book', book)">
         Sell it whole
       </button>

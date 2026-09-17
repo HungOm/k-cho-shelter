@@ -65,8 +65,19 @@ ok(/export function sellBlock\(ticket\) \{\s*return bookBlock\(whereIs\(ticket\)
    'sellBlock delegates rather than restating the rule')
 
 console.log('the book sheet shows the control, disabled, with the reason')
-ok(/:disabled="!!blocked"/.test(detail), '"Sell it whole" is disabled when blocked')
-ok(/:title="blocked \?/.test(detail), 'and carries the reason')
+/*
+ * TWO REASONS NOW, THROUGH ONE BINDING. The control is disabled when this
+ * person may not sell from the book (bookBlock, unchanged) OR when the book is
+ * not whole — 8 of its 10 already gone, so there is no book to sell. Asserted
+ * as "the binding carries both" rather than by pinning the old name, which
+ * would fail for the second reason existing.
+ */
+ok(/:disabled="!!cannotSellWhole"/.test(detail), '"Sell it whole" is disabled when it cannot be sold whole')
+ok(/:title="cannotSellWhole \?/.test(detail), 'and carries the reason')
+ok(/cannotSellWhole = computed\(\(\) => blocked\.value \|\| notWhole\.value\)/.test(detail),
+   'and it is the permission rule OR the not-whole rule, not one replacing the other')
+ok(/Number\(props\.book\?\.sold \|\| 0\) > 0/.test(detail),
+   'not whole means any ticket already sold, read from the book rather than guessed')
 ok(/v-if="book\.available"/.test(detail),
    'still shown whenever the book has tickets — not hidden from a helper')
 ok(/bookBlock\(props\.book\)/.test(detail), 'asked of the real rule, not re-derived')
