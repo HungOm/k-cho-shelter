@@ -75,7 +75,31 @@ screen.
    — that is recoverable. It is that a clean checkout of master plus `db push`
    then builds a database MISSING objects the deployed function assumes.
 
-3. **The deploy is current, in this order.** Each step depends on the one
+3. **Check that the reset still knows about every table.** `tests/run.sh` runs
+   `resetcovers.test.mjs` on every commit, so if the suite is green this is
+   already true — read it anyway if you are about to run the reset by hand:
+
+   ```
+   node tests/resetcovers.test.mjs
+   ```
+
+   Two kinds of change put `reset.sql` out of date and nothing links the files.
+   A table that gains an **append-only trigger** makes the whole run raise, and
+   it rolls back cleanly, so nothing is half destroyed — the cost is that the
+   reset simply does not happen, discovered after the backup with everyone told
+   to stop touching the system. `audit_log` was exactly this for a day. A table
+   that is merely **created** and never added to the delete list SURVIVES: no
+   error, nothing rolls back, and the last raffle's rows sit in the new one.
+   `money_entries` was exactly this, with no foreign key to refuse it, so the
+   money journal would have carried over with the figures quietly wrong.
+
+   The second is the one to fear. The first fails loudly; the second succeeds.
+
+   If you change `reset.sql` to prove something, change a COPY in a scratch
+   directory. Several sessions share this tree and breaking the real file to
+   test a check has already destroyed another session's uncommitted work.
+
+4. **The deploy is current, in this order.** Each step depends on the one
    before it:
 
    **Look at what the push will apply before applying it:**
@@ -99,6 +123,16 @@ screen.
    git push                                           # deploys the browser app
    ```
 
+   **MIGRATIONS FIRST, FUNCTION SECOND, RESET LAST**, and the order is not a
+   preference. `master` has code calling `issue_books_tx`, `return_books_tx`,
+   `transfer_books_tx` and `restock_books_tx`; a production that has not had the
+   migrations has none of them, so deploying the function first stops issuing a
+   book altogether — worse than a screen that misreads, because it refuses the
+   thing organisers do most. And the reset itself now clears `ticket_movements`
+   and `money_entries`, which the pending migrations are what create: run it
+   against today's database and it fails on a missing table.
+   `supabase/DEPLOY-PENDING.md` has the full state of that gap.
+
    `rls.sql` was missing from this list until 17 September, and it is not
    optional here for the same reason it is not optional in SETUP.md: the money
    views — `agent_money`, `book_ledger_all`, `book_ledger` — live in it, not in
@@ -110,7 +144,7 @@ screen.
    from the shared working tree. Both of 17 September's production faults came
    through that door.
 
-4. **Take a backup and check you can read it.**
+5. **Take a backup and check you can read it.**
 
    ```
    ./supabase/backup.sh
@@ -124,7 +158,7 @@ screen.
    exist — which the reset leaves alone. If the schema is ever lost as well, the
    rebuild is `schema.sql`, `functions.sql`, `rls.sql`, then the CSVs.
 
-5. **Tell the volunteers.** Anybody with the app open will see their books
+6. **Tell the volunteers.** Anybody with the app open will see their books
    vanish. Better they hear it first.
 
 ## Running it
