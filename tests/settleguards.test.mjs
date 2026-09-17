@@ -44,8 +44,18 @@ ok(/state\.byNumber\[x\.num\]\.book !== props\.book\.book/.test(src),
 // Matched as a SET rather than as one exact string: the list of things that
 // block the save grows, and pinning its spelling makes every addition look like
 // a regression. What matters is that each one is in there.
+//
+// READ OFF THE SAVE BUTTON, not off the first :disabled in the file. It was the
+// first one, and the footer now holds a second control — "Mark it brought back",
+// for a book with nothing sold in it — which is disabled on `busy` alone and
+// legitimately so. That harmless button became the one this read, and three
+// guards that had not moved reported as missing. An assertion about which
+// button carries the guards has to say which button it is looking at.
 {
-  const disabled = (src.match(/:disabled="busy[^"]*"/) || [''])[0]
+  const at = src.indexOf('@click="settle"')
+  ok(at > 0, 'the save button is in the template')
+  const button = src.slice(src.lastIndexOf('<button', at), at)
+  const disabled = (button.match(/:disabled="[^"]*"/) || [''])[0]
   for (const guard of ['unresolved.length', 'wrongBook.length', 'alreadySold.length']) {
     ok(disabled.includes(guard), `${guard} blocks the save (${disabled})`)
   }

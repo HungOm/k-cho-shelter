@@ -25,7 +25,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { renderScreen, visibleText } from './screen.mjs'
+import { renderScreen, setupOf, visibleText } from './screen.mjs'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -190,6 +190,167 @@ console.log('5. no action is registered on the server that nothing can call')
   const wired = Object.keys(NO_SCREEN_YET).filter((a) => named.has(a))
   ok(wired.length === 0,
      `nothing on the not-built-yet list is actually built — remove: ${wired.join(', ')}`)
+}
+
+console.log('6. and the trap is not walked into again: nothing sold is not a count-in')
+{
+  /*
+   * THE SAME FREEZE, REPORTED FROM THE OTHER END, after everything above
+   * shipped. A book came back with every ticket still in it. It was counted in
+   * — nothing sold, nothing handed in, "Finished · RM0", which is what the
+   * screen asked for and what the screen said. All ten tickets froze with the
+   * book, and the person holding them could not sell one.
+   *
+   * Sections 1 to 4 are the way out and the reason. This is the way IN, and it
+   * is the half that matters more: the count-in was offered as the thing to do
+   * at the one moment it was the wrong thing. There was no money to reconcile,
+   * so it recorded nothing and cost ten sellable tickets.
+   *
+   * What is pinned is that the screen offers bringing the book back instead —
+   * one act, no approval, and the tickets stay sellable — and that it says what
+   * counting in would do before anybody presses it.
+   */
+  const TICKETS = Array.from({ length: 10 }, (_, i) => ({
+    number: 'KS-0' + (5051 + i), book: 'Book-506', status: 'Available',
+    name: '', phone: '', source: '',
+  }))
+  const settleStore = `
+import { reactive } from 'vue'
+export const state = reactive({
+  cfg: { ticketsPerBook: 10, ticketPrice: 10, currency: 'RM',
+         ticketPrefix: 'KS-', ticketDigits: 5, bookPrefix: 'Book-', bookDigits: 3 },
+  tickets: ${JSON.stringify(TICKETS)},
+  byNumber: ${JSON.stringify(Object.fromEntries(TICKETS.map((t) => [t.number, t])))},
+})
+export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
+export const api = async (action, payload) => { globalThis.__call = [action, payload]; return {} }
+export const toast = () => {}
+export const refresh = async () => {}
+export const loadDelta = async () => {}
+`
+  const OUT = { book: 'Book-506', agentName: 'Kee Thang', status: 'Out' }
+
+  const { ctx, cleanup } = await setupOf('src/components/modals/SettleBook.vue', settleStore, { book: OUT })
+  ctx.wholeBookBack()
+  ok(ctx.sold.value === 0, 'the whole book came back, so nothing sold')
+  ok(ctx.nothingSold.value, 'and the screen knows it')
+  ok(ctx.putBackInstead.value, 'and that bringing it back is the act, not closing it')
+
+  globalThis.__call = null
+  await ctx.putBack()
+  ok(globalThis.__call?.[0] === 'return_books',
+     `it brings the book back rather than settling it (called ${globalThis.__call?.[0]})`)
+  ok(globalThis.__call?.[1]?.fromBook === 'Book-506' &&
+     globalThis.__call?.[1]?.toBook === 'Book-506', 'that one book, both ends of the range')
+  cleanup()
+
+  // A book already handed back needs nothing doing at all — it is on the desk
+  // and free — so there is no second act to offer, only the warning.
+  const { ctx: back, cleanup: c2 } = await setupOf('src/components/modals/SettleBook.vue',
+    settleStore, { book: { ...OUT, status: 'Returned' } })
+  back.wholeBookBack()
+  ok(back.nothingToCount.value, 'a returned book with nothing sold has nothing to count in')
+  ok(!back.putBackInstead.value, 'and nothing to bring back — it is already back')
+  c2()
+}
+
+console.log('7. and it says so on the screen, before the press')
+{
+  const TICKETS = Array.from({ length: 10 }, (_, i) => ({
+    number: 'KS-0' + (5051 + i), book: 'Book-506', status: 'Available',
+    name: '', phone: '', source: '',
+  }))
+  const settleStore = `
+import { reactive } from 'vue'
+export const state = reactive({
+  cfg: { ticketsPerBook: 10, ticketPrice: 10, currency: 'RM',
+         ticketPrefix: 'KS-', ticketDigits: 5, bookPrefix: 'Book-', bookDigits: 3 },
+  tickets: ${JSON.stringify(TICKETS)},
+  byNumber: ${JSON.stringify(Object.fromEntries(TICKETS.map((t) => [t.number, t])))},
+})
+export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
+export const api = async () => ({})
+export const toast = () => {}
+export const refresh = async () => {}
+export const loadDelta = async () => {}
+`
+  const html = await renderScreen('src/components/modals/SettleBook.vue', settleStore, {
+    props: { book: { book: 'Book-506', agentName: 'Kee Thang', status: 'Out' } },
+    drive: (b) => b.wholeBookBack(),
+  })
+  const said = visibleText(html)
+  ok(/Nothing sold in this book/i.test(said), 'the screen says nothing sold')
+  ok(/freeze with it|frozen/i.test(said), 'and that the tickets freeze with the book')
+  ok(/back on the shelf/i.test(said), 'and names the way out, as the ticket screen does')
+  ok(/Mark it brought back/.test(said), 'and offers the act that is actually being asked for')
+  ok(/Count it in anyway/.test(said),
+     'with the count-in still there for whoever means it, and no longer the obvious press')
+  ok(!/Finish this book/.test(said),
+     'so the button that reads as the ordinary next step is not what a nought-value count-in looks like')
+}
+
+console.log('8. the way back on the shelf is on the book it is about')
+{
+  /*
+   * REPORTED AGAIN AFTER 1 TO 5 SHIPPED, by somebody looking at exactly the
+   * book sheet. The way out existed — on another screen, under "Other things
+   * you can do", as a range you type the book's number into. They did not find
+   * it, and reported that an organiser could not put the book back at all.
+   *
+   * A way out that asks you to re-identify the book you are already looking at
+   * is one most people will not use. So it is on the book, and the sheet says
+   * what happened to the tickets rather than leaving a greyed-out button to
+   * explain itself.
+   */
+  const detailStore = `
+import { reactive, computed } from 'vue'
+export const state = reactive({ cfg: { ticketsPerBook: 10, currency: 'RM' }, books: [], agents: [],
+  tickets: [], user: { email: 'org@x.com' } })
+export const isAdmin = computed(() => true)
+export function go() {}
+export function bookBlock() { return 'book is settled' }
+export const overrideReasonNeeded = () => false
+export const sellOverrideNeeded = () => false
+export const agentMap = computed(() => ({}))
+export function toast() {}
+export const isSold = (t) => /^(Sold|Donated)$/.test(String(t?.status || ''))
+`
+  const BOOK = {
+    book: 'Book-084', firstTicket: 'KS-00831', lastTicket: 'KS-00840',
+    agentName: 'JOHN', agentId: 'A001', status: 'Settled', countedIn: true,
+    sold: 0, expected: 0, paid: 0, variance: 0, missingContact: 0, available: 10,
+  }
+  const said = visibleText(await renderScreen('src/components/modals/BookDetail.vue',
+    detailStore, { props: { book: BOOK } }))
+  ok(/Put it back on the shelf/.test(said), 'the book sheet carries the way out')
+  ok(/10 tickets in this book never sold/.test(said),
+     'and says what happened to the tickets, which is the question somebody arrives with')
+  ok(/keeps its buyer/.test(said), 'and that the sales in it are not touched by putting it back')
+
+  // A book nobody is stuck on must not grow a control that undoes a settlement
+  // beside the one that performs it.
+  const out = visibleText(await renderScreen('src/components/modals/BookDetail.vue',
+    detailStore, { props: { book: { ...BOOK, status: 'Out', countedIn: false, available: 10 } } }))
+  ok(!/Put it back on the shelf/.test(out), 'a book still out does not offer it')
+  ok(!/never sold/.test(out), 'and is not described as stuck')
+
+  const app = read('src/App.vue')
+  ok(/@restock="b => openModal\('bookaction', \{ kind: 'restock', book: b\.book \}\)"/.test(app),
+     'the app opens the shelf sheet on it — an emit nobody listens for is a dead button')
+
+  // And it arrives filled in. Being sent to a range picker to type the number of
+  // the book you just pressed is the same dead end one step along.
+  const { ctx, cleanup } = await setupOf('src/components/modals/BookAction.vue',
+    `import { reactive, computed } from 'vue'
+export const state = reactive({ cfg: { currency: 'RM', ticketsPerBook: 10 }, agents: [], books: [] })
+export const api = async () => ({})
+export const toast = () => {}
+export const refresh = async () => {}
+export const loadDelta = async () => {}
+`, { kind: 'restock', book: 'Book-084' })
+  ok(ctx.from.value === '84' && ctx.to.value === '84',
+     `the sheet opens on that book alone (${ctx.from.value}–${ctx.to.value})`)
+  cleanup()
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

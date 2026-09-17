@@ -9,7 +9,7 @@ import StatusPill from '../ui/StatusPill.vue'
 import History from './History.vue'
 
 const props = defineProps({ book: Object })
-const emit = defineEmits(['close', 'settle', 'receipt', 'see-tickets', 'sell-book'])
+const emit = defineEmits(['close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock'])
 const currency = computed(() => state.cfg?.currency || '')
 const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status))
 
@@ -74,6 +74,37 @@ const canPrintReceipt = computed(() =>
   isAdmin.value && !!props.book.agentId && props.book.status === 'Out')
 
 const blocked = computed(() => bookBlock(props.book))
+
+/**
+ * THE WAY BACK OUT, ON THE BOOK IT IS ABOUT.
+ *
+ * Putting a book back on the shelf has existed on the server since the
+ * beginning and, since the Book-084 report, on the Books screen as well — a
+ * bulk sheet under "Other things you can do" that asks you to type the book's
+ * number back in. It was reported missing again anyway, and by somebody looking
+ * at exactly this sheet: a book counted in with everything returned, every
+ * ticket in it frozen, and the only control on the screen a greyed-out "Sell it
+ * whole" with no way forward from it.
+ *
+ * A way out that lives on another screen, behind a generic heading, and asks
+ * you to re-identify the book you are already looking at is not one most people
+ * will find. So it is here, where the dead end is met.
+ *
+ * ONLY FOR A BOOK THAT HAS BEEN COUNTED IN. A book merely brought back is not
+ * stuck — it can be sold from and given out again as it stands — and a control
+ * that undoes a count-in sitting beside the one that performs it is an invitation
+ * to undo a settlement that was right.
+ */
+const canShelve = computed(() => isAdmin.value && props.book.status === 'Settled')
+
+/**
+ * Tickets that never sold, in a book that can no longer sell them.
+ *
+ * The number was on the sheet all along as part of `available` and said nothing
+ * about itself; this is the sentence that turns it into the fact somebody needs.
+ */
+const frozen = computed(() =>
+  props.book.status === 'Settled' ? Number(props.book.available || 0) : 0)
 
 /**
  * TWO GAPS ON THIS SHEET, AND THEY WERE BEING SHOWN AS ONE.
@@ -167,6 +198,20 @@ const showHistory = ref(false)
       </div>
     </div>
 
+    <!-- Said on the sheet rather than only in the button, because the button
+         answers "what can I do" and this answers "what has happened to my
+         tickets" — which is the question somebody arrives here with. -->
+    <div v-if="frozen > 0" class="note warn">
+      <b>{{ frozen }} {{ frozen === 1 ? 'ticket' : 'tickets' }} in this book never sold,
+        and cannot be sold now.</b>
+      {{ book.book }} has been <span class="helpword" :title="COUNTED_IN_HELP">counted in</span>,
+      which closes it. Putting it back on the shelf returns
+      {{ frozen === 1 ? 'that ticket' : 'those tickets' }} to the office so
+      {{ frozen === 1 ? 'it' : 'they' }} can be sold again. The count-in is undone with
+      it — the figures are cleared and any money recorded against them is reversed on
+      the ledger — and every ticket already sold keeps its buyer.
+    </div>
+
     <template #actions>
       <button class="btn" @click="emit('see-tickets', book)">See its tickets</button>
       <button class="btn" @click="showHistory = true">Where it has been</button>
@@ -187,6 +232,13 @@ const showHistory = ref(false)
       <button v-if="isAdmin && canSettle" class="btn primary"
               :disabled="soldByMe" :title="settleHelp"
               @click="emit('settle', book)">Count it in</button>
+
+      <!-- Primary only while the book is actually stuck. On a book that sold
+           out entirely this is a correction somebody may need and should not be
+           invited into; on one holding tickets nobody can sell, it is the only
+           thing on the screen worth pressing. -->
+      <button v-if="canShelve" :class="['btn', frozen > 0 ? 'primary' : '']"
+              @click="emit('restock', book)">Put it back on the shelf</button>
 
       <!-- GHOST, not another button. Four controls of identical weight is a row
            with no answer to "what am I meant to do here", and the browser's

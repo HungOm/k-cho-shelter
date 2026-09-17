@@ -49,6 +49,68 @@ async function booksIn(payload: Record<string, unknown>, ctx: Ctx): Promise<numb
 }
 
 /**
+ * The books a payload names, with what is actually recorded against them.
+ *
+ * Beside booksIn rather than folded into it because the two answer different
+ * questions — how many, and what is in them — and booksIn is asked by the
+ * summary sentence, which must keep counting the whole span whatever is in it.
+ */
+async function bookRowsIn(
+  payload: Record<string, unknown>,
+  ctx: Ctx,
+): Promise<Record<string, unknown>[]> {
+  const cols = 'idx,number,recorded_sold,counted_sold,counted_expected,counted_collected'
+  if (Array.isArray(payload.bookNumbers)) {
+    const { data } = await ctx.supabaseAdmin.from('book_ledger_all').select(cols)
+      .in('number', payload.bookNumbers.map(String))
+    return data ?? []
+  }
+  const from = String(payload.fromBook ?? '')
+  const to = String(payload.toBook ?? '') || from
+  if (!from) return []
+  const { data: ends } = await ctx.supabaseAdmin.from('books').select('idx').in('number', [from, to])
+  const idxs = (ends ?? []).map((b: { idx: number }) => Number(b.idx))
+  if (!idxs.length) return []
+  const { data } = await ctx.supabaseAdmin.from('book_ledger_all').select(cols)
+    .gte('idx', Math.min(...idxs)).lte('idx', Math.max(...idxs))
+  return data ?? []
+}
+
+/**
+ * A COUNT-IN AT NOUGHT HAS NOTHING FOR A SECOND PERSON TO SIGN OFF.
+ *
+ * Restocking needs two people because it CLEARS A DECLARED FIGURE: somebody
+ * counted a book in, somebody else's money is recorded against it, and undoing
+ * that quietly is exactly the act that wants a witness. All of that is still
+ * true and none of it is true of a book that was counted in with nothing sold.
+ *
+ * That book is the trap this exemption exists for. A seller hands back a book
+ * untouched, it is counted in at nought — no sales, no money, no ledger row —
+ * and every ticket in it freezes, because a settled book cannot be sold from.
+ * Putting it back is the only way to sell those tickets again, and an organiser
+ * who has just made a nought-value mistake had to find the owner and wait to
+ * undo it. Two people to sign off the reversal of nothing.
+ *
+ * EVERY named book, and only from the figures themselves: nothing sold, nothing
+ * declared, nothing expected, nothing handed in. One book in the range with a
+ * real sale on it and the whole request goes to the owner as before. A book the
+ * view does not carry cannot be judged and counts against the exemption too —
+ * the count and the rows must agree, or the range holds something unexamined.
+ */
+async function clearsNothing(
+  payload: Record<string, unknown>,
+  named: number,
+  ctx: Ctx,
+): Promise<boolean> {
+  const rows = await bookRowsIn(payload, ctx)
+  if (!rows.length || rows.length !== named) return false
+  const nought = (v: unknown) => !Number(v ?? 0)
+  return rows.every((r) =>
+    nought(r.recorded_sold) && nought(r.counted_sold) &&
+    nought(r.counted_expected) && nought(r.counted_collected))
+}
+
+/**
  * Decides whether an action needs two people, and if so writes the sentence the
  * approver will read — here, at request time, so the words come from the same
  * code that made the decision. Deriving them again in the browser would let the
@@ -84,6 +146,9 @@ export async function approvalNeeded(
   if (action === 'restock_books') {
     const n = await countBooks()
     if (!n) return null
+    // Nothing was sold, declared, expected or handed in, so there is no figure
+    // to clear and nothing to witness. See clearsNothing.
+    if (await clearsNothing(payload, n, ctx)) return null
     return {
       kind: 'restock_books', books: n,
       firstBook: String(payload.fromBook ?? ''), lastBook: String(payload.toBook ?? ''),

@@ -411,6 +411,22 @@ function afterBookChange() {
   closeModal()
 }
 
+/*
+ * The book-action sheet takes a KIND, and sometimes a book to fill in for it.
+ *
+ * Opened from the Books screen it is a bare kind string — "put some books back
+ * on the shelf", and you say which. Opened from one book's own sheet the book
+ * is already known, and asking somebody to type the number of the book they are
+ * looking at is how a way out goes unused. Normalised here so the screens that
+ * open it the old way are left exactly as they were.
+ */
+const bookAction = computed(() => {
+  const p = modal.value?.payload
+  return typeof p === 'string'
+    ? { kind: p, book: '' }
+    : { kind: p?.kind ?? '', book: p?.book ?? '' }
+})
+
 function seeTickets(book) {
   closeModal()
   state.query = book.book
@@ -470,12 +486,15 @@ function seeTickets(book) {
                 @settle="b => openModal('settle', b)"
                 @receipt="id => openModal('receipt', id)"
                 @sell-book="b => openModal('sellbook', b)"
+                @restock="b => openModal('bookaction', { kind: 'restock', book: b.book })"
                 @see-tickets="seeTickets" />
     <SettleBook v-else-if="modal?.kind === 'settle'" :book="modal.payload"
-                @close="closeModal" @settled="afterBookChange" />
+                @close="closeModal" @settled="afterBookChange"
+                @put-back="afterBookChange" />
     <SellBook v-else-if="modal?.kind === 'sellbook'" :book="modal.payload"
               @close="closeModal" @sold="closeModal" />
-    <BookAction v-else-if="modal?.kind === 'bookaction'" :kind="modal.payload"
+    <BookAction v-else-if="modal?.kind === 'bookaction'"
+                :kind="bookAction.kind" :book="bookAction.book"
                 @close="closeModal" @done="closeModal"
                 @needs-approval="r => openModal('askapproval', r)" />
     <AskApproval v-else-if="modal?.kind === 'askapproval'" :request="modal.payload"

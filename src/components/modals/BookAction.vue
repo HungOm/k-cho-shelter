@@ -22,11 +22,31 @@ import { money, COUNTED_IN_HELP } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import FreeRuns from '../ui/FreeRuns.vue'
 
-const props = defineProps({ kind: String })   // 'transfer' | 'return' | 'restock' | 'mark'
+const props = defineProps({
+  kind: String,                               // 'transfer' | 'return' | 'restock' | 'mark'
+  // One book, when the sheet was opened from that book's own screen rather than
+  // from the Books list. See below.
+  book: { type: String, default: '' }
+})
 const emit = defineEmits(['close', 'done', 'needs-approval'])
 
-const from = ref('')
-const to = ref('')
+/*
+ * FILLED IN WHEN THE BOOK IS ALREADY KNOWN.
+ *
+ * This sheet's job is picking a range, and from the Books screen that is right:
+ * you came here to move some books and you say which. Reached from a single
+ * book's sheet the question is already answered — and asking somebody to type
+ * the number of the book they are looking at is how a way out of a stuck book
+ * goes unused, which is what was reported.
+ *
+ * The DIGITS, not the full number: this pair of boxes is numeric and everything
+ * downstream re-pads through bookNumber, so "84" and "Book-084" are the same
+ * range with only one of them readable in a numeric input.
+ */
+const only = String(props.book || '').replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+
+const from = ref(only)
+const to = ref(only)
 const agentId = ref(state.agents[0]?.id || '')
 const status = ref('Lost')
 const reason = ref('')
@@ -135,7 +155,7 @@ async function go() {
     <!-- Transfer and bring-back only make sense for books already out, so the
          runs shown are the ones out with somebody. Restock is the mirror of
          that: the books it can act on are the ones already back at the desk. -->
-    <FreeRuns v-if="kind !== 'mark'" :is-free="isRelevant"
+    <FreeRuns v-if="kind !== 'mark' && !only" :is-free="isRelevant"
               :label="kind === 'restock' ? 'Back at the desk now' : 'Out now'"
               :noun="kind === 'restock' ? 'brought back or counted in' : 'out with sellers'"
               @pick="useRun" />

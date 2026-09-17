@@ -16,12 +16,12 @@
  */
 import { ref, computed } from 'vue'
 import { state, api, toast, refresh, loadDelta, isSold } from '../../lib/store.js'
-import { money } from '../../lib/format.js'
+import { money, COUNTED_IN_HELP } from '../../lib/format.js'
 import { resolveTicketNumber, expandTicketRange } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ book: Object })
-const emit = defineEmits(['close', 'settled'])
+const emit = defineEmits(['close', 'settled', 'put-back'])
 
 const unsold = ref('')
 const paid = ref('')
@@ -200,6 +200,52 @@ const allBack = computed(() =>
   inBook.value.length > 0 && sold.value === 0 && returned.value.length >= inBook.value.length)
 
 /**
+ * NOTHING SOLD IS NOT A COUNT-IN, AND COUNTING IT IN IS A ONE-WAY DOOR.
+ *
+ * Reported from the live raffle, and it is the Book-084 freeze approached from
+ * the other end. A book came back with every ticket still in it, was counted in
+ * at nought, and the screen said Finished · RM0 — correctly. What nobody was
+ * told is that the ten unsold tickets went with it: a settled book cannot be
+ * sold from, by anybody, the organiser holding the paper included. Ten sellable
+ * tickets left the raffle, quietly, with nothing on the screen saying so and no
+ * control on it to undo it.
+ *
+ * NOTHING WAS BROKEN, which is why it lasted. Every rule involved is right —
+ * counting in reconciles a book's money, and a reconciled book must not keep
+ * selling. What was wrong is that this screen offered "Finish this book" as THE
+ * thing to do at the one moment it was the wrong thing. There was no money to
+ * reconcile, so the count-in recorded nothing and cost ten tickets.
+ *
+ * A book with nothing sold has not been counted in. It has come back, which is
+ * `return_books`: one act, nobody's approval, and the book is free to go out
+ * again or be sold from the desk the moment it lands. So that is what the
+ * screen offers here, and the count-in stays on it for whoever means it.
+ */
+const nothingSold = computed(() =>
+  !lost.value && inBook.value.length > 0 && sold.value === 0)
+
+/** Nothing sold AND no money: a count-in that would record nothing at all. */
+const nothingToCount = computed(() => nothingSold.value && paidNum.value === 0)
+
+/*
+ * ...and it is still out with somebody, so bringing it back is the act that is
+ * actually being asked for. A book already handed back needs nothing doing: it
+ * is on the desk, it is free to give out, and the screen says so instead.
+ */
+const putBackInstead = computed(() => nothingToCount.value && props.book.status === 'Out')
+
+/** Brought back rather than closed — the same button, without the trapdoor. */
+async function putBack() {
+  busy.value = true
+  try {
+    await api('return_books', { fromBook: props.book.book, toBook: props.book.book })
+    toast(`${props.book.book} is back — its tickets can still be sold`, 'ok')
+    emit('put-back')
+    loadDelta().then(refresh)
+  } catch (err) { toast(err.message, 'bad', err.code) } finally { busy.value = false }
+}
+
+/**
  * Typed a real ticket, but one from a different book.
  *
  * resolveTicketNumber searches the whole raffle, so a number from another book
@@ -365,6 +411,29 @@ async function settle() {
       </div>
     </div>
 
+    <!--
+      THE CONSEQUENCE, SAID BEFORE THE PRESS.
+
+      A count-in at nought closes the book and freezes every ticket left in it.
+      The old screen said neither half: it showed "0 sold · RM0" — which reads
+      as harmless — and offered Finish. The organiser found out days later, when
+      a ticket lying on the desk in front of them could not be sold by anybody.
+    -->
+    <div v-if="nothingSold" class="note warn">
+      <b>Nothing sold in this book.</b>
+      <span class="helpword" :title="COUNTED_IN_HELP">Counting it in</span> closes the
+      book, and the {{ held }} tickets still in it freeze with it — nobody can sell
+      them until an organiser puts the book back on the shelf.
+      <template v-if="putBackInstead">
+        Bringing it back is the whole job here: the book returns to the desk free, and
+        its tickets can be sold from there or given to somebody else.
+      </template>
+      <template v-else-if="handedBack">
+        It is already back at the desk and free to give out again, so there is nothing
+        here to count in.
+      </template>
+    </div>
+
     <label class="lostbox">
       <input type="checkbox" v-model="lost">
       <span v-if="handedBack">The leftover tickets did not come back</span>
@@ -373,9 +442,18 @@ async function settle() {
 
     <template #actions>
       <button class="btn" @click="emit('close')">Cancel</button>
-      <button class="btn primary" :disabled="busy || unresolved.length || wrongBook.length || alreadySold.length"
+      <!-- The act that is actually being asked for, first. The count-in is
+           DEMOTED RATHER THAN REMOVED: a book whose leftovers are gone, or a
+           figure being corrected, still needs it, and it is not this screen's
+           place to decide that nobody ever means it. It just stops looking like
+           the step that was being asked for. -->
+      <button v-if="putBackInstead" class="btn primary" :disabled="busy" @click="putBack">
+        {{ busy ? 'Saving…' : 'Mark it brought back' }}
+      </button>
+      <button :class="['btn', nothingToCount ? 'ghost' : 'primary']"
+              :disabled="busy || unresolved.length || wrongBook.length || alreadySold.length"
               @click="settle">
-        {{ busy ? 'Saving…' : 'Finish this book' }}
+        {{ busy ? 'Saving…' : nothingToCount ? 'Count it in anyway' : 'Finish this book' }}
       </button>
     </template>
   </Sheet>
