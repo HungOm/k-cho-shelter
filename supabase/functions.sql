@@ -980,6 +980,32 @@ begin
       using errcode = 'check_violation';
   end if;
 
+  /*
+   * ON THE SHELF IS NOT THE SAME AS WHOLE.
+   *
+   * Restocking returns the unsold tickets to the pool and leaves every SOLD
+   * ticket with its buyer — deliberately, because that money is real and
+   * belongs to whoever sold it. So an Unassigned book can have eight of its ten
+   * already gone, and the status check above waves it through: the offer screen
+   * counted it among "1,000 books free" and would have handed a seller a book
+   * with two sellable tickets in it.
+   *
+   * A book given to a seller is a book they can work. The two that are left are
+   * sold at the desk, one at a time, which is what the Sell screen is for.
+   */
+  select count(*), string_agg(b.number, ', ' order by b.idx)
+    into wrong, offenders
+    from books b
+   where b.idx = any(p_idxs)
+     and exists (select 1 from tickets tk
+                  where tk.book_idx = b.idx and tk.status in ('Sold', 'Donated'));
+
+  if wrong > 0 then
+    raise exception 'BOOK_NOT_WHOLE: % of % already have tickets sold from them — %',
+      wrong, array_length(p_idxs, 1), left(offenders, 200)
+      using errcode = 'check_violation';
+  end if;
+
   -- RETURNING, not a re-read. What this wrote is the only honest answer to
   -- "what did this write"; asking the table afterwards which books are Offered
   -- also collects books somebody else offered a moment ago.

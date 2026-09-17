@@ -1307,13 +1307,32 @@ echo "a book offered is a book on nobody's balance"
 # So an offer reserves and moves nothing. The assertion that matters is not the
 # status — it is that the money views cannot see it, because held_by_agent is
 # what every one of them reads.
+# THE TICKETS TOO, not just the book row. Offering now refuses a book with
+# sales already in it, and earlier cases in this file sold out of books 4 and 5
+# — so resetting only the status left two books that look free and are not.
 P "update books set status='Unassigned', held_by_agent=null, offered_to_agent=null where idx in (4,5)" >/dev/null
+P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,
+     sold_by_agent=null, sold_at=null, payment_status='', source='' where book_idx in (4,5)" >/dev/null
 before=$(P "select count(*) from book_ledger_all where held_by_agent='A001'")
 P "select offer_books_tx(array[4,5],'A001',current_date+7,'org@x.com')" >/dev/null
 ok "$(P "select status from books where idx=4")" "Offered" "the book is Offered"
 ok "$(P "select coalesce(held_by_agent,'-') from books where idx=4")" "-" "and on nobody's balance, which is the point"
 ok "$(P "select offered_to_agent from books where idx=4")" "A001" "reserved for the seller it was offered to"
 ok "$(P "select count(*) from book_ledger_all where held_by_agent='A001'")" "$before" "and the money views are unmoved by an offer"
+
+echo "and a book with sales already in it is not a book to offer"
+# ON THE SHELF IS NOT THE SAME AS WHOLE. Restocking returns the unsold tickets
+# and leaves every SOLD one with its buyer — so an Unassigned book can have
+# eight of its ten gone. The status check alone waved it through, and the offer
+# screen counted it among the free books.
+P "update books set status='Unassigned', held_by_agent=null, offered_to_agent=null where idx=6" >/dev/null
+P "update tickets set status='Sold', buyer_name='Earlier Buyer', buyer_phone='0125550401', amount=10, sold_at=now(), payment_status='Paid' where number='KS-00051'" >/dev/null
+r=$(P "select offer_books_tx(array[6],'A002',current_date+7,'org@x.com')")
+has "$r" "BOOK_NOT_WHOLE" "a part-sold book cannot be offered to a seller"
+ok "$(P "select status from books where idx=6")" "Unassigned" "and it stays where it was"
+ok "$(P "select buyer_name from tickets where number='KS-00051'")" "Earlier Buyer" "with the sale in it untouched"
+P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null, sold_at=null, payment_status='' where number='KS-00051'" >/dev/null
+P "update books set status='Settled' where idx=6" >/dev/null
 
 echo "and it cannot be offered twice, or to two sellers at once"
 # Book 6's state is READ, not assumed. Written as a literal it said 'Out', which

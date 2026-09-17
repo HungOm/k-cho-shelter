@@ -187,9 +187,23 @@ export function holderLabel(book) {
  * A COURTESY, like every other client-side rule here: the server decides, and
  * offering a book it would refuse is the wasted typing this exists to remove.
  */
+/*
+ * AND THE RULE APPLIES TO BOTH STATUSES, WHICH IT DID NOT.
+ *
+ * "With sales on it, no" was asked only of a RETURNED book, because when this
+ * was written an Unassigned book could not have a sold ticket in it — nothing
+ * put a book back without wiping it. Restocking does: it returns the unsold
+ * tickets to the pool and every sold ticket KEEPS ITS BUYER, by design, so a
+ * restocked book is Unassigned with sales in it.
+ *
+ * The result was a part-sold book counted among "1,000 books free" and offered
+ * to a seller, who would be handed a book of ten with eight already gone. The
+ * two that are left are sold at the desk, one at a time, which is what the Sell
+ * screen is for.
+ */
 export const isFreeToIssue = (b) =>
-  b?.status === 'Unassigned' ||
-  (b?.status === 'Returned' && !Number(b?.sold || 0))
+  !Number(b?.sold || 0) &&
+  (b?.status === 'Unassigned' || b?.status === 'Returned')
 
 export function inspectRange(from, to, isFree = isFreeToIssue) {
   const cfg = state.cfg

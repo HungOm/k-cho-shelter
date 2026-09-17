@@ -124,8 +124,20 @@ export async function issueBooks(p: Record<string, unknown>, user: AppUser, ctx:
   for (const b of books ?? []) {
     if (b.idx > liveBooks) {
       blocked.push({ book: b.number, status: 'not released yet', agentId: '' })
-    } else if (b.status === 'Unassigned') {
+    } else if (b.status === 'Unassigned' && (soldIn.get(Number(b.idx)) ?? 0) === 0) {
       // free
+    } else if (b.status === 'Unassigned' && !p.force) {
+      /*
+       * UNASSIGNED IS NOT THE SAME AS UNTOUCHED, since restocking existed.
+       * A restocked book goes back to Unassigned with its SOLD tickets intact —
+       * that is the whole point of it — so this branch used to hand a seller a
+       * book of ten with eight already gone, and count it among the free ones.
+       */
+      blocked.push({
+        book: b.number,
+        status: `${soldIn.get(Number(b.idx))} of its tickets are already sold`,
+        agentId: '',
+      })
     } else if (b.status === 'Returned' && (soldIn.get(Number(b.idx)) ?? 0) === 0) {
       emptyReturned.add(Number(b.idx))
     } else if (!p.force) {
@@ -487,6 +499,13 @@ export async function offerBooks(p: Record<string, unknown>, user: AppUser, ctx:
     // The SQL names the books that are not free; passed through rather than
     // flattened to "some books are not available", because the organiser is
     // standing at a shelf and needs to know which ones.
+    if (/BOOK_NOT_WHOLE/.test(error.message)) {
+      const named = (error.message.split('—')[1] ?? '').split(',').map((n: string) => n.trim()).filter(Boolean)
+      throw new ApiError('BOOK_NOT_WHOLE',
+        `${named.length} of these books already have tickets sold from them, so they are ` +
+        'not whole books to give anybody. Sell what is left of them at the desk. Nothing was changed.',
+        { blocked: named.map((n: string) => ({ book: n, status: 'some of its tickets are already sold', agentId: '' })) })
+    }
     if (/BOOKS_NOT_FREE/.test(error.message)) {
       /*
        * THE NAMES, IN THE SHAPE THE SCREEN ALREADY DRAWS. The SQL names the
