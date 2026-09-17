@@ -477,6 +477,30 @@ ok "$(P "select count(*) from round_snapshots where round=1 and agent_id='SNAP'"
 r=$(P "delete from agents where agent_id='SNAP'")
 has "$r" "violates foreign key" "and the seller cannot be erased out from under a round that measured them"
 
+# The check-in's two new columns are what makes a checkpoint able to find
+# anything: everything else on the report is a figure the database already had.
+# The constraints are the whole of the SQL here — there is no function to test —
+# and they are worth a case because a negative count of stubs is not a typo that
+# shows up on a screen, it is an "unaccounted for" line that reads as five
+# tickets found rather than five missing.
+echo "what the seller brought is counted, and cannot be counted backwards"
+P "insert into agents(agent_id,name,phone) values ('A009','Reporter','0125559999')" >/dev/null
+P "insert into check_in_reports(agent_id,round,due_at,books_back,tickets_sold,amount_paid)
+   values ('A009',1,'2026-09-01',2,5,50)" >/dev/null
+ok "$(P "select stubs_returned||'/'||unsold_returned||'/'||books_out_at from check_in_reports where agent_id='A009'")" "0/0/0" "a check-in recorded before anybody was asked reads as nought, which is what happened"
+P "update check_in_reports set stubs_returned=5, unsold_returned=15, books_out_at=2 where agent_id='A009'" >/dev/null
+ok "$(P "select stubs_returned+unsold_returned from check_in_reports where agent_id='A009'")" "20" "and two books' worth of paper adds up"
+r=$(P "update check_in_reports set stubs_returned=-1 where agent_id='A009'")
+has "$r" "violates check constraint" "a negative count of stubs is refused by the database, not by a screen"
+
+echo "a reporting round can be moved, once, to one day"
+P "insert into check_in_dates(round,due_at,note,set_by) values (4,'2026-11-20','hall booked','a@x.com')" >/dev/null
+r=$(P "insert into check_in_dates(round,due_at,set_by) values (4,'2026-11-27','a@x.com')")
+has "$r" "duplicate key" "one round cannot have two dates — the upsert replaces, it does not add"
+ok "$(P "select due_at from check_in_dates where round=4")" "2026-11-20" "and the stored one stands until it is replaced"
+r=$(P "insert into check_in_dates(round,due_at,set_by) values (0,'2026-11-27','a@x.com')")
+has "$r" "violates check constraint" "there is no round zero"
+
 # THE BOOK AND THE LEDGER CANNOT DISAGREE, because one transaction writes both.
 # The old path wrote the payment row after settle_book returned, in a call that
 # could not fail the settlement — so a book could say money came in over a
@@ -561,6 +585,93 @@ ok "$(P "select expected||'/'||collected||'/'||outstanding from agent_money wher
 # Server-only, like every other view the function reads on the raffle's behalf.
 ok "$(P "select has_table_privilege('anon','agent_money','select')")" "f" "the browser's anonymous role cannot read it"
 ok "$(P "select has_table_privilege('authenticated','agent_money','select')")" "f" "nor can a signed-in browser"
+
+# THE LEDGER IS THE ONLY RECORD OF WHAT MONEY WAS CORRECTED FROM, and until
+# today it was append-only in the sense that nobody had written the code to
+# change it. Run as the owning superuser, which is stricter than the key the
+# edge function holds: if it cannot edit the ledger, neither can anything the
+# app can do.
+# A BOOK IN THE OFFICE HAS NO SELLER, AND A SALE OUT OF IT IS NOBODY'S.
+# Returning a book does not clear held_by_agent — keeping it is how "brought
+# back by" has a name on it — so a book handed in and then sold whole at the
+# desk credited every ticket to the seller who had brought it back, and put the
+# price of them on her balance as money owed. The single-ticket path had this
+# right all along, which is why nobody looked at this one.
+#
+# Two fresh books, because every book in the fixture has been sold, settled or
+# restocked by the time this runs, and a test that reuses one would be asserting
+# about whatever the section above left behind.
+echo "a whole book sold out of the office is not charged to whoever brought it back"
+P "update config set value='70' where key='TOTAL_TICKETS';
+   insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
+     values (6,'Book-0006','KS-00051','KS-00060','Returned','A002'),
+            (7,'Book-0007','KS-00061','KS-00070','Out','A002');
+   insert into tickets(idx,number,book_idx,status)
+     select i,'KS-'||lpad(i::text,5,'0'),ceil(i/10.0),'Available' from generate_series(51,70) i" >/dev/null
+r=$(P "select sell_books('Book-0006',null,null,'Desk Buyer','0125557777','',false,'me@x.com','admin',null)")
+has "$r" "sold" "a book brought back can still be sold whole at the desk"
+ok "$(P "select count(*) from tickets where book_idx=6 and status='Sold' and sold_by_agent is null")" "10" "with nobody named, it is the desk's — not the seller who handed the book in"
+ok "$(P "select count(*) from tickets where book_idx=6 and sold_by_agent='A002'")" "0" "nobody is charged for a sale they were not there for"
+ok "$(P "select held_by_agent from books where idx=6")" "A002" "while the book still remembers who brought it back"
+
+# WHO WAS ACTUALLY AT THE DESK. The helper taking the money is usually not the
+# seller who handed the book in, and until the last argument existed there was
+# no way to say so: the sale was either credited to the wrong person or to
+# nobody at all.
+P "insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
+     values (8,'Book-0008','KS-00071','KS-00080','Returned','A002');
+   insert into tickets(idx,number,book_idx,status)
+     select i,'KS-'||lpad(i::text,5,'0'),8,'Available' from generate_series(71,80) i;
+   update config set value='80' where key='TOTAL_TICKETS'" >/dev/null
+r=$(P "select sell_books('Book-0008',null,null,'Desk Buyer','0125557777','',false,'me@x.com','recorder',null,'A001')")
+ok "$(P "select count(*) from tickets where book_idx=8 and sold_by_agent='A001'")" "10" "the person at the desk is credited when they are named"
+ok "$(P "select count(*) from tickets where book_idx=8 and sold_by_agent='A002'")" "0" "and the seller who brought the book in still is not"
+# The other half of the same rule, unchanged: a book genuinely out with somebody
+# is theirs, and the money lands on their balance where settlement checks it
+# against the stubs they hand back.
+r=$(P "select sell_books('Book-0007',null,null,'Another Buyer','0125558888','',false,'me@x.com','admin',null)")
+ok "$(P "select count(*) from tickets where book_idx=7 and status='Sold' and sold_by_agent='A002'")" "10" "a book out with a seller is still credited to them"
+
+echo "the ledger cannot be edited or erased"
+P "insert into payments(agent_id,amount,received_by,note) values ('A001',50,'me@x.com','cash at the desk')" >/dev/null
+n0=$(P "select count(*) from payments")
+r=$(P "update payments set amount=5 where amount=50")
+has "$r" "append only" "an update is refused"
+r=$(P "delete from payments where amount=50")
+has "$r" "append only" "a delete is refused"
+r=$(P "truncate payments")
+has "$r" "append only" "and a truncate, which would have emptied it without firing either"
+ok "$(P "select count(*) from payments")" "$n0" "every entry is still there"
+ok "$(P "select amount from payments where note='cash at the desk'")" "50.00" "with the figure it was written with"
+
+echo "the same attempt, recorded twice, is one payment"
+P "insert into payments(agent_id,amount,received_by,client_key) values ('A001',60,'me@x.com','attempt-1')" >/dev/null
+r=$(P "insert into payments(agent_id,amount,received_by,client_key) values ('A001',60,'me@x.com','attempt-1')")
+has "$r" "duplicate key" "a retry of the same attempt cannot write a second row"
+ok "$(P "select count(*) from payments where client_key='attempt-1'")" "1" "so the money is counted once"
+# The index is PARTIAL, and it has to be: every NULL is distinct in Postgres, but
+# a plain unique column would be relying on that by accident. Two keyless
+# payments of the same amount are two payments, which is the ordinary case.
+P "insert into payments(agent_id,amount,received_by) values ('A001',7,'me@x.com')" >/dev/null
+P "insert into payments(agent_id,amount,received_by) values ('A001',7,'me@x.com')" >/dev/null
+ok "$(P "select count(*) from payments where amount=7")" "2" "and two payments nobody named are still two payments"
+
+# One API request writes to four tables. Before this, "show me everything that
+# happened when that book was counted in" was a join on TIME — approximately
+# right, always available, and wrong in exactly the case worth investigating.
+echo "one request, one thread through every table it touched"
+ok "$(P "select request_id from payments order by id desc limit 1")" "" "written with no request, the id is blank — which is the truth about that row"
+P "begin;
+   select set_config('request.headers','{\"x-request-id\":\"req-77\"}',true);
+   update tickets set buyer_name='Threaded' where number='KS-00021';
+   insert into payments(agent_id,amount,received_by) values ('A001',9,'me@x.com');
+   insert into audit_log(action,details,email) values ('RECORD_PAYMENT','{}','me@x.com');
+   insert into book_history(book_idx,action,by_user) values (3,'issue','me@x.com');
+   commit;" >/dev/null
+ok "$(P "select count(*) from ticket_history where request_id='req-77'")" "1" "the ticket trail carries it, written by a trigger that was never told about it"
+ok "$(P "select count(*) from payments where request_id='req-77'")" "1" "the ledger carries it"
+ok "$(P "select count(*) from audit_log where request_id='req-77'")" "1" "the log carries it"
+ok "$(P "select count(*) from book_history where request_id='req-77'")" "1" "and the book's custody line"
 
 echo "money taken at the desk is counted, paid or not"
 P "update config set value='' where key='ACTIVE_TICKETS';

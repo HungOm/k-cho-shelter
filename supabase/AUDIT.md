@@ -666,6 +666,160 @@ Overall:                7/10   YES, WITH CONDITIONS → the remaining conditions
 
 ---
 
+## T. The ticket's record, finished (2026-09-16)
+
+Phase 1 built `ticket_history` and left two halves of it unfinished, both of
+which the requirement names: **the record is append only, and it is readable by
+whoever may read the ticket.**
+
+**Append only was a description, not a rule.** Nothing updated or deleted the
+table because no handler had been written that did. Every other guarantee about
+it is enforced by the database — the trigger that fills it so no code path can
+forget, the `on delete restrict` that refuses to let a ticket be deleted out
+from under its own record — and the one that matters most, that an overwritten
+buyer cannot be quietly overwritten a second time, rested on nobody having
+written the line. The Edge Function holds the secret key and bypasses row
+security, so every grant and policy on this table is irrelevant to the only
+caller that can reach it. A trigger is not.
+
+`ticket_history_append_only()` raises on UPDATE, DELETE and TRUNCATE
+(`20260916140000_ticket_history_append_only.sql`, mirrored in the TICKET HISTORY
+block of `schema.sql`). Truncate is named separately because it is neither of
+the other two and would have emptied the table without firing either.
+
+**Readable by whoever may read the ticket.** The trail was returned with
+`showBuyer = !!user.isAdmin`, a fourth rule for a question the system already
+answers three times in agreement: `tickets_readable` in the database, `mask()`
+on every other read, and what the ticket screen shows. It was wrong in both
+directions at once — a seller carrying the book was shown the buyer on the live
+ticket and a blank in its history, the same name from the same book; and a
+viewer, whose defining property is that they may read every buyer in the raffle
+with the telephone number shortened, was shown none of them here. A record
+nobody entitled to it can read is not a record.
+
+The rule now has one implementation. `mask()`'s body is extracted as
+`seesBuyer()` in `gate.ts` and `bookHistory` asks it per ticket, with
+`shortPhone()` applied to a viewer's numbers exactly as `mask()` applies it to
+the live ticket. The ticket's own `notes` — masked with the buyer everywhere
+else — was being returned to everybody in the trail's `note` field, and is now
+masked with them. `from_payment`/`to_payment` are returned, so a step whose only
+change was "marked paid" no longer renders as a change that did nothing.
+
+**And it can be seen.** `History.vue` renders the trail (the Phase 2 client item
+from section R): every recorded change merged into the same one order as the
+book's movements, a correction showing the name it was corrected from, and a
+step whose details are withheld from this reader saying so rather than appearing
+as a step where nothing happened.
+
+| Check | Result |
+|---|---|
+| `tests/integrity.test.mjs` | 64 passed (10 new: organiser, the seller carrying the book, a seller who is not, the helper who wrote the sale, one who did not, a viewer's shortened number, the masked note) |
+| `tests/history.test.mjs` | 44 passed (18 new: the corrected name, the sale not drawn twice, a withheld step, a visible note, a book-wide trail) |
+| `./tests/run.sh` | every suite green |
+| Postgres 16, `schema.sql` applied fresh | UPDATE, DELETE and TRUNCATE each refused with "append only"; the row survives all three; deleting the ticket refused by the FK |
+| Migration rehearsal | Applied to a database built from the committed schema, then applied again: no error, no change on the second run, both triggers present. `schema.sql` re-applied over a populated database: no error, no row lost |
+
+`supabase/test-functions.sh` carries the four SQL cases. **It has not been run
+here** — Docker was not available in this session — so the refusals were
+reproduced statement for statement against a local Postgres 16 instead, which is
+what the row above records; run the script before deploying. `test-rls.sh` is
+unchanged and did not need to be: no policy or grant moved, because the browser
+still cannot read this table by any door.
+
+Scores affected:
+
+```
+Ticket integrity:       9/10   (+1) the record cannot be edited or erased
+Auditability:           8/10   (+1) and is readable by everybody entitled to it
+```
+
+---
+
+## U. The check-in report (2026-09-16)
+
+Section G rated reporting integrity 2/10: *"Seller's declaration only (books back,
+sold, paid, note) — overwritable, deletable, no reconciliation snapshot."* Round
+snapshots (§I Phase 2) closed the immutability half the same day. This closes the
+other half, which is worse and was not on the list: **two of the three declared
+numbers are the seller's word about things the database already counts.** A
+checkpoint built from them can only restate the screen, so the question an
+organiser at a table actually asks — *does the paper add up* — had no data behind
+it at all.
+
+**The paper, in four places.** A seller carrying N books is carrying
+N × `TICKETS_PER_BOOK` physical tickets. At a checkpoint each one is a stub
+handed in, a ticket handed back unsold, paper still in a book they kept, or
+missing. The system counts SALES, which is what somebody typed; it cannot count
+paper. So `check_in_reports` gains `stubs_returned`, `unsold_returned` and
+`books_out_at` — the last stored rather than looked up later, so a sheet
+reprinted in November agrees with the copy signed in September.
+
+**Declared and recorded are printed side by side, never merged**, because the
+gap is the finding: sales not yet entered, a sale credited to the wrong seller,
+an envelope of stubs left in a car. Both sides are **cumulative** — declarations
+summed to the round against the running total of recorded sales. Comparing one
+visit's envelope with the whole raffle's sales shows a discrepancy on every
+sheet after the first, for everybody, which is how a number stops being read.
+
+**Two documents, printed the way the receipt already prints.** `window.print()`
+and the existing print stylesheet: no library, no server, and the same page is a
+PDF on a phone and a sheet of paper to sign.
+
+| | `CheckInSheet.vue` — the table | `RoundReport.vue` — the meeting |
+|---|---|---|
+| Custody | books held / back / still out, book by book with what is left in each | books out at the close |
+| Paper | tickets carried, stubs, unsold back, still out, **unaccounted** | — |
+| Money | expected, collected, **outstanding**, handed over today | then / now / what moved since |
+| Faults | sold tickets with nobody to draw, books overdue, rounds missed | draw blockers, silent sellers |
+| Ends with | two signature lines | two signature lines |
+
+The round report is `round_snapshot` + `report_draw_ready` — two existing, tested,
+separately scoped actions rather than a third with one scoping rule for two
+questions. `agent_statement` was already registered on both backends with **no
+caller**; the seller sheet is what it was for, plus the declaration and the
+reconciliation.
+
+**Dates.** Three gaps, all now closed:
+
+- **"Twice a month" was unsayable.** `CHECK_IN_EVERY_MONTHS` is whole months, so a
+  fortnightly team was told by every screen that they report monthly. `CHECK_IN_EVERY`
+  takes `1m`, `2w`, `10d`; blank falls back to the old key, so nothing configured
+  before today changes meaning.
+- **No round could be moved.** The plan stays derived — nobody should keep a
+  calendar in their head — and `check_in_dates` overrides one round. Because the
+  plan is anchored rather than chained, moving round 4 does not walk 5 and 6 with
+  it. The **live** round is refused: `CHECK_IN_DATE` decides who is late and
+  already has an owner in `rollCheckIn`, with a dry run and a typed confirmation.
+- **Nothing stopped a sale after the draw.** `SALES_CLOSE_DATE` refuses one, on
+  all three doors — the single ticket, the 500-row batch and the whole book — and
+  an organiser can force it with their name in the log. Settling, correcting and
+  voiding stay open: they are the work that happens *because* selling stopped.
+
+| Check | Result |
+|---|---|
+| `tests/checkinreport.test.mjs` (new) | 115 passed — 81 handler, 34 rendering both documents |
+| `./tests/run.sh` | every suite green; `npm run build` clean |
+| Postgres 16, `schema.sql` fresh | columns present and defaulting to 0; `check_in_dates` present |
+| Migration rehearsal | Applied to a database built from the committed schema with a check-in row already in it, then applied again: no error, no change, no row touched, the old row reads 0/0/0. `schema.sql` re-applied over it: no loss |
+| SQL constraints, by hand on Postgres 16 | negative stubs refused; two dates for one round refused; round zero refused |
+| `supabase/test-functions.sh` | 8 new cases added; **not run here** (no Docker in this session) — reproduced statement for statement as above |
+
+Three harness gaps surfaced and were fixed rather than worked around:
+`clientcoverage` had no way to express a Supabase-only action that a screen
+calls (now a list with reasons, *and* an assertion that the calling file reads
+`isSupabase`); `wording` hardcoded the depth of the `lib/backend.js` import, so
+the first modal to ask which backend it was on failed for being two directories
+away; and `screen.mjs` compiled every bundle as the Apps Script build, which
+would have rendered any `isSupabase`-gated screen as one sentence and looked
+like a broken component.
+
+Reporting integrity: **2/10 → 6/10.** Remaining: the declaration is still
+overwritable in place (a corrected check-in leaves no trace of what it
+corrected), which is the same fault `ticket_history` fixed for tickets and the
+obvious next thing to copy.
+
+---
+
 ## V. The roadmap, finished (2026-09-16)
 
 Sections I and P listed eleven things across Phases 2, 3 and 4. All of them
@@ -803,3 +957,326 @@ Overall:                8/10   The conditions in section A are closed in the rep
 ```
 
 ---
+
+## V. The ledger's protocol, and a book counted in (2026-09-16)
+
+### What the system actually runs, named
+
+| Concern | Protocol |
+|---|---|
+| Money | Append-only ledger with **reversing (contra) entries** — `payments`, signed amounts, `reverses` chaining a correction to what it corrects |
+| Ticket changes | Mutable current state + **trigger-written change journal**; the row is the authority, `ticket_history` the diff |
+| One ticket at a time | **Optimistic concurrency** — `update … where idx = ? and version = ?` |
+| Settlement | **Pessimistic row lock** — `select … for update` |
+| Batches | One Postgres function = one transaction |
+| Retries after a timeout | **Read-back reconciliation** — and, from today, **idempotency keys on money** |
+
+Not event sourcing, deliberately — §I's DO NOT IMPLEMENT list still holds. State is
+the truth; history is the record.
+
+### Three gaps closed
+
+**1. Append-only was a habit.** No handler updated `payments`, none deleted from
+it, and that held exactly as long as nobody wrote the one that did. The edge
+function bypasses row security, so grants do not bind it. `payments_append_only()`
+raises on UPDATE, DELETE and TRUNCATE.
+
+**2. Money writes were not idempotent, and the app tells volunteers to retry.** A
+ticket sale is idempotent by nature — the number is the key, version CAS makes a
+second attempt fail loudly, the sell screen reads back what landed. A payment has
+no natural key: RM60 twice for one seller is indistinguishable from two genuine
+RM60 payments, and `WRITE_UNCONFIRMED` puts *"Checking what went through"* on the
+screen at the moment somebody presses again. `payments.client_key`, unique where
+present; `insertPayment()` returns the first row on a replay and writes no second
+audit line. A reversal needs no key — `reverses` is the natural one it already has.
+
+**3. Nothing joined the tables.** Counting a book in writes to four —
+`ticket_history` (by trigger), `payments`, `book_history`, `audit_log` — and the
+only common key was a timestamp, which is approximately right and wrong in exactly
+the case worth investigating. `request_id` now defaults from the request's own
+headers (`current_setting('request.headers')`), so the rows written **inside
+`settle_book`** are stamped without that function growing a parameter and without
+fifty inserts being edited. Blank when there is no request, which is the truth
+about a row written in the SQL editor.
+
+Plus the setter that was owed: `set_sales_close`. The cutoff had been enforced
+since it existed while the date lived in a config row only somebody with database
+access could write — so the app could refuse a volunteer a sale on the authority
+of a date nobody in the app could choose. Organisers', not the owner's; closing
+sooner is typed back, opening up is not.
+
+### And the book being counted in — a live money bug
+
+Reported from a screenshot of `SettleBook.vue`. The server counts `declared` from
+the ticket **rows**; the screen counted the **length of the typed list**. Those
+agree only when the list is perfect:
+
+| Typed | Screen said | Server records |
+|---|---|---|
+| `5051, 5052, 5052` | 8 sold, RM80 | 9 sold, **RM90 due** |
+| one number, on a book holding 3 | 9 sold, RM90 | 2 sold, **RM20** |
+| a number from another book | counted as returned | refuses the whole settlement |
+| a number that is no ticket | counted as returned | ignored — the ticket stays **sold** |
+
+The organiser takes RM80 and the book says RM90; the shortfall lands on a
+volunteer who did nothing wrong. Now: de-duplicated by resolved ticket number and
+counted against the book's actual rows (`inBook.length`, not `TICKETS_PER_BOOK`),
+repeats named on screen rather than silently collapsed, and **the settle button
+refuses to send a list with a bad number in it** — the red warning saying such a
+number "would be counted as sold" had been right, and nobody was stopped.
+
+Whole-book return added: one button fills every number in the book rather than
+asking somebody to read ten out, which is ten chances to fumble a digit. It fills
+the box rather than setting a flag, so the same resolution, the same
+not-in-this-book check and the same count apply.
+
+| Check | Result |
+|---|---|
+| `tests/settlecount.test.mjs` (new) | 21 passed, driving the real computeds; **mutation-checked** — the old arithmetic fails 5 of them |
+| `tests/ledger.test.mjs` (new) | 28 passed — replay, non-replay collisions, the sales-close refusals |
+| `./tests/run.sh` | every suite green; `npm run build` clean |
+| Postgres 16, by hand | 14 new `test-functions.sh` cases reproduced against the real fixture: update/delete/truncate refused, a repeated key refused, two keyless payments still two, and one request id found in all four tables including the rows `settle_book` wrote |
+| Migration rehearsal | Applied twice to a database built from the committed schema **with a payment already in it**: no error, no change, the row keeps its amount and gets a blank id and no key |
+| `supabase/test-functions.sh` | **not run** — no Docker in this session |
+
+Remaining, in order: `book_history` is still written by handlers rather than by a
+trigger (5 of 6 book-update sites write one; the roll's due-date change writes
+only a count); `buyer_zone` is still outside the ticket trail; `audit_log` and
+`book_history` are still append-only by convention.
+
+---
+
+## W. Book-001, reported from production (2026-09-16)
+
+A book brought back by Thang ling, then sold whole at the desk. Four faults, one
+of them money.
+
+**1. The grid could not draw a sale.** A book square's colour is its CUSTODY —
+office, seller, brought back, finished — and selling every ticket in a book
+changes none of those. Book-001 came back brown whether it sold out or sold
+nothing, so the reporter sold a whole book, refreshed, and reasonably concluded
+the app had lost the sale. Nothing was lost: the ticket list showed all ten Sold
+and the book's own panel said 10 of 10. *A screen that cannot show a thing that
+happened is indistinguishable from one that never heard about it.* The colour
+still answers "where is it"; sales are a mark on top — a ring for sold out, a
+corner for part sold. `available` rather than `TICKETS_PER_BOOK`, so a
+part-released book is not drawn sold out while tickets are still in a hand, and a
+book with nothing sold and nothing available reads as not-yet-released.
+
+**2. The history said the book had never been given out.** It had, by name, one
+sheet behind. Empty is two answers — never moved, or moved before this system
+kept the record — and the panel only had words for the first. This raffle ran on
+a spreadsheet before it ran here, so books that moved then have no rows. The
+empty state now checks the book's own status and says which case it is.
+
+**3. A whole-book sale credited the wrong person — and the money with it.**
+`sell_books` used `coalesce(held_by_agent, p_agent_id)`, and returning a book
+does not clear `held_by_agent` (keeping it is how "brought back by" has a name).
+So ten tickets sold across a desk were credited to the seller who had handed the
+book in, putting RM100 on her balance. **The single-ticket path had always asked
+`status = 'Out'` first** — so selling one ticket from a returned book credited
+the desk and selling the whole book credited a volunteer: the same act, two
+doors, two different people owing a hundred ringgit.
+
+The rule now, in one place:
+
+| Where the book is | Credited to |
+|---|---|
+| Out with a seller | that seller, whatever the form says — they carried the paper |
+| Office, or brought back | the person recording it, or whoever they name |
+
+`p_sold_by` is a new argument (the function is dropped first — `create or
+replace` cannot change a signature, and an overload would report "function is
+not unique" at the moment somebody sells a book). The form asks, defaulting to
+the signed-in user; an agent cannot name anybody but themselves.
+
+**4. "Sold by: nobody" read as a hole in the record.** The ticket panel now says
+*"Nobody — sold at the desk"* and shows **written down by**, which has been on
+the row since the first version and was displayed nowhere.
+
+| Check | Result |
+|---|---|
+| `tests/booksold.test.mjs` (new) | 13 passed — the three sale marks, the not-yet-released case, the picker's default |
+| `tests/history.test.mjs` | +3: a moved book with no trail, and a book that truly has not moved |
+| Postgres 16, by hand | all three credit branches: desk→null, out→holder, desk-named→that person. **Mutation-checked**: the old rule credits all ten to the returning seller |
+| `./tests/run.sh` | green; `npm run build` clean |
+| `supabase/test-functions.sh` | 7 new cases; **not run** — no Docker in this session |
+
+**Production data still needs repairing by hand.** The ten tickets of Book-001
+are credited to Thang ling in the live database; the code fix does not rewrite
+rows. `correct_ticket` accepts `agentId`, so each can be moved with a reason,
+and the correction lands in `ticket_history` where it can be read back.
+
+**Still open, and the deeper half of 3:** expected money is attributed by
+`books.held_by_agent`, so a returned book's post-return sales remain on the
+person who brought it back even now that `sold_by_agent` is honest. Making that
+right means deciding where a returned book's money lives — `return_books`
+clearing the holder, or a `returned_by` column — and it moves what every seller
+is shown as owing. That is a change to make deliberately, with reproductions,
+not alongside four UI fixes.
+
+---
+
+## X. "Everything except X" — a bug shape, named (2026-09-16)
+
+A condition written as the complement of a set — `scope !== 'totals'`,
+`source <> 'settlement'` — is correct on the day it is written and wrong on the
+day somebody adds a value to that set. It never fails loudly: the new value
+falls into the branch nobody was thinking about, and the branch does something
+plausible.
+
+**And the test suite is not merely failing to catch it. It is supplying the
+confidence to ship it.** Nobody reorders a ternary against a red board. They
+reorder it, watch two hundred assertions pass across the files most thorough in
+the repository on exactly that subject, and conclude it was inert. Every other
+paragraph in this section is downstream of that sentence: the rule, the fixture,
+the direction test and the survivors are all attempts to put something in the
+way of a change that a green suite has already blessed.
+
+Five instances in this repository, all within two days of each other — three
+written as the operator, one as a fall-through with no operator in it, and one at
+the auth boundary:
+
+| Where | The negation | What the new value did |
+|---|---|---|
+| Two money screens | `scope !== 'totals'` | A fourth scope (`recorded`) arrived and a **helper fell through to the seller-by-seller table** — the rows the scope split exists to withhold |
+| Collected money | `source <> 'settlement'` | A third source (`writeoff`) arrived and **forgiven debt counted as cash handed in** — a seller who was let off appeared to have paid |
+| `RoundReport.vue` | `scope !== 'totals'` | Written the same day the warning above it was, in the same file it warns from |
+
+The third is the instructive one. `showsSellerNames()` already existed, with a
+comment saying in as many words that the negation had broken two screens — and
+the new screen wrote the negation anyway. It **did not leak**, because the
+server sends a helper no lines at all, and that is the part worth being
+uncomfortable about: the screen was relying on the server's withholding rather
+than saying the rule. It rendered a "Seller by seller" heading over nothing,
+offered no explanation, and would have printed the rows the day the server's
+answer widened. A guard that is correct only because something else is correct
+is not a second layer.
+
+**The rule.** Name the set that GETS the thing, never the set that does not.
+`scope === 'all' || scope === 'mine'`, `source = 'hand'`. Then a value nobody
+has thought of yet falls outside, which is the safe side of every one of these
+three. Where the negation is right, it is because it fails safe — `tickets.source
+<> 'settlement'` in `settle_book` treats an unknown source as a real buyer and
+*refuses* to un-sell it — and that is worth a sentence at the site saying so.
+
+**Where it cannot be spelled once.** `showsSellerNames()` lives in the edge
+function and the client cannot import it, so `RoundReport.vue` keeps a copy kept
+in step by hand and says that it is one. A copy that knows it is a copy is the
+cheapest honest answer; the expensive dishonest one is two rules that look
+independent. `Money.vue` reached the same arrangement independently for
+`showsRaffleMoney`, which is what makes it a decision rather than an excuse.
+
+**A fourth instance, and the part that generalises.** `Money.vue` gated the
+raffle's own figures on `scope !== 'recorded'` — shipped and deployed, two
+hundred lines from a comment describing the bug, by somebody who had written the
+rule down an hour earlier. Knowing the rule did not make them see it. That is
+the ordinary case, not a lapse, and it is why the rule needs a test rather than
+a paragraph.
+
+**AND NO TEST KEYED ON THE VALUES THAT EXIST CAN CATCH THIS.** Every case on
+both screens named one of the four scopes we have, so all four passed against the
+negation as readily as against the rule. The failure mode *is* a value that is
+not in the set yet, and a case keyed on the members cannot reach it. Both screens
+now render a scope nobody has invented — `'added-next-year'` — and assert it
+receives no seller's name and none of the raffle's figures.
+
+That test is strictly stronger than the one it joins, and the reason is worth
+keeping. The helper case asserts against `lines: []`, because the server
+withholds them — so it passes whether the screen is withholding or merely
+relying on the server to. The unknown-scope case hands the screen a populated
+`lines` and requires it to withhold anyway. Restoring the negation fails five
+assertions, and the two that name a real seller are only reachable from the
+value that does not exist.
+
+**A fall-through is this bug without the operator.** The last arm of a `v-if`
+chain, a final `else`, a `default:` — each catches everything the named arms did
+not, and grepping for `!==` finds none of them. `Money.vue`'s seller table was
+`v-else-if="rows.length"`, last in the chain after the named arms for a helper
+and a viewer, so it caught every scope they did not: hand it rows and it renders
+every seller by name with books, expected and owed. No operator anywhere in it.
+The question that finds these is **"which branch does an unknown value land
+in"**, which is a reading question, not a search.
+
+**And the fixture matters as much as the assertion.** A test for an
+unrecognised value has to hand the code the data the server would NEVER send.
+Built from the server's own correct answer, it only re-tests the server. Both
+unknown-scope tests were first written with `lines: []` — the shape a refused
+scope really returns — and both proved nothing: they passed whether the screen
+withheld or was merely relying on the server to. Changing `[]` to `[row]` turned
+one of them red on the spot and exposed the fall-through above. This is the most
+portable sentence in this section.
+
+**Run the reading question at the boundary, not only in the screens.**
+`resolveUser` cast whatever `app_users.role` said straight to `Role`, and
+`mask()` asks viewer, then agent, then recorder, and returns the row **untouched**
+if none match. A sixth role would have received every buyer's name and full
+telephone number — the one direction this system must never fall. Not reachable:
+the column carries a CHECK naming the five values. But the guard was a constraint
+in `schema.sql`, a file that at the time of writing is in no commit — **the code
+did not say it depended on the constraint, and the constraint is the part that is
+not in git.** A clean checkout has neither the constraint nor anything standing in
+for it. That is a sharper argument for committing this tree than "the tree is the
+only copy of production's schema": it names a specific unguarded PII boundary
+that a fresh clone would ship with. An unrecognised role now resolves to `viewer`,
+which is the floor. Mutation-checked: with the bare cast restored, the masker
+hands back `0123456789` instead of `••••789`.
+
+**The worked example, in four lines.** `moneyScope` ends
+`user.role === 'viewer' ? 'totals' : 'recorded'`. Reorder it to
+`user.role === 'recorder' ? 'recorded' : 'totals'` — a change that reads like
+tidying, and which anybody might write. All four known roles still come out
+right: organiser `all`, seller `mine`, helper `recorded`, viewer `totals`. An
+unrecognised role goes from `recorded`, an empty helper screen, to `totals`, the
+raffle's takings.
+
+Run against that mutant, `money.test.mjs` (116), `roles.test.mjs` (32) and
+`moneyowed.test.mjs` (55) are **entirely green** — 203 assertions keyed on the
+four roles that exist, none of which can see it. Only the two assertions keyed on
+a role that does not exist fail. That is the whole section in one experiment: a
+test keyed on the values that exist cannot catch a change to the arm that catches
+the ones that do not.
+
+And those three suites are not weak ones. `money.test.mjs` and
+`moneyowed.test.mjs` are the most thorough in this repository on exactly this
+subject — who may see whose money — which is the point rather than a caveat:
+**thoroughness about the set that exists is not partial coverage of the value
+that does not, it is zero coverage of it, and it looks like the opposite.** The
+green suite is what makes the change feel safe to make.
+
+### The exceptions are on purpose
+
+Three branches in this repository catch unknown values deliberately and must
+survive the rule, or the next reader applies it as a lint and removes the
+protection along with the bug:
+
+| Where | Why it stays |
+|---|---|
+| `tickets.source <> 'settlement'` in `settle_book` | An unknown source is read as a REAL BUYER, so the settlement refuses to un-sell it. Fails toward keeping a name |
+| `History.vue` step kinds, last arm | A trail that silently omits a step is worse than one with an ugly word in it — the file's own stated principle |
+| `Empty` fallback on the money cards | Reveals nothing; the fall-through is a blank card |
+
+The test is not the operator, it is the direction: **does the value nobody
+thought of land on the withholding side?** Where it does, leave it and say so at
+the site. `tickets.source` and the step kinds now do.
+
+**Ask that question of the code ALONE, with every other layer assumed broken** —
+and this clause is not a refinement, it is the whole thing. Asked of the running
+system, *every instance in the table above passes*. `Money.vue`'s fall-through
+never fired, because `report_outstanding` sends no rows to a scope
+`showsSellerNames` refuses. `RoundReport.vue` never printed a seller, because the
+server withholds the lines. `resolveUser`'s bare cast was unreachable, because a
+CHECK constraint names the five roles. All three were safe in situ and all three
+were wrong, and a reader applying the direction test to the live system would
+have certified all three as designs.
+
+Which is the coincidence this whole section is about, wearing the costume of the
+rule that removes it. `tickets.source` and the step kinds survive because they
+withhold **by their own reading, with nothing else assumed**. That is the
+difference, and it is the only version of the test worth writing down.
+
+**A survivor, named so nobody fixes it on pattern-match.** `tickets.source <>
+'settlement'` in `settle_book` stays. It is on the ticket's source, not a
+payment's, and it fails safe: an unknown source is read as a real buyer, so the
+settlement *refuses* to un-sell it. Once a rule has a name, the risk turns over
+— the next reader deletes the correct instances too.

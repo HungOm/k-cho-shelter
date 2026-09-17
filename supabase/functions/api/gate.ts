@@ -151,7 +151,24 @@ export function resolveUser(
     )
   }
 
-  const role = (isSuper ? 'admin' : (row?.role ?? 'viewer')) as Role
+  /*
+   * A ROLE THIS CODE DOES NOT RECOGNISE IS THE LEAST OF THEM, NOT THE MOST.
+   *
+   * This was a bare cast: whatever the row said became a Role, unvalidated. It
+   * is not reachable today — app_users.role carries a CHECK naming the five
+   * values — so the guard is a constraint in schema.sql rather than anything
+   * here, and that file's canonical text is not currently in any commit.
+   *
+   * What made it worth closing anyway is WHERE an unrecognised value lands.
+   * mask() asks `role === 'viewer'`, then agent, then recorder, and returns the
+   * row untouched if none match — so a sixth role would have received every
+   * buyer's name and full telephone number, which is the one direction this
+   * system must never fall in. Every other "everything except" bug found today
+   * fell the same way: the value nobody had thought of landed on the permissive
+   * side. A viewer is the floor, so an unknown role gets the floor.
+   */
+  const claimed = isSuper ? 'admin' : (row?.role ?? 'viewer')
+  const role: Role = ROLES.includes(claimed as Role) ? (claimed as Role) : 'viewer'
 
   /*
    * ONLY 'active' IS LET IN, AND EACH OTHER STATE SAYS WHICH IT IS.
@@ -241,26 +258,54 @@ export async function agentBooks(
 }
 
 
+/**
+ * The last three digits and nothing else — a viewer's whole defining property.
+ *
+ * Its own function because the trail masks the same numbers as the ticket does,
+ * and a phone shortened two ways is the bug this file's own comment warns
+ * about: three code paths hiding a number three ways read as three
+ * applications.
+ */
+export function shortPhone(phone: unknown): string {
+  const p = String(phone ?? '')
+  if (!p) return ''
+  return p.length < 4 ? '\u2022\u2022\u2022\u2022' : '\u2022\u2022\u2022\u2022' + p.slice(-3)
+}
+
+/**
+ * MAY THIS PERSON READ THE BUYER ON THIS TICKET — the rule itself, alone.
+ *
+ * It was the body of mask() and is now named, because a second reader needs the
+ * same answer: a ticket's history is shown to whoever may see the ticket, and
+ * deciding that a second time in books.ts is how the trail came to be
+ * organisers-only while the ticket beside it was not. The row it is asked about
+ * needs only `book_idx` and `recorded_by`, which is what both the ticket and
+ * its trail can supply.
+ *
+ * A viewer passes: they see names, with the telephone number shortened by
+ * mask() and by the trail. That is the same answer tickets_readable gives —
+ * `mine` is true for every role but agent and recorder.
+ */
+export function seesBuyer(
+  row: { book_idx?: unknown; recorded_by?: unknown },
+  user: AppUser,
+  holds?: BookSet,
+): boolean {
+  if (holds && user.role === 'agent' && !holds.has(Number(row.book_idx))) return false
+  if (user.role === 'recorder' && String(row.recorded_by ?? '') !== user.email) return false
+  return true
+}
+
 export function mask(
   row: Record<string, unknown>,
   user: AppUser,
   holds?: BookSet,
 ): Record<string, unknown> {
   if (user.role === 'viewer') {
-    const phone = String(row.buyer_phone ?? '')
-    return {
-      ...row,
-      buyer_phone: phone
-        ? (phone.length < 4 ? '\u2022\u2022\u2022\u2022' : '\u2022\u2022\u2022\u2022' + phone.slice(-3))
-        : '',
-    }
+    return { ...row, buyer_phone: shortPhone(row.buyer_phone) }
   }
 
-  if (holds && user.role === 'agent' && !holds.has(Number(row.book_idx))) {
-    return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
-  }
-
-  if (user.role === 'recorder' && String(row.recorded_by ?? '') !== user.email) {
+  if (!seesBuyer(row, user, holds)) {
     return { ...row, buyer_name: '', buyer_phone: '', buyer_zone: '', notes: '' }
   }
 

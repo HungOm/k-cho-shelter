@@ -208,6 +208,15 @@ async function correct() {
         <!-- Who sold it was recorded from the first version and shown nowhere.
              It is the first thing asked about a sale somebody is querying. -->
         <div v-if="agent" class="fact"><span>Sold by</span><b>{{ agent.name }}</b></div>
+        <!-- A sale at the desk is credited to nobody unless somebody was named,
+             and then this panel had nothing to say about who handled it — while
+             the email of the person who typed it has been on the row since the
+             first version. "Sold by: nobody" reads as a record with a hole in
+             it; "written down by" is the person you would actually go and ask. -->
+        <div v-else-if="isSold(t)" class="fact">
+          <span>Sold by</span><b class="muted">Nobody — sold at the desk</b>
+        </div>
+        <div v-if="t.by" class="fact"><span>Written down by</span><b>{{ t.by }}</b></div>
         <div class="fact"><span>Now</span><StatusPill :status="t.status" /></div>
       </div>
       <button class="btn block mt" @click="showHistory = true">Where this ticket has been</button>

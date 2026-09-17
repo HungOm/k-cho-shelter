@@ -177,6 +177,54 @@ export async function writtenOffByAgent(ctx: Ctx, agentIds?: string[] | null) {
 export const round2 = (n: number) => Math.round(n * 100) / 100
 
 /**
+ * RECORDING THE SAME MONEY TWICE IS THE RETRY, NOT A SECOND PAYMENT.
+ *
+ * A ticket sale is idempotent by nature: the ticket number is the key, the
+ * version check makes a second attempt fail loudly, and the sell screen reads
+ * the rows back one by one to see what landed. A PAYMENT has no natural key.
+ * RM60 for one seller twice is indistinguishable from two genuine RM60
+ * payments — and after a write times out the app tells the person, in as many
+ * words, "Checking what went through". That sentence is on the screen at the
+ * precise moment somebody on bad signal in a car park presses the button again.
+ *
+ * So the CALLER names the attempt and reuses that name on every retry of it.
+ * A second insert with the same name is not an error: it returns the row the
+ * first one wrote. Refusing would be the same problem in a different coat —
+ * the volunteer cannot tell "already recorded" from "record it again", and one
+ * of those two answers loses money.
+ *
+ * NO KEY IS STILL ALLOWED, and means "I am not claiming this is a retry".
+ * Everything written before today, and every path that has no client to ask,
+ * carries none. The unique index is partial for exactly that reason.
+ */
+const DUPLICATE = '23505'
+
+export async function insertPayment(
+  ctx: Ctx,
+  row: Record<string, unknown>,
+  clientKey: unknown,
+): Promise<{ id: number | null; replayed: boolean }> {
+  const key = String(clientKey ?? '').trim().slice(0, 100)
+  const { data, error } = await ctx.supabaseAdmin
+    .from('payments').insert({ ...row, client_key: key || null })
+    .select('id').maybeSingle()
+
+  if (!error) return { id: (data as { id?: number })?.id ?? null, replayed: false }
+
+  // Only THIS key colliding is a replay. Any other unique violation is a real
+  // fault and has to travel as one rather than being reported as a success.
+  const code = (error as { code?: string }).code
+  const message = String((error as { message?: string }).message ?? '')
+  if (!key || code !== DUPLICATE || !message.includes('client_key')) {
+    throw new ApiError('QUERY_FAILED', message)
+  }
+
+  const { data: existing } = await ctx.supabaseAdmin
+    .from('payments').select('id').eq('client_key', key).maybeSingle()
+  return { id: (existing as { id?: number })?.id ?? null, replayed: true }
+}
+
+/**
  * Sales that never had a seller: tickets sold out of books nobody is holding.
  *
  * The ledger counted their price as expected and nothing could count it as
@@ -230,7 +278,7 @@ export async function recordPayment(p: Record<string, unknown>, user: AppUser, c
     bookIdx = Number((book as { idx: number }).idx)
   }
 
-  const { data, error } = await ctx.supabaseAdmin.from('payments').insert({
+  const { id, replayed } = await insertPayment(ctx, {
     agent_id: agentId,
     amount,
     received_by: user.email,
@@ -238,18 +286,25 @@ export async function recordPayment(p: Record<string, unknown>, user: AppUser, c
     note: String(p.note ?? '').trim(),
     book_idx: bookIdx,
     source: 'hand',
-  }).select('id,amount,received_at').maybeSingle()
-  if (error) throw new ApiError('QUERY_FAILED', error.message)
+  }, p.clientKey)
 
-  await ctx.supabaseAdmin.from('audit_log').insert({
-    action: 'RECORD_PAYMENT',
-    details: { agent: agentId, amount, book: bookNumber || null },
-    email: user.email,
-  })
+  // A replay wrote nothing, so it logs nothing. An audit trail that grows a row
+  // every time a phone retries would report one payment as four.
+  if (!replayed) {
+    await ctx.supabaseAdmin.from('audit_log').insert({
+      action: 'RECORD_PAYMENT',
+      details: { agent: agentId, amount, book: bookNumber || null },
+      email: user.email,
+    })
+  }
 
   const owed = await owedBy(ctx, agentId)
   return {
-    paymentId: (data as { id?: number })?.id ?? null,
+    paymentId: id,
+    // So the screen can say "already recorded" rather than "recorded", which is
+    // the difference between a volunteer trusting the number and counting the
+    // cash again.
+    replayed,
     agentId,
     agentName: String((agent as { name?: string }).name ?? agentId),
     amount,
@@ -335,28 +390,32 @@ export async function writeOff(p: Record<string, unknown>, user: AppUser, ctx: C
     )
   }
 
-  const { data: row, error } = await ctx.supabaseAdmin.from('payments').insert({
+  const { id: writeOffRow, replayed } = await insertPayment(ctx, {
     agent_id: agentId,
     amount,
     received_by: user.email,
     method: 'writeoff',
     source: 'writeoff',
     note: reason,
-  }).select('id').maybeSingle()
-  if (error) throw new ApiError('QUERY_FAILED', error.message)
+  }, p.clientKey)
 
-  await ctx.supabaseAdmin.from('audit_log').insert({
-    action: 'WRITE_OFF',
-    details: { agent: agentId, name: agent.name, amount, owedBefore: owed, reason },
-    email: user.email,
-  })
+  if (!replayed) {
+    await ctx.supabaseAdmin.from('audit_log').insert({
+      action: 'WRITE_OFF',
+      details: { agent: agentId, name: agent.name, amount, owedBefore: owed, reason },
+      email: user.email,
+    })
+  }
 
   const left = round2(owed - amount)
   return {
     agent: { id: agentId, name: agent.name },
     amount,
     reason,
-    writeOffId: (row as { id?: number } | null)?.id ?? null,
+    writeOffId: writeOffRow,
+    // Said back, so a screen can tell "already written off" from "written off"
+    // rather than showing the same decision twice to somebody who tapped twice.
+    replayed,
     owedBefore: owed,
     stillOwed: left,
     by: user.email,
@@ -379,6 +438,14 @@ export async function reversePayment(p: Record<string, unknown>, user: AppUser, 
     throw new ApiError('NOTHING_TO_DO', 'That entry is itself a reversal.')
   }
 
+  /*
+   * A REVERSAL NEEDS NO KEY: it already has one.
+   *
+   * `reverses` names the row being undone, and only one row may undo it, so a
+   * retried reversal finds this guard and stops. That is the natural key a
+   * plain payment does not have — which is why only the plain ones carry a
+   * client key.
+   */
   const { data: already } = await ctx.supabaseAdmin
     .from('payments').select('id').eq('reverses', id).maybeSingle()
   if (already) throw new ApiError('NOTHING_TO_DO', 'That payment has already been reversed.')
@@ -466,6 +533,7 @@ export async function owedBy(ctx: Ctx, agentId: string): Promise<number> {
   if (error) throw new ApiError('QUERY_FAILED', error.message)
   return round2(Number((data as { outstanding?: number } | null)?.outstanding ?? 0))
 }
+
 
 /*
  * noteSettlementPayment USED TO LIVE HERE, and deleting it is the point.

@@ -100,7 +100,11 @@ for (const f of files) {
     continue
   }
   // Not listed, so it has to choose at run time rather than assume.
-  ok(/from '\.\.\/lib\/backend\.js'|from '\.\/lib\/backend\.js'/.test(raw) &&
+  // Any relative depth. The two files that had needed this lived one level from
+  // lib/, and the pattern had quietly hardcoded that — so the first screen in
+  // modals/ to ask which backend it was on imported the flag, read the flag, and
+  // failed for being two directories away from it.
+  ok(/from '(?:\.\.?\/)+lib\/backend\.js'/.test(raw) &&
      /isSupabase/.test(v),
      `${rel} names a spreadsheet without asking which backend is running`)
 }

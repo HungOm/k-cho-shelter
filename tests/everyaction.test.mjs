@@ -156,7 +156,17 @@ const CALLS = {
   set_active_tickets: { activeTickets: 20 },
   set_ticket_ceiling: { ticketCeiling: 200 },
   roll_check_in: {}, set_final_deadline: { date: '2027-01-01' },
-  record_check_in: { agentId: 'A001', booksBack: 1, ticketsSold: 4, amountPaid: 40 },
+  record_check_in: { agentId: 'A001', booksBack: 1, ticketsSold: 4, amountPaid: 40,
+                     stubsReturned: 4, unsoldReturned: 6 },
+  check_in_sheet: { agentId: 'A001' },
+  round_snapshot: {},
+  // A round far enough ahead to exist in any plan this fixture has; the point
+  // of exercising it here is that the action answers at all, in words, rather
+  // than falling over on a payload shape.
+  set_check_in_date: { round: 2, date: '2027-06-01' },
+  // Far enough out to need no confirmation, and inside the year the setter caps
+  // a mistyped date at.
+  set_sales_close: { date: '2027-01-01' },
   record_payment: { agentId: 'A001', amount: 40, note: 'at the hall' },
   // A real 1x1 PNG, because the handler sniffs the bytes rather than trusting
   // contentType — a made-up string would be refused for the right reason and

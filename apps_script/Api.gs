@@ -377,6 +377,10 @@ function whoamiConfig_(cfg) {
     defaultDueDays: cfgNum(cfg, 'DEFAULT_DUE_DAYS', 30),
     checkInDate: isoDay_(cfgDate_(cfg, 'CHECK_IN_DATE')),
     finalDeadline: isoDay_(cfgDate_(cfg, 'FINAL_DEADLINE')),
+    // Carried so the two backends hand the client the same config object. The
+    // cutoff is ENFORCED on Supabase only, where the write rules live; here it
+    // is a date the screens can show, which is what this payload is for.
+    salesCloseDate: isoDay_(cfgDate_(cfg, 'SALES_CLOSE_DATE')),
     eventName: cfg.EVENT_NAME || '',
     orgName: cfg.ORG_NAME || '',
     // The organiser's mark, by URL. Blank means no mark rather than somebody

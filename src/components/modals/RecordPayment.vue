@@ -25,6 +25,34 @@ const amount = ref('')
 const note = ref('')
 const bookNumber = ref('')
 const busy = ref(false)
+
+/*
+ * ONE NAME FOR THIS ATTEMPT, KEPT UNTIL IT LANDS.
+ *
+ * A write that times out may well have landed — that is why the app says
+ * "Checking what went through" rather than "failed" — and the next thing that
+ * happens is a volunteer with one bar of signal pressing the button again.
+ * Cash has no natural key: RM60 twice for one seller is indistinguishable from
+ * two genuine RM60 payments, so the server cannot tell a retry from a second
+ * handful of notes unless the caller says which it is.
+ *
+ * Generated once and REUSED until a save succeeds, which is the whole
+ * mechanism: the same key is the same payment, a new key is new money. Cleared
+ * on success so the next payment from the same form is not read as a replay of
+ * this one.
+ *
+ * randomUUID is not everywhere — an old Android WebView, or any page not served
+ * over HTTPS — so the fallback is a plain random string. It has to be unique
+ * among one volunteer's retries, not across the universe.
+ */
+const key = ref('')
+function attempt() {
+  if (!key.value) {
+    key.value = globalThis.crypto?.randomUUID?.()
+      || `k-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  }
+  return key.value
+}
 const problem = ref('')
 
 const currency = computed(() => state.cfg?.currency || '')
@@ -53,8 +81,14 @@ async function save() {
       amount: n,
       note: note.value.trim(),
       bookNumber: bookNumber.value.trim(),
+      clientKey: attempt(),
     })
-    toast(`${money(r.amount, currency.value)} recorded`, 'ok')
+    // "Already recorded" and "recorded" have to read differently, or somebody
+    // who pressed twice counts the cash again to find out which it was.
+    toast(r.replayed
+      ? `${money(r.amount, currency.value)} was already recorded`
+      : `${money(r.amount, currency.value)} recorded`, 'ok')
+    key.value = ''
     emit('saved')
     refresh()
   } catch (err) {

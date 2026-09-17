@@ -109,23 +109,132 @@ export function daysBetween(from: string, to: string): number {
 /** A week — when "due soon" starts everywhere else in this system. */
 export const REPORT_NOTICE_DAYS = 7
 
-/** Every round from `anchor` to `final` inclusive; [] with no wall to walk to. */
-export function checkInSchedule(anchor: string, final: string, everyMonths: number): string[] {
+/*
+ * HOW FAR APART THE ROUNDS SIT, in the unit the raffle actually keeps.
+ *
+ * Months were the only unit there was, and half the rhythms people run on
+ * cannot be said in months. "Twice a month" is the common one and it was
+ * unsayable: CHECK_IN_EVERY_MONTHS is a whole number of months, so the nearest
+ * expressible thing was monthly, and a team reporting every fortnight was being
+ * told by every screen in the app that they report monthly.
+ *
+ * So the cadence is a number and a unit — `1m`, `2w`, `14d` — and months stay
+ * the default so nothing that was set before today changes meaning. A bare
+ * number is months, which is exactly what the old key held, which is what lets
+ * the old key remain the fallback rather than a migration everybody has to run.
+ *
+ * TWICE A MONTH IS A FORTNIGHT HERE, not the 15th and the last day. A true
+ * semi-monthly rhythm has two different gaps and lands on dates no arithmetic
+ * agrees about in February; a raffle that genuinely wants the 15th and the 30th
+ * sets a fortnight and moves the one round that lands wrong, which is what the
+ * per-round override is for. One mechanism that handles every calendar beats
+ * two that each handle most of one.
+ */
+export type Cadence = { n: number; unit: 'm' | 'd' }
+
+/** A year. Longer than the longest raffle, so a mistyped cadence cannot suspend it. */
+const MAX_CADENCE_DAYS = 366
+
+export function parseCadence(raw: unknown, fallbackMonths = 1): Cadence {
+  const fallback: Cadence = { n: Math.min(12, Math.max(1, Math.floor(fallbackMonths) || 1)), unit: 'm' }
+  const text = String(raw ?? '').trim().toLowerCase()
+  if (!text) return fallback
+
+  const m = /^(\d+)\s*(d|day|days|w|week|weeks|m|month|months)?$/.exec(text)
+  if (!m) return fallback
+
+  // 0 is not "never": it asks the check-in to stand still, which is the one
+  // setting that stops the whole mechanism working. Read as 1, as it always was.
+  const n = Math.max(1, parseInt(m[1], 10) || 1)
+  const unit = (m[2] ?? 'm')[0]
+  if (unit === 'w') return { n: Math.min(n * 7, MAX_CADENCE_DAYS), unit: 'd' }
+  if (unit === 'd') return { n: Math.min(n, MAX_CADENCE_DAYS), unit: 'd' }
+  return { n: Math.min(n, 12), unit: 'm' }
+}
+
+/** One step of the cadence. Month steps clamp to the end of the month; days do not need to. */
+export function addCadence(iso: string, c: Cadence): string {
+  return c.unit === 'd' ? addDays(iso, c.n) : addMonths(iso, c.n)
+}
+
+/**
+ * The cadence as somebody would say it, because the screens print it in
+ * sentences: "then it moves on a month".
+ */
+export function cadenceWords(c: Cadence): string {
+  if (c.unit === 'm') return c.n === 1 ? 'a month' : `${c.n} months`
+  if (c.n === 7) return 'a week'
+  if (c.n === 14) return 'a fortnight'
+  if (c.n % 7 === 0) return `${c.n / 7} weeks`
+  return `${c.n} days`
+}
+
+/**
+ * Every round from `anchor` to `final` inclusive; [] with no wall to walk to.
+ *
+ * `every` takes a plain number of months as it always did, or a cadence with a
+ * unit. Both, rather than one: this function is called with a bare number from
+ * the Apps Script twin's tests and from four cases in checkin.test.mjs, and a
+ * signature that silently reinterprets those as days would move every date in
+ * the plan while every one of those tests went on passing.
+ */
+export function checkInSchedule(
+  anchor: string, final: string, every: number | Cadence,
+): string[] {
   if (!final) return []
   if (!anchor || anchor >= final) return [final]
 
-  const step = Math.max(1, Math.floor(everyMonths) || 1)
+  const step: Cadence = typeof every === 'number'
+    ? { n: Math.max(1, Math.floor(every) || 1), unit: 'm' }
+    : every
   const out = [anchor]
   let d = anchor
-  // Capped rather than trusted. A cadence and a wall that disagree — a one-month
-  // step and a raffle somebody dated five years out — must not spin here.
-  for (let i = 0; i < 60; i++) {
-    d = addMonths(d, step)
+  // Capped rather than trusted. A cadence and a wall that disagree — a one-day
+  // step and a raffle somebody dated five years out — must not spin here. The
+  // cap is on ROUNDS rather than on the arithmetic, so a weekly raffle gets its
+  // weeks and a mistyped one stops at a plan nobody can read instead of hanging.
+  for (let i = 0; i < 200; i++) {
+    d = addCadence(d, step)
     if (d >= final) break
     out.push(d)
   }
   out.push(final)
   return out
+}
+
+/**
+ * THE PLAN, WITH THE DATES SOMEBODY MOVED.
+ *
+ * The derivation does not know that round 4 lands on Chinese New Year, and it
+ * never will. A row in check_in_dates replaces the date for one round and
+ * touches no other: the rhythm is anchored, so moving one date does not walk
+ * the rest of the plan sideways.
+ *
+ * Kept OUT of checkInSchedule rather than folded into it, because that function
+ * is a pure derivation from three values and is tested as one. Overrides are
+ * stored data and arrive with round numbers attached, which the derivation has
+ * no way to know — it produces a list, not a numbering.
+ */
+export function withOverrides(
+  schedule: string[], firstRound: number, overrides: Map<number, string>,
+): Array<{ date: string; round: number; moved: boolean }> {
+  return schedule.map((date, i) => {
+    const round = firstRound + i
+    const moved = overrides.get(round)
+    return { date: moved || date, round, moved: !!moved && moved !== date }
+  })
+}
+
+/** Dates an organiser has moved, by round. Empty is the behaviour this always had. */
+export async function checkInOverrides(ctx: Ctx): Promise<Map<number, string>> {
+  const { data } = await ctx.supabaseAdmin
+    .from('check_in_dates').select('round,due_at,note').order('round')
+  const m = new Map<number, string>()
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const d = dayStart(r.due_at)
+    if (d) m.set(Number(r.round), d)
+  }
+  return m
 }
 
 /** A whole number of days on from a date-only day. Never an instant. */
@@ -141,8 +250,24 @@ export async function configNum(ctx: Ctx, key: string, fallback: number, min = 0
   return Number.isFinite(n) && n >= min ? n : fallback
 }
 
-/** How far apart the rounds sit. */
+/** How far apart the rounds sit, in months. Kept for the callers that think in months. */
 export const everyMonths = (ctx: Ctx) => configNum(ctx, 'CHECK_IN_EVERY_MONTHS', 1, 1)
+
+/**
+ * The cadence this raffle keeps.
+ *
+ * CHECK_IN_EVERY wins when it is set; CHECK_IN_EVERY_MONTHS is the fallback, so
+ * a raffle configured before the unit existed keeps the rhythm it has been
+ * running on and nobody has to migrate a row to stay where they were.
+ */
+export async function cadence(ctx: Ctx): Promise<Cadence> {
+  const { data } = await ctx.supabaseAdmin
+    .from('config').select('value').eq('key', 'CHECK_IN_EVERY').maybeSingle()
+  return parseCadence(data?.value ?? '', await everyMonths(ctx))
+}
+
+/** The last day a ticket may be sold. Blank is how every raffle ran until today. */
+export const salesCloseDate = (ctx: Ctx) => configDate(ctx, 'SALES_CLOSE_DATE')
 
 /**
  * The gap between the check-in date and being called late for it.
@@ -286,14 +411,15 @@ export async function deadlineStatus(_p: Record<string, unknown>, user: AppUser,
     if (id) holders.add(id)
   }
 
-  const months = await everyMonths(ctx)
+  const step = await cadence(ctx)
   const grace = await graceDays(ctx)
   const round = await checkInRound(ctx)
   const answered = await reportedIn(ctx, round)
   const outstanding = [...holders].filter((id) => !answered.has(id))
+  const close = await salesCloseDate(ctx)
 
   const reportBy = checkIn ? addDays(checkIn, grace) : ''
-  const schedule = checkInSchedule(checkIn, final, months)
+  const schedule = withOverrides(checkInSchedule(checkIn, final, step), round, await checkInOverrides(ctx))
 
   return {
     today: now,
@@ -312,15 +438,30 @@ export async function deadlineStatus(_p: Record<string, unknown>, user: AppUser,
     // everybody — a seller cannot report by a day nobody told them about — so
     // this is not scoped the way the counts are.
     round,
-    everyMonths: months,
+    // Both, and they cannot disagree: everyMonths is the month count when the
+    // raffle keeps a monthly rhythm and 0 when it does not, so a reader that
+    // only knows about months can tell "three months" from "not months at all"
+    // instead of quietly rendering a fortnight as a month.
+    everyMonths: step.unit === 'm' ? step.n : 0,
+    cadence: `${step.n}${step.unit}`,
+    cadenceWords: cadenceWords(step),
     graceDays: grace,
     reportBy,
     chaseFrom: reportBy,
-    schedule: schedule.map((d, i) => ({
-      date: d,
-      round: round + i,
-      last: d === final,
-      done: d < now,
+    // THE LAST DAY A TICKET MAY BE SOLD, which is not the day the books come
+    // back and not the draw. Blank is every raffle that ran before it existed.
+    salesCloseDate: close,
+    salesClosed: !!close && close < now,
+    daysToSalesClose: close ? daysBetween(now, close) : null,
+    schedule: schedule.map((r) => ({
+      date: r.date,
+      round: r.round,
+      // Whether somebody moved this one off the rhythm. Shown, because a date
+      // that is not where the cadence would have put it is a date people have
+      // to be told about twice.
+      moved: r.moved,
+      last: r.date === final,
+      done: r.date < now,
     })),
     roundsLeft: schedule.length,
     sellersHolding: holders.size,
@@ -393,6 +534,20 @@ export async function recordCheckIn(p: Record<string, unknown>, user: AppUser, c
     return { agentId, agentName: name, round, checkInDate: checkIn, undone: true }
   }
 
+  /*
+   * HOW MANY BOOKS THEY WERE HOLDING WHEN THEY SAID THIS.
+   *
+   * Read now and stored, rather than looked up whenever the sheet is printed.
+   * A seller reports in September holding four books and hands two back in
+   * October; a sheet printed in November that recomputes "books × ten tickets"
+   * gets forty where the copy they signed says eighty, and the two sheets
+   * disagree about a number neither of them got wrong. The figure belongs to
+   * the moment, so it is written down at the moment — the same reason
+   * round_snapshots stores `outstanding` instead of deriving it later.
+   */
+  const { data: held } = await ctx.supabaseAdmin
+    .from('books').select('idx').eq('held_by_agent', agentId).eq('status', 'Out')
+
   const row = {
     agent_id: agentId,
     round,
@@ -400,6 +555,21 @@ export async function recordCheckIn(p: Record<string, unknown>, user: AppUser, c
     books_back: int(p.booksBack),
     tickets_sold: int(p.ticketsSold),
     amount_paid: num(p.amountPaid),
+    /*
+     * THE PAPER, WHICH IS THE HALF NOTHING COULD SEE.
+     *
+     * books_back and tickets_sold are the seller's word about things the system
+     * counts for itself, so a report built from them could only restate the
+     * screen. These two are what the system cannot know: how many counterfoils
+     * are in the envelope, and how many unsold tickets came back loose out of a
+     * part-used book. With them, every ticket a seller was carrying is in one of
+     * four places — stub, returned unsold, still in a book they kept, or
+     * unaccounted for — and the fourth is the number an organiser is actually
+     * looking for.
+     */
+    stubs_returned: int(p.stubsReturned),
+    unsold_returned: int(p.unsoldReturned),
+    books_out_at: (held ?? []).length,
     note: String(p.note ?? '').trim(),
     recorded_by: user.email,
     reported_at: new Date().toISOString(),
@@ -415,7 +585,8 @@ export async function recordCheckIn(p: Record<string, unknown>, user: AppUser, c
 
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'RECORD_CHECK_IN',
-    details: { agent: agentId, round, booksBack: row.books_back, amountPaid: row.amount_paid },
+    details: { agent: agentId, round, booksBack: row.books_back, amountPaid: row.amount_paid,
+               stubs: row.stubs_returned, unsold: row.unsold_returned },
     email: user.email,
   })
 
@@ -428,6 +599,9 @@ export async function recordCheckIn(p: Record<string, unknown>, user: AppUser, c
     booksBack: row.books_back,
     ticketsSold: row.tickets_sold,
     amountPaid: row.amount_paid,
+    stubsReturned: row.stubs_returned,
+    unsoldReturned: row.unsold_returned,
+    booksOutAt: row.books_out_at,
   }
 }
 
@@ -532,13 +706,23 @@ export async function rollCheckIn(p: Record<string, unknown>, user: AppUser, ctx
     )
   }
 
-  // A step of the configured cadence, clamped at the wall further down. The
-  // schedule is for showing people the plan, never for choosing this date.
-  const months = await everyMonths(ctx)
+  /*
+   * WHERE THE NEXT DATE COMES FROM, in order: what the caller typed, then the
+   * date somebody set for that round, then a plain step of the cadence.
+   *
+   * The middle one is new and it is not the derivation creeping in. A row in
+   * check_in_dates is a date a person typed and stored, the same kind of thing
+   * as p.date arriving in the request — the rule this preserves is that the
+   * target is never READ OFF THE PLAN, because the plan is arithmetic and
+   * whether a seller is late must not depend on arithmetic that can change
+   * under them. A stored override cannot change under anybody.
+   */
+  const step = await cadence(ctx)
   const round = await checkInRound(ctx)
+  const overrides = await checkInOverrides(ctx)
   const target = String(p.date ?? '').trim()
     ? dayStart(p.date)
-    : addMonths(current || now, months)
+    : (overrides.get(round + 1) || addCadence(current || now, step))
 
   if (!target) {
     throw new ApiError('BAD_DATE', 'That is not a date this system can read. Use 2026-10-14.')
@@ -606,7 +790,7 @@ export async function rollCheckIn(p: Record<string, unknown>, user: AppUser, ctx
       dryRun: true,
       from: current, to: landed, finalDeadline: final, isLastRound,
       round, nextRound: round + 1,
-      roundsLeft: checkInSchedule(landed, final, months).length,
+      roundsLeft: checkInSchedule(landed, final, step).length,
       booksOut, booksMoving: moving.length, lateNow,
       daysGiven: daysBetween(now, landed),
       effect: `${moving.length} of ${booksOut} books out would be given until ${landed}.`,
@@ -1006,5 +1190,515 @@ export async function setFinalDeadline(p: Record<string, unknown>, user: AppUser
     from: current, to: target, clearing,
     checkInDate: pullsCheckIn ? target : checkIn,
     pulledCheckInBack: pullsCheckIn,
+  }
+}
+
+
+// ============ MOVING ONE ROUND'S DATE ============
+
+/**
+ * Put a FUTURE reporting round on a different day, without touching the rhythm.
+ *
+ * WHY THIS AND NOT A TYPED CALENDAR. The rounds are worked out from the anchor,
+ * the cadence and the wall precisely so nobody has to keep a calendar in their
+ * head, and so a seller can be told every one of their dates on the day they
+ * collect their books. That stays. What the derivation cannot know is that round
+ * 4 lands on a public holiday, or that the hall is booked that week, and until
+ * now the only answers were to change the cadence for everybody or to roll early
+ * and lose a round.
+ *
+ * ONE ROUND, AND THE RHYTHM SURVIVES IT. The plan is derived from the ANCHOR
+ * rather than from each previous date, so moving round 4 does not walk rounds 5
+ * and 6 sideways with it. That property is what makes this safe to offer: the
+ * worst a mistake can do is put one date somewhere odd, and the same screen puts
+ * it back.
+ *
+ * FUTURE ONLY, AND THE LIVE ROUND IS THE ROLL'S. CHECK_IN_DATE is the one stored
+ * date that decides who is late — defaultDueDate hands it to every book going
+ * out, every overdue calculation compares against it, the chase list is built
+ * from it — and it already has an owner: rollCheckIn, with a dry run, a typed
+ * confirmation when somebody is already overdue, and a flat refusal to move
+ * backwards. A second door onto the same value with none of those guards is how
+ * a raffle ends up with two current check-in dates and discovers that the one
+ * nobody could see was the one deciding who was chased. So this moves rounds
+ * that have not arrived yet and says where to move the live one.
+ *
+ * THE WINDOW IS THE GUARD. A date is refused unless it falls strictly between
+ * the round before it and the round after it, and never past the wall. Two
+ * rounds on one day is a date that cannot be reported by twice; rounds out of
+ * order is a plan that reads as nonsense to the person keeping it. Both are
+ * refused with the window named, because "not allowed" and "it has to fall
+ * between 15 October and 14 December" are different amounts of help.
+ */
+export async function setCheckInDate(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const round = Math.floor(Number(p.round ?? 0))
+  if (!Number.isFinite(round) || round < 1) {
+    throw new ApiError('MISSING_FIELD', 'Which round is being moved?')
+  }
+
+  const now = today()
+  const current = await checkInRound(ctx)
+  const checkIn = await configDate(ctx, 'CHECK_IN_DATE')
+  const final = await configDate(ctx, 'FINAL_DEADLINE')
+
+  if (!final) {
+    throw new ApiError(
+      'NO_FINAL_DEADLINE',
+      'There is no final deadline yet, so there are no rounds to move. The system admin ' +
+      'sets that first.',
+    )
+  }
+  if (round < current) {
+    throw new ApiError(
+      'ROUND_CLOSED',
+      `Round ${round} has already closed — round ${current} is the live one. Reports are ` +
+      'filed against the round they answered, so moving its date now would change what ' +
+      'people were asked to do after they had done it.',
+      { round, currentRound: current },
+    )
+  }
+  if (round === current) {
+    throw new ApiError(
+      'ROUND_IS_LIVE',
+      `Round ${current} is the one everybody is reporting to now, and its date is the one ` +
+      'the whole raffle measures lateness against. Move it with "Move the check-in on" on ' +
+      'the Deadlines screen, which says first how many books it would give more time to.',
+      { round, currentRound: current, checkInDate: checkIn },
+    )
+  }
+
+  const step = await cadence(ctx)
+  const overrides = await checkInOverrides(ctx)
+  const derived = checkInSchedule(checkIn, final, step)
+  const plan = withOverrides(derived, current, overrides)
+
+  const at = plan.find((r) => r.round === round)
+  if (!at) {
+    const last = plan[plan.length - 1]
+    throw new ApiError(
+      'NO_SUCH_ROUND',
+      `This raffle has rounds ${current} to ${last ? last.round : current} — there is no ` +
+      `round ${round} between now and the final deadline on ${final}.`,
+      { rounds: plan.map((r) => r.round) },
+    )
+  }
+
+  // CLEARING puts a round back on the rhythm, which is the first thing somebody
+  // wants the moment they move one by mistake.
+  const clearing = !String(p.date ?? '').trim()
+  const asked = clearing ? '' : dayStart(p.date)
+  if (!clearing && !asked) {
+    throw new ApiError('BAD_DATE', 'That is not a date this system can read. Use 2026-10-14.')
+  }
+  if (clearing && !overrides.has(round)) {
+    throw new ApiError('NO_CHANGE', `Round ${round} has not been moved — it is on ${at.date}.`)
+  }
+
+  const was = at.date
+  // Where it lands: the typed date, or the date the rhythm would have given it.
+  const target = clearing ? derived[round - current] : asked
+  if (!clearing && target === was) {
+    throw new ApiError('NO_CHANGE', `Round ${round} is already on ${target}.`)
+  }
+
+  const before = plan.filter((r) => r.round < round).pop()
+  const after = plan.find((r) => r.round > round)
+
+  if (target < now) {
+    throw new ApiError(
+      'IN_THE_PAST',
+      `${target} has already passed. A reporting date has to be a day people can still ` +
+      'report by.',
+    )
+  }
+  if (target > final) {
+    throw new ApiError(
+      'PAST_THE_WALL',
+      `The final deadline is ${final}. A reporting round cannot fall after it — by then ` +
+      'everything is due outright, which is not something to report on, it is the end.',
+      { finalDeadline: final },
+    )
+  }
+  if (before && target <= before.date) {
+    throw new ApiError(
+      'OUT_OF_ORDER',
+      `Round ${before.round} is on ${before.date}, so round ${round} has to fall after it. ` +
+      `${target} does not.`,
+      { window: { after: before.date, before: after ? after.date : final } },
+    )
+  }
+  if (after && target >= after.date) {
+    throw new ApiError(
+      'OUT_OF_ORDER',
+      `Round ${after.round} is on ${after.date}, so round ${round} has to fall before it. ` +
+      'Move the later round first if the whole run is shifting.',
+      { window: { after: before ? before.date : checkIn, before: after.date } },
+    )
+  }
+
+  if (clearing) {
+    const { error } = await ctx.supabaseAdmin.from('check_in_dates').delete().eq('round', round)
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
+  } else {
+    const { error } = await ctx.supabaseAdmin.from('check_in_dates').upsert({
+      round, due_at: target, note: String(p.note ?? '').trim(), set_by: user.email,
+      set_at: new Date().toISOString(),
+    }, { onConflict: 'round' })
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
+  }
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SET_CHECK_IN_DATE',
+    details: { round, from: was, to: target, cleared: clearing,
+               note: String(p.note ?? '').trim() },
+    email: user.email,
+  })
+
+  return {
+    round, from: was, to: target, cleared: clearing,
+    schedule: withOverrides(derived, current, await checkInOverrides(ctx)),
+  }
+}
+
+
+// ============ THE CHECK-IN SHEET ============
+
+/**
+ * One seller, one round, on one page — the thing that is printed, read out and
+ * signed at the table.
+ *
+ * WHY IT IS ONE CALL. Everything on it is already answerable somewhere:
+ * agent_statement has the books and the money, deadline_status has the dates,
+ * round_snapshot has what a closed round said. Assembling a document out of four
+ * calls means four moments, and a sheet whose money was read at 10:04 and whose
+ * books were read at 10:06 can disagree with itself about a book settled at
+ * 10:05. A document somebody signs has to be one measurement.
+ *
+ * THE PAPER ARITHMETIC IS THE POINT, and it is the half nothing could do before.
+ * A seller carrying N books is carrying N × TICKETS_PER_BOOK physical tickets.
+ * The system counts SALES — what somebody typed into a screen — and cannot count
+ * paper, so until the stubs and the unsold returns were written down, "does it
+ * add up" was a question with no data behind it.
+ *
+ * DECLARED AND RECORDED ARE PRINTED SIDE BY SIDE, never merged. The declaration
+ * is what the seller said while standing there; the record is what the system
+ * was told by whoever typed the sales in. Where they disagree, the disagreement
+ * IS the finding — a book sold out of somebody's own pocket, a sale recorded
+ * against the wrong seller, an envelope of stubs left in a car. Merged into one
+ * "sold" figure, the same gap goes unseen until the draw.
+ *
+ * AND BOTH SIDES ARE CUMULATIVE, which is the only way they can be compared.
+ * Stubs handed in at one visit are a per-visit quantity; sales recorded on a
+ * seller's books are a running total for the raffle. Comparing those two
+ * directly reads as a discrepancy every round after the first, which would
+ * train an organiser to ignore the one number on the sheet worth reading. So
+ * the declarations are summed to this round and compared with the running
+ * total. The round's own figures are printed too — they are what the seller
+ * actually handed over today — but the gap is cumulative against cumulative.
+ *
+ * FROZEN ONCE THE ROUND HAS CLOSED. For a round that has rolled, the snapshot
+ * taken at the roll comes back beside today's figures, so a sheet reprinted in
+ * December still says what the October copy said and shows what has moved. For
+ * the live round nothing is frozen and the figures are live, which is correct:
+ * it is the working document, and the round has not finished happening.
+ */
+export async function checkInSheet(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  // An agent may only ever pull their own — the same silent redirection
+  // agent_statement makes. Asking for somebody else's is not an error worth
+  // explaining, it is a question they are not entitled to ask.
+  const agentId = user.role === 'agent'
+    ? (user.agentId ?? '')
+    : String(p.agentId ?? '').trim()
+  if (!agentId) throw new ApiError('MISSING_FIELD', 'Which seller?')
+
+  const { data: agent } = await ctx.supabaseAdmin
+    .from('agents').select('agent_id,name,phone,zone').eq('agent_id', agentId).maybeSingle()
+  if (!agent) {
+    throw new ApiError('AGENT_NOT_FOUND', `There is no seller with the ID "${agentId}".`, null, 404)
+  }
+
+  const now = today()
+  const current = await checkInRound(ctx)
+  const asked = Math.floor(Number(p.round ?? 0))
+  const round = asked >= 1 ? asked : current
+
+  const checkIn = await configDate(ctx, 'CHECK_IN_DATE')
+  const final = await configDate(ctx, 'FINAL_DEADLINE')
+  const close = await salesCloseDate(ctx)
+  const grace = await graceDays(ctx)
+  const step = await cadence(ctx)
+  const perBook = await configNum(ctx, 'TICKETS_PER_BOOK', 10, 1)
+  const { data: cur } = await ctx.supabaseAdmin
+    .from('config').select('value').eq('key', 'CURRENCY').maybeSingle()
+
+  // Every declaration this seller has made up to and including this round. The
+  // one for this round is the sheet's subject; the rest are what makes the
+  // comparison with a running total a fair one.
+  const { data: saidRows } = await ctx.supabaseAdmin
+    .from('check_in_reports').select('*')
+    .eq('agent_id', agentId).lte('round', round).order('round')
+  const history = (saidRows ?? []) as Array<Record<string, unknown>>
+  const said = history.find((r) => Number(r.round) === round) ?? null
+
+  // What the round said when it closed. Absent for the live round, which has not
+  // closed, and for rounds that closed before snapshots existed.
+  const { data: frozen } = await ctx.supabaseAdmin
+    .from('round_snapshots').select('*')
+    .eq('agent_id', agentId).eq('round', round).maybeSingle()
+
+  const { data: ledger } = await ctx.supabaseAdmin
+    .from('book_ledger_all').select('*').eq('held_by_agent', agentId).order('idx')
+  const rows = (ledger ?? []) as Array<Record<string, unknown>>
+
+  const n = (v: unknown) => Number(v ?? 0)
+  const books = rows.map((b) => ({
+    number: String(b.number ?? ''),
+    firstTicket: String(b.first_ticket ?? ''),
+    lastTicket: String(b.last_ticket ?? ''),
+    status: String(b.status ?? ''),
+    due: b.due_at ?? null,
+    daysOverdue: n(b.days_overdue),
+    ticketsInBook: perBook,
+    sold: n(b.counted_sold),
+    // What is still sellable in it, and what is being held for somebody. These
+    // two are the "remains of the book" a seller is carrying.
+    available: n(b.available),
+    reserved: n(b.reserved),
+    // Sold, and nobody wrote down who bought it. The one fault on this sheet
+    // that cannot be repaired after the draw.
+    missingContact: n(b.missing_contact),
+    expected: round2(n(b.counted_expected)),
+    collected: round2(n(b.counted_collected)),
+  }))
+
+  const out = rows.filter((b) => String(b.status) === 'Out')
+  const expected = round2(rows.reduce((t, b) => t + n(b.counted_expected), 0))
+  const collected = round2((await collectedByAgent(ctx, [agentId])).get(agentId) ?? 0)
+  const recordedSold = rows.reduce((t, b) => t + n(b.counted_sold), 0)
+  const missingContact = rows.reduce((t, b) => t + n(b.missing_contact), 0)
+
+  /*
+   * THE PAPER, AND WHERE EVERY TICKET OF IT IS.
+   *
+   * booksOutAt is what they were holding when they reported, stored at that
+   * moment — not what they hold now, which is what makes a reprint agree with
+   * the copy somebody signed. With no declaration yet the live count stands in,
+   * because this sheet is also what an organiser prints BEFORE the seller
+   * arrives, to carry to the table with the numbers already on it.
+   *
+   * `unaccounted` is the number the sheet exists for: the paper that was in the
+   * books handed back, less the paper actually counted in. Positive means
+   * tickets are missing out of a returned book. NEGATIVE IS ORDINARY and says
+   * so on the page — it means they also handed in stubs from books they are
+   * keeping, which is what a seller mid-book does every time.
+   */
+  const booksAtHand = said ? n(said.books_out_at) : out.length
+  const ticketsInHand = booksAtHand * perBook
+  const stubs = n(said?.stubs_returned)
+  const unsoldBack = n(said?.unsold_returned)
+  const booksBack = n(said?.books_back)
+  const handedBack = booksBack * perBook
+  const handedIn = stubs + unsoldBack
+
+  const stubsToDate = history.reduce((t, r) => t + n(r.stubs_returned), 0)
+  const paidToDate = round2(history.reduce((t, r) => t + n(r.amount_paid), 0))
+
+  const answered = await reportedIn(ctx, round)
+  const earlier = await reportsBefore(ctx, round)
+
+  return {
+    round,
+    isCurrentRound: round === current,
+    roundClosed: round < current,
+    // The date this round was to be reported by: what the declaration was filed
+    // against for a round that has one, the live date otherwise. Never
+    // re-derived — a round's date is what it was, whatever the plan says now.
+    dueAt: said?.due_at ?? (round === current ? checkIn : null),
+    checkInDate: checkIn,
+    finalDeadline: final,
+    salesCloseDate: close,
+    cadence: cadenceWords(step),
+    graceDays: grace,
+    ticketsPerBook: perBook,
+    currency: cur?.value ?? 'RM',
+    takenAt: new Date().toISOString(),
+    printedBy: user.email,
+
+    agent: {
+      id: String(agent.agent_id), name: String(agent.name ?? ''),
+      phone: String(agent.phone ?? ''), zone: String(agent.zone ?? ''),
+    },
+
+    // What the seller said, and who wrote it down. Null until they report.
+    declared: said
+      ? {
+        reportedAt: said.reported_at, recordedBy: String(said.recorded_by ?? ''),
+        booksOutAt: booksAtHand, booksBack,
+        stubsReturned: stubs, unsoldReturned: unsoldBack,
+        ticketsSold: n(said.tickets_sold), amountPaid: round2(n(said.amount_paid)),
+        note: String(said.note ?? ''),
+      }
+      : null,
+
+    // What the system has been told by whoever typed the sales in.
+    recorded: {
+      books: rows.length, booksOut: out.length,
+      booksOverdue: out.filter((b) => n(b.days_overdue) > 0).length,
+      ticketsSold: recordedSold,
+      expected, collected, outstanding: round2(expected - collected),
+      missingContact,
+    },
+
+    // Every ticket they were carrying, and where it went.
+    paper: {
+      booksAtHand, ticketsInHand,
+      booksBack, inBooksHandedBack: handedBack,
+      stubsReturned: stubs, unsoldReturned: unsoldBack, handedIn,
+      stillWithThem: Math.max(0, ticketsInHand - handedIn),
+      unaccounted: said ? handedBack - handedIn : 0,
+    },
+
+    // The two numbers this sheet exists to put beside each other, both running
+    // totals so that they are the same measurement twice.
+    gap: said
+      ? {
+        stubsToDate, ticketsRecorded: recordedSold, tickets: stubsToDate - recordedSold,
+        paidToDate, moneyRecorded: collected, money: round2(paidToDate - collected),
+      }
+      : null,
+
+    standing: {
+      state: reportState({
+        booksOut: out.length, reported: answered.has(agentId), checkIn, grace, now,
+      }),
+      reported: answered.has(agentId),
+      daysLate: checkIn && checkIn < now ? daysBetween(checkIn, now) : 0,
+      missedBefore: Math.max(0, (round - 1) - (earlier.get(agentId) ?? 0)),
+    },
+
+    // What this round said when it closed, for a sheet reprinted afterwards.
+    frozen: frozen
+      ? {
+        takenAt: frozen.taken_at, takenBy: String(frozen.taken_by ?? ''),
+        booksOut: n(frozen.books_out), booksSettled: n(frozen.books_settled),
+        ticketsSold: n(frozen.recorded_sold),
+        expected: round2(n(frozen.expected)), collected: round2(n(frozen.collected)),
+        outstanding: round2(n(frozen.outstanding)),
+      }
+      : null,
+
+    books,
+  }
+}
+
+
+// ============ THE DAY SELLING STOPS ============
+
+/**
+ * The last day a ticket may be sold.
+ *
+ * THE THIRD DATE, and it is none of the other two. The check-in is a
+ * checkpoint, the final deadline is when the paper and the money are due back,
+ * and this is when the raffle stops taking money. They are usually different
+ * days and the ordinary order is: selling stops, then everything comes back,
+ * then the draw.
+ *
+ * It was enforced before it could be set, which is a real gap and not a
+ * theoretical one: the rule lived in the database as a config row that only
+ * somebody with SQL access could write. An organiser could be refused a sale by
+ * a date they had no way to choose or to move.
+ *
+ * WHY AN ORGANISER AND NOT THE OWNER. The final deadline is the owner's because
+ * moving it moves the draw and every countdown to it. Closing sales is the
+ * ordinary running of the raffle — the committee decides at a meeting that the
+ * books shut on the first — and a single unreachable person should not be
+ * between the organisers and a decision they have already taken. It is audited
+ * like everything else, and it can be undone.
+ *
+ * CLOSING IS THE DANGEROUS DIRECTION. Opening selling back up costs nothing;
+ * shutting it stops money the raffle is counting on, immediately and for
+ * everybody. So a date that closes sales sooner than they close today — or that
+ * has already passed, which closes them the moment it is written — has to be
+ * typed back before it is applied. The same shape as bringing the final
+ * deadline forward, for the same reason.
+ */
+export async function setSalesClose(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const now = today()
+  const current = await salesCloseDate(ctx)
+  const draw = await configDate(ctx, 'DRAW_DATE')
+  const final = await configDate(ctx, 'FINAL_DEADLINE')
+
+  const clearing = !String(p.date ?? '').trim()
+  const target = clearing ? '' : dayStart(p.date)
+  if (!clearing && !target) {
+    throw new ApiError('BAD_DATE', 'That is not a date this system can read. Use 2026-12-01.')
+  }
+  if (target === current) {
+    throw new ApiError('NO_CHANGE', current
+      ? `Ticket sales already close on ${current}.`
+      : 'There is already no closing date — sales stay open.')
+  }
+
+  if (!clearing) {
+    if (draw && target > draw) {
+      throw new ApiError(
+        'AFTER_THE_DRAW',
+        `The draw is on ${draw}. Selling cannot close after the tickets have been drawn — ` +
+        'a ticket sold that day could never have won anything.',
+        { drawDate: draw },
+      )
+    }
+    if (daysBetween(now, target) > 366) {
+      throw new ApiError(
+        'TOO_FAR',
+        `${target} is more than a year away. A closing date that far out is almost always ` +
+        'a mistyped year, and one nobody would notice until the raffle refused to close.',
+      )
+    }
+  }
+
+  /*
+   * TYPED BACK WHEN IT SHUTS SOMETHING, and not otherwise.
+   *
+   * Pushing the date out, or removing it, leaves every seller able to do what
+   * they could do a minute ago. Bringing it in stops sales that are open right
+   * now, which is a decision somebody should have to make twice.
+   */
+  // SOONER THAN IT WOULD HAVE, which is not the same as "a restriction where
+  // there was none". Setting a closing date for the first time, months out, takes
+  // nothing away from anybody today — everybody goes on selling until the day
+  // they are now told about. Treating that as dangerous would put a typed
+  // confirmation in front of the ordinary act of planning a raffle, and a
+  // confirmation asked for routinely is one people learn to type without reading.
+  const closesSooner = !clearing && !!current && target < current
+  const alreadyPast = !clearing && target < now
+  if ((closesSooner || alreadyPast) && String(p.confirm ?? '') !== target) {
+    throw new ApiError(
+      'CONFIRM_REQUIRED',
+      alreadyPast
+        ? `${target} has already passed, so selling would stop the moment this is saved. ` +
+          `Send confirm:"${target}" to go ahead.`
+        : `Sales close on ${current} today. Moving that to ${target} stops selling ` +
+          `sooner for everybody. Send confirm:"${target}" to go ahead.`,
+      { confirm: target, from: current, to: target, alreadyPast },
+    )
+  }
+
+  await setConfig(ctx, 'SALES_CLOSE_DATE', target)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SET_SALES_CLOSE',
+    details: { from: current || null, to: target || null, cleared: clearing },
+    email: user.email,
+  })
+
+  return {
+    from: current, to: target, cleared: clearing,
+    closed: !!target && target < now,
+    // Said back so the screen can put the three dates in order without asking
+    // again, and so an organiser can see at once if they have just put the
+    // closing date after the day everything is due back.
+    finalDeadline: final, drawDate: draw,
+    afterFinal: !!target && !!final && target > final,
   }
 }

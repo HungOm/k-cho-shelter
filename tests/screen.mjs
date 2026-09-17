@@ -17,6 +17,11 @@
  * aimed at a prop therefore fails looking exactly like a broken screen. Aim at
  * slot content, or stub that child specifically.
  *
+ * WHICH BACKEND: pass `backend: 'supabase'` to compile the bundle as that
+ * build. Screens that ask `isSupabase` otherwise compile as Apps Script, which
+ * is the right default — it is what a plain `npm run build` produces — but it
+ * silently empties any screen whose body sits behind that flag.
+ *
  * WHY EITHER EXISTS: a helper can be correct, thoroughly tested, and never
  * called. That has happened four times here in two days — a byte-sniff never
  * invoked, a sell guard no screen consulted, applyBrand never applied, and a
@@ -44,7 +49,7 @@ const ESBUILD = join(ROOT, 'node_modules/.bin/esbuild')
  *                      template reaches on its own; a script-only build cannot
  *                      see it and reports clean.
  */
-function build(componentPath, storeStub, withTemplate) {
+function build(componentPath, storeStub, withTemplate, backend) {
   const dir = mkdtempSync(join(tmpdir(), 'screen-'))
   cpSync(join(ROOT, 'src'), join(dir, 'src'), { recursive: true })
   writeFileSync(join(dir, 'src/lib/store.js'), storeStub)
@@ -107,7 +112,22 @@ function build(componentPath, storeStub, withTemplate) {
     writeFileSync(join(d, '__stubvue.js'), SLOT_STUB)
   }
 
+  /*
+   * WHICH BACKEND THE BUNDLE BELIEVES IT IS ON.
+   *
+   * backend.js picks at import time from the URL, then localStorage, then
+   * VITE_BACKEND, then 'appsscript'. Under Node the first two throw and are
+   * swallowed and the build variable is absent, so every screen compiled here
+   * ran as Apps Script — which was invisible until a screen existed whose whole
+   * body is behind `if (isSupabase)`. Rendered that way it produces its "this
+   * needs the database backend" line and nothing else, and a test asserting on
+   * the document would have failed as though the document were broken.
+   *
+   * Defined rather than stubbed, because backend.js decides more than this one
+   * flag and a stub of it would be a second implementation of that decision.
+   */
   const out = join(dir, 'bundle.mjs')
+  const env = JSON.stringify({ VITE_BACKEND: backend ?? 'appsscript' })
   execFileSync(ESBUILD, [probe, '--bundle', '--format=esm', '--platform=neutral',
     '--external:vue',
     /*
@@ -117,11 +137,12 @@ function build(componentPath, storeStub, withTemplate) {
      * function nothing here ever calls — but esbuild resolves a dynamic import
      * at build time all the same, and it runs in a temp directory whose
      * node_modules link is not made until afterwards. So the first screen to
-     * import backend.js, however indirectly, fails to BUILD, with a resolver
+     * import backend.js, however indirectly, failed to BUILD, with a resolver
      * error that says nothing about the screen.
      */
     '--external:@supabase/supabase-js',
-    '--log-level=error', '--outfile=' + out])
+    '--log-level=error', '--define:import.meta.env=' + env,
+    '--outfile=' + out])
   // vue stays external and resolves from the project's own copy, so the screen
   // runs against the reactivity it actually ships with.
   symlinkSync(join(ROOT, 'node_modules'), join(dir, 'node_modules'))
@@ -129,8 +150,8 @@ function build(componentPath, storeStub, withTemplate) {
 }
 
 /** The setup context of a screen: its refs, computeds and functions, live. */
-export async function setupOf(componentPath, storeStub, props = {}, { emit } = {}) {
-  const { out, cleanup } = build(componentPath, storeStub, false)
+export async function setupOf(componentPath, storeStub, props = {}, { backend, emit } = {}) {
+  const { out, cleanup } = build(componentPath, storeStub, false, backend)
   const mod = await import('file://' + out)
   // The emit is swallowed unless a caller asks for it. What a modal tells its
   // parent is sometimes the whole behaviour — a handover that went out half
@@ -151,10 +172,12 @@ export async function setupOf(componentPath, storeStub, props = {}, { emit } = {
  * proof. No jsdom: a DOM library carried forever to click one row is a worse
  * trade than driving the component's own bindings.
  */
-export async function renderScreen(componentPath, storeStub, { props = {}, drive } = {}) {
+export async function renderScreen(
+  componentPath, storeStub, { props = {}, drive, backend } = {},
+) {
   const { createSSRApp } = await import('vue')
   const { renderToString } = await import('vue/server-renderer')
-  const { out, cleanup } = build(componentPath, storeStub, true)
+  const { out, cleanup } = build(componentPath, storeStub, true, backend)
   const real = (await import('file://' + out)).default
   /*
    * THE PROPS DECLARATION IS CARRIED THROUGH, and it has to be.

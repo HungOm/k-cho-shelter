@@ -100,6 +100,23 @@ console.log('every Apps Script action is either ported or listed as not ported')
     // result. Apps Script would have to read three tabs whole to do it, on a
     // backend whose cheapest call already costs a second.
     ['chase_today', 'merges three lists into one per person, which means joining three tabs a spreadsheet must read whole'],
+    // The sheet's substance is the two declared paper counts and the frozen
+    // round beside them. The spreadsheet backend has neither the columns nor a
+    // table that refuses to be rewritten, so the same action name there would
+    // return a document with the reconciliation missing and no way for a reader
+    // to tell that it was missing rather than zero.
+    ['check_in_sheet', 'no stub columns and no frozen round in the spreadsheet to report on'],
+    // A moved round is a row in check_in_dates. Apps Script derives its
+    // schedule from the same three values and has nowhere to put an exception
+    // to it, so the action would accept a date and quietly drop it.
+    ['set_check_in_date', 'no check_in_dates table in the spreadsheet to store a moved round in'],
+    // The date is a config row either backend can hold — what only one of them
+    // has is the REFUSAL. The cutoff is enforced in the edge function, where the
+    // write rules live, so a setter on the spreadsheet backend would hand an
+    // organiser a closing date that nothing there enforces: a promise the app
+    // does not keep, which is worse than the gap. On that backend it stays what
+    // DRAW_DATE and TICKET_PRICE are — a value in the Config tab.
+    ['set_sales_close', 'the cutoff is enforced in the edge function; a setter with no refusal behind it would be a promise the spreadsheet backend cannot keep'],
   ])
   const extra = [...supabase].filter(a => !appsScript.has(a) && !SUPABASE_ONLY.has(a)).sort()
   ok(extra.length === 0,

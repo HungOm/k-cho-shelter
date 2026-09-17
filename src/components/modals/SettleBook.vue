@@ -39,20 +39,64 @@ const handedBack = computed(() => props.book.status === 'Returned')
 const unsoldList = computed(() =>
   unsold.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))
 
+/** Each entry with the ticket it resolves to, so nothing below resolves twice. */
+const entries = computed(() =>
+  unsoldList.value.map(raw => ({ raw, num: resolveTicketNumber(raw) })))
+
+/**
+ * THE SAME NUMBER TYPED TWICE IS ONE TICKET.
+ *
+ * Read out from a stack of stubs, "5052" gets said twice often enough; the list
+ * is also edited and pasted. The count used to be the LENGTH OF THE LIST, so a
+ * repeat took a ticket off the sold side and RM10 off what the seller owed —
+ * and the server does not agree, because it counts the ticket ROWS. So the
+ * screen said 8 sold and RM80, the organiser took RM80, and the book recorded 9
+ * sold and RM90 owed. A reassuring total that is wrong, with the shortfall
+ * landing on a volunteer.
+ *
+ * Deduplicated and shown. Collapsing it silently would leave somebody who typed
+ * ten numbers looking at nine and no explanation.
+ */
+const returned = computed(() => [...new Set(entries.value.filter(e => e.num).map(e => e.num))])
+
+const repeated = computed(() => {
+  const seen = new Set()
+  const twice = new Map()
+  for (const e of entries.value) {
+    if (!e.num) continue
+    if (seen.has(e.num)) twice.set(e.num, (twice.get(e.num) ?? 1) + 1)
+    seen.add(e.num)
+  }
+  return [...twice].map(([num, n]) => `${short(num)} (${n}×)`)
+})
+
+/**
+ * How many tickets this book actually holds — the rows, not the setting.
+ *
+ * TICKETS_PER_BOOK is what a full book holds. A book at the end of a
+ * part-released run holds fewer, and the server counts the rows, so subtracting
+ * from the setting overstates the sale on exactly the books where the tickets
+ * are already scarce. `inBook` knows; this had been reading the setting while
+ * the comment above inBook explained why it must not.
+ */
+const held = computed(() => inBook.value.length || per.value)
+
 const sold = computed(() => {
   if (lost.value) return parseInt(soldCount.value, 10) || 0
-  // Only tickets that actually resolved count as returned. Counting a typo as
-  // returned would show the agent owing less than the server will charge them.
-  const good = unsoldList.value.length - unresolved.value.length
-  return Math.max(0, per.value - good)
+  // Unique, and only tickets that are IN THIS BOOK. A typo resolves to nothing
+  // and a number from the next book resolves to somebody else's ticket; neither
+  // comes back from here, and counting either would show the seller owing less
+  // than the server is about to charge them.
+  const here = new Set(inBook.value)
+  const back = returned.value.filter(n => here.has(n)).length
+  return Math.max(0, held.value - back)
 })
 const due = computed(() => sold.value * price.value)
 const paidNum = computed(() => parseFloat(paid.value) || 0)
 const diff = computed(() => paidNum.value - due.value)
 
 /** Anything that does not resolve is shown back, not silently sent. */
-const unresolved = computed(() =>
-  unsoldList.value.filter(r => !resolveTicketNumber(r)))
+const unresolved = computed(() => entries.value.filter(e => !e.num).map(e => e.raw))
 
 /**
  * The numbers this book actually contains.
@@ -92,6 +136,28 @@ const example = computed(() => {
 })
 
 /**
+ * THE WHOLE BOOK CAME BACK, which is a real Saturday and was ten lines of typing.
+ *
+ * A seller who never got started hands the book back untouched. The form asked
+ * them to read out every number in it — the longest possible piece of typing
+ * for the simplest possible outcome, and every one of those numbers is a chance
+ * to fumble a digit and accidentally sell a ticket nobody bought.
+ *
+ * It FILLS THE BOX rather than setting a hidden flag. The numbers then go
+ * through the same resolution, the same not-in-this-book check and the same
+ * count as anything typed by hand, and the organiser can see on the screen
+ * exactly what is about to be claimed — including taking one back out if the
+ * seller then finds a stub in their pocket.
+ */
+function wholeBookBack() {
+  unsold.value = inBook.value.map(short).join(', ')
+}
+
+/** Already saying the whole book came back, so the button has nothing to add. */
+const allBack = computed(() =>
+  inBook.value.length > 0 && sold.value === 0 && returned.value.length >= inBook.value.length)
+
+/**
  * Typed a real ticket, but one from a different book.
  *
  * resolveTicketNumber searches the whole raffle, so a number from another book
@@ -100,19 +166,40 @@ const example = computed(() => {
  * books end up describing the same ticket differently.
  */
 const wrongBook = computed(() =>
-  unsoldList.value
-    .map(raw => ({ raw, num: resolveTicketNumber(raw) }))
+  entries.value
     .filter(x => x.num && state.byNumber[x.num]?.book &&
                  state.byNumber[x.num].book !== props.book.book)
     .map(x => `${x.raw} (${state.byNumber[x.num].book})`))
 
 async function settle() {
   if (paid.value === '') return toast('How much money did they hand in?', 'bad')
+  /*
+   * A LIST WITH A BAD NUMBER IN IT IS NOT SENT.
+   *
+   * The screen has said in red, since long before this, that a number it cannot
+   * match "would be counted as sold" — and then let it be sent anyway. What
+   * arrived at the server was a null in the array, which slipped through the
+   * not-in-this-book check without matching anything and was quietly ignored:
+   * the ticket it was meant to name stayed on the sold side and was charged to
+   * the seller. The warning was right, nobody was stopped, and the outcome was
+   * the one the warning described.
+   *
+   * A number from another book is the same act with a worse ending — the server
+   * refuses the whole settlement by name, so the organiser finds out after
+   * pressing the button rather than before.
+   */
+  if (!lost.value && (unresolved.value.length || wrongBook.value.length)) {
+    return toast('Some of those numbers are not tickets in this book. Fix them first ' +
+                 '— as they stand they would count as sold.', 'bad')
+  }
   busy.value = true
   try {
     const payload = { bookNumber: props.book.book, amountPaid: paidNum.value }
     if (lost.value) { payload.allowUnidentified = true; payload.soldCount = sold.value }
-    else payload.unsoldTickets = unsoldList.value.map(resolveTicketNumber)
+    // Resolved and de-duplicated, so what is sent is exactly what the preview
+    // counted. Nothing unresolved can be in it, because the button refuses
+    // above while anything on the list is still wrong.
+    else payload.unsoldTickets = returned.value
 
     const r = await api('settle_book', payload)
     toast(`${props.book.book} counted — ${r.declaredSold} sold`,
@@ -141,6 +228,14 @@ async function settle() {
       <div class="field">
         <label for="su">Which tickets came back?</label>
         <textarea id="su" v-model="unsold" class="xl" :placeholder="example"></textarea>
+        <div v-if="inBook.length" class="quick">
+          <button type="button" class="btn sm ghost" :disabled="allBack" @click="wholeBookBack">
+            The whole book came back
+          </button>
+          <button type="button" class="btn sm ghost" :disabled="!unsold" @click="unsold = ''">
+            Clear
+          </button>
+        </div>
         <p class="hint">
           <template v-if="range">
             This book holds <b>{{ range.first }}–{{ range.last }}</b>.
@@ -180,6 +275,15 @@ async function settle() {
     <!-- A real ticket, from somebody else's book. The dangerous one: it
          resolves, so nothing above catches it, and it would be recorded as
          having come back from a book it was never in. -->
+    <!-- Said, not silently collapsed. Somebody who typed ten numbers and is
+         shown nine needs to know which one this screen decided was the same
+         ticket twice — most often it is, and occasionally it is a digit that
+         should have been different. -->
+    <div v-if="repeated.length" class="note warn">
+      <b>Typed more than once:</b> {{ repeated.join(', ') }}
+      <div class="small">Counted once. Check whether one of them should be a different number.</div>
+    </div>
+
     <div v-if="wrongBook.length" class="note bad">
       <b>Not in {{ book.book }}:</b> {{ wrongBook.join(', ') }}
       <div class="small">
@@ -213,6 +317,8 @@ async function settle() {
 </template>
 
 <style scoped>
+.quick { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
 .lostbox { display: flex; align-items: center; gap: 10px; margin-top: 14px;
   font-weight: 500; color: var(--muted); cursor: pointer; }
 .lostbox input { width: auto; min-height: auto; }

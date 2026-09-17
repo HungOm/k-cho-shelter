@@ -159,13 +159,23 @@ console.log('and the sentence is written once, for every place the phrase appear
   ok(retyped.length === 0, `nobody retypes it (${retyped.map(rel).join(', ') || 'none do'})`)
 
   /*
-   * CheckIn.vue names the term too and does NOT carry the tooltip. It is
-   * another session's file as this is written and reverting somebody's
-   * in-flight work to add a title attribute is not a trade worth making. Listed
-   * so the gap is a decision on the record rather than an oversight; remove it
-   * from here when that file lands and the tooltip goes on.
+   * EMPTY, AND THE ONE ENTRY IT HELD WAS A FALSE POSITIVE WORTH THE TROUBLE.
+   *
+   * CheckIn.vue matched on "counted in" and did not carry the tooltip, so it
+   * was listed here as a pending gap. It was not one: that screen was saying
+   * "ten tickets have been counted in", meaning stubs tallied onto a table,
+   * not a book being closed. Bolting COUNTED_IN_HELP onto it would have
+   * explained settlement on a line about counting paper.
+   *
+   * The real fault was the collision. "Counted in" is this app's word for the
+   * last step of a book — numbers read back, cash written down, Finished — and
+   * a check-in closes nothing. A term that means the ordinary English thing on
+   * one screen and a particular irreversible act on another is how somebody
+   * thinks they have finished a book by reporting on it. So that screen says
+   * "handed over" now, and the list is empty rather than carrying an exemption
+   * for a file that never needed one.
    */
-  const PENDING = ['src/components/modals/CheckIn.vue']
+  const PENDING = []
 
   const missing = files.filter((f) => {
     const r = rel(f)

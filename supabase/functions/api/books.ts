@@ -12,7 +12,7 @@
  * five seconds and is exact, whereas "I sold eight" throws away the
  * ticket-to-buyer link the draw depends on.
  */
-import { ApiError, type AppUser } from './gate.ts'
+import { ApiError, agentBooks, seesBuyer, shortPhone, type AppUser } from './gate.ts'
 import {
   checkInRound, configDate, defaultDueDate, noteReportFromSettle,
 } from './deadlines.ts'
@@ -476,7 +476,6 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
   // and the price of that was a book saying money came in over a ledger with
   // no row for it.
 
-
   return data
 }
 
@@ -700,15 +699,28 @@ export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx
    * AND EVERY CHANGE TO A TICKET IN IT, from the trigger-written trail.
    *
    * The ticket row keeps only its latest state; the trail keeps what it was
-   * before. Buyer names and numbers ride along for an organiser only — this
-   * action is open to every role so a seller can see where a book went, and a
-   * seller is not owed the name that used to be on somebody else's ticket.
+   * before. WHO MAY READ THE BUYER IN IT is not a question this handler gets to
+   * answer on its own: it is whoever may read that buyer on the ticket itself,
+   * decided by seesBuyer in gate.ts, which is the same rule tickets_readable
+   * applies in the database and mask() applies to every other read.
+   *
+   * It used to be `user.isAdmin` and nothing else, which was a fourth rule and
+   * the wrong one in both directions. A seller carrying the book was shown the
+   * buyer on the live ticket and a blank in its history — the same name, from
+   * the same book, hidden on one screen and printed on the other; while an
+   * ordinary viewer, who may read every buyer in the raffle, was shown none of
+   * them here. A record nobody entitled to it can read is not a record.
    */
   const { data: trail } = await ctx.supabaseAdmin
     .from('ticket_history').select('*').eq('book_idx', book.idx).order('at')
   const { data: ticketRows } = await ctx.supabaseAdmin
-    .from('tickets').select('idx,number').eq('book_idx', book.idx)
+    .from('tickets').select('idx,number,recorded_by').eq('book_idx', book.idx)
   const numberOf = new Map((ticketRows ?? []).map((t: { idx: number; number: string }) => [Number(t.idx), t.number]))
+  // A helper's claim is on the sales THEY wrote down, so the trail has to ask
+  // the ticket who that is now — the history row's own by_user is who made that
+  // one change, which is a different question.
+  const wroteIt = new Map((ticketRows ?? []).map(
+    (t: { idx: number; recorded_by?: string }) => [Number(t.idx), String(t.recorded_by ?? '')]))
   for (const h of (trail ?? []) as Array<Record<string, unknown>>) {
     for (const k of ['from_agent', 'to_agent']) if (h[k]) ids.push(String(h[k]))
   }
@@ -722,7 +734,12 @@ export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx
       names.set(id, String(a.name ?? ''))
     }
   }
-  const showBuyer = !!user.isAdmin
+  const holds = await agentBooks(user, ctx)
+  const showBuyer = (ticketIdx: unknown) =>
+    seesBuyer({ book_idx: book.idx, recorded_by: wroteIt.get(Number(ticketIdx)) }, user, holds)
+  // Shortened for a viewer exactly as mask() shortens the live one. A number
+  // printed in full here would undo that masking through the history door.
+  const phone = (v: unknown) => (user.role === 'viewer' ? shortPhone(v) : String(v ?? ''))
   const who = (id: unknown) => (id ? (names.get(String(id)) ?? String(id)) : null)
 
   /*
@@ -767,24 +784,35 @@ export async function bookHistory(p: Record<string, unknown>, user: AppUser, ctx
       by: h.by_user,
       note: h.note || '',
     })),
-    tickets: (trail ?? []).map((h: Record<string, unknown>) => ({
-      at: h.at,
-      ticket: numberOf.get(Number(h.ticket_idx)) ?? String(h.ticket_idx),
-      fromStatus: h.from_status ?? '',
-      toStatus: h.to_status ?? '',
-      fromSeller: who(h.from_agent),
-      toSeller: who(h.to_agent),
-      fromSellerWho: person(h.from_agent),
-      toSellerWho: person(h.to_agent),
-      fromBuyer: showBuyer ? (h.from_buyer ?? '') : '',
-      toBuyer: showBuyer ? (h.to_buyer ?? '') : '',
-      fromPhone: showBuyer ? (h.from_phone ?? '') : '',
-      toPhone: showBuyer ? (h.to_phone ?? '') : '',
-      fromAmount: h.from_amount ?? null,
-      toAmount: h.to_amount ?? null,
-      source: h.source ?? '',
-      by: h.by_user ?? '',
-      note: h.note ?? '',
-    })),
+    tickets: (trail ?? []).map((h: Record<string, unknown>) => {
+      const sees = showBuyer(h.ticket_idx)
+      return {
+        at: h.at,
+        ticket: numberOf.get(Number(h.ticket_idx)) ?? String(h.ticket_idx),
+        fromStatus: h.from_status ?? '',
+        toStatus: h.to_status ?? '',
+        fromSeller: who(h.from_agent),
+        toSeller: who(h.to_agent),
+        fromSellerWho: person(h.from_agent),
+        toSellerWho: person(h.to_agent),
+        fromBuyer: sees ? (h.from_buyer ?? '') : '',
+        toBuyer: sees ? (h.to_buyer ?? '') : '',
+        fromPhone: sees ? phone(h.from_phone) : '',
+        toPhone: sees ? phone(h.to_phone) : '',
+        fromAmount: h.from_amount ?? null,
+        toAmount: h.to_amount ?? null,
+        // Money state, not buyer detail: the ticket shows Paid/Unpaid to every
+        // role, so its record does too. Without these a row whose only change
+        // was "marked paid" renders as a step where nothing happened.
+        fromPayment: h.from_payment ?? '',
+        toPayment: h.to_payment ?? '',
+        source: h.source ?? '',
+        by: h.by_user ?? '',
+        // The ticket's own note, which is a note ABOUT THE BUYER — masked with
+        // them by mask(), and masked with them here. (The book's note, above,
+        // is an organiser writing down why a book moved.)
+        note: sees ? (h.note ?? '') : '',
+      }
+    }),
   }
 }

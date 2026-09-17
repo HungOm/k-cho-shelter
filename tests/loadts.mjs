@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 const API = fileURLToPath(new URL('../supabase/functions/api/', import.meta.url))
 const ESBUILD = fileURLToPath(new URL('../node_modules/esbuild/bin/esbuild', import.meta.url))
 const STUB = fileURLToPath(new URL('./stubs/supabase-server.js', import.meta.url))
+const CORE_STUB = fileURLToPath(new URL('./stubs/supabase-server-core.js', import.meta.url))
 
 let dir = null
 const loaded = new Map()
@@ -60,6 +61,11 @@ export async function loadModule(name) {
     // loaded and run — they are where several of today's bugs lived, and an
     // unloadable module is an untestable one.
     '--alias:npm:@supabase/server=' + STUB,
+    // The subpath is a separate module specifier and needs its own alias: an
+    // import of npm:@supabase/server/core does not resolve through the alias
+    // above, and the bundle fails to build rather than to run — an esbuild
+    // error, not a test failure, which reads as the harness being broken.
+    '--alias:npm:@supabase/server/core=' + CORE_STUB,
     '--external:npm:*',
     '--log-level=error',
     '--outfile=' + out,

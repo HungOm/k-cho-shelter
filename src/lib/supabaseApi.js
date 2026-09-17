@@ -29,6 +29,7 @@ const WRITES = new Set([
   'set_user_status', 'set_permission', 'request_approval', 'cancel_approval',
   'decide_approval', 'record_winner', 'expand_tickets', 'set_active_tickets',
   'set_ticket_ceiling', 'roll_check_in', 'set_final_deadline', 'record_check_in',
+  'set_check_in_date', 'set_sales_close',
   'upload_logo', 'set_brand_color',
   'record_payment', 'reverse_payment',
   'upsert_prize', 'remove_prize', 'upsert_prize_type', 'set_winner_status',

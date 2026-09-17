@@ -139,21 +139,48 @@ console.log('5b. a sold-out book has its own colour, and still says where it is'
   ok(/background:\s*#[0-9a-f]{3,8}/i.test(key), 'the legend swatch carries the same fill')
 }
 
-/*
- * CASE 6 IS HELD BACK, DELIBERATELY, and this note is why rather than a gap.
- *
- * It exercises SellBook.vue's seller picker — who a whole-book sale is
- * credited to — which is a MONEY-ATTRIBUTION change still waiting on the
- * organiser's decision. The four books it was written for are credited in the
- * live database to sellers who had already handed them back, and correcting
- * the ticket rows does not move the money, because what is expected follows
- * books.held_by_agent. That is a decision with two volunteers' names on it.
- *
- * The cases above are the DISPLAY half and drag none of it in: a grid that can
- * draw what sold, and a history panel that stops contradicting the panel
- * behind it. Kept apart so the screens the organiser photographed can be fixed
- * without shipping an attribution rule nobody has agreed to yet.
- */
+console.log('6. and the form asks who sold it, rather than deciding')
+{
+  /*
+   * A book OUT with somebody is theirs whatever this box says — the server
+   * credits the holder. The box is for the other case, which is the one that
+   * went wrong: a book in the office, or brought back and not given out again,
+   * is sold across a desk by whoever is standing at it. That person was
+   * recorded as the seller who had handed the book in, and the price of ten
+   * tickets landed on her balance.
+   */
+  const store = `
+import { reactive, computed } from 'vue'
+export const state = reactive({
+  cfg: { ticketsPerBook: 10, ticketPrice: 10, currency: 'RM', bookPrefix: 'Book-', bookDigits: 3 },
+  agents: [{ id: 'A001', name: 'Amos Hung' }, { id: 'A002', name: 'Thang ling' }],
+  user: { role: 'recorder', agentId: 'A001' }, books: [], tickets: [],
+})
+export const api = async (a, p) => { globalThis.__sold = p; return { sold: 10, books: ['Book-001'], amount: 100, tickets: [], skipped: [] } }
+export const toast = () => {}
+export const refresh = async () => {}
+export const loadDelta = async () => {}
+export const isAdmin = computed(() => false)
+export const bookBlock = () => null
+`
+  const { setupOf } = await import('./screen.mjs')
+  const { ctx, cleanup } = await setupOf('src/components/modals/SellBook.vue', store, { book: null })
+  ok(ctx.soldBy.value === 'A001',
+     'it defaults to the person signed in, who is the one at the desk')
+  ok(ctx.creditName.value === 'Amos Hung', 'and says whose name that is')
+
+  globalThis.__sold = null
+  ctx.from.value = '1'
+  ctx.name.value = 'HTNAG'
+  ctx.phone.value = '012345678'
+  await ctx.sell()
+  ok(globalThis.__sold?.soldBy === 'A001', 'and sends it, so the server does not have to guess')
+
+  ctx.soldBy.value = ''
+  await ctx.sell()
+  ok(globalThis.__sold?.soldBy === '', 'nobody is a choice too — a sale no volunteer carried a book for')
+  cleanup()
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

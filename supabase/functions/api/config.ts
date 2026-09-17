@@ -67,6 +67,11 @@ export function configPayload(cfg: Record<string, string>) {
     // real day, so a date months past reads as still ahead.
     checkInDate: dayStart(cfg.CHECK_IN_DATE ?? ''),
     finalDeadline: dayStart(cfg.FINAL_DEADLINE ?? ''),
+    // The last day a ticket may be sold, which is none of the other three. It
+    // travels with them because the screens that offer a sale are the ones that
+    // have to say when selling stops — a cutoff nobody is told about first is a
+    // refusal at the till.
+    salesCloseDate: dayStart(cfg.SALES_CLOSE_DATE ?? ''),
     drawDate: dayStart(cfg.DRAW_DATE ?? ''),
   }
 }

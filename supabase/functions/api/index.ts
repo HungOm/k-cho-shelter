@@ -23,6 +23,7 @@
  * instead of Google Identity Services directly.
  */
 import { withSupabase } from 'npm:@supabase/server'
+import { createAdminClient } from 'npm:@supabase/server/core'
 import {
   ApiError,
   isActionAllowed,
@@ -155,8 +156,11 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   deadline_status: { group: 'Books', label: 'See the check-in and final dates' },
   roll_check_in: { group: 'Books', label: 'Move the check-in date on a month', danger: true },
   record_check_in: { group: 'Books', label: 'Record that a seller has reported' },
+  check_in_sheet: { group: 'Books', label: "A seller's check-in report" },
+  set_check_in_date: { group: 'Books', label: 'Move a future reporting round', danger: true },
   round_snapshot: { group: 'Books', label: 'What a past check-in round said' },
   set_final_deadline: { group: 'Books', label: 'Change the final deadline', danger: true },
+  set_sales_close: { group: 'Books', label: 'Set the day ticket sales close', danger: true },
   upload_logo: { group: 'Access', label: 'Change the raffle\'s logo' },
   set_brand_color: { group: 'Access', label: 'Change the raffle\'s colour' },
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
@@ -274,6 +278,9 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // organiser to be free is a report that gets written on the back of an
   // envelope instead.
   record_check_in: { roles: ['recorder'], kind: 'write', fn: deadlines.recordCheckIn },
+  check_in_sheet: { roles: ['agent', 'recorder'], kind: 'report', fn: deadlines.checkInSheet },
+  set_check_in_date: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setCheckInDate },
+  set_sales_close: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setSalesClose },
   round_snapshot: { roles: null, kind: 'read', fn: deadlines.readRoundSnapshot },
   set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline },
   // Organisers only, enforced HERE rather than by hiding a button. Branding is
@@ -966,8 +973,44 @@ export default {
       // the same overrides this request was.
       ;(ctx as unknown as { _overrides?: unknown })._overrides = overrides
 
+      /*
+       * ONE ID FOR EVERYTHING THIS REQUEST TOUCHES.
+       *
+       * Counting a book in writes to four tables — the tickets it marks sold,
+       * the payments row for the cash, the book's custody line and the audit
+       * log — and nothing joined them. "Show me everything that happened when
+       * Book-0031 was counted in" was a join on TIME, which is approximately
+       * right, always available, and wrong in exactly the cases worth
+       * investigating: two people working the same minute.
+       *
+       * CARRIED AS A HEADER rather than threaded through fifty inserts. Every
+       * call this client makes carries it, PostgREST puts the request's headers
+       * where SQL can see them, and a column DEFAULT picks it up — which is
+       * also how the rows written INSIDE settle_book get stamped without that
+       * function growing a parameter. No handler is changed and no handler can
+       * forget.
+       *
+       * Replaced rather than reconfigured, because a client's headers are fixed
+       * when it is built and this id is per request. Cheap: it is an HTTP
+       * client, not a connection.
+       */
+      const requestId = crypto.randomUUID()
+      const ctxWithId = ctx as unknown as { supabaseAdmin: unknown; requestId?: string }
+      ctxWithId.requestId = requestId
+      // KEPT IF IT CANNOT BE BUILT. The id is bookkeeping; the client is the
+      // raffle. Anything that stops a second admin client being made — an
+      // environment this package cannot read, a test harness with no project to
+      // talk to — must cost the correlation id and not the request, so the one
+      // the platform already handed us stands and the rows carry ''.
+      const stamped = createAdminClient({
+        supabaseOptions: { global: { headers: { 'x-request-id': requestId } } },
+      })
+      if (stamped) ctxWithId.supabaseAdmin = stamped
+
       const data = await spec.fn(body.payload ?? {}, user, ctx)
-      return Response.json({ ok: true, data, serverTime: new Date().toISOString() })
+      // Returned so a person reporting something odd can name the one action
+      // rather than a time and a screen.
+      return Response.json({ ok: true, data, requestId, serverTime: new Date().toISOString() })
     } catch (err) {
       return fail(err)
     }

@@ -189,6 +189,15 @@ end $$ language plpgsql;
 -- book with three already gone is "7 sold, 3 left alone", and calling that
 -- "book sold" is a lie the organiser would only discover at the draw.
 
+/*
+ * DROPPED FIRST, because p_sold_by is a new parameter and `create or replace`
+ * cannot change a signature — it would leave the old ten-argument function in
+ * place beside this one, and a call naming the arguments would then be
+ * ambiguous between them. Postgres reports that as "function is not unique",
+ * at the moment somebody sells a book, which is the worst place to find out.
+ */
+drop function if exists sell_books(text, text, jsonb, text, text, text, boolean, text, text, text);
+
 create or replace function sell_books(
   p_from_book text,
   p_to_book text,
@@ -199,7 +208,13 @@ create or replace function sell_books(
   p_donated boolean,
   p_user text,
   p_role text,
-  p_agent_id text
+  p_agent_id text,
+  /*
+   * WHO TO CREDIT when the book is not out with anybody — chosen at the desk,
+   * defaulting to whoever is signed in. Null means "use the caller", which is
+   * what every existing call passes by not passing it at all.
+   */
+  p_sold_by text default null
 ) returns jsonb as $$
 declare
   first_idx integer;
@@ -298,8 +313,32 @@ begin
       buyer_name = p_buyer_name,
       buyer_phone = p_buyer_phone,
       buyer_zone = coalesce(p_buyer_zone, ''),
-      sold_by_agent = coalesce(
-        (select held_by_agent from books where idx = t.book_idx), p_agent_id),
+      /*
+       * WHOEVER ACTUALLY SOLD IT, WHICH DEPENDS ON WHERE THE BOOK WAS.
+       *
+       * OUT WITH A SELLER: theirs. They are carrying the paper; they handed the
+       * ticket over, whoever typed it in afterwards. The money lands on their
+       * balance, where settlement checks it against the stubs they bring back.
+       *
+       * ANYWHERE ELSE — in the office, or brought back and not given out again —
+       * it is being sold ACROSS A DESK by whoever is standing at it. So it is
+       * credited to the person recording it, or to whoever they name instead.
+       *
+       * This was `coalesce(held_by_agent, p_agent_id)`, and returning a book
+       * does not clear held_by_agent — keeping it is how "brought back by" has
+       * a name on it. So a book handed in and then sold whole at the desk
+       * credited all ten tickets to the seller who had brought it back and put
+       * the price of them on her balance. She had already given the paper back;
+       * somebody else took the cash.
+       *
+       * The single-ticket path has always asked `status = 'Out'` first, which
+       * is why nobody looked here: selling one ticket out of a returned book
+       * and selling the whole book credited two different people.
+       */
+      sold_by_agent = (
+        select case when bk.status = 'Out' then bk.held_by_agent
+                    else nullif(coalesce(p_sold_by, p_agent_id), '') end
+          from books bk where bk.idx = t.book_idx),
       amount = case when p_donated then 0 else price end,
       payment_status = 'Paid',
       sold_at = now(),

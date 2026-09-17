@@ -24,6 +24,30 @@ const zone = ref('')
 const busy = ref(false)
 const result = ref(null)
 
+/*
+ * WHO THE SALE IS CREDITED TO, and why it needs asking at all.
+ *
+ * A book that is OUT with somebody is theirs: they are carrying the paper, and
+ * the server credits the holder whatever this box says. Nothing to ask.
+ *
+ * A book in the office, or one brought back and not given out again, is being
+ * sold across a desk by whoever is standing at it — and that person used to be
+ * recorded as nobody, or worse, as the seller who had handed the book in. So it
+ * defaults to the person signed in, and can be changed, because the one at the
+ * keyboard is not always the one who did the talking.
+ *
+ * Only offered to somebody who may credit another person. A seller recording
+ * their own sale has nothing to choose, and the server refuses it anyway —
+ * crediting a sale elsewhere moves what that person is shown as owing.
+ */
+const soldBy = ref(state.user?.agentId || '')
+const iAmSeller = computed(() => state.user?.role === 'agent')
+const sellers = computed(() => state.agents || [])
+const creditName = computed(() => {
+  const a = sellers.value.find(x => x.id === soldBy.value)
+  return a ? a.name : ''
+})
+
 const cfg = computed(() => state.cfg)
 const count = computed(() => {
   const a = parseInt(from.value, 10)
@@ -79,7 +103,8 @@ async function sell() {
       toBook: bookNum(to.value || from.value),
       buyerName: name.value.trim(),
       buyerPhone: phone.value.trim(),
-      buyerZone: zone.value.trim()
+      buyerZone: zone.value.trim(),
+      soldBy: soldBy.value || ''
     })
     result.value = r
     loadDelta().then(refresh)
@@ -150,6 +175,22 @@ async function sell() {
       <div class="field">
         <label for="sbz">Church or area <span class="opt">— not required</span></label>
         <input id="sbz" v-model="zone" autocomplete="off">
+      </div>
+
+      <!-- Asked, not assumed. A book still out with a seller is credited to
+           that seller whatever is chosen here, and the hint says so rather than
+           leaving somebody to discover it on the ticket afterwards. -->
+      <div v-if="!iAmSeller" class="field">
+        <label for="sbs">Who sold it? <span class="opt">— for books in the office</span></label>
+        <select id="sbs" v-model="soldBy">
+          <option value="">Nobody — sold at the desk</option>
+          <option v-for="a in sellers" :key="a.id" :value="a.id">{{ a.name }}</option>
+        </select>
+        <p class="hint">
+          <template v-if="creditName">Credited to {{ creditName }}.</template>
+          <template v-else>Credited to nobody, which is right for a sale nobody carried a book for.</template>
+          A book still out with a seller is always credited to that seller.
+        </p>
       </div>
 
       <div class="note">

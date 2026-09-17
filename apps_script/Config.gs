@@ -144,6 +144,20 @@ var CONFIG_DEFAULTS = [
     + '0 is not "never": it asks the check-in to stand still, which is refused, as is a '
     + 'negative number and anything over a year. Set it to 3 for quarterly; the screens say '
     + 'whatever it is rather than assuming monthly.'],
+  ['CHECK_IN_EVERY', '', 'The same rhythm as CHECK_IN_EVERY_MONTHS, in whatever unit this '
+    + 'raffle keeps: 1m for monthly, 2w for a fortnight, 10d for ten days. Months could not '
+    + 'say "twice a month", so a team reporting every fortnight was told by every screen that '
+    + 'they report monthly. Blank falls back to CHECK_IN_EVERY_MONTHS, so a raffle set up '
+    + 'before this existed keeps the rhythm it has been running on. A round that lands on a '
+    + 'holiday is moved on its own from the Deadlines screen; the cadence is not changed for '
+    + 'everybody to fix one date.'],
+  ['SALES_CLOSE_DATE', '', 'The last day a ticket may be sold, e.g. 2026-12-01. NOT the day '
+    + 'the books come back (FINAL_DEADLINE) and not the draw (DRAW_DATE) — it is when selling '
+    + 'stops, which is usually earlier than both. After it, recording a sale is refused; an '
+    + 'organiser can still force one for a ticket genuinely sold in time, and that is written '
+    + 'to the log. Settling, correcting and voiding go on working: they are the work that '
+    + 'happens BECAUSE selling has stopped. Blank means no cutoff, which is how every raffle '
+    + 'ran before this existed.'],
   ['REPORT_GRACE_DAYS', '3', 'Days after the check-in date before a seller who has not '
     + 'reported is shown as late. Somebody who says they will come on Saturday should not be '
     + 'marked red on Friday: a badge that fires on people doing the right thing is one the '

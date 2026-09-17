@@ -40,6 +40,8 @@ import MakeTickets from './components/modals/MakeTickets.vue'
 import TicketsInPlay from './components/modals/TicketsInPlay.vue'
 import Deadlines from './components/modals/Deadlines.vue'
 import CheckIn from './components/modals/CheckIn.vue'
+import CheckInSheet from './components/modals/CheckInSheet.vue'
+import RoundReport from './components/modals/RoundReport.vue'
 import RecordPayment from './components/modals/RecordPayment.vue'
 import WinnerForm from './components/modals/WinnerForm.vue'
 import PrizeForm from './components/modals/PrizeForm.vue'
@@ -645,9 +647,19 @@ function seeTickets(book) {
     <TicketsInPlay v-else-if="modal?.kind === 'inplay'"
                    @close="closeModal" @done="closeModal"
                    @make-more="openModal('make')" />
-    <Deadlines v-else-if="modal?.kind === 'deadlines'" @close="closeModal" />
+    <Deadlines v-else-if="modal?.kind === 'deadlines'" @close="closeModal"
+               @round-report="r => openModal('roundreport', r)" />
     <CheckIn v-else-if="modal?.kind === 'checkin'" :agent="modal.payload"
-             @close="closeModal" @saved="closeModal" />
+             @close="closeModal" @saved="closeModal"
+             @sheet="a => openModal('checkinsheet', a)" />
+    <!-- The printed half of a check-in. Opened from the form and from a
+         seller's own screen, because the two people who need it are the
+         organiser at the table and the seller holding the books. -->
+    <CheckInSheet v-else-if="modal?.kind === 'checkinsheet'"
+                  :agent-id="modal.payload?.id || modal.payload || ''"
+                  @close="closeModal" />
+    <RoundReport v-else-if="modal?.kind === 'roundreport'" :round="modal.payload || 0"
+                 @close="closeModal" />
     <RecordPayment v-else-if="modal?.kind === 'payment'" :seller="modal.payload"
                    @close="closeModal" @saved="closeModal" />
     <WinnerForm v-else-if="modal?.kind === 'winner'" @close="closeModal" @saved="closeModal" />

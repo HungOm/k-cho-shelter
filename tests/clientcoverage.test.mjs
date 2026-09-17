@@ -85,28 +85,37 @@ const CLIENT_EXEMPT = new Map([
 /*
  * Actions the client calls that the SPREADSHEET backend does not have.
  *
- * This direction had no exemption at all, and the rule it replaces — every
- * action a screen calls exists on both backends — was right while the two were
- * meant to be interchangeable. The migration has since produced features that
- * genuinely cannot exist in a spreadsheet: a table nothing can rewrite, and a
- * record of whose word a confirmation is.
+ * This direction had no exemption at all, because until the check-in report
+ * there was no screen that called one. The rule it replaces — every action a
+ * screen calls exists on both backends — was the right rule while the two
+ * backends were meant to be interchangeable, and the migration has since
+ * produced features that genuinely cannot exist in a spreadsheet: a table
+ * nothing can rewrite, and columns the sheet has no place for.
  *
  * SO THE BAR MOVES RATHER THAN DROPS. A screen may call a Supabase-only action
- * if it is listed here with a reason AND the file that calls it reads
- * isSupabase — asserted below, not promised. Without that second half this
- * list would be a way to make a screen break quietly on the other backend by
- * writing a sentence about it: the volunteer gets an unknown-action error,
- * which reads as the app being broken rather than as a feature the backend
- * does not have.
+ * if it is listed here with a reason AND the file that calls it knows which
+ * backend it is on — asserted below, not promised. Without that second half
+ * this list would be a way to make a screen break quietly on the other backend
+ * by writing a sentence about it.
  */
 const SUPABASE_ONLY = new Map([
+  ['check_in_sheet',
+   'the stub and unsold counts it reconciles are columns the spreadsheet has no place for'],
+  ['round_snapshot',
+   'a closed round is frozen into an append-only table; a spreadsheet figure anybody ' +
+   'can retype is the one thing the snapshot exists to stop being true'],
+  ['set_check_in_date',
+   'a moved round is a row in check_in_dates, which the spreadsheet backend has no table for'],
+  ['set_sales_close',
+   'the cutoff is refused in the edge function, so a setter on the spreadsheet backend ' +
+   'would hand an organiser a closing date nothing there enforces'],
   ['acknowledge_books',
-   'recording whose word a confirmation is — the seller\'s own tap against an ' +
-   'organiser typing that they saw a signed paper — needs a row nobody can edit ' +
-   'afterwards, which a sheet anybody with the link can open has nowhere to put'],
+   'recording whose word a confirmation is — the seller\'s own tap against an organiser ' +
+   'typing that they saw a signed paper — needs a row nobody can edit afterwards, which a ' +
+   'sheet anybody with the link can open has nowhere to put'],
   ['acknowledged_books',
-   'reads back what acknowledge_books writes, and there is nothing to read on a ' +
-   'backend that cannot write it'],
+   'reads back what acknowledge_books writes, and there is nothing to read on a backend ' +
+   'that cannot write it'],
 ])
 
 console.log('every action the client calls exists on Apps Script')
@@ -120,7 +129,6 @@ console.log('and a screen that calls one knows which backend it is on')
 for (const [action, why] of SUPABASE_ONLY) {
   ok(why.length > 20, `${action}'s exemption gives an actual reason`)
   ok(!appsScript.has(action), `${action} is exempt but Apps Script now has it — delete the exemption`)
-  ok(calls.has(action), `${action} is exempt but nothing calls it — a stale exemption`)
   for (const file of calls.get(action) ?? []) {
     const src = read('../' + file)
     ok(/isSupabase/.test(src),

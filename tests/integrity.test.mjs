@@ -208,21 +208,33 @@ console.log('4. money taken at the desk is money in the tin, not money owed by n
   eq(drawMine.totals.collected, 0, 'and the desk\'s cash is not credited to them')
 }
 
-// ============ 5. a ticket keeps its past ============
+// ============ 5. a ticket keeps its past, and it is readable ============
 
-console.log('5. a book\'s history carries every change to its tickets, and a seller is not shown a stranger\'s name')
+/*
+ * WHO MAY READ THE TRAIL IS WHOEVER MAY READ THE TICKET.
+ *
+ * Phase 1 gave the buyer fields to organisers and nobody else, which is a
+ * fourth rule for a question the system already answers three times in
+ * agreement — tickets_readable in the database, mask() on every other read, and
+ * what the ticket screen shows. It was wrong in both directions at once: the
+ * seller carrying the book was shown the buyer on the live ticket and a blank
+ * in its history, and a viewer who may read every buyer in the raffle was shown
+ * none of them here. So the trail asks gate.ts the same question the ticket
+ * does, and these cases are the four answers it can give.
+ */
+console.log('5. a book\'s history carries every change to its tickets, and whoever may read the ticket may read it')
 {
   const w = fakeDb({
     config: baseConfig(), agents,
     books: [book(1)],
-    tickets: [{ idx: 1, number: 'KS-00001', book_idx: 1, status: 'Sold' }],
+    tickets: [{ idx: 1, number: 'KS-00001', book_idx: 1, status: 'Sold', recorded_by: 'rec@x.com' }],
     book_history: [{ book_idx: 1, from_agent: null, to_agent: 'A001', action: 'issue',
                      by_user: 'boss@x.com', note: '', at: '2026-08-01T00:00:00Z' }],
     ticket_history: [{ id: 1, at: '2026-08-02T00:00:00Z', ticket_idx: 1, book_idx: 1,
       from_status: 'Available', to_status: 'Sold', from_agent: null, to_agent: 'A002',
       from_buyer: '', to_buyer: 'Pa Thang', from_phone: '', to_phone: '0123456789',
       from_amount: null, to_amount: 10, from_payment: '', to_payment: 'Paid',
-      source: 'app', by_user: 'rec@x.com', note: '' }],
+      source: 'app', by_user: 'rec@x.com', note: 'lives behind the market' }],
   })
   const r = await books.bookHistory({ bookNumber: 'Book-001' }, users.boss, w.ctx)
   eq(r.history.length, 1, 'the book\'s own movements are still there')
@@ -232,12 +244,34 @@ console.log('5. a book\'s history carries every change to its tickets, and a sel
   eq(t.fromStatus + '>' + t.toStatus, 'Available>Sold', 'what changed')
   eq(t.toSeller, 'U Kyaw', 'credited to a person, by name')
   eq(t.toBuyer, 'Pa Thang', 'an organiser sees who was written on it')
+  eq(t.toPayment, 'Paid', 'and that it was marked paid — otherwise that step shows nothing')
   eq(t.by, 'rec@x.com', 'and who wrote it')
 
-  const asAgent = await books.bookHistory({ bookNumber: 'Book-001' }, users.agent, w.ctx)
-  eq(asAgent.tickets[0].toStatus, 'Sold', 'a seller sees the movement')
-  eq(asAgent.tickets[0].toBuyer, '', 'and not the buyer')
-  eq(asAgent.tickets[0].toPhone, '', 'nor their number')
+  // A001 is carrying Book-001, so tickets_readable shows them this buyer.
+  const holder = await books.bookHistory({ bookNumber: 'Book-001' }, users.agent, w.ctx)
+  eq(holder.tickets[0].toStatus, 'Sold', 'the seller carrying the book sees the movement')
+  eq(holder.tickets[0].toBuyer, 'Pa Thang', 'and the buyer, which is the name their own ticket screen shows them')
+  eq(holder.tickets[0].toPhone, '0123456789', 'and the number they would ring')
+
+  const other = { ...users.agent, email: 'b@x.com', name: 'U Kyaw', agentId: 'A002' }
+  const stranger = await books.bookHistory({ bookNumber: 'Book-001' }, other, w.ctx)
+  eq(stranger.tickets[0].toStatus, 'Sold', 'a seller who is not carrying it still sees the movement')
+  eq(stranger.tickets[0].toBuyer, '', 'and not somebody else\'s buyer')
+  eq(stranger.tickets[0].toPhone, '', 'nor their number')
+  eq(stranger.tickets[0].note, '', 'nor the note about them, which is masked with them everywhere else')
+
+  const wroteIt = await books.bookHistory({ bookNumber: 'Book-001' }, users.recorder, w.ctx)
+  eq(wroteIt.tickets[0].toBuyer, 'Pa Thang', 'the helper who wrote the sale down sees it')
+  eq(wroteIt.tickets[0].note, 'lives behind the market', 'and their own note')
+  const elseHelper = { ...users.recorder, email: 'other@x.com' }
+  eq((await books.bookHistory({ bookNumber: 'Book-001' }, elseHelper, w.ctx)).tickets[0].toBuyer, '',
+     'a helper who did not sees a desk shift, not every buyer in the raffle')
+
+  const viewer = { ...users.recorder, role: 'viewer', email: 'v@x.com' }
+  const seen = await books.bookHistory({ bookNumber: 'Book-001' }, viewer, w.ctx)
+  eq(seen.tickets[0].toBuyer, 'Pa Thang', 'a viewer reads the names')
+  eq(seen.tickets[0].toPhone, '\u2022\u2022\u2022\u2022789',
+     'with the telephone number shortened exactly as mask() shortens the live one')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

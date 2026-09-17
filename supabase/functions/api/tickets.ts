@@ -20,6 +20,10 @@
  * happen, and `for` loops over single updates cannot promise that.
  */
 import { ApiError, type AppUser } from './gate.ts'
+// Whole local days, and the raffle's own calendar rather than the server's.
+// Selling "today" west of here is a different day, and a cutoff read off a
+// timestamp closes the raffle a day early for somebody.
+import { dayStart, today } from './deadlines.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -78,6 +82,37 @@ async function agentLabel(ctx: Ctx, agentId: string | null): Promise<string> {
   const { data } = await ctx.supabaseAdmin
     .from('agents').select('name').eq('agent_id', agentId).maybeSingle()
   return String(data?.name ?? '').trim() || agentId
+}
+
+/**
+ * Is this raffle still selling?
+ *
+ * ITS OWN FUNCTION BECAUSE THERE ARE THREE DOORS. A single ticket goes through
+ * assertCanWrite; a batch of five hundred and a whole book go straight to SQL
+ * and never touch it. A cutoff enforced on the door people use least is the
+ * kind of guard that reads as protection and is not — the two bulk paths are
+ * how a desk records most of what it records.
+ *
+ * Not applied in the SQL itself, where it would also catch settle_book: that
+ * function marks every unreturned ticket sold, which is the work that HAPPENS
+ * after selling stops. A cutoff that blocked settlement would stop the raffle
+ * being finished.
+ */
+async function assertStillSelling(
+  ctx: Ctx, user: AppUser, force: boolean, loaded?: Record<string, string>,
+) {
+  const cfg = loaded ?? await config(ctx)
+  const closesOn = dayStart(cfg.SALES_CLOSE_DATE ?? '')
+  if (!closesOn || today() <= closesOn) return
+  if (user.isAdmin && force) return
+  throw new ApiError(
+    'SALES_CLOSED',
+    `Ticket sales for this raffle closed on ${closesOn}. ` +
+      (user.isAdmin
+        ? 'Send force:true to record sales after it, which is written to the log.'
+        : 'An organiser can still record one if it was genuinely sold in time.'),
+    { salesCloseDate: closesOn, today: today() },
+  )
 }
 
 async function assertCanWrite(
@@ -151,6 +186,16 @@ async function assertCanWrite(
    * A book that is Out with nobody recorded should not exist; it is refused
    * rather than guessed at in the permissive direction.
    */
+  /*
+   * ONLY WHEN CLAIMING a ticket. Correcting a spelling on a sale made in
+   * September, releasing a hold, voiding a ticket, and above all SETTLING a book
+   * are all work that happens after selling stops — most of it happens BECAUSE
+   * selling stopped. A cutoff that froze those would stop the raffle being
+   * finished. The config this already read is handed over rather than read a
+   * second time.
+   */
+  if (opts.claiming) await assertStillSelling(ctx, user, !!opts.force, cfg)
+
   if (opts.claiming && book.status === 'Out') {
     const holdsIt = !!user.agentId && book.held_by_agent === user.agentId
     if (!holdsIt && !(user.isAdmin && book.held_by_agent)) {
@@ -448,6 +493,7 @@ export async function voidTicket(p: Record<string, unknown>, user: AppUser, ctx:
 export async function bulkRecordSales(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const sales = Array.isArray(p.sales) ? p.sales : []
   if (!sales.length) throw new ApiError('BAD_REQUEST', 'No sales supplied.')
+  await assertStillSelling(ctx, user, !!p.force)
   if (sales.length > 500) {
     throw new ApiError('RANGE_TOO_LARGE', 'Record at most 500 sales at a time.')
   }
@@ -481,7 +527,34 @@ export async function bulkRecordSales(p: Record<string, unknown>, user: AppUser,
  * deliberately blank.
  */
 export async function sellBook(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  await assertStillSelling(ctx, user, !!p.force)
   const { name, phone } = requireBuyer(p)
+
+  /*
+   * WHO IS CREDITED for a book that is not out with anybody.
+   *
+   * Checked here rather than left to the foreign key, because the failure is
+   * otherwise a constraint message about `sold_by_agent` in the middle of a
+   * sale — true, and no use to somebody at a table with a buyer in front of
+   * them. An agent cannot name anyone but themselves: crediting a sale to
+   * another person moves what that person is shown as owing.
+   */
+  const soldBy = String(p.soldBy ?? '').trim()
+  if (soldBy) {
+    if (user.role === 'agent' && soldBy !== user.agentId) {
+      throw new ApiError(
+        'NOT_AUTHORIZED',
+        'You can record a sale as your own. Recording it for another seller is the ' +
+        "organiser's to do, because it changes what that person is shown as owing.",
+        null, 403,
+      )
+    }
+    const { data: seller } = await ctx.supabaseAdmin
+      .from('agents').select('agent_id,active').eq('agent_id', soldBy).maybeSingle()
+    if (!seller) {
+      throw new ApiError('AGENT_NOT_FOUND', `There is no seller with the ID "${soldBy}".`)
+    }
+  }
 
   const { data, error } = await ctx.supabaseAdmin.rpc('sell_books', {
     p_from_book: p.fromBook ?? null,
@@ -494,6 +567,7 @@ export async function sellBook(p: Record<string, unknown>, user: AppUser, ctx: C
     p_user: user.email,
     p_role: user.role,
     p_agent_id: user.agentId,
+    p_sold_by: soldBy || null,
   })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
   if (data?.error) throw new ApiError(data.error.code, data.error.message, data.error.details)
@@ -504,7 +578,8 @@ export async function sellBook(p: Record<string, unknown>, user: AppUser, ctx: C
   }
 
   await audit(ctx, 'SELL_BOOK',
-    { books: data.books, buyer: name, sold: data.sold, skipped: data.skipped?.length ?? 0 },
+    { books: data.books, buyer: name, sold: data.sold, skipped: data.skipped?.length ?? 0,
+      soldBy: soldBy || user.agentId || null },
     user.email)
   return data
 }
