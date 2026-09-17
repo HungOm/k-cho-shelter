@@ -78,14 +78,43 @@ ok(/alter table tickets add column if not exists holder text not null default 'd
 // except X" condition — the shape AUDIT.md §X names after three defects in a day.
 ok(!/holder text(?!\s+not null)/.test(flat(mig)), 'and is not nullable, so no read has to remember a null case')
 
-console.log('6. nothing reads it and nothing writes it, which is the whole of Phase 1A')
+/*
+ * PHASE 1B LANDED IN 018734a, so this section is narrower than it was and the
+ * change is recorded rather than quietly made. It used to say nothing anywhere
+ * read or wrote the ledger; move_tickets and the ticket_custody view now do,
+ * which is the whole of 1B and is why that line was written to fail.
+ *
+ * WHAT IS STILL TRUE, AND STILL WORTH GUARDING: the API layer has not switched.
+ * No TypeScript handler touches the ledger or the projection — issuing a book
+ * still goes through the old custody path — so the ledger is written only by
+ * SQL that takes the lock and writes the movement and the projection in one
+ * transaction. The day a handler writes either of them directly is the day the
+ * projection can drift from the ledger, and whoever does it should have to
+ * delete a line here saying so.
+ *
+ * rls.sql likewise: a view the browser's roles could reach is a different
+ * decision from a view the edge function reads, and 1D is where that gets made.
+ */
+console.log('6. the API layer has not switched, so the ledger is written only by SQL')
 for (const f of readdirSync(API).filter((x) => x.endsWith('.ts'))) {
-  ok(!readFileSync(join(API, f), 'utf8').includes('ticket_movements'),
-     `${f} does not touch ticket_movements yet`)
+  const src = readFileSync(join(API, f), 'utf8')
+  ok(!src.includes('ticket_movements'), `${f} does not write the ledger directly`)
+  ok(!src.includes('ticket_custody'), `${f} does not read the replay view directly`)
 }
-for (const f of ['supabase/functions.sql', 'supabase/rls.sql']) {
-  ok(!readFileSync(join(ROOT, f), 'utf8').includes('ticket_movements'),
-     `${f} has no function or view over it yet`)
+ok(!readFileSync(join(ROOT, 'supabase/rls.sql'), 'utf8').includes('ticket_movements'),
+   'rls.sql exposes no view over it — whether a browser role may reach it is 1D\'s decision')
+// And the writer that DOES exist writes both halves. A function that inserted a
+// movement without updating tickets.holder would leave the cache wrong from the
+// first call, which is the failure the projection exists to avoid.
+{
+  const fns = readFileSync(join(ROOT, 'supabase/functions.sql'), 'utf8')
+  const mv = fns.slice(fns.indexOf('function move_tickets'))
+  // Both halves, named exactly. A looser regex passed a mutation that renamed
+  // the column, because `holder_x` contains `holder` — an assertion that cannot
+  // fail is the thing it was written to prevent.
+  ok(/insert into ticket_movements/.test(mv), 'move_tickets writes the movement')
+  ok(/update tickets set holder = p_to_holder/.test(mv),
+     'and sets tickets.holder in the same transaction — a movement without the projection leaves the cache wrong from the first call')
 }
 /*
  * tickets.holder likewise: the column is added and left alone. A handler writing
