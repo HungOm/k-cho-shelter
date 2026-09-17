@@ -18,7 +18,7 @@
  * that the panel is a component: it cannot be built before somebody opens it.
  */
 import { ref, onMounted, computed } from 'vue'
-import { api, state, canWrite } from '../../lib/store.js'
+import { api, state, isAdmin } from '../../lib/store.js'
 import { money, date, COUNTED_IN_HELP } from '../../lib/format.js'
 // Asked here as well as by the screen that built the link. Every component that
 // turns a phone number into something pressable asks whether it can be dialled
@@ -40,7 +40,20 @@ const props = defineProps({
 const emit = defineEmits(['close', 'record-payment'])
 
 const currency = computed(() => state.cfg?.currency || '')
-const canRecord = canWrite
+/*
+ * WHO MAY WRITE DOWN A HAND-OVER: whoever received it.
+ *
+ * This was canWrite, which includes sellers — so a seller looking at their own
+ * money was offered a button that credited themselves a hand-over nobody had
+ * received. The money a seller handles is the cash a buyer puts in their hand,
+ * and the record of that is the ticket. What they give an organiser is an act
+ * with two people in it, and the person receiving the cash is the only one who
+ * can honestly write it down.
+ */
+const canRecord = computed(() => isAdmin.value || state.user?.role === 'recorder')
+
+/** Looking at your own money, which is most of what a seller opens this for. */
+const isMine = computed(() => state.user?.agentId === props.agent.agentId)
 const canRing = computed(() => isDialable(props.agent.phone))
 
 const st = ref({ loading: true })
@@ -73,14 +86,44 @@ onMounted(load)
  */
 const payments = ref(null)
 const showAudit = ref(false)
-async function toggleAudit() {
-  showAudit.value = !showAudit.value
-  if (!showAudit.value || payments.value) return
+async function loadPayments() {
+  if (payments.value) return
   try {
     const r = await api('list_payments', { agentId: props.agent.agentId })
     payments.value = r.payments || []
   } catch { payments.value = [] }
 }
+async function toggleAudit() {
+  showAudit.value = !showAudit.value
+  if (showAudit.value) await loadPayments()
+}
+
+/**
+ * THE RECEIPT FOR ONE HAND-OVER, which is what a seller is owed by this screen.
+ *
+ * A seller cannot write a payment down — the person receiving the cash does
+ * that — so the only evidence they have that their money arrived is what this
+ * app shows them. A line in a running balance is not evidence: it says an
+ * amount and a date. A receipt says who took it, when, how, against which book,
+ * and whether anything has happened to it since.
+ *
+ * NOTHING HERE IS EDITABLE, BY ANYBODY, and that is the part worth showing. A
+ * payment row is never altered and never deleted: a correction is an opposing
+ * row with a reason on it, so a receipt that was undone still exists and says
+ * so. That is what makes it worth trusting — and worth showing to the person
+ * whose money it was.
+ */
+const receipt = ref(null)
+async function openReceipt(ref_) {
+  const id = String(ref_ || '').replace(/^#/, '')
+  if (!id) return
+  await loadPayments()
+  receipt.value = (payments.value || []).find((p) => String(p.id) === id) || { missing: id }
+}
+
+/** The row that undid this one, if anything did. */
+const undoneBy = computed(() => !receipt.value?.id ? null
+  : (payments.value || []).find((p) => String(p.reverses) === String(receipt.value.id)) || null)
 
 /* On top of this sheet, so closing the book puts you back on the seller. */
 const showHistory = ref(null)
@@ -127,6 +170,16 @@ const KINDS = {
       incomplete; check it against the seller list.
     </p>
     <p v-else-if="!agent.phone" class="tiny muted">No phone number on file for this seller.</p>
+
+    <!-- WHERE A SELLER'S MONEY GOES, said on the screen where they would
+         otherwise look for a button. Every line below is the record of a
+         hand-over an organiser accepted; the way to add another is to send a
+         report, not to type one here. -->
+    <p v-if="isMine && !canRecord" class="note info tiny">
+      Cash you hand over is recorded by the organiser who receives it. Send it with
+      your report, and it appears here once they accept it — with their name on it,
+      which is what makes it a receipt.
+    </p>
 
     <div v-if="st.loading" class="skel" style="height:64px"></div>
     <div v-else-if="st.error" class="note bad">
@@ -186,9 +239,12 @@ const KINDS = {
                 {{ KINDS[e.kind] || e.kind }}
               </td>
               <td class="tiny">
+                <!-- A book reference opens the book; a payment reference opens
+                     its receipt. Both are the same act from the reader's side:
+                     "show me what is behind this line". -->
                 <button v-if="e.ref && !e.ref.startsWith('#')" class="linkish"
                         @click="showHistory = e.ref">{{ e.ref }}</button>
-                <template v-else>{{ e.ref }}</template>
+                <button v-else-if="e.ref" class="linkish" @click="openReceipt(e.ref)">{{ e.ref }}</button>
                 <template v-if="e.description"> · {{ e.description }}</template>
                 <!-- Who the money went to, on the line that says it moved. -->
                 <div v-if="e.by" class="muted">to <Who :email="e.by" /></div>
@@ -253,6 +309,40 @@ const KINDS = {
       </p>
     </template>
 
+    <!-- ON TOP OF THE STATEMENT, so closing it puts you back on the line you
+         were reading. -->
+    <div v-if="receipt" class="receipt">
+      <div class="spread">
+        <b>Receipt</b>
+        <button class="linkish" @click="receipt = null">Close</button>
+      </div>
+      <template v-if="receipt.missing">
+        <p class="tiny">That payment is not in the last 200 rows for this seller.</p>
+      </template>
+      <template v-else>
+        <div class="amount" :class="{ bad: receipt.amount < 0 }">{{ money(receipt.amount, currency) }}</div>
+        <div class="f"><span>When</span><b>{{ receipt.receivedAt ? date(receipt.receivedAt) : '—' }}</b></div>
+        <div class="f"><span>Received by</span><b><Who :email="receipt.receivedBy" /></b></div>
+        <div class="f"><span>How</span><b>{{ receipt.method || 'cash' }}</b></div>
+        <div class="f"><span>What it was</span>
+          <b>{{ receipt.source === 'settlement' ? 'counted in with a book'
+               : receipt.source === 'writeoff' ? 'written off' : 'handed over' }}</b>
+        </div>
+        <div v-if="receipt.note" class="f"><span>Note</span><b>{{ receipt.note }}</b></div>
+        <div v-if="receipt.reverses" class="note warn tiny">
+          This row undoes an earlier one. Both stay on the record.
+        </div>
+        <div v-else-if="undoneBy" class="note warn tiny">
+          <b>This was undone</b> on {{ date(undoneBy.receivedAt) }} by
+          <Who :email="undoneBy.receivedBy" />. Both rows stay on the record.
+        </div>
+        <p class="tiny muted">
+          Nobody can edit or delete this, including an organiser. A correction is a
+          new row that says what it undoes, which is why this one can be relied on.
+        </p>
+      </template>
+    </div>
+
     <template #actions>
       <a v-if="wa" class="btn" :href="wa" target="_blank" rel="noopener">Message on WhatsApp</a>
       <a v-if="tel && canRing" class="btn ghost" :href="tel">{{ agent.phone }}</a>
@@ -286,5 +376,14 @@ th { font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color:
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .bal { font-weight: 700; }
 tr.writeoff td { color: var(--muted); }
+.receipt {
+  margin-top: 14px; padding: 14px 16px; border-radius: var(--r-sm);
+  border: 1.5px solid var(--brand); background: var(--brand-soft);
+}
+.receipt .spread { align-items: center; margin-bottom: 8px; }
+.receipt .amount { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.receipt .amount.bad { color: var(--bad); }
+.receipt .f { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: .9rem; }
+.receipt .f span { color: var(--muted); }
 .linkish { background: none; border: 0; padding: 0; color: var(--brand); cursor: pointer; font: inherit; }
 </style>

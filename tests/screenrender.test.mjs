@@ -79,6 +79,7 @@ export const isSuper = computed(() => true)
 // bundle here with "no matching export", which reads as a broken test rather
 // than as a stub one field behind.
 export const canWrite = computed(() => true)
+export const isAdmin = computed(() => state.user?.role === 'admin')
 export const go = () => {}
 // The real one is the single place the two sold statuses are spelled; this is
 // a stub of its BEHAVIOUR, and soldlock.test.mjs walks src/ only, so the

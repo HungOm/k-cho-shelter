@@ -261,6 +261,10 @@ export const MY_ERRORS = {
   // Books are handed to a person, and the record has to name which one.
   NOT_A_SELLER: 'သင့်အကောင့်ကို ရောင်းသူတစ်ဦးနှင့် ချိတ်ဆက်မထားပါ — စီစဉ်သူကို ပြောပါ',
   BOOKS_NOT_AVAILABLE: 'ဤစာအုပ်များ မရနိုင်ပါ',
+  // Money you hand over is written down by whoever receives it. Built from the
+  // vocabulary already here: ငွေ (money), လက်ခံသူ (the one who receives),
+  // မှတ်တမ်းတင် (record), အစီရင်ခံစာ (report).
+  HANDED_OVER_NOT_RECEIVED: 'သင်ပေးအပ်သော ငွေကို လက်ခံသူက မှတ်တမ်းတင်ရသည် — သင်ကိုယ်တိုင် မဟုတ်ပါ။ အစီရင်ခံစာဖြင့် ပို့ပါ၊ စီစဉ်သူ လက်ခံသောအခါ မှတ်တမ်းတင်ပါမည်',
   // Offering books: the seller decides, and only the seller they were offered to.
   NOT_OFFERED_TO_YOU: 'ဤစာအုပ်များကို သင့်အတွက် မစောင့်တော့ပါ — ပြန်ရုပ်သိမ်းခံရခြင်း သို့မဟုတ် အချိန်ကုန်သွားခြင်း ဖြစ်နိုင်ပါသည်',
   NOT_YOUR_DECISION: 'ဤစာအုပ်များကို အခြားသူတစ်ဦးအား ကမ်းလှမ်းထားပါသည်',

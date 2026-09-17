@@ -4,7 +4,7 @@
  * last column and the only one in colour.
  */
 import { ref, onMounted, computed } from 'vue'
-import { state, api, toast, canWrite, isSold } from '../lib/store.js'
+import { state, api, toast, canWrite, isAdmin, isSold } from '../lib/store.js'
 import { money, moneyShort, date } from '../lib/format.js'
 import { waNumber, isDialable } from '../lib/search.js'
 import Empty from './ui/Empty.vue'
@@ -42,7 +42,12 @@ const emit = defineEmits(['record-payment'])
  * refuses it regardless of what this draws — the button is hidden as a courtesy,
  * not as the control.
  */
-const canRecord = canWrite
+/*
+ * Whoever RECEIVED the money writes it down. canWrite includes sellers, and a
+ * seller recording their own hand-over is a receipt with nobody on the other
+ * end of it — see record_payment in the registry.
+ */
+const canRecord = computed(() => isAdmin.value || state.user?.role === 'recorder')
 
 onMounted(load)
 async function load() {
@@ -233,8 +238,27 @@ function waLink(a) {
 
 <template>
   <div>
-    <h1>Money</h1>
-    <p class="muted">The system records money — it never touches it. Cash is handled in person.</p>
+    <!--
+      THE SAME SCREEN ANSWERS TWO DIFFERENT QUESTIONS, and it used to ask both
+      readers the organiser's one.
+
+      An organiser opens this to find out who still owes the raffle money. A
+      seller opens it to find out where THEIR money stands: what the buyers have
+      paid them, and what of that has reached the organiser. "What each seller
+      owes", to somebody who is one seller, is a page about themselves written
+      in the third person — and the figure it leads with is a debt rather than
+      an account.
+    -->
+    <h1>{{ scope === 'mine' ? 'Your money' : 'Money' }}</h1>
+    <p class="muted">
+      <template v-if="scope === 'mine'">
+        What the buyers have handed you, and what of it has reached the organiser.
+        Cash you pass on is recorded by whoever receives it.
+      </template>
+      <template v-else>
+        The system records money — it never touches it. Cash is handled in person.
+      </template>
+    </p>
 
     <!-- THE RAFFLE'S MONEY, for the three scopes it belongs to in some part.
          A helper is not one of them: those figures are the whole raffle's
@@ -271,10 +295,17 @@ function waLink(a) {
     </div>
 
     <div class="card">
-      <h3>{{ scope === 'recorded' ? 'What you wrote down' : 'What each seller owes' }}</h3>
+      <h3>
+        {{ scope === 'recorded' ? 'What you wrote down'
+           : scope === 'mine' ? 'Where your money stands' : 'What each seller owes' }}
+      </h3>
       <p v-if="scope === 'recorded'" class="muted small">
         Every sale recorded under your name, and whether the buyer had paid when
         you wrote it down.
+      </p>
+      <p v-else-if="scope === 'mine'" class="muted small">
+        Your tickets written down as sold, less the cash an organiser has confirmed
+        receiving from you. Open the line for every dated entry behind it.
       </p>
       <p v-else class="muted small">Tickets written down as sold, minus the cash handed in.</p>
 

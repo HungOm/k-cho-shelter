@@ -226,5 +226,56 @@ console.log('and the case the Books column reads as innocent')
 ok(/agent\.outstanding > 0 && !agent\.booksOut/.test(sheet),
    'every book back and money still owed is called out — only true now booksOut counts books that are out')
 
+console.log('a seller may not write money down, and is shown what happened to it instead')
+{
+  /*
+   * TWO KINDS OF MONEY, AND ONLY ONE OF THEM IS THE SELLER'S TO WRITE.
+   *
+   * The cash a buyer puts in a seller's hand is recorded by the ticket: sold,
+   * to whom, paid or not. That is theirs, in the books they carry.
+   *
+   * What they hand to an organiser is an act with two people in it, and the
+   * registry used to let the seller write it: record_payment was open to
+   * 'agent', and visibleAgents limits a non-admin to their own id — so the only
+   * thing a seller could record was a hand-over to themselves. The balance
+   * dropped, the ledger read as money in, and the only counterparty named was
+   * the person who typed it.
+   *
+   * What replaces it is the report, which changes nothing until an organiser
+   * accepts it — and then the organiser's name is on the row, which is what
+   * makes it a receipt rather than a claim.
+   */
+  const idx = read('../supabase/functions/api/index.ts')
+  const line = idx.slice(idx.indexOf('  record_payment: {'), idx.indexOf('  record_payment: {') + 200)
+  ok(!/'agent'/.test(line), `a seller is not offered it at all (${line.split('\n')[0]})`)
+
+  const mon = read('../supabase/functions/api/money.ts')
+  ok(/HANDED_OVER_NOT_RECEIVED/.test(mon),
+     'and recording your own hand-over is refused by name, whatever role you hold')
+  ok(/!user\.isAdmin && agentId === String\(user\.agentId/.test(mon),
+     'with the organiser exempt, because they are the person cash is handed to')
+
+  // The screens stop offering what the server refuses, rather than letting the
+  // refusal arrive after the press.
+  for (const f of ['../src/components/Money.vue', '../src/components/modals/SellerMoney.vue']) {
+    ok(/isAdmin\.value \|\| state\.user\?\.role === 'recorder'/.test(read(f)),
+       `${f.split('/').pop()} offers it to whoever received the money, not to whoever handed it over`)
+  }
+
+  /*
+   * AND THE RECEIPT, which is what a seller is owed in exchange for not being
+   * able to write it. A line in a running balance says an amount and a date; a
+   * receipt says who took it, when, how, and whether anything has happened to
+   * it since — and that nobody, organiser included, can edit or delete it.
+   */
+  const sheet = read('../src/components/modals/SellerMoney.vue')
+  ok(/function openReceipt/.test(sheet), 'a payment line opens its own receipt')
+  ok(/Received by/.test(sheet) && /<Who :email="receipt\.receivedBy"/.test(sheet),
+     'naming who received the money')
+  ok(/undoneBy/.test(sheet), 'and saying so if it was later undone')
+  ok(/Nobody can edit or delete this/.test(sheet),
+     'with the immutability said outright, because that is what makes it worth relying on')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

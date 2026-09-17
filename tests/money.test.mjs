@@ -159,13 +159,34 @@ console.log('4. what recording refuses')
      'BOOK_NOT_FOUND', 'and a named book has to exist')
 }
 
-console.log('5. a helper cannot record money against somebody else')
+console.log('5. money is written down by whoever received it, and by nobody else')
 {
+  /*
+   * THE SECOND HALF IS NEW AND IT REVERSES WHAT THIS ASSERTED, so the reason is
+   * here rather than in a commit nobody will read next to the line.
+   *
+   * "Their own is theirs to write down" was wrong, and it is the more dangerous
+   * half. A hand-over is cash moving from one person to another; a row where
+   * both ends are the same name is a receipt nobody issued. The seller's
+   * balance drops, the ledger reads as money in, and the only counterparty is
+   * the person who typed it. Asked for in exactly those terms: the money a
+   * seller handles is the buyer's cash, and what they hand to an organiser is
+   * recorded by the organiser.
+   *
+   * Their route is the report, which changes nothing until somebody accepts it
+   * — and then the organiser's name is on the row, which is what makes it a
+   * receipt the seller can be shown.
+   */
   const w = world()
   eq(await codeOf(() => M.recordPayment({ agentId: 'A002', amount: 10 }, sellerHelper, w.ctx)),
      'NOT_AUTHORIZED', 'recording for another seller changes what THEY are shown as owing')
-  const own = await M.recordPayment({ agentId: 'A001', amount: 10 }, sellerHelper, w.ctx)
-  eq(own.amount, 10, 'but their own is theirs to write down')
+  eq(await codeOf(() => M.recordPayment({ agentId: 'A001', amount: 10 }, sellerHelper, w.ctx)),
+     'HANDED_OVER_NOT_RECEIVED', 'and recording their own is a hand-over with nobody on the other end')
+
+  // An organiser is exempt: the chain ends somewhere, and they are the person
+  // cash is handed to. The audit row names them.
+  const boss = await M.recordPayment({ agentId: 'A001', amount: 10 }, users.boss, w.ctx)
+  eq(boss.amount, 10, 'an organiser records what they were handed')
 }
 
 console.log('6. undoing is a new row, never a delete')

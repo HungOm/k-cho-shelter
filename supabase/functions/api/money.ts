@@ -258,14 +258,39 @@ export async function recordPayment(p: Record<string, unknown>, user: AppUser, c
     .from('agents').select('agent_id,name').eq('agent_id', agentId).maybeSingle()
   if (!agent) throw new ApiError('AGENT_NOT_FOUND', `There is no seller with the ID "${agentId}".`)
 
-  // A helper may record what they were handed, but only for a seller — never
-  // reassign it. The scoping below is the same one the reports use.
+  /*
+   * MONEY IS WRITTEN DOWN BY WHOEVER RECEIVED IT, never by whoever handed it
+   * over — and those are the two halves of this check.
+   *
+   * Recording it for ANOTHER seller changes what that person is shown as owing,
+   * so it stays the organiser's.
+   *
+   * Recording it for YOURSELF is the half that was missing, and it is the more
+   * dangerous one: a hand-over is cash moving from one person to another, and a
+   * row where both ends are the same name is a receipt nobody issued. The
+   * balance drops, the ledger reads as money in, and the only counterparty is
+   * the person who typed it. A seller's route is the report they send — it
+   * changes nothing until an organiser accepts it, and then the organiser's
+   * name is on the row, which is what a receipt is.
+   *
+   * An organiser is exempt because the chain has to end somewhere: they are the
+   * person cash is handed TO, and when they carry books as well their own
+   * hand-over is to the raffle they run. The audit row names them.
+   */
   const allowed = visibleAgents(user)
   if (allowed && !allowed.includes(agentId)) {
     throw new ApiError(
       'NOT_AUTHORIZED',
-      'You can record money for yourself. Recording it for another seller is the ' +
-      "organiser's to do, because it changes what that person is shown as owing.",
+      "Recording money for another seller is the organiser's to do, because it " +
+      'changes what that person is shown as owing.',
+    )
+  }
+  if (!user.isAdmin && agentId === String(user.agentId ?? '').trim()) {
+    throw new ApiError(
+      'HANDED_OVER_NOT_RECEIVED',
+      'Money you hand over is written down by whoever receives it, not by you — ' +
+      'otherwise the record shows a hand-over with nobody on the other end. ' +
+      'Send it in a report instead, and it is recorded when an organiser accepts it.',
     )
   }
 
