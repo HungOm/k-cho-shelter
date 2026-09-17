@@ -383,12 +383,42 @@ async function whoami(_p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const activeRaw = num(cfg.ACTIVE_TICKETS, 0)
   const active = activeRaw <= 0 || activeRaw > generated ? generated : activeRaw
 
+  /*
+   * WHO THE EMAILS ON THE TICKETS BELONG TO.
+   *
+   * Every sold ticket carries the email of whoever wrote it down, and every
+   * screen that showed it showed the raw address — "written down by
+   * helper.someone.oct19@gmail.com", which is a string nobody in this raffle
+   * refers to anybody by. The names exist; they are in app_users, one row per
+   * person who can sign in.
+   *
+   * Sent once at sign-in rather than per ticket, because it is a dozen people
+   * against twenty thousand tickets: attaching a name to every row would be the
+   * same handful of strings repeated until they were the biggest thing in the
+   * snapshot.
+   *
+   * NO NEW EXPOSURE, which is the question worth asking before shipping a
+   * directory. recorded_by is not masked for any role — mask() touches the
+   * buyer's details and nothing else — so every one of these addresses is
+   * already on screen for anybody who can read a ticket. This turns an address
+   * they can already see into a name they can use.
+   */
+  const { data: staffRows } = await ctx.supabaseAdmin
+    .from('app_users').select('email,name').eq('active', true)
+  const staff = (staffRows ?? [])
+    .map((r: Record<string, unknown>) => ({
+      email: String(r.email ?? '').trim().toLowerCase(),
+      name: String(r.name ?? '').trim(),
+    }))
+    .filter((r: { email: string; name: string }) => r.email && r.name)
+
   return {
     email: user.email,
     name: user.name,
     role: user.role,
     isSuperAdmin: user.isSuperAdmin,
     agentId: user.agentId,
+    staff,
     config: configPayload(cfg),
   }
 }

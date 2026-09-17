@@ -18,6 +18,7 @@ import Sheet from './ui/Sheet.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Bi from './ui/Bi.vue'
 import History from './modals/History.vue'
+import Who from './ui/Who.vue'
 
 const props = defineProps({ ticket: Object })
 const emit = defineEmits(['close', 'saved'])
@@ -238,7 +239,7 @@ async function correct() {
         <div v-else-if="isSold(t)" class="fact">
           <span>Sold by</span><b class="muted">Nobody — sold at the desk</b>
         </div>
-        <div v-if="t.by" class="fact"><span>Written down by</span><b>{{ t.by }}</b></div>
+        <div v-if="t.by" class="fact"><span>Written down by</span><Who :email="t.by" /></div>
         <div class="fact"><span>Now</span><StatusPill :status="t.status" /></div>
       </div>
       <button class="btn block mt" @click="showHistory = true">Where this ticket has been</button>

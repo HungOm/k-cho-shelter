@@ -183,6 +183,31 @@ export function setConfig(cfg) {
   return state.cfg
 }
 
+/**
+ * The person behind an email address, for the screens that show who did
+ * something rather than who bought something.
+ *
+ * Every sold ticket carries the email of whoever wrote it down, and it was
+ * rendered raw — an address nobody here calls anybody by, in a column people
+ * read at a glance. The names arrive once at sign-in (whoami carries the dozen
+ * people who can sign in), so this is a lookup and not a request.
+ *
+ * THREE ANSWERS, because they are read differently:
+ *   somebody else   their name, with the address underneath in small
+ *   the reader      "You (Their Name)", because a record of your own work
+ *                   should say so — checking an address against your own to
+ *                   find out whether it was you is work the screen can do
+ *   nobody known    the address itself, once. An address shown twice, as both
+ *                   the name and the note under it, reads as a rendering bug.
+ */
+export function whoIs(email) {
+  const want = String(email || '').trim().toLowerCase()
+  if (!want) return null
+  const me = state.user || {}
+  const name = (me.staff || []).find((s) => s.email === want)?.name || ''
+  return { email: want, name, you: String(me.email || '').trim().toLowerCase() === want }
+}
+
 export function sellBlock(ticket) {
   return bookBlock(whereIs(ticket))
 }

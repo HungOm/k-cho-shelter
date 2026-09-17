@@ -33,6 +33,7 @@
  * relationship between the two.
  */
 import { ref, computed, onMounted } from 'vue'
+import Who from '../ui/Who.vue'
 import { api, state, agentMap, isSold } from '../../lib/store.js'
 import { dateTime, money, plainName, isSellerContact, STATUS_WORDS, COUNTED_IN_HELP } from '../../lib/format.js'
 import { isDialable, waNumber } from '../../lib/search.js'
@@ -364,7 +365,7 @@ const movedAlready = computed(() => {
             Filled in when the book was counted, so nobody wrote down who bought it
             at the time.
           </div>
-          <div v-if="sale.by" class="who">Written down by {{ sale.by }}</div>
+          <div v-if="sale.by" class="who">Written down by <Who :email="sale.by" /></div>
         </template>
 
         <template v-else-if="s.kind === 'change'">
@@ -377,7 +378,7 @@ const movedAlready = computed(() => {
           <div v-if="s.hidden" class="who">
             The buyer's details were changed. You are not shown them on this ticket.
           </div>
-          <div v-if="s.by" class="who">Written down by {{ s.by }}</div>
+          <div v-if="s.by" class="who">Written down by <Who :email="s.by" /></div>
           <div v-if="s.note" class="note-line">{{ s.note }}</div>
         </template>
 

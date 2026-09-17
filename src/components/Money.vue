@@ -411,11 +411,24 @@ function waLink(a) {
           </thead>
           <tbody>
             <template v-for="a in rows" :key="a.agentId">
-              <tr :class="{ openrow: open === a.agentId }" @click="toggle(a.agentId)">
+              <!--
+                THE DESK IS A LINE AND NOT A PERSON. Tickets sold out of books
+                nobody holds are counted here, and the row carries no agentId
+                because there is nobody to carry one. It used to be clickable
+                anyway: the chevron invited a press and the press did nothing,
+                which reads as a screen that has stopped responding. It says
+                what it is instead.
+              -->
+              <tr :class="{ openrow: open === a.agentId, deskrow: !a.agentId }"
+                  @click="a.agentId && toggle(a.agentId)">
                 <td>
-                  <span class="chev">{{ open === a.agentId ? '▾' : '▸' }}</span>
+                  <span v-if="a.agentId" class="chev">{{ open === a.agentId ? '▾' : '▸' }}</span>
                   {{ a.name || a.agentId }}
                   <span v-if="a.overdueBooks" class="pill bad">{{ a.overdueBooks }} late</span>
+                  <span v-if="!a.agentId" class="tiny muted deskwhy">
+                    the money went into the tin as each sale was written down, so there is
+                    nobody to chase — each ticket says who recorded it
+                  </span>
                 </td>
                 <td class="num">{{ a.booksOut }}</td>
                 <td class="num">{{ a.ticketsSold }}</td>
@@ -713,4 +726,8 @@ function waLink(a) {
 .recon b { font-size: 1.02rem; }
 .recon b.owed { color: var(--warn); }
 .recon .op { font-size: 1.1rem; color: var(--muted); align-self: center; }
+
+/* Not a person, so not a row that invites a press. */
+.deskrow { cursor: default; }
+.deskwhy { display: block; max-width: 46ch; margin-top: 2px; }
 </style>
