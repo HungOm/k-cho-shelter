@@ -23,8 +23,16 @@ const emit = defineEmits(['issue', 'add-agent', 'open-book', 'sell-book', 'repor
  * Shown to anybody whose account is linked to a seller, including an organiser
  * who also carries books, because the question "what am I bringing in" belongs
  * to whoever is holding the paper.
+ *
+ * AND TO A SELLER WHOSE LINK IS BROKEN, which is the case it must not hide
+ * from. Keying this on agentId alone meant the one person who cannot report —
+ * an account marked Seller with no seller record behind it — was also the one
+ * person shown no way to find out. They press it, the screen says what is
+ * wrong and who fixes it, which is the whole of what they need. A control that
+ * vanishes teaches somebody the app has nothing for them.
  */
-const isSeller = computed(() => !!state.user?.agentId)
+const isSeller = computed(() =>
+  state.user?.role === 'agent' || !!state.user?.agentId)
 
 function doStep(action) {
   if (action === 'add-agent') emit('add-agent')
@@ -109,7 +117,12 @@ function doStep(action) {
     <template v-if="attention.length">
       <h3 class="sect"><Bi text="Needs looking at" /></h3>
       <TransitionGroup name="pop" tag="div">
-        <button v-for="a in attention" :key="a.key" :class="['attn', a.tone]" @click="go(a.go)">
+        <!-- A row may name a SHEET rather than a screen. "Time to report" sent
+             sellers to the Books screen, which is not in a seller's sidebar at
+             all — the one row written for them pointed at a page they cannot
+             reach. -->
+        <button v-for="a in attention" :key="a.key" :class="['attn', a.tone]"
+                @click="a.act ? emit(a.act) : go(a.go)">
           <Icon :name="a.icon" :size="24" class="em" />
           <span class="grow">
             <!-- Bilingual: this list is the one thing on Home that every role

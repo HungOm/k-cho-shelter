@@ -343,6 +343,16 @@ export const attention = computed(() => {
       detail: state.checkIn.date
         ? { text: ATTN.myReportBy, vars: { when: date(state.checkIn.date) } }
         : { text: ATTN.myReportAnyway },
+      /*
+       * OPENS THE REPORT, rather than sending them to a screen.
+       *
+       * It pointed at 'books', which is not in a seller's sidebar — the one
+       * attention row written for sellers led to a page they cannot reach, so
+       * the app told them it was time to report and then had nowhere to put
+       * them. `act` is an emit for Home to raise; `go` stays for every other
+       * row, which really is a screen.
+       */
+      act: 'report-back',
       go: 'books'
     })
   } else if (silent) {

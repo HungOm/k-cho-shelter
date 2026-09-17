@@ -279,5 +279,48 @@ console.log('7. an empty report is not a report')
   eq(body.error.code, 'NOTHING_TO_DO', 'with the reason said plainly')
 }
 
+console.log('8. and there is a way in — including for the seller who cannot use it')
+{
+  /*
+   * REPORTED AS "I didn't see any submit report or return buttons".
+   *
+   * A feature nothing can press is not a feature, and this one had two ways to
+   * end up that way. The first is ordinary and was caught by looking: the entry
+   * point keyed on `agentId`, so a seller whose account is not linked to a
+   * seller record — the exact account that cannot report, and the exact account
+   * this raffle produced — was shown nothing at all. The person who most needs
+   * to be told why is the one it hid from.
+   *
+   * The second is the attention row written FOR sellers, which pointed at the
+   * Books screen. A seller's sidebar has no Books screen. The app told them it
+   * was time to report and then had nowhere to put them.
+   */
+  const { readFileSync } = await import('node:fs')
+  const root = new URL('../', import.meta.url).pathname
+  const read = (f) => readFileSync(root + f, 'utf8')
+
+  const home = read('src/components/Home.vue')
+  ok(/emit\('report-back'\)/.test(home), 'Home has a control that asks for it')
+  ok(/defineEmits\(\[[^\]]*'report-back'/.test(home), 'and declares the event, or Vue drops it')
+
+  // Role OR link. Keyed on the link alone it disappears for the broken account.
+  const seller = home.slice(home.indexOf('const isSeller'), home.indexOf('function doStep'))
+  ok(/role === 'agent'/.test(seller),
+     'and it is shown to a seller account whether or not its link is sound')
+
+  const app = read('src/App.vue')
+  ok(/@report-back="openModal\('reportback'\)"/.test(app),
+     'the app opens the sheet on it — an emit nobody listens for is a dead button')
+  ok(/modal\?\.kind === 'reportback'/.test(app), 'and renders it')
+
+  // The row written for sellers goes to the report, not to a screen they do
+  // not have.
+  const store = read('src/lib/store.js')
+  const row = store.slice(store.indexOf("key: 'myreport'"), store.indexOf("key: 'reports'"))
+  ok(/act: 'report-back'/.test(row), 'the "time to report" row opens the report itself')
+  ok(/a\.act \? emit\(a\.act\) : go\(a\.go\)/.test(home),
+     'and Home raises it rather than navigating')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
