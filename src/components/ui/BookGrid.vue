@@ -100,12 +100,14 @@ function sales(b) {
 .bk:hover { transform: scale(1.22); z-index: 2; box-shadow: var(--shadow); }
 .bk:active { transform: scale(1.05); }
 
-.s-Unassigned { background: var(--surface-2); color: var(--muted); box-shadow: inset 0 0 0 1px var(--border); }
-.s-Out        { background: #2563eb; }
-.s-Returned   { background: #c2700a; }
-.s-Settled    { background: #15803d; }
-.s-Lost       { background: #c62828; }
-.s-Void       { background: #4b5563; }
+/* Each custody state names its own colour, so the sold-out rule below can
+   borrow it for the edge instead of repeating this list. */
+.s-Unassigned { --custody: var(--border); background: var(--surface-2); color: var(--muted); box-shadow: inset 0 0 0 1px var(--border); }
+.s-Out        { --custody: #2563eb; background: var(--custody); }
+.s-Returned   { --custody: #c2700a; background: var(--custody); }
+.s-Settled    { --custody: #15803d; background: var(--custody); }
+.s-Lost       { --custody: #c62828; background: var(--custody); }
+.s-Void       { --custody: #4b5563; background: var(--custody); }
 .more         { background: var(--brand-soft); color: var(--brand); }
 .late { outline: 2.5px solid var(--bad); outline-offset: -2.5px; }
 
@@ -132,25 +134,39 @@ function sales(b) {
  * border would shift every tile around it by a pixel, which reads as the grid
  * jittering when a sale lands.
  */
+/*
+ * A COLOUR OF ITS OWN, asked for after a band and a ring both failed to read.
+ *
+ * The rule here was that colour means custody and nothing else, and a seventh
+ * hue would be read as a seventh place a book can be. That held until somebody
+ * looking at the actual grid said "same colour" three times. A rule that keeps
+ * being right while the screen keeps being unreadable is not worth the screen.
+ *
+ * So a sold-out book is violet, and CUSTODY IS NOT LOST — it becomes the edge,
+ * borrowing --custody from whichever state rule applied above. Fill answers
+ * "is there anything left in it", edge answers "where is it". Somebody chasing
+ * books can still tell a sold-out book that is out with a seller from one
+ * sitting on the desk, which is the distinction the old rule existed to keep.
+ */
+.bk.sold-all { background: #6d28d9; color: #fff; }
 .bk.sold-all::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 8px;
-  background: rgba(255, 255, 255, .95); border-radius: 0 0 7px 7px;
-  box-shadow: inset 0 1px 0 rgba(0, 0, 0, .18);
+  content: ''; position: absolute; inset: 0; border-radius: 7px;
+  box-shadow: inset 0 0 0 3px var(--custody, transparent);
 }
 .bk.sold-some::after {
   content: ''; position: absolute; right: 4px; bottom: 4px;
   width: 7px; height: 7px; border-radius: 50%;
   background: rgba(255, 255, 255, .9);
 }
-/* The office colour is pale, so a white mark on it would be invisible. */
-.bk.s-Unassigned.sold-all::after { background: var(--muted); box-shadow: none; }
+/* The office tile is pale and its own mark has to be dark to show at all. A
+   sold-out office book is violet like any other, so only the dot needs it. */
 .bk.s-Unassigned.sold-some::after { background: var(--muted); }
 .bk { position: relative; }
 
-.keys i.sold-all { position: relative; }
+.keys i.sold-all { position: relative; background: #6d28d9; }
 .keys i.sold-all::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
-  background: rgba(255, 255, 255, .95); border-radius: 0 0 4px 4px;
+  content: ''; position: absolute; inset: 0; border-radius: 4px;
+  box-shadow: inset 0 0 0 2px var(--custody, transparent);
 }
 .keys i.sold-some { position: relative; }
 .keys i.sold-some::after {

@@ -100,45 +100,43 @@ console.log('5. the number on it is still the number, and the hover still reads'
      'and the legend carries both marks, because a mark nobody can look up is decoration')
 }
 
-console.log('5b. the sold-out mark is a shape somebody can see, not a hairline')
+console.log('5b. a sold-out book has its own colour, and still says where it is')
 {
   /*
-   * THE CLASS WAS RIGHT AND NOBODY COULD SEE IT.
+   * THREE FORMS, BECAUSE THE FIRST TWO COULD NOT BE SEEN.
    *
-   * Cases 1-3 assert that a sold-out book carries `sold-all`, and they passed
-   * throughout — while the organiser reported twice, looking at Book-003, that
-   * the grid showed "same colour". They were right in the only way that counts.
-   * The mark was a 2px white outline inset from a rounded edge, on a tile with
-   * a bold white numeral already in the middle of it, so it read as part of the
-   * text rather than as a separate fact.
+   * A 2px white ring, then a solid white band, then a colour. The organiser
+   * looked at the real grid and said "same colour" three times, and each time
+   * the class was present, the data was right and the mark was rendering. The
+   * design rule — colour means custody, a mark means sales — was defensible
+   * every time and the screen was unreadable every time. A rule that keeps
+   * being right while nobody can use the screen is not worth the screen.
    *
-   * A test on the CLASS cannot catch that: the class is present either way.
-   * What failed was whether the mark is a shape, so that is what is asserted —
-   * `sold-all` paints a filled area, and does not go back to being a hairline
-   * that only a person who knows to look for it will find.
-   *
-   * This is the weakest kind of assertion, a scrape over a stylesheet, and it
-   * is here because the alternative is no check at all on the one property that
-   * actually broke. It is not a claim that the mark looks good; it is a claim
-   * that it is still solid.
+   * WHAT THIS PINS is not the hue, which is a taste somebody may change. It is
+   * the two properties that failed: the mark is a FILL rather than a hairline,
+   * and custody is still legible, because losing it would make a sold-out book
+   * that is out with a seller indistinguishable from one sitting on the desk —
+   * and telling those apart is the whole job of the chase list.
    */
   const css = read('src/components/ui/BookGrid.vue')
-  const rule = cut(css, '.bk.sold-all::after', '}', 'the sold-out mark')
 
-  ok(/background:/.test(rule), 'it fills an area rather than drawing an outline')
-  ok(!/^\s*border:\s*\d/m.test(rule),
-     'and is not a hairline border again — that is the form nobody could see')
-  ok(/rgba\(255, 255, 255, \.9\d*\)|#fff/.test(rule), 'in white, so it sits on every custody colour')
+  const fill = cut(css, '.bk.sold-all {', '}', 'the sold-out fill')
+  ok(/background:\s*#[0-9a-f]{3,8}/i.test(fill),
+     'a sold-out book has a colour of its own, not an outline drawn on another one')
+  for (const custody of ['#2563eb', '#c2700a', '#15803d', '#c62828', '#4b5563']) {
+    ok(!fill.includes(custody),
+       `and it is not ${custody}, which already means a place a book can be`)
+  }
 
-  // The pale office tile cannot take a white mark, and that override has to
-  // follow the mark's shape or it silently stops applying.
-  const pale = cut(css, '.bk.s-Unassigned.sold-all::after', '}', 'the office-tile override')
-  ok(/background:\s*var\(--muted\)/.test(pale),
-     'and the pale tile overrides the same property the mark now uses')
+  const edge = cut(css, '.bk.sold-all::after', '}', 'the custody edge')
+  ok(/var\(--custody/.test(edge),
+     'custody survives as the edge — a sold-out book still says where it is')
+  ok(/--custody:/.test(cut(css, '.s-Out', '}', 'the out-state rule')),
+     'and each state names its colour once, so the edge borrows rather than repeats it')
 
-  // The key teaches the mark. If they diverge, the legend is a lie.
-  const key = cut(css, '.keys i.sold-all::after', '}', 'the legend swatch')
-  ok(/background:/.test(key), 'the legend swatch shows the same shape as the tile')
+  // The key teaches the mark. If they diverge the legend is a lie.
+  const key = cut(css, '.keys i.sold-all {', '}', 'the legend swatch')
+  ok(/background:\s*#[0-9a-f]{3,8}/i.test(key), 'the legend swatch carries the same fill')
 }
 
 /*
