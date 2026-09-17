@@ -702,8 +702,18 @@ possible), which makes the backfill exact rather than a guess:
 1. **Add the ledgers empty** (`ticket_movements`, `sales`, `money_entries`, `settlements`,
    `reconciliation_exceptions`, `event_state`, `adjustments`) with their triggers. No
    existing table changes. Deploy; nothing reads them yet.
-2. **Backfill from what exists**, in one reviewed transaction, as rows marked
-   `kind='backfill'` with `reason` naming the source row:
+2. **Backfill from what exists**, in one reviewed transaction. *Corrected after
+   implementation:* this said the rows should carry `kind='backfill'`, which is
+   wrong — the replay check two paragraphs down needs to know whether each row
+   was an issue or a return, and `'backfill'` has thrown exactly that away. The
+   `kind` stays semantic and provenance rides on a `backfilled` boolean, with
+   `reason` naming the source row. The same paragraph should also have said that
+   the desk is a **sentinel holder** (`'desk'`) rather than null, so that no
+   query over a holder column becomes an "everything except X" condition — the
+   failure this repository has already produced three times (AUDIT.md §X).
+   Both corrections came from building it; they are recorded here rather than
+   silently fixed, because a design document that quietly agrees with the code
+   afterwards teaches nobody what was wrong with it:
    - each `book_history` issue/transfer/return/restock → N movements for the book's tickets
      at that time (every one was whole-book, so N = the book's tickets);
    - each ticket currently `Sold`/`Donated` → one `sales` row from `ticket_history`'s first
