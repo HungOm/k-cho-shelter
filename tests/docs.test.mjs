@@ -23,6 +23,7 @@
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { join, dirname, normalize } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -98,8 +99,23 @@ console.log('5. every file the docs tell somebody to run is a file that exists')
     }
   }
   ok(claimed.size > 0, `the docs name ${claimed.size} paths`)
+  /*
+   * A PATH THE READER MAKES IS NOT A PATH THAT IS MISSING. Setup names two
+   * kinds of file: ones that ship — a script, a workflow, a migration — and
+   * ones the reader creates on their own machine and the repo deliberately
+   * refuses to carry, like the file the database password goes in. Both are
+   * real instructions. Only the first can be checked by looking for it, and
+   * requiring the second to exist would make a clean clone fail the suite for
+   * doing exactly what .gitignore asks.
+   *
+   * So the question for an absent path is whether the repo meant to keep it
+   * out. git answers that, and it answers it from .gitignore rather than from
+   * a list here that would drift the first time one changed.
+   */
   for (const p of claimed) {
-    ok(existsSync(join(root, p)), `${p} exists`)
+    if (existsSync(join(root, p))) { pass++; continue }
+    const ignored = spawnSync('git', ['check-ignore', '-q', p], { cwd: root }).status === 0
+    ok(ignored, `${p} exists, or is a file .gitignore says the reader makes themselves`)
   }
 }
 
