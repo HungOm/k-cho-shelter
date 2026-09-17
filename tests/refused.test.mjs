@@ -70,8 +70,8 @@ ok(!/emit\('retry'\)/.test(refusedBlock),
 
 console.log('the way out actually ends the session')
 const reset = app.slice(app.indexOf('async function reset'), app.indexOf('async function signOut'))
-ok(/isSupabase.*sbAuth\.signOut\(\)/s.test(reset),
-   'reset signs out of Supabase — otherwise the reload lands back on the refusal')
+ok(/sbAuth\.signOut\(\)/.test(reset),
+   'reset ends the session — otherwise the reload lands back on the refusal')
 ok(/forgetCache\(\)/.test(reset), 'and drops the cached tickets on the way')
 
 console.log('the person is told WHICH account was refused')

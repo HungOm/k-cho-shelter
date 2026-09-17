@@ -30,7 +30,7 @@
  * wrong, the view is wrong — fix it there. A second opinion in the client is
  * decoration that people would trust over the real thing.
  */
-import { ApiError } from './api.js'
+import { ApiError } from './errors.js'
 import { getClient } from './supabaseAuth.js'
 
 /**

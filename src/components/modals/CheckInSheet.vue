@@ -27,7 +27,6 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { api, state } from '../../lib/store.js'
-import { isSupabase } from '../../lib/backend.js'
 import { date, dateTime, money, plural } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import Logo from '../ui/Logo.vue'
@@ -53,10 +52,6 @@ async function load() {
    * unknown action, which reads to a volunteer as the app being broken rather
    * than as a report that lives somewhere else.
    */
-  if (!isSupabase) {
-    problem.value = 'This report is built from the database backend — the frozen round, and the stub counts the spreadsheet has no columns for. Switch to the Supabase backend to read it.'
-    return
-  }
   try {
     r.value = await api('check_in_sheet', {
       agentId: props.agentId || '', round: props.round || 0,

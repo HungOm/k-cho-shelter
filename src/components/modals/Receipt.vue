@@ -9,7 +9,6 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api, toast, state } from '../../lib/store.js'
 import { money, date } from '../../lib/format.js'
 import { waNumber, isDialable } from '../../lib/search.js'
-import { isSupabase } from '../../lib/backend.js'
 import Sheet from '../ui/Sheet.vue'
 import Logo from '../ui/Logo.vue'
 
@@ -43,20 +42,17 @@ const acking = ref(false)
 const isTheSeller = computed(() => !!state.user?.agentId && state.user.agentId === props.agentId)
 const unconfirmed = computed(() => ack.value?.unconfirmed ?? [])
 const canConfirm = computed(() =>
-  isSupabase && !!ack.value && unconfirmed.value.length > 0 && !nothing.value)
+  !!ack.value && unconfirmed.value.length > 0 && !nothing.value)
 
 async function loadAck() {
-  // Apps Script has no such action, and it cannot: recording WHOSE word a
-  // confirmation is needs a row nobody can edit afterwards, which a sheet
-  // anybody with the link can open has nowhere to put. Asking anyway would
-  // show a volunteer an unknown-action error and read as the app being broken,
-  // so on that backend the receipt is the paper it always was.
-  if (!isSupabase) return
+  // Recording WHOSE word a confirmation is — the seller's own tap, against an
+  // organiser typing that they saw a signed paper — needs a row nobody can edit
+  // afterwards. That is why it is a table and not a column.
   try { ack.value = await api('acknowledged_books', { agentId: props.agentId }) } catch { ack.value = null }
 }
 
 async function confirm() {
-  if (acking.value || !isSupabase) return
+  if (acking.value) return
   acking.value = true
   try {
     const got = await api('acknowledge_books', { agentId: props.agentId })

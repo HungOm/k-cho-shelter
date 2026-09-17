@@ -40,7 +40,6 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { api, state, toast, refresh } from '../../lib/store.js'
-import { isSupabase } from '../../lib/backend.js'
 import { date, money, plural } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 
@@ -70,7 +69,7 @@ const problem = ref('')
 const sheet = ref(null)
 onMounted(load)
 async function load() {
-  if (!props.agent?.id || !isSupabase) return
+  if (!props.agent?.id) return
   try { sheet.value = await api('check_in_sheet', { agentId: props.agent.id }) } catch { /* the form is the point */ }
 }
 
@@ -284,7 +283,7 @@ async function undo() {
            this is where somebody already is when the seller is in front of
            them, and it opens on top rather than instead — nothing typed is
            lost by looking at it. -->
-      <button v-if="isSupabase" class="btn" @click="emit('sheet', agent)">Report</button>
+      <button class="btn" @click="emit('sheet', agent)">Report</button>
       <button v-if="already" class="btn" :disabled="busy" @click="undo">Undo</button>
       <button class="btn primary" :disabled="busy" @click="save">
         {{ busy ? 'Saving…' : 'Record it' }}

@@ -42,7 +42,7 @@ globalThis.fetch = async (url, o) => {
 }
 
 const store = await import('../src/lib/store.js')
-const { configure } = await import('../src/lib/api.js')
+const { configure } = await import('../src/lib/supabaseApi.js')
 configure({ apiUrl: 'https://example.test/exec', idToken: 'x.y.z' })
 const { state, poll } = store
 

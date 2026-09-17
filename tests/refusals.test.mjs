@@ -16,14 +16,29 @@ globalThis.localStorage = {
   removeItem: k => mem.delete(k)
 }
 
-const { configure } = await import('../src/lib/api.js')
+/*
+ * DIRECT READS OFF, because these suites stub `fetch` and drive the store.
+ *
+ * backend.js sends row reads straight to PostgREST rather than through the Edge
+ * Function — that shortcut is the whole performance difference and is on by
+ * default. It goes through the Supabase client, not through `fetch`, so a
+ * stubbed transport never sees the call and every read comes back NO_CONNECTION.
+ *
+ * Set before backend.js is imported: `directReads` is decided once, at module
+ * load, from this key.
+ */
+globalThis.localStorage.setItem('kcho_direct_reads', 'off')
+
+const { configure } = await import('../src/lib/supabaseApi.js')
 const { state, refresh } = await import('../src/lib/store.js')
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 const eq = (g, w, what) => { String(g) === String(w) ? pass++ : (fail++, console.log(`  FAIL ${what}: got ${g}, want ${w}`)) }
 
-configure({ apiUrl: 'https://example.test/exec', idToken: '' })
+// Any non-empty session: the Supabase transport refuses to call without one,
+// and every fetch below is stubbed anyway.
+configure({ apiUrl: 'https://example.test/exec', idToken: 'x.y.z' })
 
 /** Whatever `replies` does not name comes back as a plain empty success. */
 const DEFAULTS = {
@@ -42,10 +57,13 @@ function serve(replies) {
     const { action } = JSON.parse(opts.body)
     asked.push(action)
     const fixed = replies[action]
+    // json(), not text(): the Apps Script transport read the body as text,
+    // because its responses were text/plain to dodge a CORS preflight it could
+    // not answer. The Edge Function answers JSON.
     if (fixed && fixed.error) {
-      return { text: async () => JSON.stringify({ ok: false, error: fixed.error }) }
+      return { ok: true, status: 200, json: async () => ({ ok: false, error: fixed.error }) }
     }
-    return { text: async () => JSON.stringify({ ok: true, data: fixed || DEFAULTS[action] || {} }) }
+    return { ok: true, status: 200, json: async () => ({ ok: true, data: fixed || DEFAULTS[action] || {} }) }
   }
 }
 const refusal = (code, message) => ({ error: { code, message } })

@@ -128,18 +128,24 @@ ok(!/window\.google|accounts\.id/.test(src),
 
 // ---- which door, and how the token travels ----
 
-ok(/if\s*\(\s*isSupabase\s*\)\s*return\s+bootSupabase\(\)/.test(app),
-   'boot forks before any Google client id is needed')
-ok(/if\s*\(isSupabase\)\s*await\s+sbAuth\.signOut\(\)/.test(app),
+/*
+ * These used to assert which way a FORK went — `if (isSupabase) …` at the boot,
+ * at sign-out, and on a Google credential. There is one path now, so what is
+ * pinned is that each still happens at all. The fork is gone; the three things
+ * it guarded are not.
+ */
+ok(/return\s+bootSupabase\(\)/.test(app),
+   'boot goes straight to the Supabase session')
+ok(/await\s+sbAuth\.signOut\(\)/.test(app),
    'signing out drops the Supabase refresh token as well as the cache')
 ok(app.includes("p.has('access_token')"),
    'the OAuth reply in the fragment is left for the client to read')
 
-ok(/if\s*\(isSupabase\)\s*return\s+exchangeForSupabaseSession\(res\)/.test(app),
-   'a Google credential on the Supabase path is traded, not used')
-ok(app.indexOf('if (isSupabase) return exchangeForSupabaseSession(res)')
-   < app.indexOf('lastToken = res.credential'),
-   'and traded BEFORE the Apps Script expiry machinery touches it')
+ok(/return\s+exchangeForSupabaseSession\(res\)/.test(app),
+   'a Google credential is traded for a session, not used as one')
+// The machinery it used to be traded ahead of has gone with the other backend.
+ok(!/scheduleRenewal|keepToken|tokenIsStale/.test(app),
+   'and nothing here keeps a Google token alive any more — a session refreshes itself')
 ok(/nonce:\s*gsiNonce\.hashed/.test(app), 'Google is initialised with the hashed nonce')
 ok(/signInWithGoogleToken\(res\.credential,\s*gsiNonce\?\.raw\)/.test(app),
    'and Supabase is handed the raw one — the halves are not swapped')
@@ -163,11 +169,14 @@ ok(/useGsi\.value = !!clientId\.value && !forceRedirect/.test(app),
 // BOTH guards, counted rather than matched: the button is drawn from a watch
 // AND from onMounted, and fixing one leaves a path where it never appears —
 // which a regex that stops at the first hit reports as fixed.
-ok((signin.match(/if\s*\(props\.supabase\s*&&\s*!props\.gsi\)\s*return/g) || []).length === 2,
-   'Google draws the button on the Supabase path too, from both entry points')
-ok(!/if\s*\(props\.supabase\)\s*return/.test(signin),
-   'and neither guard still turns it away for being Supabase alone')
-ok(/v-if="supabase && !gsi"/.test(signin), 'the handoff button appears only then')
+//
+// The guard used to read `props.supabase && !props.gsi`, because there was a
+// backend on which no Google button was drawn at all. There is one path now, so
+// what remains is the choice between drawing Google's button here and handing
+// off to supabase.co.
+ok((signin.match(/if\s*\(!props\.gsi\)\s*return/g) || []).length === 2,
+   'the Google button is drawn from both entry points')
+ok(/v-if="!gsi"/.test(signin), 'and the handoff button appears only when it is not')
 ok(signin.includes("emit('signin')"), 'and still works when it does')
 ok(/<div class="note bad"><Bi :text="message" \/><\/div>/.test(signin),
    'the failure line goes through Bi, so any translated message glosses')

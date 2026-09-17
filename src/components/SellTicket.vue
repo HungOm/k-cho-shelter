@@ -138,16 +138,15 @@ async function correct() {
       name: name.value.trim(), phone: phone.value.trim()
     }, 'correct_ticket', {
       ticketNumber: t.value.number, reason: reason.value.trim(),
-      // BOTH SPELLINGS, because the two backends disagree about this one action.
-      // Apps Script's correction reads sheet column names (Buyer_Name); the
-      // Supabase port reads camelCase (buyerName) — while BOTH read camelCase
-      // for a sale. Sending only the sheet names, as this did, meant a
-      // correction on Supabase supplied nothing the server recognised and came
-      // back "No changed fields were supplied", which is true and useless.
-      // Sending only camelCase would break Apps Script, still live for
-      // volunteers mid-cutover. Each backend ignores the spelling it does not
-      // know, so both work. Remove the sheet names once Supabase accepts them.
-      Buyer_Name: name.value.trim(), Buyer_Phone: phone.value.trim(),
+      // ONE SPELLING NOW. This sent Buyer_Name AND buyerName, because the two
+      // backends disagreed about this one action: the spreadsheet read sheet
+      // column names, the Edge Function read camelCase, and each ignored the
+      // other's — so a correction carrying only one silently did nothing on the
+      // backend it was not speaking to. It came back "No changed fields were
+      // supplied", which was true and useless.
+      //
+      // The handler still accepts the sheet spellings as aliases, so a stale
+      // cached bundle sending them keeps working. Nothing sends them any more.
       buyerName: name.value.trim(), buyerPhone: phone.value.trim(),
       expectedVersion: t.value.version
     })

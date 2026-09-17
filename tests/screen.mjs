@@ -17,11 +17,6 @@
  * aimed at a prop therefore fails looking exactly like a broken screen. Aim at
  * slot content, or stub that child specifically.
  *
- * WHICH BACKEND: pass `backend: 'supabase'` to compile the bundle as that
- * build. Screens that ask `isSupabase` otherwise compile as Apps Script, which
- * is the right default — it is what a plain `npm run build` produces — but it
- * silently empties any screen whose body sits behind that flag.
- *
  * WHY EITHER EXISTS: a helper can be correct, thoroughly tested, and never
  * called. That has happened four times here in two days — a byte-sniff never
  * invoked, a sell guard no screen consulted, applyBrand never applied, and a
@@ -49,7 +44,7 @@ const ESBUILD = join(ROOT, 'node_modules/.bin/esbuild')
  *                      template reaches on its own; a script-only build cannot
  *                      see it and reports clean.
  */
-function build(componentPath, storeStub, withTemplate, backend) {
+function build(componentPath, storeStub, withTemplate) {
   const dir = mkdtempSync(join(tmpdir(), 'screen-'))
   cpSync(join(ROOT, 'src'), join(dir, 'src'), { recursive: true })
   writeFileSync(join(dir, 'src/lib/store.js'), storeStub)
@@ -113,21 +108,20 @@ function build(componentPath, storeStub, withTemplate, backend) {
   }
 
   /*
-   * WHICH BACKEND THE BUNDLE BELIEVES IT IS ON.
+   * `import.meta.env` HAS TO EXIST, even now that nothing chooses a backend
+   * with it.
    *
-   * backend.js picks at import time from the URL, then localStorage, then
-   * VITE_BACKEND, then 'appsscript'. Under Node the first two throw and are
-   * swallowed and the build variable is absent, so every screen compiled here
-   * ran as Apps Script — which was invisible until a screen existed whose whole
-   * body is behind `if (isSupabase)`. Rendered that way it produces its "this
-   * needs the database backend" line and nothing else, and a test asserting on
-   * the document would have failed as though the document were broken.
+   * It used to carry VITE_BACKEND, and defaulting it to 'appsscript' meant
+   * every screen compiled here rendered as the spreadsheet build — invisible
+   * until a screen existed whose whole body sat behind `if (isSupabase)`, which
+   * then rendered as its one-line refusal and read like a broken component.
    *
-   * Defined rather than stubbed, because backend.js decides more than this one
-   * flag and a stub of it would be a second implementation of that decision.
+   * The flag is gone; the object is not. VITE_GOOGLE_CLIENT_ID is still read at
+   * module load, and an undefined `import.meta.env` throws there rather than
+   * returning undefined — taking the whole bundle down at import time.
    */
   const out = join(dir, 'bundle.mjs')
-  const env = JSON.stringify({ VITE_BACKEND: backend ?? 'appsscript' })
+  const env = JSON.stringify({})
   execFileSync(ESBUILD, [probe, '--bundle', '--format=esm', '--platform=neutral',
     '--external:vue',
     /*
@@ -150,8 +144,8 @@ function build(componentPath, storeStub, withTemplate, backend) {
 }
 
 /** The setup context of a screen: its refs, computeds and functions, live. */
-export async function setupOf(componentPath, storeStub, props = {}, { backend, emit } = {}) {
-  const { out, cleanup } = build(componentPath, storeStub, false, backend)
+export async function setupOf(componentPath, storeStub, props = {}, { emit } = {}) {
+  const { out, cleanup } = build(componentPath, storeStub, false)
   const mod = await import('file://' + out)
   // The emit is swallowed unless a caller asks for it. What a modal tells its
   // parent is sometimes the whole behaviour — a handover that went out half
@@ -173,11 +167,11 @@ export async function setupOf(componentPath, storeStub, props = {}, { backend, e
  * trade than driving the component's own bindings.
  */
 export async function renderScreen(
-  componentPath, storeStub, { props = {}, drive, backend } = {},
+  componentPath, storeStub, { props = {}, drive } = {},
 ) {
   const { createSSRApp } = await import('vue')
   const { renderToString } = await import('vue/server-renderer')
-  const { out, cleanup } = build(componentPath, storeStub, true, backend)
+  const { out, cleanup } = build(componentPath, storeStub, true)
   const real = (await import('file://' + out)).default
   /*
    * THE PROPS DECLARATION IS CARRIED THROUGH, and it has to be.

@@ -7,7 +7,6 @@
  */
 import { ref, onMounted, computed, watch } from 'vue'
 import { state, setConfig, api, toast, isSuper, go } from '../lib/store.js'
-import { isSupabase } from '../lib/backend.js'
 import { money, date, dateTime, ROLE_WORDS } from '../lib/format.js'
 import { applyBrand, inkFor } from '../lib/brand.js'
 import { toPayload, reject as rejectLogo } from '../lib/logofile.js'
@@ -381,15 +380,11 @@ function details(d) {
            them somewhere that cannot work — and they would see the change stick
            in the sheet and nothing happen in the app. -->
       <p class="hint">
-        Ticket numbers are fixed once the tickets are made.
-        <template v-if="isSupabase">
-          The dates and the number of tickets are changed here. Anything else —
-          the price, the prefix, how many to a book — has to be changed in the
-          database by whoever set it up.
-        </template>
-        <template v-else>
-          Everything else is changed in the <b>Config</b> tab of the spreadsheet.
-        </template>
+        Ticket numbers are fixed once the tickets are made — the database
+        refuses to change them, because every number already printed was built
+        from them. The dates and the number of tickets are changed here.
+        Anything else — the price, the event name, how many to a book — is in
+        the <b>config</b> table, which whoever set this up can open.
       </p>
     </div>
 

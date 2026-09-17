@@ -2,9 +2,11 @@
 /**
  * The way in.
  *
- * Two things can be missing: the link to the spreadsheet, and a Google sign-in.
- * They are asked for one at a time, in plain words, because whoever is looking
- * at this screen is usually not the person who set the system up.
+ * One thing can be missing now: the Google sign-in. There used to be a second —
+ * a setup phase asking a volunteer to paste a script.google.com link and a
+ * Google app ID before they could even try — and it is gone with the backend
+ * that needed it. Whoever is looking at this screen is usually not the person
+ * who set the system up, so it asks for as little as it can.
  */
 import { ref, onMounted, watch, nextTick } from 'vue'
 import Logo from './ui/Logo.vue'
@@ -12,15 +14,20 @@ import Bi from './ui/Bi.vue'
 import { state } from '../lib/store.js'
 
 const props = defineProps({
-  phase: String,          // 'loading' | 'setup' | 'signin' | 'error'
+  phase: String,          // 'loading' | 'signin' | 'error'
   message: String,
-  needsClientId: Boolean,
-  savedUrl: String,
-  supabase: Boolean,      // sign in through Supabase Auth rather than GIS
-  // Supabase too can use the Google button on this page and trade the token it
-  // returns, instead of handing off to supabase.co and coming back. Same
-  // button, same account; the consent screen names this site rather than the
-  // project reference.
+  /*
+   * WHICH WAY THE GOOGLE SIGN-IN GOES, and it is the only fork left here.
+   *
+   * true  — draw Google's own button on this page and trade the credential it
+   *         returns for a session. The consent screen names this site.
+   * false — hand off to supabase.co and come back. Used when the build has no
+   *         Google client id, or somebody asked with ?signin=redirect.
+   *
+   * There used to be a 'setup' phase above this asking a volunteer to paste a
+   * script.google.com link and a Google app ID before they could sign in at
+   * all. There is nothing to paste now: the project is built into the bundle.
+   */
   gsi: Boolean,
   // A second line for whoever can act on the failure, when the person reading
   // the first one cannot. Shown quietly, in English: it names a dashboard whose
@@ -29,20 +36,14 @@ const props = defineProps({
   notYou: Boolean,        // the failure is a setting, not this person's account
   refused: Boolean        // the account is not on the list, or was turned off
 })
-const emit = defineEmits(['connect', 'reset', 'retry', 'signin'])
+const emit = defineEmits(['reset', 'retry', 'signin'])
 
-const url = ref(props.savedUrl || '')
-const cid = ref('')
 const gsiTarget = ref(null)
-
-function connect() {
-  emit('connect', { url: url.value.trim(), cid: cid.value.trim() })
-}
 
 // The Google button is drawn by Google's script into this element, so it has to
 // exist in the DOM before we ask for it.
 watch(() => props.phase, async p => {
-  if (props.supabase && !props.gsi) return
+  if (!props.gsi) return
   if (p === 'signin' || p === 'waiting') {
     await nextTick()
     window.__renderGoogleButton?.(gsiTarget.value)
@@ -50,7 +51,7 @@ watch(() => props.phase, async p => {
 }, { immediate: true })
 
 onMounted(async () => {
-  if (props.supabase && !props.gsi) return
+  if (!props.gsi) return
   if (props.phase === 'signin') {
     await nextTick()
     window.__renderGoogleButton?.(gsiTarget.value)
@@ -87,39 +88,17 @@ onMounted(async () => {
         <div ref="gsiTarget" class="gsi" style="display:none"></div>
       </div>
 
-      <!-- first time on this device -->
-      <form v-else-if="phase === 'setup'" class="pad left" @submit.prevent="connect">
-        <div class="note info">
-          <b>First time on this phone?</b><br>
-          Paste the link the organiser sent you.
-        </div>
-        <div class="field">
-          <label for="u">Link to the spreadsheet</label>
-          <input id="u" v-model="url" type="url" inputmode="url" autocomplete="off"
-                 placeholder="https://script.google.com/…/exec" required>
-        </div>
-        <div v-if="needsClientId" class="field">
-          <label for="c">Google app ID</label>
-          <input id="c" v-model="cid" autocomplete="off"
-                 placeholder="…apps.googleusercontent.com">
-        </div>
-        <button class="btn primary block lg" type="submit">Connect</button>
-      </form>
-
       <!-- sign in -->
-      <div v-else-if="phase === 'signin'" class="pad">
+      <div v-if="phase === 'signin'" class="pad">
         <p class="muted small">Sign in with the Google account the organiser approved.</p>
         <!-- The handoff to supabase.co: only when this build has no Google
              client id, or somebody asked for it with ?signin=redirect. -->
-        <div v-if="supabase && !gsi" class="gsi">
+        <div v-if="!gsi" class="gsi">
           <button class="btn primary block lg" @click="emit('signin')">
             Continue with Google
           </button>
         </div>
         <div v-else ref="gsiTarget" class="gsi"></div>
-        <button v-if="!supabase" class="btn sm ghost mt" @click="emit('reset')">
-          Use a different link
-        </button>
       </div>
 
       <!-- turned away: on the list, or not -->
@@ -155,7 +134,7 @@ onMounted(async () => {
         <div class="row" style="justify-content:center">
           <button class="btn" @click="emit('retry')">Try again</button>
           <button class="btn ghost" @click="emit('reset')">
-            {{ supabase ? 'Different account' : 'Different link' }}
+            Different account
           </button>
         </div>
       </div>

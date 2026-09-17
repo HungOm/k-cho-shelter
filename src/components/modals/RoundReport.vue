@@ -26,7 +26,6 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { api, state } from '../../lib/store.js'
-import { isSupabase } from '../../lib/backend.js'
 import { date, dateTime, money, plural } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import Logo from '../ui/Logo.vue'
@@ -46,11 +45,7 @@ onMounted(load)
 async function load() {
   // A round is frozen into an append-only table the spreadsheet does not have,
   // and a figure anybody can retype is the one thing a snapshot exists to stop
-  // being true. So this report is the database backend's, and says so.
-  if (!isSupabase) {
-    problem.value = 'This report is built from the database backend — the frozen round, and the stub counts the spreadsheet has no columns for. Switch to the Supabase backend to read it.'
-    return
-  }
+  // being true.
   try {
     snap.value = await api('round_snapshot', { round: props.round || 0 })
   } catch (err) {

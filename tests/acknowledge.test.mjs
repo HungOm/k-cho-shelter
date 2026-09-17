@@ -306,29 +306,6 @@ console.log('17. the confirmation is the record, not the paper')
     'and the paper keeps its signature lines, which is what somebody signs')
 }
 
-console.log('18. on the spreadsheet backend it does not ask at all')
-{
-  /*
-   * Apps Script has no such action and cannot have one. Asking anyway shows a
-   * volunteer an unknown-action error, which reads as the app being broken
-   * rather than as a feature the other backend does not have. This harness
-   * compiles as Apps Script by default, which is what makes this the one case
-   * here that needs no flag to be the real question.
-   */
-  const html = await renderScreen('src/components/modals/Receipt.vue',
-    receiptStore({ user: { role: 'agent', agentId: 'A001' }, receipt, ack: unconfirmedAck }),
-    { props: { agentId: 'A001' },
-      drive: async (c) => {
-        await c.load()
-        await c.loadAck()
-        ok(c.ack.value === null, 'loadAck fetched nothing on a backend that has no such action')
-        await c.confirm()
-        ok(c.acking.value === false, 'and confirming is a no-op rather than an error')
-      } })
-  const text = visibleText(html)
-  ok(!/not yet confirmed received|confirmed received/.test(text), 'so no panel is shown')
-  ok(/Print \/ Save as PDF/.test(text), 'and the receipt is the paper it always was')
-}
 
 console.log('19. the two taps are never given the same words')
 {

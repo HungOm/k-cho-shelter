@@ -1,110 +1,73 @@
 /**
- * Which backend the app talks to — Apps Script or Supabase.
+ * The one way the app talks to the server.
  *
- * A migration where both ends have to change at the same moment is a migration
- * that gets rolled back at 11pm. This makes the choice a setting instead: the
- * same `api(action, payload)` either way, so nothing above this file knows or
- * cares which one answered.
+ * WHAT THIS USED TO BE. A switch between two backends — Apps Script or Supabase
+ * — chosen at build time by `VITE_BACKEND` and overridable per device with
+ * `?backend=`. That existed so a migration did not need both ends to change at
+ * the same moment, which is the kind of migration that gets rolled back at 11pm.
+ * It did its job; the migration finished; the spreadsheet is gone.
  *
- * TWO WAYS TO CHOOSE, and the second is the one that matters during cutover:
+ * Worth recording, because the shape of it was a hazard right up to the end:
+ * with `VITE_BACKEND` unset and nothing in localStorage, the fallback was
+ * `appsscript`. A build that forgot the variable pointed the whole raffle at
+ * the older, weaker backend, and nothing on any screen said so.
  *
- *   1. Build time — VITE_BACKEND=appsscript | supabase in .env.local.
- *      Sets the default for everybody.
- *
- *   2. Run time — ?backend=supabase in the URL, remembered per device.
- *      This is how you try the new one on your own phone while every volunteer
- *      stays on the old one, which is the only safe way to test a raffle
- *      backend mid-raffle. ?backend=appsscript switches back; the flip takes
- *      effect on the next reload, with no deploy either way.
- *
- * Both transports return the same envelope — {ok, data} or
- * {ok:false, error:{code, message, details}} — because the Edge Function was
- * deliberately written to match what Apps Script already returned. That is what
- * keeps this file thin: it chooses a transport, it does not translate between
- * two different shapes.
+ * WHAT IT STILL DOES is the one branch that is not about a backend at all:
+ * whether a row read goes straight to PostgREST or through the Edge Function.
  */
-import { api as appsScriptApi, configure as configureAppsScript, ApiError } from './api.js'
 import { api as supabaseApi, configure as configureSupabase, isSignedIn } from './supabaseApi.js'
 import { DIRECT_READS, directRead } from './supabaseReads.js'
+import { ApiError } from './errors.js'
 
 export { ApiError }
 
-const KEY = 'kcho_backend'
 const DIRECT_KEY = 'kcho_direct_reads'
-export const BACKENDS = ['appsscript', 'supabase']
 
 /**
  * Whether row reads go straight to PostgREST instead of through the function.
  *
- * On by default on Supabase, because it is the entire performance difference:
+ * On by default, because it is the entire performance difference:
  * 57-82ms direct against 340-1000ms through the function, which adds 300-700ms
  * per call however little it does. A read-heavy app cannot absorb that.
  *
- * Switchable at run time — ?directreads=off — for the same reason the backend
- * itself is: if the views misbehave in front of volunteers, somebody needs a
- * way back to the known-good path on one phone, now, without a deploy. It is
+ * Switchable at run time — ?directreads=off. If the views misbehave in front of
+ * volunteers, somebody needs a way back to the known-good path on one phone,
+ * now, without a deploy. It is
  * NOT an automatic fallback. A read that silently retried through the function
  * would hide a broken view behind a slow one, and the day rls.sql is wrong is
  * the day you most need to be told.
  */
 function chooseDirect() {
+  /*
+   * TWO LOOKUPS, TWO try BLOCKS, and that is the fix rather than the style.
+   *
+   * They shared one. So anything that threw while reading the URL — no
+   * `location` at all, a locked-down profile, a `history` the page may not
+   * touch — skipped straight past the SAVED preference to the default. The
+   * device setting was silently ignored in exactly the situations somebody had
+   * set it for, and the only sign was the app being slow.
+   */
   try {
     const p = new URLSearchParams(location.search).get('directreads')
     if (p === 'off' || p === 'on') {
-      localStorage.setItem(DIRECT_KEY, p)
+      try { localStorage.setItem(DIRECT_KEY, p) } catch { /* not remembered, still applied */ }
       history.replaceState(null, '', location.pathname + location.hash)
       return p === 'on'
     }
+  } catch { /* no readable URL; fall through to what the device remembers */ }
+
+  try {
     const saved = localStorage.getItem(DIRECT_KEY)
     if (saved === 'off' || saved === 'on') return saved === 'on'
   } catch { /* storage blocked; the default below is the safe one */ }
+
   return true
 }
 
-/** URL wins and is remembered; then the device's choice; then the build default. */
-function choose() {
-  let chosen = null
-
-  try {
-    const fromUrl = new URLSearchParams(location.search).get('backend')
-    if (BACKENDS.includes(fromUrl)) {
-      localStorage.setItem(KEY, fromUrl)
-      chosen = fromUrl
-      // Drop it from the address bar so the choice is not re-applied by a
-      // shared link — somebody pasting a URL to a colleague should not move
-      // that colleague onto a half-migrated backend without knowing.
-      history.replaceState(null, '', location.pathname + location.hash)
-    } else {
-      chosen = localStorage.getItem(KEY)
-    }
-  } catch {
-    // Storage blocked (private window, locked-down profile). Fall through to
-    // the build default rather than taking the whole module down — reading
-    // localStorage at import time is exactly how this app went blank once.
-  }
-
-  if (!BACKENDS.includes(chosen)) chosen = import.meta.env?.VITE_BACKEND
-  if (!BACKENDS.includes(chosen)) chosen = 'appsscript'
-  return chosen
-}
-
-export const backend = choose()
-export const isSupabase = backend === 'supabase'
-export const directReads = isSupabase && chooseDirect()
-
-/** For the settings screen: say which one is answering, and how it was picked. */
-export function backendLabel() {
-  return isSupabase ? 'Supabase' : 'Apps Script'
-}
-
-export function switchBackend(to) {
-  if (!BACKENDS.includes(to)) throw new Error('Unknown backend: ' + to)
-  try { localStorage.setItem(KEY, to) } catch { /* nothing we can do */ }
-  location.reload()
-}
+export const directReads = chooseDirect()
 
 export function configure(opts) {
-  return isSupabase ? configureSupabase(opts) : configureAppsScript(opts)
+  return configureSupabase(opts)
 }
 
 export function api(action, payload, opts) {
@@ -113,14 +76,10 @@ export function api(action, payload, opts) {
   // are. Both return the same envelope, so nothing above here can tell which
   // answered, and that is the only reason this line is safe.
   if (directReads && DIRECT_READS.has(action)) return directRead(action, payload)
-  return isSupabase ? supabaseApi(action, payload, opts) : appsScriptApi(action, payload, opts)
+  return supabaseApi(action, payload, opts)
 }
 
-/**
- * Whether the chosen backend has what it needs to make a call. The two want
- * different things — Apps Script a Google ID token, Supabase a session — so
- * asking "are we ready" has to go through here rather than being assumed.
- */
+/** Whether there is a session to make a call with. */
 export function backendReady() {
-  return isSupabase ? isSignedIn() : true
+  return isSignedIn()
 }

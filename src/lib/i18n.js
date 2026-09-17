@@ -24,7 +24,6 @@
 export const MY = {
   // --- getting in ---
   'Connect': 'ချိတ်ဆက်ရန်',
-  'Link to the spreadsheet': 'စာရင်းဇယားလင့်ခ်',
   'Sign in with Google': 'Google ဖြင့် ဝင်ရန်',
   // Shown when the project has not been told to trust this app's Google client
   // id. The person reading it cannot fix that, so both lines say so plainly.
@@ -270,7 +269,6 @@ export const MY_ERRORS = {
   RANGE_TOO_LARGE: 'အရေအတွက် များလွန်းပါသည်',
   RATE_LIMIT: 'ခဏစောင့်ပြီး ထပ်ကြိုးစားပါ',
   LOCK_TIMEOUT: 'အခြားသူ သိမ်းနေဆဲဖြစ်သည်',
-  SHEET_MISSING: 'စာရင်းဇယား မပြင်ဆင်ရသေးပါ',
   NOT_CONFIGURED: 'စနစ် မပြင်ဆင်ရသေးပါ',
   TIMEOUT: 'ဆာဗာမှ အဖြေပြန်ရန် အချိန်ကြာလွန်းသည်။ ခဏနေ ထပ်ကြိုးစားပါ',
   WRITE_UNCONFIRMED: 'သိမ်းဆည်းမှု အချိန်ကြာနေသည်။ မည်သည့်အရာ သိမ်းပြီးကြောင်း စစ်ဆေးနေသည် — ထပ်မံ မထည့်ပါနှင့်',
@@ -288,7 +286,6 @@ export const MY_ERRORS = {
   NOT_IN_BOOK: 'ဤလက်မှတ်သည် ထိုစာအုပ်ထဲတွင် မပါဝင်ပါ',
   NUMBERING_TOO_SMALL: 'လက်မှတ်နံပါတ် ဂဏန်းနေရာ မလုံလောက်ပါ',
   PARTIAL_BOOK: 'စာအုပ်တစ်အုပ်လုံး မဟုတ်ပါ',
-  SHEET_DRIFT: 'စာရင်းဇယားနှင့် ဆက်တင်များ ကိုက်ညီမှု မရှိပါ',
   TOO_MANY: 'တစ်ကြိမ်တည်း လုပ်ရန် အရေအတွက် များလွန်းသည်',
   TICKET_NOT_RELEASED: 'ဤလက်မှတ်ကို မရောင်းရသေးပါ',
   NOT_GENERATED: 'ထိုမျှလောက် လက်မှတ် မပြုလုပ်ရသေးပါ',

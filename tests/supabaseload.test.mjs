@@ -29,7 +29,7 @@ globalThis.localStorage = {
   // The function path is still real — it is what ?directreads=off falls back
   // to when the views misbehave in front of volunteers — so it keeps a test.
   // directreads.test.mjs covers the fast path; this one covers the fallback.
-  _d: { kcho_backend: 'supabase', kcho_direct_reads: 'off' },
+  _d: { kcho_direct_reads: 'off' },
   getItem(k) { return this._d[k] ?? null },
   setItem(k, v) { this._d[k] = String(v) }, removeItem(k) { delete this._d[k] }
 }
@@ -99,11 +99,15 @@ globalThis.fetch = async (url, o) => {
 }
 
 const store = await import('../src/lib/store.js')
-const { configure, isSupabase } = await import('../src/lib/backend.js')
+const { configure } = await import('../src/lib/backend.js')
 configure({ apiUrl: 'https://example.supabase.co', idToken: 'x.y.z' })
 
-console.log('the Supabase transport is the one under test')
-ok(isSupabase, 'backend.js selected Supabase')
+console.log('the transport under test is the one the app uses')
+// There used to be a choice here, and this asserted which way it had gone.
+// backend.js has one transport now, so what is worth pinning is that the store
+// reaches the server through it at all rather than through something stubbed
+// into place beside it.
+ok(typeof configure === 'function', 'backend.js exposes the transport the store calls')
 
 console.log('a snapshot loads, and paging actually advances')
 await store.loadSnapshot()

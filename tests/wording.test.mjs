@@ -80,9 +80,7 @@ for (const f of files) {
  * backend-aware — the file has to import isSupabase and choose.
  */
 const SHEET_OK = new Map([
-  ['/src/lib/api.js',
-   'the Apps Script transport itself; every message in it fires only on that backend'],
-  ['/src/components/SignIn.vue',
+    ['/src/components/SignIn.vue',
    'the setup form asks for a script.google.com link and is unreachable on Supabase'],
   ['/src/lib/i18n.js',
    'translation keys for those Apps Script labels; a key is not a screen'],

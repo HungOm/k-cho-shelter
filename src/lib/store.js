@@ -6,7 +6,7 @@
  */
 
 import { reactive, computed, ref } from 'vue'
-import { ApiError, LS } from './api.js'
+import { ApiError, LS } from './errors.js'
 // Through the switch, not straight at Apps Script: every screen's reads and
 // writes are these calls, so this one import is what actually moves the app
 // from one backend to the other.

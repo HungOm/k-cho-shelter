@@ -4,7 +4,6 @@
  * going, and what needs doing. Every attention row is a shortcut to the fix.
  */
 import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh } from '../lib/store.js'
-import { isSupabase } from '../lib/backend.js'
 import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
 import Icon from './ui/Icon.vue'
@@ -29,22 +28,17 @@ function doStep(action) {
     <div v-if="state.needsSetup" class="card setup">
       <h3 class="row">
         <Icon name="gear" :size="22" />
-        {{ isSupabase ? 'The database is not ready yet' : 'The spreadsheet is not ready yet' }}
+        The raffle has no tickets yet
       </h3>
-      <p v-if="isSupabase">
-        Your sign-in worked — but the tables the app reads from have not been
-        made. Whoever set this up needs to run the setup steps against the
-        database. Nothing here will work until they have.
+      <p>
+        Your sign-in worked — the tickets simply have not been made. The System
+        Admin sets the numbering, then generates them on
+        <b>Books → Make more tickets</b>, which shows the range before it writes
+        anything. Nothing here will work until they have.
       </p>
-      <p v-else>
-        Your sign-in worked — but the tabs the app reads from have not been made.
-        Somebody needs to open the spreadsheet, go to
-        <b>Extensions → Apps Script</b>, choose <b>setup</b> from the list at the top
-        and press <b>Run</b>. It takes about a minute.
-      </p>
-      <p v-if="!isSupabase" class="muted small">
-        Set the ticket numbers in the <b>Config</b> tab first — they are fixed
-        once the tickets are made.
+      <p class="muted small">
+        The ticket numbering has to be right first — the prefix and the padding
+        lock the moment the first ticket exists.
       </p>
       <button class="btn primary" @click="refresh()"><Bi text="Check again" /></button>
     </div>

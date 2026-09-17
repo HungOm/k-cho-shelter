@@ -8,14 +8,12 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state, setConfig, refresh, go, toast, isAdmin, bootFromCache, forgetCache, poll } from './lib/store.js'
-import { tokenIsStale, LS } from './lib/api.js'
-import { api, configure, isSupabase } from './lib/backend.js'
+import { api, configure } from './lib/backend.js'
 import * as sbAuth from './lib/supabaseAuth.js'
 import { attach as attachNudge, pollInterval } from './lib/nudge.js'
 
 import AppShell from './components/AppShell.vue'
 import SignIn from './components/SignIn.vue'
-import ReAuth from './components/ReAuth.vue'
 import Home from './components/Home.vue'
 import Search from './components/Search.vue'
 import Sell from './components/Sell.vue'
@@ -51,7 +49,7 @@ import Toasts from './components/ui/Toasts.vue'
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ||
   '981045980686-ah7579259e9j24l2pgnsbb2v4bn0biud.apps.googleusercontent.com'
 
-const phase = ref('loading')       // loading | waiting | setup | signin | error | ready
+const phase = ref('loading')       // loading | waiting | signin | error | ready
 let silentTimer = null
 const errorMsg = ref('')
 // Kept apart from errorMsg on purpose: one line is for whoever is looking at
@@ -64,7 +62,6 @@ const errorNotYou = ref(false)
 const refused = ref(false)
 const signedInAs = ref('')
 const clientId = ref('')
-const savedUrl = ref('')
 
 // which dialog is open
 const modal = ref(null)            // {kind, payload}
@@ -81,46 +78,28 @@ const current = computed(() => SCREENS[state.screen] || Home)
 // ---------- connection ----------
 
 function readFragment() {
-  // One link sets a helper up: …/#s=<exec url>&cid=<client id>
-  // …or, on the Supabase backend: …/#sb=<project url>&k=<publishable key>
+  // One link points a device at a project: …/#sb=<project url>&k=<publishable key>
   // A fragment never reaches any server, so it stays out of logs and history.
   if (!location.hash || location.hash.length < 2) return
   const p = new URLSearchParams(location.hash.slice(1))
-  // Supabase's own OAuth reply also comes back in the fragment. Leave it alone:
+  // Supabase's own OAuth reply ALSO comes back in the fragment. Leave it alone:
   // the client reads it once, and clearing the hash here would eat the session
-  // before it was ever exchanged.
+  // before it was ever exchanged. This line is the only reason signing in works.
   if (p.has('access_token') || p.has('error_description')) return
-  const s = p.get('s'), c = p.get('cid')
   const sb = p.get('sb'), k = p.get('k')
   try {
-    if (s) localStorage.setItem(LS.url, s.trim())
-    if (c) localStorage.setItem(LS.cid, c.trim())
     if (sb) localStorage.setItem(sbAuth.LS_SB.url, sb.trim())
     if (k) localStorage.setItem(sbAuth.LS_SB.key, k.trim())
   } catch { /* private window */ }
-  if (s || c || sb || k) history.replaceState(null, '', location.pathname + location.search)
-}
-
-function connect({ url, cid }) {
-  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) {
-    return toast('That should be a script.google.com link ending in /exec', 'bad')
-  }
-  if (!CLIENT_ID && !cid) return toast('The Google app ID is needed too', 'bad')
-  try {
-    localStorage.setItem(LS.url, url)
-    if (cid) localStorage.setItem(LS.cid, cid)
-  } catch { /* private window */ }
-  location.reload()
+  if (sb || k) history.replaceState(null, '', location.pathname + location.search)
 }
 
 async function reset() {
-  try { localStorage.removeItem(LS.url); localStorage.removeItem(LS.cid) } catch {}
   await forgetCache()
-  dropToken()
-  // Without this the Supabase session survives, so somebody refused for being
-  // off the list reloads straight back into the same refusal with no way out.
-  // A door that returns you to the room you were locked in is not a door.
-  if (isSupabase) await sbAuth.signOut()
+  // Without this the session survives, so somebody refused for being off the
+  // list reloads straight back into the same refusal with no way out. A door
+  // that returns you to the room you were locked in is not a door.
+  await sbAuth.signOut()
   location.reload()
 }
 
@@ -130,139 +109,32 @@ async function signOut() {
   // Supabase keeps its own refresh token in storage. Dropping the cache without
   // dropping that would sign them straight back in on the next load, which is
   // the opposite of what the button says.
-  if (isSupabase) await sbAuth.signOut()
+  await sbAuth.signOut()
   // Somebody who has signed out must not still have the ticket table on their
-  // phone, even with the names already stripped out of it — nor the sign-in
-  // that would put them straight back in on the next load.
+  // phone, even with the names already stripped out of it.
   await forgetCache()
-  dropToken()
   location.reload()
 }
 
 // ---------- Google sign-in ----------
 
-let tokenWaiter = null
-let renewing = null          // one shared renewal, however many calls fail at once
-let renewTimer = null
-const reauth = ref(false)    // the "sign in again" overlay
+/*
+ * WHAT IS NOT HERE ANY MORE. Roughly a hundred lines that kept a Google ID
+ * token alive: storing it, reading its expiry, scheduling a silent renewal
+ * before the hour ran out, retrying the renewal on wake, and putting a "sign in
+ * again" overlay on screen when it failed. All of it existed because the Apps
+ * Script backend verified a Google token on every request, so the token WAS the
+ * session and it expired in an hour.
+ *
+ * A Supabase session refreshes itself. The Google credential below is traded
+ * for one, once, and then nothing here holds it.
+ */
 
 function onCredential(res) {
-  // On Supabase a Google token is not a session — it is the thing you trade for
-  // one. The Edge Function verifies Supabase's own JWT and has no reason to
-  // trust a token signed by Google for a Google client id.
-  if (isSupabase) return exchangeForSupabaseSession(res)
-  clearTimeout(silentTimer)
-  lastToken = res.credential
-  configure({ idToken: res.credential })
-  keepToken(res.credential)
-  scheduleRenewal(res.credential)
-  reauth.value = false
-  if (tokenWaiter) { const w = tokenWaiter; tokenWaiter = null; w(true); return }
-  start()
-}
-
-/**
- * Keeps the sign-in across a page refresh.
- *
- * Storing it does NOT make it last any longer: a Google ID token is valid for
- * its own hour whether or not we write it down, so this widens no window. What
- * it removes is being asked to sign in again every time somebody reloads the
- * page or reopens the tab, which is most of a volunteer's day.
- *
- * It is dropped on sign-out, on changing the connection, and on any
- * authentication failure — the same lifecycle as the ticket cache.
- */
-function keepToken(jwt) {
-  try {
-    const exp = tokenExpiry(jwt)
-    if (exp) localStorage.setItem(LS.tok, JSON.stringify({ jwt, exp }))
-  } catch { /* storage blocked; the app just asks again next time */ }
-}
-
-function storedToken() {
-  try {
-    const raw = localStorage.getItem(LS.tok)
-    if (!raw) return ''
-    const { jwt, exp } = JSON.parse(raw)
-    // A minute of headroom, so a token about to die is not used for a request
-    // that would fail halfway through.
-    return exp && exp > Date.now() + 60_000 ? jwt : ''
-  } catch { return '' }
-}
-
-function dropToken() {
-  try { localStorage.removeItem(LS.tok) } catch { /* nothing to drop */ }
-}
-
-/** The token's own expiry, read from the JWT. Not trusted — only used for timing. */
-function tokenExpiry(jwt) {
-  try {
-    const part = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    const exp = JSON.parse(atob(part)).exp
-    return exp ? exp * 1000 : 0
-  } catch { return 0 }
-}
-
-/**
- * Renew a few minutes early, while nobody is mid-sale.
- *
- * Waiting for a request to fail means the interruption lands exactly when
- * somebody is saving something.
- */
-function scheduleRenewal(jwt) {
-  clearTimeout(renewTimer)
-  const exp = tokenExpiry(jwt)
-  if (!exp) return
-  const wait = exp - Date.now() - 5 * 60 * 1000
-  renewTimer = setTimeout(() => { renew() }, Math.max(30_000, wait))
-}
-
-/**
- * Try quietly first; ask the person only if that fails.
- *
- * Deduplicated on purpose: a refresh fires five requests, and without this
- * every one of them would raise its own sign-in prompt.
- */
-function renew() {
-  if (renewing) return renewing
-
-  renewing = new Promise(resolve => {
-    const g = window.google?.accounts?.id
-    if (!g) return resolve(false)
-
-    let settled = false
-    const finish = ok => { if (!settled) { settled = true; resolve(ok) } }
-    tokenWaiter = finish
-
-    // One Tap may be suppressed, and under FedCM the old "was it shown?"
-    // signals are unreliable, so treat silence as failure and move on.
-    try { g.prompt() } catch { /* fall through to asking */ }
-    setTimeout(() => { if (!settled) askToSignInAgain(finish) }, 3500)
-  }).finally(() => { renewing = null })
-
-  return renewing
-}
-
-/** Silent renewal did not work — put the button in front of them and wait. */
-function askToSignInAgain(finish) {
-  reauth.value = true
-  // No timeout here: they may be away from the phone. The overlay keeps every
-  // loaded ticket and every open form intact until they come back.
-  tokenWaiter = ok => { reauth.value = false; finish(ok) }
-}
-
-/**
- * Phones suspend timers while the screen is off, so the scheduled renewal may
- * simply never have run. Check the moment the app comes back into view.
- */
-let lastToken = ''
-
-function wake() {
-  if (document.visibilityState !== 'visible') return
-  if (!lastToken) return
-  // The old timer may have been killed, or be about to fire at the wrong time.
-  scheduleRenewal(lastToken)
-  if (tokenIsStale(5 * 60 * 1000)) renew()
+  // A Google token is not a session — it is the thing you trade for one. The
+  // Edge Function verifies Supabase's own JWT and has no reason to trust a
+  // token signed by Google for a Google client id.
+  return exchangeForSupabaseSession(res)
 }
 
 function initGoogle() {
@@ -279,7 +151,7 @@ function initGoogle() {
     // on is change without purpose.
     ...(gsiNonce ? { nonce: gsiNonce.hashed } : {})
   })
-  // SignIn.vue and ReAuth.vue call this once their target element exists.
+  // SignIn.vue calls this once its target element exists.
   window.__renderGoogleButton = el => {
     if (!el) return
     g.renderButton(el, { theme: 'outline', size: 'large', shape: 'pill', width: 280 })
@@ -303,8 +175,10 @@ let stopSession = null
 async function bootSupabase() {
   if (!sbAuth.isConfigured()) {
     phase.value = 'error'
-    errorMsg.value = 'This device does not have the Supabase project address yet. ' +
-      'Ask the organiser for the setup link, or switch back with ?backend=appsscript.'
+    // It used to end "or switch back with ?backend=appsscript", which is now a
+    // volunteer being told to do something that cannot work.
+    errorMsg.value = 'This device does not know which raffle it belongs to yet. ' +
+      'Ask the organiser for the setup link — it sets this up in one tap.'
     return
   }
 
@@ -324,7 +198,11 @@ async function bootSupabase() {
   // sign-in would only ever report a working backend as a broken one.
   const session = await sbAuth.currentSession()
   if (!session?.access_token) {
-    try { clientId.value = CLIENT_ID || (localStorage.getItem(LS.cid) || '').trim() } catch { /* private window */ }
+    // Built into the bundle. It used to fall back to a value pasted into the
+    // device alongside the Apps Script link; there is nothing to paste now, so
+    // an unset VITE_GOOGLE_CLIENT_ID means the redirect flow rather than the
+    // Google button, which is the honest outcome rather than a broken button.
+    clientId.value = CLIENT_ID
     const forceRedirect = new URLSearchParams(location.search).get('signin') === 'redirect'
     useGsi.value = !!clientId.value && !forceRedirect
     if (useGsi.value) {
@@ -452,50 +330,15 @@ function onVisibility() {
 // ---------- boot ----------
 
 onMounted(async () => {
-  document.addEventListener('visibilitychange', wake)
+  // `onVisibility` alone now. There used to be a second listener on the same
+  // event — `wake` — whose whole job was to notice that a Google ID token had
+  // gone stale while the phone was asleep and renew it before the next call
+  // failed. A Supabase session refreshes itself, so waking up is just polling.
   document.addEventListener('visibilitychange', onVisibility)
-  window.addEventListener('focus', wake)
 
   readFragment()
 
-  if (isSupabase) return bootSupabase()
-
-  let url = ''
-  try {
-    url = (localStorage.getItem(LS.url) || '').trim()
-    clientId.value = CLIENT_ID || (localStorage.getItem(LS.cid) || '').trim()
-  } catch { /* private window */ }
-  savedUrl.value = url
-
-  if (!url || !clientId.value) { phase.value = 'setup'; return }
-
-  configure({ apiUrl: url, onAuthExpired: renew })
-
-  try {
-    await api('ping', {}, { noRetry: true })
-  } catch (err) {
-    phase.value = 'error'
-    errorMsg.value = err.message
-    return
-  }
-  initGoogle()
-
-  // Still signed in from last time: carry straight on, no Google round trip.
-  const saved = storedToken()
-  if (saved) {
-    lastToken = saved
-    configure({ idToken: saved })
-    scheduleRenewal(saved)
-    return start()
-  }
-
-  // Otherwise give Google a moment to sign them back in before showing a
-  // button. Leading with "please sign in" when it was about to happen anyway
-  // is the difference between an app that remembers you and one that does not.
-  phase.value = 'waiting'
-  silentTimer = setTimeout(() => {
-    if (phase.value === 'waiting') phase.value = 'signin'
-  }, 2500)
+  return bootSupabase()
 })
 
 async function start() {
@@ -522,10 +365,7 @@ async function start() {
     if (String(err.code || '').startsWith('AUTH') ||
         err.code === 'NOT_AUTHORIZED' || err.code === 'ACCOUNT_DISABLED') {
       forgetCache()
-      dropToken()
     }
-    // A stored token the server would not take is worse than none: it would be
-    // retried on every reload. Throw it away and let them sign in properly.
     if (String(err.code || '').startsWith('AUTH')) {
       phase.value = 'signin'
       return
@@ -555,10 +395,7 @@ async function start() {
 }
 
 onUnmounted(() => {
-  document.removeEventListener('visibilitychange', wake)
   document.removeEventListener('visibilitychange', onVisibility)
-  window.removeEventListener('focus', wake)
-  clearTimeout(renewTimer)
   stopPolling()
   stopSession?.()
 })
@@ -583,10 +420,10 @@ function seeTickets(book) {
 
 <template>
   <SignIn v-if="phase !== 'ready'" :phase="phase" :message="errorMsg"
-          :needs-client-id="!CLIENT_ID" :saved-url="savedUrl" :supabase="isSupabase" :gsi="useGsi"
+          :gsi="useGsi"
           :detail="errorDetail" :not-you="errorNotYou"
           :refused="refused"
-          @connect="connect" @reset="reset" @retry="() => location.reload()"
+          @reset="reset" @retry="() => location.reload()"
           @signin="supabaseSignIn" />
 
   <AppShell v-else @signout="signOut">
@@ -670,7 +507,6 @@ function seeTickets(book) {
 
   <Teleport to="body">
     <Transition name="fade">
-      <ReAuth v-if="reauth" />
     </Transition>
   </Teleport>
 

@@ -507,7 +507,7 @@ console.log('15. the seller sheet says what was brought, what is recorded, and t
 {
   const html = await renderScreen('src/components/modals/CheckInSheet.vue',
     storeFor(`return ${JSON.stringify(SHEET)}`),
-    { props: { agentId: 'A001' }, drive: (b) => b.load(), backend: 'supabase' })
+    { props: { agentId: 'A001' }, drive: (b) => b.load() })
   const said = visibleText(html)
 
   ok(/Daw Hla/.test(said), 'the seller, by name')
@@ -544,23 +544,12 @@ console.log('16. a sheet for somebody who has not reported is still worth carryi
              inBooksHandedBack: 0, unaccounted: 0, stillWithThem: 30 } }
   const html = await renderScreen('src/components/modals/CheckInSheet.vue',
     storeFor(`return ${JSON.stringify(blank)}`),
-    { props: { agentId: 'A001' }, drive: (b) => b.load(), backend: 'supabase' })
+    { props: { agentId: 'A001' }, drive: (b) => b.load() })
   const said = visibleText(html)
   ok(/Has not reported/.test(said), 'it says so at the top')
   ok(/this sheet is the one to take to the table/.test(said),
      'and offers itself as the blank form rather than as an error')
   ok(/Book-001/.test(said), 'with their books already on it, which is the point of printing it early')
-}
-
-console.log('17. and on the spreadsheet backend it says where the report lives')
-{
-  const html = await renderScreen('src/components/modals/CheckInSheet.vue',
-    storeFor(`return ${JSON.stringify(SHEET)}`),
-    { props: { agentId: 'A001' }, drive: (b) => b.load() })
-  const said = visibleText(html)
-  ok(/database backend/.test(said),
-     'rather than an unknown-action error, which reads as the app being broken')
-  ok(!/Daw Hla/.test(said), 'and nothing is half-drawn from figures it could not fetch')
 }
 
 console.log('18. the round report puts what the round said beside what is true now')
@@ -592,7 +581,7 @@ console.log('18. the round report puts what the round said beside what is true n
     `  return ${JSON.stringify(DRAW)}`)
 
   const html = await renderScreen('src/components/modals/RoundReport.vue', store,
-    { props: { round: 2 }, drive: (b) => b.load(), backend: 'supabase' })
+    { props: { round: 2 }, drive: (b) => b.load() })
   const said = visibleText(html)
 
   ok(/Outstanding when the round closed/.test(said), 'what the round said')
@@ -622,7 +611,7 @@ console.log('19. a viewer gets the totals and no names, and the page still adds 
   }
   const html = await renderScreen('src/components/modals/RoundReport.vue',
     storeFor(`if (action === 'round_snapshot') return ${JSON.stringify(TOTALS_ONLY)}\n  throw new Error('no')`),
-    { props: { round: 2 }, drive: (b) => b.load(), backend: 'supabase' })
+    { props: { round: 2 }, drive: (b) => b.load() })
   const said = visibleText(html)
   ok(/Totals only/.test(said), 'the names are withheld and the page says so')
   ok(/RM\s?200/.test(said),
@@ -650,7 +639,7 @@ console.log('19b. a helper is told why the list is not there, not shown a headin
   }
   const said = visibleText(await renderScreen('src/components/modals/RoundReport.vue',
     storeFor(`if (action === 'round_snapshot') return ${JSON.stringify(helper)}\n  throw new Error('no')`),
-    { props: { round: 2 }, drive: (b) => b.load(), backend: 'supabase' }))
+    { props: { round: 2 }, drive: (b) => b.load() }))
   ok(!/Seller by seller/.test(said), 'no heading over an empty table')
   ok(/goes to organisers/.test(said), 'and a sentence saying who the list is for')
   ok(/RM\s?200/.test(said), 'while the totals, which are theirs to see, are still there')
@@ -691,7 +680,7 @@ console.log('19c. and a scope nobody has invented yet gets nothing, which is the
   }
   const said = visibleText(await renderScreen('src/components/modals/RoundReport.vue',
     storeFor(`if (action === 'round_snapshot') return ${JSON.stringify(unknown)}\n  throw new Error('no')`),
-    { props: { round: 2 }, drive: (b) => b.load(), backend: 'supabase' }))
+    { props: { round: 2 }, drive: (b) => b.load() }))
   ok(!/Daw Hla/.test(said),
      'a reader nobody planned for is not handed a seller by name, even when the rows arrive')
   ok(!/Seller by seller/.test(said), 'nor a heading promising them')
@@ -703,7 +692,7 @@ console.log('20. no round has closed yet is an answer, not an empty page')
 {
   const html = await renderScreen('src/components/modals/RoundReport.vue',
     storeFor("return { round: 0, rounds: [], lines: [], totals: null, scope: 'all', message: 'No round has closed yet, so there is nothing frozen to look back at.' }"),
-    { props: {}, drive: (b) => b.load(), backend: 'supabase' })
+    { props: {}, drive: (b) => b.load() })
   ok(/No round has closed yet/.test(visibleText(html)), 'it says so in the server\'s own words')
 }
 

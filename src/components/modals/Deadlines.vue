@@ -33,7 +33,6 @@ import { api, toast, refresh, isAdmin, isSuper } from '../../lib/store.js'
 // Moving one round stores a row the spreadsheet has no table for, and a round
 // report reads one it cannot freeze. Both are offered only where they work,
 // rather than offered everywhere and refused by the server afterwards.
-import { isSupabase } from '../../lib/backend.js'
 import { date, plural } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 
@@ -309,9 +308,9 @@ function explain(err) {
             <!-- Only rounds nobody is reporting to yet. The live one belongs to
                  "Move the check-in on" below, which says first how many books
                  it would give more time to. -->
-            <button v-if="isSupabase && isAdmin && r.state === 'ahead' && !r.last"
+            <button v-if="isAdmin && r.state === 'ahead' && !r.last"
                     class="btn sm ghost noprint" @click="startMove(r)">Move</button>
-            <button v-if="isSupabase && r.state === 'done'" class="btn sm ghost noprint"
+            <button v-if="r.state === 'done'" class="btn sm ghost noprint"
                     @click="emit('round-report', r.round)">Report</button>
           </li>
         </ol>
@@ -390,7 +389,7 @@ function explain(err) {
       </template>
 
       <!-- ------------------------------------------------ when selling stops -->
-      <template v-if="isSupabase && isAdmin">
+      <template v-if="isAdmin">
         <h4>When ticket sales close</h4>
         <p class="muted small">
           The last day a ticket may be sold. Not the day the books come back, and

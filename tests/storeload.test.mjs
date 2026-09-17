@@ -17,6 +17,19 @@ globalThis.localStorage = {
   _d: {}, getItem(k) { return this._d[k] ?? null },
   setItem(k, v) { this._d[k] = String(v) }, removeItem(k) { delete this._d[k] }
 }
+
+/*
+ * DIRECT READS OFF, because these suites stub `fetch` and drive the store.
+ *
+ * backend.js sends row reads straight to PostgREST rather than through the Edge
+ * Function — that shortcut is the whole performance difference and is on by
+ * default. It goes through the Supabase client, not through `fetch`, so a
+ * stubbed transport never sees the call and every read comes back NO_CONNECTION.
+ *
+ * Set before backend.js is imported: `directReads` is decided once, at module
+ * load, from this key.
+ */
+globalThis.localStorage.setItem('kcho_direct_reads', 'off')
 globalThis.indexedDB = undefined
 
 let pass = 0, fail = 0
@@ -36,7 +49,10 @@ const calls = []
 globalThis.fetch = async (url, o) => {
   const { action } = JSON.parse(o.body)
   calls.push(action)
-  const ok_ = d => ({ text: async () => JSON.stringify({ ok: true, data: d }) })
+  // json(), not text(): the Apps Script transport read the body as text
+  // because its responses were text/plain to dodge a CORS preflight. The
+  // Edge Function answers JSON and this stub answers what it answers.
+  const ok_ = d => ({ ok: true, status: 200, json: async () => ({ ok: true, data: d }) })
   if (action === 'read_snapshot') {
     const rows = []
     for (let i = 1; i <= 20; i++) rows.push(row(i, i <= 3 ? 'Sold' : 'Available'))
@@ -54,7 +70,7 @@ globalThis.fetch = async (url, o) => {
 
 const store = await import('../src/lib/store.js')
 const { state, configure, loadSnapshot, loadDelta } = {
-  ...store, configure: (await import('../src/lib/api.js')).configure
+  ...store, configure: (await import('../src/lib/supabaseApi.js')).configure
 }
 configure({ apiUrl: 'https://example.test/exec', idToken: 'x.y.z' })
 

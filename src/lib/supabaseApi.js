@@ -12,7 +12,7 @@
  * verified locally by the platform. Same person, same allowlist, no outbound
  * call.
  */
-import { ApiError, LS } from './api.js'
+import { ApiError, LS } from './errors.js'
 
 export { ApiError }
 
@@ -74,7 +74,12 @@ export async function api(action, payload = {}, opts = {}) {
 
   const write = WRITES.has(action)
   const stop = new AbortController()
-  const timer = setTimeout(() => stop.abort(), write ? WRITE_TIMEOUT_MS : READ_TIMEOUT_MS)
+  // `opts.timeoutMs` overrides, which is how the timeout behaviour can be
+  // tested at all — waiting 45 real seconds to assert that a write gives up is
+  // not a test anybody runs twice. It was in the transport this replaced and
+  // was not carried across, so nothing here could be driven to the boundary.
+  const limit = opts.timeoutMs || (write ? WRITE_TIMEOUT_MS : READ_TIMEOUT_MS)
+  const timer = setTimeout(() => stop.abort(), limit)
 
   let res
   try {
@@ -98,6 +103,10 @@ export async function api(action, payload = {}, opts = {}) {
         write
           ? 'That is taking longer than expected. Checking what went through…'
           : 'The server did not answer in time. Try again.',
+        // Named, so the toast and the log can say WHICH call is being checked.
+        // A "checking what went through" with no action in it is untraceable
+        // the moment two things are in flight.
+        { action, waitedMs: limit },
       )
     }
     throw new ApiError('NETWORK', 'Could not reach the server. Check your internet connection.')

@@ -73,8 +73,6 @@ ok(supabase.size > 25, `the registry parsed (${supabase.size} actions)`)
  * below, so the list cannot quietly outlive the decision it records.
  */
 const CLIENT_EXEMPT = new Map([
-  ['ping', 'Apps Script boot only — the edge function is auth:user, so the ' +
-           'Supabase path skips the pre-flight rather than pinging it'],
 ])
 
 

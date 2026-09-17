@@ -21,8 +21,7 @@
  * tested rather than one being assumed to still work.
  */
 globalThis.localStorage = {
-  _d: { kcho_backend: 'supabase',
-        kcho_sb_url: 'https://proj.supabase.co',
+  _d: { kcho_sb_url: 'https://proj.supabase.co',
         kcho_sb_key: 'sb_publishable_test' },
   getItem(k) { return this._d[k] ?? null },
   setItem(k, v) { this._d[k] = String(v) }, removeItem(k) { delete this._d[k] }
