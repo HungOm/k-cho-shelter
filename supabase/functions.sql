@@ -810,17 +810,33 @@ create or replace function restock_books_tx(
 declare
   moved integer;
 begin
-  -- Reverse each settlement payment that is not already reversed. Written as
-  -- one insert-select so the "is it already undone" check and the write cannot
-  -- be separated by another session's reversal.
-  insert into payments (agent_id, amount, received_by, method, book_idx, source, reverses, note)
-  select p.agent_id, -p.amount, p_user, coalesce(p.method, 'cash'), p.book_idx, 'settlement',
-         p.id, 'Reversed: book put back on the shelf'
-    from payments p
-   where p.book_idx = any(p_idxs)
-     and p.source = 'settlement'
-     and p.reverses is null
-     and not exists (select 1 from payments r where r.reverses = p.id);
+  /*
+   * Reverse each settlement payment that is not already reversed, and write the
+   * same money straight back as a hand-over, in one statement so that neither
+   * can happen without the other.
+   *
+   * The reversal is bookkeeping: the book's amount_paid is about to be cleared
+   * and that row is the same cash. The hand-over is the fact: the seller gave
+   * the raffle this money and still has.
+   */
+  with undone as (
+    insert into payments (agent_id, amount, received_by, method, book_idx, source, reverses, note)
+    select p.agent_id, -p.amount, p_user, coalesce(p.method, 'cash'), p.book_idx, 'settlement',
+           p.id, 'Reversed: book put back on the shelf'
+      from payments p
+     where p.book_idx = any(p_idxs)
+       and p.source = 'settlement'
+       and p.reverses is null
+       and not exists (select 1 from payments r where r.reverses = p.id)
+    returning agent_id, -amount as amount, book_idx, method
+  )
+  insert into payments (agent_id, amount, received_by, method, book_idx, source, note)
+  select u.agent_id, u.amount, p_user, u.method, u.book_idx, 'hand',
+         'Cash kept from the count-in of ' ||
+         coalesce((select b.number from books b where b.idx = u.book_idx), 'a book') ||
+         ', which went back on the shelf'
+    from undone u
+   where u.amount <> 0;
 
   insert into book_history (book_idx, from_agent, action, by_user, note)
   select b.idx, b.held_by_agent, 'restock', p_user,
