@@ -25,7 +25,12 @@ else
   exit 1
 fi
 
-NAME=kcho-rlstest
+# Per-process, and overridable, exactly as test-functions.sh is and for the
+# reason that suite learned: cleanup() is `docker rm -f`, so a fixed name means
+# a peer starting their run kills the container mine is halfway through, and
+# what that looks like is a scatter of failures in unrelated cases.
+NAME=${KCHO_RLSTEST_NAME:-kcho-rlstest-$$}
+PORT=${KCHO_RLSTEST_PORT:-$(( 55435 + ($$ % 400) ))}
 pass=0; fail=0
 ok() { if [ "$1" = "$2" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "  FAIL $3"; echo "    got:  $1"; echo "    want: $2"; fi; }
 
@@ -35,9 +40,25 @@ if [ "$MODE" = docker ]; then
   trap cleanup EXIT
   cleanup
   echo "Starting Postgres (docker)…"
-  docker run -d --name "$NAME" -e POSTGRES_PASSWORD=t -e POSTGRES_DB=kcho -p 55435:5432 postgres:16 >/dev/null
+  docker run -d --name "$NAME" -e POSTGRES_PASSWORD=t -e POSTGRES_DB=kcho -p $PORT:5432 postgres:16 >/dev/null
+  #
+  # TWO FAULTS LIVED HERE AND BETWEEN THEM THIS BRANCH HAS NEVER RUN.
+  #
+  # The definition was `DB_() { DB_ "$@"; }` — a function whose body is a call
+  # to itself. Bash recurses until the stack goes, and the suite dies with
+  # signal 11 having printed "Starting Postgres (docker)…" and nothing else,
+  # which reads as a container that crashed rather than as a typo.
+  #
+  # And it was defined AFTER the readiness loop that uses it, so the loop's
+  # sixty attempts all failed instantly with "command not found" and the script
+  # went on to apply schema.sql to a server that had not finished starting. That
+  # is the "schema failed" anybody who fixed only the recursion would see next.
+  #
+  # The local branch below has always defined both properly, so this fired only
+  # for somebody with Docker running — which, since the local branch is the
+  # fallback, is nearly everybody who has Docker.
+  DB_() { docker exec -i "$NAME" psql -U postgres -d kcho "$@"; }
   for _ in $(seq 1 60); do DB_ -c "select 1" >/dev/null 2>&1 && break; sleep 1; done
-  DB_() { DB_ "$@"; }
   APPLY() { docker cp "$1" "$NAME":/tmp/f.sql >/dev/null && \
             DB_ -q -v ON_ERROR_STOP=1 -f /tmp/f.sql; }
 else
@@ -50,9 +71,15 @@ else
   APPLY() { psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$1"; }
 fi
 
-# `anon` is created by Supabase; rls.sql revokes from it, so it has to exist.
+# `anon` and `authenticated` are created by Supabase. schema.sql grants to one
+# and rls.sql revokes from both, so both have to exist — this created only anon,
+# and schema.sql stopped at the first grant to `authenticated`. Together with the
+# two faults above it means the docker branch of this suite has never completed
+# a run; everybody who has exercised these policies did it through the local
+# Postgres fallback.
 DB_ -q -c "do \$\$ begin
     if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+    if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
   end \$\$;" >/dev/null 2>&1 || true
 APPLY supabase/schema.sql    >/dev/null 2>&1 || { echo "schema failed"; exit 1; }
 APPLY supabase/functions.sql >/dev/null 2>&1 || { echo "functions failed"; exit 1; }
@@ -77,8 +104,13 @@ DB_ -q -c "
     select g,'Book-'||lpad(g::text,4,'0'),'KS-'||lpad(((g-1)*10+1)::text,5,'0'),
            'KS-'||lpad((g*10)::text,5,'0'),'Out', case when g<=2 then 'A001' else 'A002' end
     from generate_series(1,6) g;
-  insert into tickets(idx,number,book_idx,status,buyer_name,buyer_phone,amount,sold_at)
-    select i,'KS-'||lpad(i::text,5,'0'),ceil(i/10.0),'Sold','Buyer '||i,'0125550'||lpad((100+i)::text,3,'0'),10,now()
+  -- sold_by_agent is filled in, which it was not: every ticket here was Sold by
+  -- nobody, so a case about reading another seller's takings had nothing to
+  -- read. Credited to whoever holds the book, which is what the sale paths do.
+  insert into tickets(idx,number,book_idx,status,buyer_name,buyer_phone,amount,sold_at,sold_by_agent,payment_status,recorded_by)
+    select i,'KS-'||lpad(i::text,5,'0'),ceil(i/10.0),'Sold','Buyer '||i,'0125550'||lpad((100+i)::text,3,'0'),10,now(),
+           case when ceil(i/10.0) <= 2 then 'A001' else 'A002' end,
+           'Paid', 'desk@x.com'
     from generate_series(1,60) i;
   insert into app_users(email,name,role,status,agent_id) values
     ('admin@x.com','Admin','admin','active',null),
@@ -170,6 +202,49 @@ ok "$(AS 'a1@x.com' "select count(*) from tickets_readable where book_idx<>1 and
 # buyers when a number comes up.
 ok "$(AS 'a1@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "0125550101" "their own buyer's number is intact"
 ok "$(AS 'a1@x.com' 'select count(*) from book_ledger')" "2" "and only their books in the ledger"
+
+echo "a seller cannot read another seller's takings"
+# THE GAP THE REVIEW NAMED, and it is not the row's existence. Every signed-in
+# agent's browser held every active ticket with four columns filled in that were
+# none of their business: which seller sold it, for how much, whether that money
+# had come in, and who wrote it down. No screen draws another seller's takings,
+# which is why nobody noticed — but the data was in the browser, and "no screen
+# shows it" is not a permission.
+#
+# A001 holds books 1-2 (tickets 1-20). Books 3-6 are A002's.
+ok "$(AS 'a1@x.com' "select coalesce(sold_by_agent,'') from tickets_readable where number='KS-00021'")" "" "another seller's name is not on their ticket"
+ok "$(AS 'a1@x.com' "select coalesce(amount::text,'') from tickets_readable where number='KS-00021'")" "" "nor what it went for"
+ok "$(AS 'a1@x.com' "select payment_status from tickets_readable where number='KS-00021'")" "" "nor whether that money came in"
+ok "$(AS 'a1@x.com' "select recorded_by from tickets_readable where number='KS-00021'")" "" "nor who wrote it down"
+
+echo "and can read their own"
+# The other direction, because a filter that returns nothing passes every
+# does-not-see case in this file for the wrong reason.
+ok "$(AS 'a1@x.com' "select sold_by_agent from tickets_readable where number='KS-00001'")" "A001" "their own sale names them"
+ok "$(AS 'a1@x.com' "select amount::text from tickets_readable where number='KS-00001'")" "10.00" "with what it went for"
+
+echo "the row itself stays, because availability is a question sellers ask"
+# Hiding another seller's tickets was the obvious fix and the wrong one: sellers
+# ask each other whether a number is still going, and a hidden row makes an
+# available ticket indistinguishable from one that was never printed.
+ok "$(AS 'a1@x.com' 'select count(*) from tickets_readable')" "30" "every ticket in play is still visible"
+ok "$(AS 'a1@x.com' "select status from tickets_readable where number='KS-00021'")" "Sold" "with its status, so availability is answerable"
+
+echo "an organiser, a helper and a viewer are unchanged by this"
+ok "$(AS 'admin@x.com' "select sold_by_agent from tickets_readable where number='KS-00021'")" "A002" "an organiser still sees who sold what"
+ok "$(AS 'admin@x.com' "select amount::text from tickets_readable where number='KS-00021'")" "10.00" "and for how much — the draw and the totals need it"
+ok "$(AS 'view@x.com' "select amount::text from tickets_readable where number='KS-00021'")" "10.00" "a view-only account checks the money, which is what it is for"
+
+echo "and an account claiming a seller who does not exist sees no takings at all"
+# From AUDIT.md §X: a test keyed on the sellers who EXIST cannot catch the next
+# widening. The case that catches it hands the filter an agent_id that is in no
+# row, and asserts the masking still closes rather than opening.
+DB_ -q -c "insert into agents(agent_id,name,phone) values ('A999','Holds Nothing','0125559999');
+           insert into app_users(email,name,role,status,agent_id) values ('ghost@x.com','Ghost','agent','active','A999')" >/dev/null 2>&1
+ok "$(AS 'ghost@x.com' "select coalesce(sold_by_agent,'') from tickets_readable where number='KS-00001'")" "" "a seller id belonging to nobody sees no seller"
+ok "$(AS 'ghost@x.com' "select coalesce(amount::text,'') from tickets_readable where number='KS-00001'")" "" "and no amount"
+ok "$(AS 'ghost@x.com' 'select count(*) from tickets_readable')" "30" "while availability still answers, as it must for any agent"
+DB_ -q -c "delete from app_users where email='ghost@x.com'; delete from agents where agent_id='A999'" >/dev/null 2>&1
 
 echo "phone numbers are masked for a view-only account"
 ok "$(AS 'view@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "••••101" "a viewer gets a masked number, in the shape both backends use"

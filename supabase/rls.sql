@@ -123,6 +123,28 @@ create policy tickets_read on tickets for select using (
   and (
     app_role() <> 'agent'
     or book_idx in (select idx from books where held_by_agent = app_agent_id())
+    -- Held directly, or held at some point according to the ledger. Kept in
+    -- step with tickets_readable so the two cannot drift.
+    --
+    -- BOTH CLAUSES ARE DORMANT, AND FOR THREE SEPARATE REASONS. Whoever wakes
+    -- the custody ledger will need all three, because fixing one leaves the
+    -- clause looking live and behaving dead:
+    --   1. `tickets` is revoked from `authenticated`, so no browser role
+    --      reaches this policy at all today.
+    --   2. Nothing writes tickets.holder except move_tickets, and no screen
+    --      calls it — every seller is carried by the book they hold.
+    --   3. ticket_movements has row security ENABLED AND NO POLICY, so this
+    --      subquery returns nothing to any non-superuser even once the other
+    --      two are fixed. It fails closed, which is the safe direction: a
+    --      seller would be denied a ticket they hold rather than shown one
+    --      they do not. Granting the read means giving that table a policy,
+    --      not just granting select on `tickets`.
+    or holder = app_agent_id()
+    or exists (
+      select 1 from ticket_movements m
+       where m.ticket_idx = tickets.idx
+         and app_agent_id() in (m.from_holder, m.to_holder)
+    )
   )
 );
 
@@ -197,9 +219,36 @@ select
     else ''
   end as buyer_phone,
   case when mine then buyer_zone else '' end as buyer_zone,
-  sold_by_agent, amount, payment_status, sold_at,
+  /*
+   * ANOTHER SELLER'S MONEY, WHICH IS WHAT "THEIR RECORDS" MEANS.
+   *
+   * The row stays. Sellers ask each other whether a number is still going, and
+   * hiding the row makes an available ticket indistinguishable from one that
+   * was never printed — the reason this view shows every ticket is written out
+   * below and it is a good one.
+   *
+   * What does NOT belong to a seller is the rest of another seller's page: who
+   * sold it, for how much, whether that money came in, and who wrote it down.
+   * Those four went out to every signed-in agent for the whole raffle, which is
+   * the gap the review names — not the row's existence, which is fine.
+   *
+   * Through the same `mine` gate the buyer's details already use, so there is
+   * one rule about whose ticket this is rather than two that can drift. An
+   * organiser, a viewer and a helper are unchanged: the draw has to be runnable
+   * and the totals checkable by somebody holding no books.
+   *
+   * Status and sold_at stay visible to everyone: "is this one gone, and when"
+   * is the availability question, and answering it reveals nothing about who
+   * holds the money.
+   */
+  case when mine or app_role() <> 'agent' then sold_by_agent else null end as sold_by_agent,
+  case when mine or app_role() <> 'agent' then amount else null end as amount,
+  case when mine or app_role() <> 'agent' then payment_status else '' end as payment_status,
+  sold_at,
   case when mine then notes else '' end as notes,
-  source, version, recorded_by, modified_at
+  source, version,
+  case when mine or app_role() <> 'agent' then recorded_by else '' end as recorded_by,
+  modified_at
 from (
   select t.*,
          b.number as book_number,

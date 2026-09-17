@@ -101,8 +101,26 @@ for (const f of readdirSync(API).filter((x) => x.endsWith('.ts'))) {
   ok(!src.includes('ticket_movements'), `${f} does not write the ledger directly`)
   ok(!src.includes('ticket_custody'), `${f} does not read the replay view directly`)
 }
-ok(!readFileSync(join(ROOT, 'supabase/rls.sql'), 'utf8').includes('ticket_movements'),
-   'rls.sql exposes no view over it — whether a browser role may reach it is 1D\'s decision')
+/*
+ * 1D MADE THAT DECISION, AND IT IS NO.
+ *
+ * rls.sql now names ticket_movements in exactly one place: a clause inside the
+ * tickets_read policy, which grants nothing — `tickets` is revoked from
+ * `authenticated`, and the ledger itself has row security on with no policy, so
+ * the subquery answers nothing to a browser role either way.
+ *
+ * So the question this asked had to change with it. `includes('ticket_movements')`
+ * could not tell a grant from a policy clause that refuses, and the answer it
+ * wanted was about reachability, not about whether a string appears. It now
+ * asks for the two things that would actually open the ledger to a browser.
+ */
+{
+  const rls = readFileSync(join(ROOT, 'supabase/rls.sql'), 'utf8')
+  ok(!/\bgrant\b[^;]*\bticket_movements\b/is.test(rls),
+     'no browser role is granted the ledger')
+  ok(!/create\s+(or\s+replace\s+)?view[^;]*\bfrom\b[^;]*\bticket_movements\b/is.test(rls),
+     'and no view over the ledger is exposed to one')
+}
 // And the writer that DOES exist writes both halves. A function that inserted a
 // movement without updating tickets.holder would leave the cache wrong from the
 // first call, which is the failure the projection exists to avoid.
