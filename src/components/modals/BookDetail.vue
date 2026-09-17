@@ -14,6 +14,24 @@ const currency = computed(() => state.cfg?.currency || '')
 const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status))
 
 /**
+ * COUNTING A BOOK IN AGAIN, when the figures on it are wrong.
+ *
+ * settle_book has taken a `force` since it was written, and approvals.ts has a
+ * sentence for it — "settle a book again, over a settlement that is already
+ * recorded" — so the server has always expected this to happen. No screen could
+ * ask for it. A book counted in with the wrong money, or counted in twice by
+ * two people, or counted in at nought by mistake, was final.
+ *
+ * THAT IS NOT THE SAME DOOR AS PUTTING IT BACK ON THE SHELF, and the difference
+ * matters. Restocking throws the settlement away and returns the tickets to
+ * stock; re-counting keeps the book closed and corrects what it says. The one
+ * that was missing is the smaller one, which is why the money on a book could
+ * be wrong with no way to put it right — and why restock, which refuses a book
+ * with money owed on it, then read as a locked door rather than as a guard.
+ */
+const canRecount = computed(() => isAdmin.value && props.book.status === 'Settled')
+
+/**
  * Every sale in this book was written down by the person reading the screen.
  *
  * YOU COUNT MONEY IN FROM SOMEBODY. Counting a book in is the moment a seller
@@ -245,6 +263,10 @@ const showHistory = ref(false)
            out entirely this is a correction somebody may need and should not be
            invited into; on one holding tickets nobody can sell, it is the only
            thing on the screen worth pressing. -->
+      <!-- Before the shelf button, because it is the smaller correction and the
+           one somebody usually wants: the book stays closed and its figures are
+           put right. -->
+      <button v-if="canRecount" class="btn" @click="emit('settle', book)">Count it in again</button>
       <button v-if="canShelve" :class="['btn', frozen > 0 ? 'primary' : '']"
               @click="emit('restock', book)">Put it back on the shelf</button>
 

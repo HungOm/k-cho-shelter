@@ -240,13 +240,25 @@ console.log('5. accepting is what writes — all of it, at once, in the organise
   eq(result.returned.length, 1, 'and one simply came back')
   eq(result.returned[0], 'Book-002', 'the one that was never opened')
 
-  // The money is ONE hand-over against the seller, not a share split across
-  // books nobody counted that way.
+  /*
+   * THE MONEY LANDS ON THE BOOK IT PAYS FOR.
+   *
+   * It used to go in as one loose hand-over against the seller while every book
+   * was counted in at nought — the seller's balance came out right and each
+   * book said "should have 20, handed in 0, still owed 20" for ever. Somebody
+   * then counts that book in again with the money, and the same cash is on the
+   * ledger twice; and the book can never go back on the shelf, because restock
+   * refuses a book with money owed on it. Both happened within a day.
+   */
   const paid = w.table('payments')
   eq(paid.length, 1, 'one payment row')
   eq(Number(paid[0].amount), 20, 'for what she handed over')
   eq(paid[0].agent_id, 'A001', 'against her')
+  eq(paid[0].book_idx, 1, 'and against the book it pays for, not loose')
+  eq(paid[0].source, 'settlement', 'as part of counting that book in')
   eq(paid[0].received_by, 'org@x.com', 'taken by the organiser who accepted it')
+  eq(decided.body.data.result.counted[0].paid, 20, 'the result says what that book was paid')
+  eq(decided.body.data.result.overPaid, 0, 'and nothing was left over')
 
   // And the declaration itself, which is the half nothing else records.
   const said = w.table('check_in_reports')
@@ -454,6 +466,36 @@ console.log('11. a book in a report nobody has accepted is marked, and still her
   const draft = await call('report_draft', {}, 'seller@x.com', w)
   ok(draft.body.data.books.find((b) => b.book === 'Book-002')?.inReport,
      'her next draft says which books she has already reported')
+}
+
+console.log('12. money beyond the books it pays for is a hand-over, and only that part')
+{
+  /*
+   * A seller hands over more than tonight's paper comes to — paying off an
+   * older book, or simply rounding up. That money is real and has to land
+   * somewhere, and it is not part of any book being counted in. It is the one
+   * case the loose hand-over is actually for.
+   */
+  const w = withSales()
+  const asked = await call('request_approval', {
+    action: 'report_back',
+    payload: {
+      books: [{ book: 'Book-001', action: 'count', unsold: ['KS-00003', 'KS-00004', 'KS-00005',
+        'KS-00006', 'KS-00007', 'KS-00008', 'KS-00009', 'KS-00010'] }],
+      amountHanded: 50,
+    },
+  }, 'seller@x.com', w)
+  const decided = await call('decide_book_request',
+    { requestId: asked.body.data.requestId, approve: true }, 'org@x.com', w)
+  ok(decided.body.ok, `accepted (${decided.body.error?.message ?? ''})`)
+
+  const rows = w.table('payments')
+  eq(rows.length, 2, 'two rows: the book, and the rest')
+  const onBook = rows.find((r) => r.book_idx === 1)
+  const loose = rows.find((r) => !r.book_idx)
+  eq(Number(onBook.amount), 20, 'the book gets what it comes to and no more')
+  eq(Number(loose.amount), 30, 'and the remainder is a hand-over against her')
+  eq(decided.body.data.result.overPaid, 30, 'which the result names rather than leaving to be derived')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

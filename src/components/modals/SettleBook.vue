@@ -36,6 +36,18 @@ const currency = computed(() => state.cfg?.currency || '')
 /** Already handed back and sitting in the office, rather than still out. */
 const handedBack = computed(() => props.book.status === 'Returned')
 
+/**
+ * COUNTING IN A BOOK THAT IS ALREADY COUNTED IN, which is a correction.
+ *
+ * The server refuses a second settlement unless it is forced, and forcing one
+ * is listed in approvals.ts as needing a second person for anybody but the
+ * owner — because it writes over figures somebody has already signed off. What
+ * it is NOT is a re-run of the same act, so the screen says which it is: the
+ * old figures come off, the money recorded with them is reversed on the ledger,
+ * and what is typed here replaces them.
+ */
+const recounting = computed(() => props.book.status === 'Settled')
+
 const unsoldList = computed(() =>
   unsold.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))
 
@@ -296,6 +308,9 @@ async function settle() {
   busy.value = true
   try {
     const payload = { bookNumber: props.book.book, amountPaid: paidNum.value }
+    // Only when it is actually a second count-in. Sending force on an ordinary
+    // one would ask for an approval nobody needs.
+    if (recounting.value) payload.force = true
     if (lost.value) { payload.allowUnidentified = true; payload.soldCount = sold.value }
     // Resolved and de-duplicated, so what is sent is exactly what the preview
     // counted. Nothing unresolved can be in it, because the button refuses
@@ -312,8 +327,15 @@ async function settle() {
 </script>
 
 <template>
-  <Sheet :title="`Count in ${book.book}`"
+  <Sheet :title="recounting ? `Count in ${book.book} again` : `Count in ${book.book}`"
          :subtitle="book.agentName ? `from ${book.agentName}` : ''" @close="emit('close')">
+    <div v-if="recounting" class="note warn">
+      <b>This book has already been counted in.</b>
+      What you type here replaces the figures on it: the money recorded with the old
+      count is reversed on the ledger and this count is recorded in its place. Both
+      stay on the record, so the correction can be read afterwards.
+    </div>
+
     <div class="note info">
       <template v-if="handedBack">
         These tickets are back in the office. Type the numbers that <b>did not</b> sell

@@ -488,7 +488,26 @@ export async function offerBooks(p: Record<string, unknown>, user: AppUser, ctx:
     // flattened to "some books are not available", because the organiser is
     // standing at a shelf and needs to know which ones.
     if (/BOOKS_NOT_FREE/.test(error.message)) {
-      throw new ApiError('BOOKS_NOT_AVAILABLE', error.message.replace(/^.*BOOKS_NOT_FREE: /, ''))
+      /*
+       * THE NAMES, IN THE SHAPE THE SCREEN ALREADY DRAWS. The SQL names the
+       * books that are not free inside its message; the give-out sheet renders
+       * `details.blocked` and falls back to a bare toast without it, which
+       * throws away the one thing the organiser standing at the shelf needs.
+       */
+      const named = (error.message.split('—')[1] ?? '').split(',')
+        .map((n: string) => n.trim()).filter(Boolean)
+      const held = await ctx.supabaseAdmin
+        .from('books').select('number,status,held_by_agent,offered_to_agent').in('number', named)
+      throw new ApiError('BOOKS_NOT_AVAILABLE',
+        `${named.length} of ${idxs.length} books are not free to offer. Nothing was changed.`,
+        {
+          blocked: (held.data ?? []).map(
+            (b: { number: string; status: string; held_by_agent: string | null; offered_to_agent: string | null }) => ({
+              book: b.number,
+              status: b.status === 'Offered' ? 'already offered to somebody' : String(b.status).toLowerCase(),
+              agentId: b.offered_to_agent ?? b.held_by_agent ?? '',
+            })),
+        })
     }
     throw new ApiError('QUERY_FAILED', error.message)
   }
@@ -1357,6 +1376,67 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
   const counting = todo.filter((l) => String(l.action) === 'count')
 
   /*
+   * THE ENVELOPE, SPLIT ACROSS THE BOOKS IT PAYS FOR.
+   *
+   * This used to count every book in at NOUGHT and record the whole envelope as
+   * one hand-over against the seller. The seller's balance came out right and
+   * every book was wrong: each one said "should have 80, handed in 0, still
+   * owed 80" for ever, which is not what happened and has two consequences that
+   * both bit within a day.
+   *
+   *   Somebody sees a book that says it was never paid for, counts it in again
+   *   with the money, and the same cash is now on the ledger twice. Reported
+   *   from the live raffle: one book charged 80, received 160, seller in credit
+   *   by 80.
+   *
+   *   And the book can never go back on the shelf, because restock refuses a
+   *   book with money owed on it — rightly, since that is how a debt leaves the
+   *   chase list unnoticed. A figure that is permanently and wrongly "owed"
+   *   turns a correct guard into a locked door.
+   *
+   * So the money is applied to the books it is for, in the order the report
+   * lists them, each up to what it comes to — the way somebody counting cash
+   * onto a table would do it. Anything left over is a hand-over against the
+   * seller, which is what money beyond the books in front of you actually is.
+   *
+   * THE ARITHMETIC IS THE SAME ONE settle_book DOES: everything in the book
+   * that is not named as unsold and not Void counts as sold. Computed here
+   * because the allocation has to be decided before the first book is written,
+   * and checked against what comes back — a book that settles at a different
+   * figure shows the difference on its own row, which is exactly where somebody
+   * would look for it.
+   */
+  const countIdx = counting
+    .map((l) => (byNumber.get(String(l.book)) as Record<string, unknown> | undefined)?.idx)
+    .filter((i) => i !== undefined) as number[]
+  const { data: countTickets } = countIdx.length
+    ? await ctx.supabaseAdmin.from('tickets').select('book_idx,status').in('book_idx', countIdx)
+    : { data: [] }
+  const liveIn = new Map<number, number>()
+  for (const t of (countTickets ?? []) as Array<Record<string, unknown>>) {
+    if (String(t.status) === 'Void') continue
+    const k = Number(t.book_idx)
+    liveIn.set(k, (liveIn.get(k) ?? 0) + 1)
+  }
+
+  const { data: priceRow } = await ctx.supabaseAdmin
+    .from('config').select('value').eq('key', 'TICKET_PRICE').maybeSingle()
+  const price = Number((priceRow as { value?: string } | null)?.value || 10) || 10
+
+  const handed = Number(p.amountHanded ?? 0) || 0
+  let left = handed
+  const share = new Map<string, number>()
+  for (const line of counting) {
+    const b = byNumber.get(String(line.book)) as Record<string, unknown> | undefined
+    const held = liveIn.get(Number(b?.idx)) ?? 0
+    const back = Array.isArray(line.unsold) ? line.unsold.length : 0
+    const due = Math.max(0, held - back) * price
+    const pay = Math.min(left, due)
+    share.set(String(line.book), pay)
+    left = Math.round((left - pay) * 100) / 100
+  }
+
+  /*
    * 1. COUNTED IN FIRST, AND STRAIGHT FROM THE SELLER'S HANDS.
    *
    * This used to bring every book back and then count in the ones that needed
@@ -1375,10 +1455,13 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
     const r = await settleBook({
       bookNumber: String(line.book),
       unsoldTickets: Array.isArray(line.unsold) ? line.unsold.map(String) : [],
-      amountPaid: 0,
+      amountPaid: share.get(String(line.book)) ?? 0,
       note: `Counted in from ${who}'s report`,
     }, user, ctx) as Record<string, unknown>
-    counted.push({ book: String(line.book), sold: r.declaredSold, due: r.amountDue })
+    counted.push({
+      book: String(line.book), sold: r.declaredSold, due: r.amountDue,
+      paid: share.get(String(line.book)) ?? 0,
+    })
   }
 
   // 2. And the rest come back to the desk, in one statement.
@@ -1387,20 +1470,27 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
   }
   const coming = [...returning, ...counting.map((l) => String(l.book)), ...done]
 
-  // 3. The cash, as one hand-over against the seller. `record_payment` is the
-  //    existing door for money that is not tied to one book, and it is the
-  //    right one: the seller handed over an envelope, not ten envelopes.
-  const handed = Number(p.amountHanded ?? 0) || 0
+  /*
+   * 3. WHAT THE BOOKS DID NOT ACCOUNT FOR, as a hand-over against the seller.
+   *
+   * Money beyond the books being counted in is real and has to land somewhere:
+   * a seller paying off an older book, or handing over more than tonight's
+   * paper comes to. `record_payment` is the existing door for money that is not
+   * tied to one book, and this is exactly that money — rather than, as before,
+   * all of it.
+   */
   let payment: unknown = null
-  if (handed > 0) {
+  if (left > 0) {
     payment = await recordPayment({
-      agentId, amount: handed, method: String(p.method ?? 'cash'),
+      agentId, amount: left, method: String(p.method ?? 'cash'),
       // The ledger says which figure this is. A row that reads "handed in with
       // their report" when the approver counted something else is the ledger
       // quoting the claim as though it were the count.
-      note: (p.declared && Number((p.declared as Record<string, unknown>).amountHanded ?? 0) !== handed)
-        ? 'Counted at the table with their report'
-        : 'Handed in with their report',
+      note: counted.length
+        ? 'With their report, beyond the books counted in'
+        : (p.declared && Number((p.declared as Record<string, unknown>).amountHanded ?? 0) !== handed)
+          ? 'Counted at the table with their report'
+          : 'Handed in with their report',
     }, user, ctx)
   }
 
@@ -1452,6 +1542,9 @@ export async function reportBack(p: Record<string, unknown>, user: AppUser, ctx:
   return {
     agentId, agentName: who,
     returned: returning, counted, handed, payment,
+    // What the books did not account for, named rather than left to be worked
+    // out from the difference.
+    overPaid: left,
     // Named rather than silently folded in: an organiser who accepts a report
     // and is told "3 books" when they handed over two wants to know which one
     // the app had already dealt with.

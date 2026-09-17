@@ -109,5 +109,33 @@ console.log('and the server agrees a returned book can still be settled')
      `(found: ${[...new Set(refusals)].join(', ')})`)
 }
 
+console.log('a book already counted in can be counted in again, and is told so')
+{
+  /*
+   * settle_book has taken a `force` since it was written, and approvals.ts has
+   * a sentence ready for it — "settle a book again, over a settlement that is
+   * already recorded". No screen could ask for it. A book counted in with the
+   * wrong money, or counted in twice by two people, or counted in at nought by
+   * mistake, was final: the figures on it could not be corrected from anywhere
+   * in the app, and the only neighbouring door — putting it back on the shelf —
+   * refuses a book with money owed on it, so it read as a lock rather than a
+   * guard.
+   *
+   * canSettle is deliberately NOT widened. Counting a book in and correcting a
+   * count are different acts with different consequences, and the test above
+   * pins canSettle to the two statuses whose words this screen speaks.
+   */
+  ok(/const canRecount = computed\(\(\) => isAdmin\.value && props\.book\.status === 'Settled'\)/.test(opener),
+     'the book sheet offers it on a settled book, to an organiser')
+  ok(/Count it in again/.test(opener), 'in those words')
+
+  ok(/const recounting = computed\(\(\) => props\.book\.status === 'Settled'\)/.test(detail),
+     'and the count-in screen knows which of the two it is doing')
+  ok(/if \(recounting\.value\) payload\.force = true/.test(detail),
+     'forcing only when it is actually a second count-in — an ordinary one must not ask for approval')
+  ok(/already been counted in/.test(detail) && /reversed on the ledger/.test(detail),
+     'and says what replacing the figures does to the money recorded with them')
+}
+
 console.log(`\n  ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
