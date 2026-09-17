@@ -42,7 +42,18 @@ const TTL_HOURS = 24
  *
  * A fortnight, which is longer than any gap between checkpoints in this raffle.
  */
-const TTL_FOR: Record<string, number> = { report_back: 24 * 14 }
+const TTL_FOR: Record<string, number> = {
+  report_back: 24 * 14,
+  /*
+   * A WEEK TO ANSWER AN OFFER. Long enough that a volunteer who is not on the
+   * app every day still gets to say yes, short enough that books are not
+   * reserved for somebody who has quietly stopped. When it lapses the books go
+   * back on the shelf and the organiser can offer them to somebody who will
+   * take them, which is the outcome that matters — a reservation nobody ever
+   * clears is stock the raffle cannot sell.
+   */
+  accept_offer: 24 * 7,
+}
 const ttlFor = (action: string) => TTL_FOR[action] ?? TTL_HOURS
 
 /**
@@ -493,6 +504,117 @@ export async function requestApproval(p: Record<string, unknown>, user: AppUser,
   return { requestId, action, summary: need.text, detail: need, expiresAt }
 }
 
+/**
+ * AN OFFER OF BOOKS: THE FIRST ROW IN THIS QUEUE THE OWNER DOES NOT DECIDE.
+ *
+ * Everything else here is answered by an organiser or the system admin, and
+ * both existing doors key on ROLE. An offer is answered by one particular
+ * SELLER — not by sellers as a class, and not by whoever happens to be an agent
+ * — so it carries decide_by_agent and the door keys on that. A role cannot
+ * express "this person and nobody else".
+ *
+ * The books are ALREADY RESERVED when this is called. offer_books_tx has moved
+ * them to Offered and taken them out of everybody's reach; this row is what
+ * lets the seller answer. If the row failed to write the books would be
+ * reserved with no way to accept them, which is why the caller releases them
+ * when this throws.
+ *
+ * The sentence is written for the SELLER, because they are who reads it. An
+ * approval screen that says only who sent it is a rubber stamp with extra
+ * steps, and what this person is agreeing to is carrying money.
+ */
+/**
+ * PUTTING THE BOOKS BACK, FOR EVERY WAY AN OFFER ENDS UNACCEPTED.
+ *
+ * An offer reserves real books. Declined, withdrawn, or nobody answered — the
+ * row changing status is only half of it, and the half nobody notices is the
+ * one where twenty books stay reserved for a volunteer who said no in March.
+ *
+ * THREE CALLERS, ONE FUNCTION, and the SQL underneath is one statement:
+ * release_offer_tx is silent about books that are not Offered, so calling it
+ * twice is safe and a sweep that meets a book somebody already dealt with
+ * carries on instead of stopping halfway.
+ *
+ * It does NOT throw. Every caller is finishing something else — expiring a
+ * batch on read, recording a refusal — and a failure to free the books must not
+ * turn a decision that was made into an error that hides it. It is logged
+ * instead, where somebody can find it.
+ */
+async function releaseOffered(
+  ctx: Ctx,
+  rows: Array<Record<string, unknown>>,
+  byUser: string,
+  reason: string,
+) {
+  const idxs = rows
+    .filter((r) => r.decide_by_agent)
+    .flatMap((r) => {
+      const pay = (r.payload ?? {}) as { idxs?: unknown }
+      return Array.isArray(pay.idxs) ? pay.idxs.map(Number).filter(Number.isFinite) : []
+    })
+  if (!idxs.length) return
+  const { error } = await ctx.supabaseAdmin.rpc('release_offer_tx', {
+    p_idxs: idxs, p_user: byUser, p_reason: reason,
+  })
+  if (error) {
+    await ctx.supabaseAdmin.from('audit_log').insert({
+      action: 'OFFER_RELEASE_FAILED',
+      details: { idxs, reason, error: error.message },
+      email: byUser,
+    })
+  }
+}
+
+export async function openOffer(
+  ctx: Ctx,
+  organiser: AppUser,
+  agent: { agent_id: string; name?: string | null },
+  books: Array<{ idx: number; number: string }>,
+  dueAt: string,
+  note: string,
+) {
+  const numbers = books.map((b) => b.number)
+  const many = numbers.length !== 1
+  const span = many ? `${numbers[0]} to ${numbers[numbers.length - 1]}` : numbers[0]
+  const from = organiser.name || organiser.email
+
+  const detail = {
+    kind: 'offer',
+    runAs: 'approver',
+    agentId: agent.agent_id,
+    agentName: agent.name ?? '',
+    offeredBy: organiser.email,
+    books: numbers.length,
+    firstBook: numbers[0] ?? '',
+    lastBook: numbers[numbers.length - 1] ?? '',
+    dueAt,
+    note,
+    text: `${from} is offering you ${numbers.length} ${many ? 'books' : 'book'} ` +
+          `(${span}), to bring back by ${dueAt}.`,
+  }
+
+  const requestId = newId()
+  const expiresAt = new Date(Date.now() + ttlFor('accept_offer') * 3600_000).toISOString()
+  const { error } = await ctx.supabaseAdmin.from('pending_approvals').insert({
+    request_id: requestId,
+    action: 'accept_offer',
+    payload: { idxs: books.map((b) => b.idx), agentId: agent.agent_id, note },
+    summary: detail.text,
+    detail,
+    requested_by: organiser.email,
+    decide_by_agent: agent.agent_id,
+    expires_at: expiresAt,
+  })
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'OFFER_MADE',
+    details: { requestId, agentId: agent.agent_id, books: numbers, dueAt },
+    email: organiser.email,
+  })
+  return { requestId, summary: detail.text, detail, expiresAt }
+}
+
 export async function listApprovals(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   let q = ctx.supabaseAdmin.from('pending_approvals').select('*').order('requested_at', { ascending: false })
   /*
@@ -507,10 +629,20 @@ export async function listApprovals(p: Record<string, unknown>, user: AppUser, c
    * A petition names its asker and the books they want, which an organiser can
    * already read on the Books screen. It carries nothing about anybody else.
    */
+  /*
+   * AND A SELLER SEES WHAT IS ADDRESSED TO THEM. Until offers existed, every
+   * row in this queue was answered either by its own author or by an organiser,
+   * so "your own, and nothing else" was a complete rule for everybody else. An
+   * offer is written BY an organiser and answered by a seller, so under the old
+   * rule the one person who has to act on it is the one person who cannot see
+   * it — and a request nobody can see is a book reserved until it expires.
+   */
   if (user.isAdmin && !user.isSuperAdmin) {
     q = q.or(`requested_by.eq.${user.email},action.in.(${[...PETITIONS].join(',')})`)
   } else if (!user.isSuperAdmin) {
-    q = q.eq('requested_by', user.email)
+    q = user.agentId
+      ? q.or(`requested_by.eq.${user.email},decide_by_agent.eq.${user.agentId}`)
+      : q.eq('requested_by', user.email)
   }
   if (p.status) q = q.eq('status', String(p.status))
 
@@ -524,8 +656,12 @@ export async function listApprovals(p: Record<string, unknown>, user: AppUser, c
     r.status === 'Pending' && Date.parse(r.expires_at) <= now)
   if (stale.length) {
     await ctx.supabaseAdmin.from('pending_approvals')
-      .update({ status: 'Expired', note: `Nobody decided within ${TTL_HOURS} hours.` })
+      .update({ status: 'Expired', note: 'Nobody decided in time.' })
       .in('request_id', stale.map((r: { request_id: string }) => r.request_id))
+    // An expired OFFER has books reserved behind it. Freed here, because this
+    // sweep is the only thing that ever notices the row lapsed.
+    await releaseOffered(ctx, stale as Array<Record<string, unknown>>,
+                         user.email, 'Offer expired before it was accepted')
   }
 
   return {
@@ -589,7 +725,7 @@ export async function decideApproval(
    * handler would make the list say something untrue about the most dangerous
    * action in it.
    */
-  opts: { petitionsOnly?: boolean } = {},
+  opts: { petitionsOnly?: boolean; offersOnly?: boolean } = {},
 ) {
   const requestId = String(p.requestId ?? '')
   if (p.approve === undefined) {
@@ -604,6 +740,33 @@ export async function decideApproval(
   const petition = PETITIONS.has(r.action) &&
     (r.detail as { runAs?: string } | null)?.runAs === 'approver'
 
+  /*
+   * AN OFFER IS ANSWERED BY ONE NAMED PERSON, WHICH NO ROLE CAN EXPRESS.
+   *
+   * decide_by_agent is the whole test. It is set only by openOffer and it names
+   * the seller the books are reserved for — not sellers as a class, not
+   * whoever is linked to an agent. The point of the feature is that nobody can
+   * put books on somebody's balance without that person agreeing, and a super
+   * admin accepting on their behalf would be exactly that with more authority.
+   * So this row is refused to every door but the seller's own, and the seller's
+   * door is refused every other row.
+   */
+  const offer = !!r.decide_by_agent
+
+  if (opts.offersOnly && !offer) {
+    throw new ApiError('NOT_YOUR_DECISION',
+      'That request is not an offer of books to you.', null, 403)
+  }
+  if (offer && !opts.offersOnly) {
+    throw new ApiError('SELLER_DECIDES',
+      'Those books were offered to a seller, and only they can accept or turn them down. ' +
+      'You can withdraw the offer instead.', null, 403)
+  }
+  if (offer && r.decide_by_agent !== user.agentId) {
+    throw new ApiError('NOT_YOUR_DECISION',
+      'Those books were offered to somebody else.', null, 403)
+  }
+
   // An organiser reaching a two-person control through the wrong door. The
   // registry refuses them decide_approval; this refuses them the other one.
   if (opts.petitionsOnly && !petition) {
@@ -616,7 +779,7 @@ export async function decideApproval(
   // looking must not execute because somebody finally opened the screen.
   if (Date.parse(r.expires_at) <= Date.now()) {
     await ctx.supabaseAdmin.from('pending_approvals')
-      .update({ status: 'Expired', note: `Nobody decided within ${TTL_HOURS} hours.` })
+      .update({ status: 'Expired', note: 'Nobody decided in time.' })
       .eq('request_id', requestId)
     const hours = ttlFor(r.action)
     throw new ApiError('APPROVAL_EXPIRED',
@@ -630,8 +793,15 @@ export async function decideApproval(
       .update({ status: 'Rejected', decided_by: user.email, decided_at: new Date().toISOString(),
                 note: String(p.note ?? '') })
       .eq('request_id', requestId)
+    // Turning down an offer is the seller saying "those are not mine", so the
+    // books go back on the shelf. Without this the refusal is recorded and the
+    // stock stays reserved for the person who refused it.
+    if (offer) {
+      await releaseOffered(ctx, [r as Record<string, unknown>], user.email,
+                           'The seller turned the offer down')
+    }
     await ctx.supabaseAdmin.from('audit_log').insert({
-      action: 'APPROVAL_REJECTED',
+      action: offer ? 'OFFER_DECLINED' : 'APPROVAL_REJECTED',
       details: { requestId, action: r.action, requestedBy: r.requested_by, note: p.note },
       email: user.email,
     })
@@ -673,7 +843,7 @@ export async function decideApproval(
    * who has been disabled since they asked is not a book anybody is carrying,
    * and the payload names them.
    */
-  if (!petition && !isActionAllowed(r.action, spec, requester, overrides)) {
+  if (!petition && !offer && !isActionAllowed(r.action, spec, requester, overrides)) {
     throw new ApiError('REQUESTER_NOT_ALLOWED',
       `${r.requested_by} can no longer do that, so their request cannot run.`)
   }
@@ -726,7 +896,15 @@ export async function decideApproval(
     }
   }
 
-  const result = await run(r.action, payload, petition ? user : requester)
+  /*
+   * WHOSE ACT IT IS. A petition runs as the approver: the organiser granting a
+   * book is the one handing it over. An OFFER runs as the decider for the
+   * mirror-image reason — the seller accepting is the one taking the books on,
+   * and recording the acceptance under the organiser's name would put the
+   * organiser's address in the book's history next to the word "accepted",
+   * which is the one thing this whole feature exists to stop being true.
+   */
+  const result = await run(r.action, payload, (petition || offer) ? user : requester)
 
   await ctx.supabaseAdmin.from('pending_approvals')
     .update({ status: 'Approved', decided_by: user.email, decided_at: new Date().toISOString(),

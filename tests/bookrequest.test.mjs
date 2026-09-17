@@ -296,8 +296,23 @@ console.log('12. and the screens offer it to the right person, in the right plac
   const approvals = read('src/components/Approvals.vue')
   ok(/r\.detail\?\.runAs === 'approver'/.test(approvals),
      'the queue tells a book request apart by what the server wrote, not by guessing from the action')
-  ok(/youDecide\.value \? 'decide_approval' : 'decide_book_request'/.test(approvals),
-     'and each reader goes through their own door')
+  /*
+   * THREE DOORS NOW, not two. Offering books added a reader this queue never
+   * had: a SELLER, answering a row an organiser wrote. The other two doors both
+   * key on role and neither can express "this one named person", so an offer
+   * goes through decide_offer and the server refuses it any row whose
+   * decide_by_agent is not the caller's own seller id.
+   *
+   * Asserted as three separate presences rather than as one exact expression.
+   * The previous version pinned the literal ternary, so adding the third door
+   * failed this line for being a third door — which is not what it is here to
+   * catch. What matters is that no reader is quietly sharing another's door.
+   */
+  for (const door of ['decide_approval', 'decide_book_request', 'decide_offer']) {
+    ok(approvals.includes(`'${door}'`), `the queue reaches ${door}`)
+  }
+  ok(/isOffer\(r\) \? 'decide_offer'/.test(approvals),
+     'and an offer goes through the seller\'s door, chosen by the row and not by role')
   ok(/youDecide\.value \|\| \(isAdmin\.value && isRequest\(r\)\)/.test(approvals),
      'an organiser is offered the decision on a book request and on nothing else')
 }

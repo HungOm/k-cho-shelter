@@ -261,6 +261,10 @@ export const MY_ERRORS = {
   // Books are handed to a person, and the record has to name which one.
   NOT_A_SELLER: 'သင့်အကောင့်ကို ရောင်းသူတစ်ဦးနှင့် ချိတ်ဆက်မထားပါ — စီစဉ်သူကို ပြောပါ',
   BOOKS_NOT_AVAILABLE: 'ဤစာအုပ်များ မရနိုင်ပါ',
+  // Offering books: the seller decides, and only the seller they were offered to.
+  NOT_OFFERED_TO_YOU: 'ဤစာအုပ်များကို သင့်အတွက် မစောင့်တော့ပါ — ပြန်ရုပ်သိမ်းခံရခြင်း သို့မဟုတ် အချိန်ကုန်သွားခြင်း ဖြစ်နိုင်ပါသည်',
+  NOT_YOUR_DECISION: 'ဤစာအုပ်များကို အခြားသူတစ်ဦးအား ကမ်းလှမ်းထားပါသည်',
+  SELLER_DECIDES: 'ရောင်းသူသာ လက်ခံရန် သို့မဟုတ် ငြင်းပယ်ရန် ဆုံးဖြတ်နိုင်ပါသည် — ကမ်းလှမ်းချက်ကို ပြန်ရုပ်သိမ်းနိုင်ပါသည်',
   // The seller's report named a book that has moved since they sent it, so
   // nothing was carried out. Composed from the vocabulary already in this file:
   // စာအုပ် (book), ပြောင်းလဲ (changed), ထပ်ပို့ (send again).

@@ -375,9 +375,40 @@ class Query {
     }
     if (cur) parts.push(cur)
 
-    const clauses = parts.map((c) => {
+    /*
+     * PostgREST lets an or() hold and(…) GROUPS, and this did not.
+     *
+     * `and(held_by_agent.eq.A001,status.eq.Out)` split on '.' gives a column
+     * called "and(held_by_agent" and an operator of "eq", so it took the eq
+     * branch, compared a field no row has, and was false for every row —
+     * silently. A seller's book list came back EMPTY and the only symptom was a
+     * later test reading `undefined.status`. An unsupported shape must fail
+     * loudly or it is worse than no fake at all.
+     */
+    const clause = (c) => {
+      const group = c.match(/^(and|or)\((.*)\)$/s)
+      if (group) {
+        const inner = []
+        let d = 0, buf = ''
+        for (const ch of group[2]) {
+          if (ch === '(') d++
+          if (ch === ')') d--
+          if (ch === ',' && d === 0) { inner.push(buf); buf = ''; continue }
+          buf += ch
+        }
+        if (buf) inner.push(buf)
+        const fns = inner.map(clause)
+        return group[1] === 'and'
+          ? (r) => fns.every((f) => f(r))
+          : (r) => fns.some((f) => f(r))
+      }
       const [col, operator, ...rest] = c.split('.')
       const raw = rest.join('.')
+      // A column nobody has is a filter that quietly matches nothing. Caught
+      // here rather than as an empty list three tests later.
+      if (/[()]/.test(col)) {
+        throw new Error(`fakedb: could not parse or() clause "${c}"`)
+      }
       if (operator === 'eq') return (r) => String(r[col] ?? '') === raw
       if (operator === 'in') {
         const wanted = new Set(raw.replace(/^\(|\)$/g, '').split(',')
@@ -389,7 +420,8 @@ class Query {
         return (r) => rx.test(String(r[col] ?? ''))
       }
       throw new Error(`fakedb: unsupported or() operator "${operator}" in "${c}"`)
-    })
+    }
+    const clauses = parts.map(clause)
     this.filters.push((r) => clauses.some((f) => f(r)))
     return this
   }
@@ -728,6 +760,94 @@ export function fakeDb(seed = {}) {
           })
         }
         return Promise.resolve({ data: written, error: null })
+      }
+      /*
+       * OFFERING, ACCEPTING AND RELEASING — modelled here, proven in Postgres.
+       *
+       * The same warning at the top of this file applies with force: all three
+       * of these were written in SQL, installed cleanly, and failed on their
+       * FIRST CALL with "column reference idx is ambiguous", because
+       * `returns table (idx integer, number text)` declares OUT parameters that
+       * shadow the table's columns. Nothing in this file could ever have caught
+       * that, and nothing in it can now. What is mirrored is which rows change.
+       */
+      if (fn === 'offer_books_tx') {
+        const idxs = args.p_idxs ?? []
+        const taken = (db.tables.books ?? []).filter(
+          (b) => idxs.includes(b.idx) && b.status !== 'Unassigned')
+        if (taken.length) {
+          return Promise.resolve({ data: null, error: { message:
+            `BOOKS_NOT_FREE: ${taken.length} of ${idxs.length} are not on the shelf — ` +
+            taken.map((b) => b.number).join(', ') } })
+        }
+        const written = []
+        for (const b of db.tables.books ?? []) {
+          if (!idxs.includes(b.idx) || b.status !== 'Unassigned') continue
+          Object.assign(b, {
+            status: 'Offered', offered_to_agent: args.p_agent_id,
+            offered_at: new Date().toISOString(), offered_by: args.p_user,
+            due_at: args.p_due_at, modified_by: args.p_user,
+          })
+          written.push({ idx: b.idx, number: b.number })
+        }
+        for (const w of written) {
+          db.tables.book_history.push({
+            id: (db.tables.book_history.length + 1), at: new Date().toISOString(),
+            book_idx: w.idx, from_agent: null, to_agent: args.p_agent_id,
+            action: 'offer', by_user: args.p_user, note: args.p_note ?? '',
+          })
+        }
+        return Promise.resolve({ data: written, error: null })
+      }
+      if (fn === 'accept_offer_tx') {
+        const idxs = args.p_idxs ?? []
+        const wrong = (db.tables.books ?? []).filter(
+          (b) => idxs.includes(b.idx) &&
+                 (b.status !== 'Offered' || b.offered_to_agent !== args.p_agent_id))
+        if (wrong.length) {
+          return Promise.resolve({ data: null, error: { message:
+            `NOT_OFFERED_TO_YOU: ${wrong.length} of ${idxs.length} are not waiting for you — ` +
+            wrong.map((b) => b.number).join(', ') } })
+        }
+        const written = []
+        for (const b of db.tables.books ?? []) {
+          if (!idxs.includes(b.idx) || b.status !== 'Offered') continue
+          Object.assign(b, {
+            status: 'Out', held_by_agent: args.p_agent_id,
+            issued_at: new Date().toISOString(),
+            offered_to_agent: null, offered_at: null, offered_by: '',
+            modified_by: args.p_user,
+          })
+          written.push({ idx: b.idx, number: b.number })
+        }
+        for (const w of written) {
+          db.tables.book_history.push({
+            id: (db.tables.book_history.length + 1), at: new Date().toISOString(),
+            book_idx: w.idx, from_agent: null, to_agent: args.p_agent_id,
+            action: 'issue', by_user: args.p_user, note: args.p_note ?? '',
+          })
+        }
+        return Promise.resolve({ data: written, error: null })
+      }
+      if (fn === 'release_offer_tx') {
+        const idxs = args.p_idxs ?? []
+        let freed = 0
+        for (const b of db.tables.books ?? []) {
+          // Silent about books that are not Offered, exactly as the SQL is: a
+          // sweep that raises on one somebody already dealt with stops halfway.
+          if (!idxs.includes(b.idx) || b.status !== 'Offered') continue
+          Object.assign(b, {
+            status: 'Unassigned', offered_to_agent: null, offered_at: null,
+            offered_by: '', due_at: null, modified_by: args.p_user,
+          })
+          db.tables.book_history.push({
+            id: (db.tables.book_history.length + 1), at: new Date().toISOString(),
+            book_idx: b.idx, from_agent: null, to_agent: null,
+            action: 'release', by_user: args.p_user, note: args.p_reason ?? '',
+          })
+          freed++
+        }
+        return Promise.resolve({ data: freed, error: null })
       }
       if (fn === 'return_books_tx') {
         const idxs = args.p_idxs ?? []

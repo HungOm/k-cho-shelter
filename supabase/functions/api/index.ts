@@ -265,7 +265,22 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // A helper takes cash at the table and must be able to write it down there
   // and then. What they cannot do is record it against somebody else, or close
   // a book — both of those change what another person is shown as owing.
-  record_payment: { roles: ['recorder', 'agent'], kind: 'write', fn: money.recordPayment },
+  /*
+   * A SELLER MAY NOT RECORD MONEY, and this is the line that used to let them.
+   *
+   * The money a seller handles is the cash a buyer puts in their hand, and the
+   * record of that is the ticket: sold, to whom, paid or not. It is theirs to
+   * write and theirs to correct, in the books they are carrying.
+   *
+   * What they hand over to an organiser is a different act with two people in
+   * it, and only one of them can honestly write it down — the one receiving the
+   * cash. With 'agent' here a seller could credit themselves a hand-over that
+   * nobody had received: the ledger showed money in, their balance dropped, and
+   * the only counterparty named was themselves. The seller's route is the
+   * report they send, which changes nothing until an organiser accepts it and
+   * records it in their own name.
+   */
+  record_payment: { roles: ['recorder'], kind: 'write', fn: money.recordPayment },
   // Undoing is an organiser's: it moves a figure somebody has already been told.
   reverse_payment: { roles: ADMIN_ONLY, kind: 'write', fn: money.reversePayment },
   // Organisers, like reverse_payment and for the same reason: it is a
@@ -930,8 +945,23 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
    * Void are closed. An organiser still sees every one of them, because the
    * holder is how the money is chased.
    */
+  /*
+   * AND THE BOOKS BEING OFFERED TO THEM, which are not Out and are not theirs.
+   *
+   * An offer that a seller cannot see is an offer they cannot answer. The row
+   * lands in their approvals queue naming books — and under 'Out' alone, every
+   * one of those books was invisible on the screen the queue points at. They
+   * would be asked to accept twenty books they had no way to look at.
+   *
+   * Offered rows carry no money and no buyer: held_by_agent is null, which is
+   * the whole design, so nothing about another seller's takings travels with
+   * them. It is the seller's own pending offer or it is not returned at all.
+   */
   if (user.role === 'agent') {
-    query = query.eq('held_by_agent', user.agentId ?? '\u0000').eq('status', 'Out')
+    const mine = user.agentId ?? '\u0000'
+    query = query.or(
+      `and(held_by_agent.eq.${mine},status.eq.Out),` +
+      `and(offered_to_agent.eq.${mine},status.eq.Offered)`)
   }
 
   const { data, error } = await query

@@ -203,6 +203,29 @@ ok "$(AS 'a1@x.com' "select count(*) from tickets_readable where book_idx<>1 and
 ok "$(AS 'a1@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "0125550101" "their own buyer's number is intact"
 ok "$(AS 'a1@x.com' 'select count(*) from book_ledger')" "2" "and only their books in the ledger"
 
+echo "a seller can see the books being offered to them, and nobody else's offer"
+# AN OFFER THEY CANNOT SEE IS AN OFFER THEY CANNOT ANSWER. The row lands in
+# their approvals queue naming books; under "held by you" alone every one of
+# those books was invisible on the screen the queue points at.
+#
+# held_by_agent is set to null in the same statement, because it has to be: an
+# Offered book on somebody's balance is refused by the database, and that
+# constraint is the whole reason an offer is safe.
+DB_ -q -c "update books set status='Offered', held_by_agent=null, offered_to_agent='A001' where idx=3" >/dev/null
+ok "$(AS 'a1@x.com' 'select count(*) from book_ledger')" "3" "their two books, plus the one being offered to them"
+ok "$(AS 'a1@x.com' "select status from book_ledger where idx=3")" "Offered" "and it reads as Offered, not as theirs"
+ok "$(AS 'a1@x.com' "select coalesce(held_by_agent,'') from book_ledger where idx=3")" "" "held by nobody, which is what keeps it off their balance"
+
+DB_ -q -c "update books set offered_to_agent='A002' where idx=3" >/dev/null
+ok "$(AS 'a1@x.com' 'select count(*) from book_ledger')" "2" "another seller's offer is not theirs to see"
+ok "$(AS 'a1@x.com' "select count(*) from book_ledger where idx=3")" "0" "the offered book is gone from their list entirely"
+# Through the ledger, not the base table: `books` is revoked from authenticated
+# for everybody, organisers included, which the cases further down assert. An
+# organiser reading it directly returns the SET from the role change and would
+# have made this pass for a reason that has nothing to do with offers.
+ok "$(AS 'admin@x.com' "select count(*) from book_ledger where idx=3")" "1" "an organiser still sees the offered book"
+DB_ -q -c "update books set status='Out', held_by_agent='A002', offered_to_agent=null where idx=3" >/dev/null
+
 echo "a seller cannot read another seller's takings"
 # THE GAP THE REVIEW NAMED, and it is not the row's existence. Every signed-in
 # agent's browser held every active ticket with four columns filled in that were

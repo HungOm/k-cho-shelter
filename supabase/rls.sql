@@ -294,7 +294,16 @@ create policy books_read on books for select using (
   and idx <= ceil(
     active_tickets()::numeric /
     greatest((select coalesce(nullif(value,'')::integer, 10) from config where key = 'TICKETS_PER_BOOK'), 1))
-  and (app_role() <> 'agent' or held_by_agent = app_agent_id())
+  -- A seller sees the books in their hands, AND the books being offered to
+  -- them. An offer they cannot read is an offer they cannot answer, and an
+  -- Offered book has held_by_agent null by design — so under the first clause
+  -- alone the one person who has to decide is the one who cannot see it.
+  -- Nothing about money travels with it: that null is exactly why.
+  and (
+    app_role() <> 'agent'
+    or held_by_agent = app_agent_id()
+    or (status = 'Offered' and offered_to_agent = app_agent_id())
+  )
 );
 
 -- The ledger view carries the money columns, so it inherits the same policies.
@@ -358,7 +367,14 @@ left join lateral (
 where app_role() is not null
   and b.idx <= ceil(active_tickets()::numeric /
         greatest((select coalesce(nullif(value,'')::integer,10) from config where key='TICKETS_PER_BOOK'),1))
-  and (app_role() <> 'agent' or b.held_by_agent = app_agent_id());
+  -- The same three-way rule as books_read, written out because this view runs
+  -- with owner rights and the policy never fires for it. Held by them, or
+  -- offered to them — an offer a seller cannot see is one they cannot answer.
+  and (
+    app_role() <> 'agent'
+    or b.held_by_agent = app_agent_id()
+    or (b.status = 'Offered' and b.offered_to_agent = app_agent_id())
+  );
 
 grant select on book_ledger to authenticated;
 

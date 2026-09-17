@@ -163,6 +163,15 @@ console.log('5. no action is registered on the server that nothing can call')
     // one on the live site. The handler ships with the function, which is
     // frozen too. This line comes out when the picker is built.
     move_tickets: 'the ticket picker waits for the deploy freeze to lift',
+    /*
+     * NOT A SCREEN ACTION AND NEVER WILL BE. accept_offer is what runs when a
+     * seller accepts, and it is reached only from inside decideApproval, which
+     * has already established that this exact person is the one the books were
+     * offered to. The screen calls decide_offer; the client must NOT be able to
+     * call this one directly, because accepting by naming book indexes in a
+     * request would be the handshake with the handshake taken out.
+     */
+    accept_offer: 'run by the queue when a seller accepts, never called by a screen',
   }
 
   const idx = read('supabase/functions/api/index.ts')

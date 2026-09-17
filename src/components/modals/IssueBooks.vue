@@ -1,5 +1,15 @@
 <script setup>
-/** Handing books to a seller, and the receipt that proves it. */
+/**
+ * Offering books to a seller.
+ *
+ * This screen used to hand them over outright: the seller named here was
+ * holding the books the moment the button was pressed, which meant the money
+ * was on their balance and they were on the chase list, whether or not they
+ * knew anything about it. A mistyped name made somebody liable.
+ *
+ * Now it reserves them and asks. The books are on nobody's balance until the
+ * seller accepts, and an offer nobody answers goes back on the shelf.
+ */
 import { ref, computed } from 'vue'
 import { state, api, toast, refresh } from '../../lib/store.js'
 import { money, date } from '../../lib/format.js'
@@ -137,7 +147,17 @@ async function issue() {
   busy.value = true
   blocked.value = null
   try {
-    const r = await api('issue_books', {
+    /*
+     * OFFER, NOT ISSUE. Typing a seller's name used to make that person liable
+     * for the money on these books before they had said a word. Now the books
+     * are reserved and the seller is asked; they become theirs when the seller
+     * accepts, and go back on the shelf if nobody does.
+     *
+     * issue_books still exists and is still the right call in one place: when
+     * the SELLER asked (Search.vue sends it as a petition) and an organiser
+     * grants it. Consent is on the record there already.
+     */
+    const r = await api('offer_books', {
       agentId: agentId.value,
       fromBook: bookNumber(from.value),
       toBook: bookNumber(to.value || from.value),
@@ -157,17 +177,30 @@ async function issue() {
      * So when anything was skipped the sheet stays up and says which, and the
      * receipt is a deliberate second tap rather than the automatic next thing.
      */
+    /*
+     * KEPT, THOUGH AN OFFER CANNOT BE PARTIAL. offer_books_tx refuses the whole
+     * batch and names the books that were not free, so `skipped` never arrives
+     * today. It stays because the branch is the safe direction: if the server
+     * ever does start reporting a partial offer, this shows it rather than
+     * printing paper for books that were never reserved.
+     */
     if (r.skipped?.length) {
       partly.value = r
       await refresh()
       return
     }
 
-    toast(`${r.issued} books given to ${r.agent.name}`, 'ok')
+    // NOT "given to". Nothing has moved yet, and a receipt printed on the
+    // strength of this sentence would be paper the seller has not agreed to.
+    toast(`${r.offered} ${r.offered === 1 ? 'book' : 'books'} offered — ` +
+          `waiting for them to accept`, 'ok')
     // Close first. The write is done and the toast has said so; reloading the
     // whole ticket table before closing reads as a hang, which is exactly what
     // it looked like on a 20,000-ticket raffle.
-    emit('issued', r.agent.id)
+    // The seller id from the form, not from the response: an offer replies with
+    // what was reserved and the queue row that was opened, and has no `agent`
+    // on it. Reading r.agent.id here threw on the happy path.
+    emit('issued', agentId.value)
     refresh()
   } catch (err) {
     // BOOKS_CHANGED_MEANWHILE carries the same `blocked` list and was not
@@ -182,7 +215,7 @@ async function issue() {
 </script>
 
 <template>
-  <Sheet title="Give out books" subtitle="Hand a run of books to one seller" @close="emit('close')">
+  <Sheet title="Offer books" subtitle="The seller accepts before the books are theirs" @close="emit('close')">
     <div class="field">
       <label for="ia">Who is taking them? <span class="req">*</span></label>
       <select id="ia" :value="agentId" @change="pickSeller($event.target)">

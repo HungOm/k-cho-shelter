@@ -14,6 +14,9 @@ import { api, toast, state, go, isAdmin } from '../lib/store.js'
 import { dateTime, relative, COUNTED_IN_HELP } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 
+/** The seller this account is linked to, or '' for anybody who is not one. */
+const myAgentId = computed(() => state.user?.agentId || '')
+
 const rows = ref(null)
 const youDecide = ref(false)
 const busy = ref('')
@@ -139,6 +142,19 @@ const isRequest = (r) => r.detail?.runAs === 'approver'
  * screen is written to prevent.
  */
 const isReport = (r) => r.detail?.kind === 'report_back'
+/*
+ * AN OFFER OF BOOKS, which is the first row in this queue a SELLER answers.
+ * Its own predicate rather than reusing either of the two above: isRequest is
+ * "somebody asked and an organiser grants it" and isReport is the count-in, and
+ * an offer is neither — it is the organiser asking and the seller deciding.
+ */
+const isOffer = (r) => r.detail?.kind === 'offer'
+/** Mine to answer: the books were offered to the seller I am linked to. */
+const isMineToAccept = (r) => isOffer(r) && !!myAgentId.value &&
+  r.detail?.agentId === myAgentId.value
+/** Mine to withdraw: I am an organiser and nobody has answered yet. */
+const canWithdraw = (r) => isOffer(r) && isAdmin.value && r.status === 'Pending' &&
+  !isMineToAccept(r)
 
 /**
  * WHAT WILL HAPPEN TO EACH BOOK, AND WHETHER IT STILL CAN.
@@ -221,6 +237,11 @@ const differs = (r) => {
 
 /** Whether this reader can decide THIS row, which is not one answer any more. */
 function canDecide(r) {
+  // An offer is answered by ONE named seller and by nobody else — not by an
+  // organiser and not by the system admin, because a handover agreed to on the
+  // seller's behalf is the thing this whole feature exists to stop. The server
+  // refuses it too; this is so the buttons are not there to press.
+  if (isOffer(r)) return isMineToAccept(r)
   return youDecide.value || (isAdmin.value && isRequest(r))
 }
 
@@ -233,7 +254,10 @@ async function decide(r, approve) {
     // The organiser's door, not the System Admin's. Both end in the same
     // handler; which one is called is what decides whether this reader is
     // allowed to touch the row, and the server refuses the wrong pairing.
-    const res = await api(youDecide.value ? 'decide_approval' : 'decide_book_request', {
+    const door = isOffer(r) ? 'decide_offer'
+               : youDecide.value ? 'decide_approval'
+               : 'decide_book_request'
+    const res = await api(door, {
       requestId: r.requestId, approve, note: note.value.trim(),
       // Only for a report, and only what was actually counted. Every other kind
       // of request runs exactly the payload that was stored, untouched.
@@ -265,7 +289,16 @@ async function decide(r, approve) {
 async function withdraw(r) {
   busy.value = r.requestId
   try {
-    await api('cancel_approval', { requestId: r.requestId })
+    /*
+     * AN OFFER IS WITHDRAWN THROUGH ITS OWN DOOR, because taking one back has
+     * to put the books on the shelf as well as close the row. cancel_approval
+     * only closes the row — used here it would leave the stock reserved for a
+     * seller who is never going to be asked again, and nothing would ever say
+     * so. withdraw_offer frees the books first and cancels second, so the
+     * failure that can happen leaves an offer somebody can withdraw again
+     * rather than books nobody can reach.
+     */
+    await api(isOffer(r) ? 'withdraw_offer' : 'cancel_approval', { requestId: r.requestId })
     toast('Withdrawn', 'ok')
     await load()
   } catch (err) {
@@ -377,10 +410,12 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
           <input v-model="note" placeholder="A note, if you want (optional)">
           <div class="row mt">
             <button class="btn danger grow" :disabled="busy === r.requestId" @click="decide(r, false)">
-              {{ isReport(r) ? 'Not yet' : isRequest(r) ? 'Say no' : 'Turn down' }}
+              {{ isOffer(r) ? 'No, not mine'
+                 : isReport(r) ? 'Not yet' : isRequest(r) ? 'Say no' : 'Turn down' }}
             </button>
             <button class="btn primary grow" :disabled="busy === r.requestId" @click="decide(r, true)">
               {{ busy === r.requestId ? 'Working…'
+                 : isOffer(r) ? 'Yes, I have them'
                  : isReport(r) ? 'Accept the report'
                  : isRequest(r) ? 'Give them the books' : 'Approve and do it' }}
             </button>
@@ -407,6 +442,21 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
               Approving carries it out straight away, in {{ r.requestedBy }}'s name.
             </template>
           </p>
+        </div>
+        <div v-else-if="canWithdraw(r)" class="mt">
+          <button class="btn" :disabled="busy === r.requestId" @click="withdraw(r)">
+            Take the offer back
+          </button>
+          <p class="hint">
+            The books go back on the shelf. Nothing was ever on
+            {{ r.detail?.agentName || 'their' }} balance.
+          </p>
+        </div>
+        <div v-else-if="isOffer(r)" class="mt">
+          <!-- An offer somebody else has to answer. Said rather than shown as an
+               empty space, because a queue row with no controls and no sentence
+               reads as broken. -->
+          <p class="hint">Waiting for {{ r.detail?.agentName || 'the seller' }} to answer.</p>
         </div>
         <div v-else class="mt">
           <button class="btn" :disabled="busy === r.requestId" @click="withdraw(r)">Withdraw</button>

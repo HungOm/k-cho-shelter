@@ -135,6 +135,9 @@ const CALLS = {
   bulk_record_sales: { sales: [{ ticketNumber: 'KS-00005', buyerName: 'X', buyerPhone: '0125550102' }] },
   sell_book: { fromBook: 'Book-002', buyerName: 'Ma Nu', buyerPhone: '0125550100' },
   issue_books: { fromBook: 'Book-002', agentId: 'A001' },
+  // Offering is what the give-out screen calls now; issue_books stays for the
+  // path where the seller asked and an organiser grants the petition.
+  offer_books: { fromBook: 'Book-002', agentId: 'A001' },
   transfer_books: { fromBook: 'Book-001', toAgentId: 'A001' },
   return_books: { fromBook: 'Book-001' },
   settle_book: { bookNumber: 'Book-001', amountPaid: 0, unsoldTickets: [] },
