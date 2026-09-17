@@ -162,8 +162,20 @@ create table if not exists tickets (
   source         text not null default '',
   version        integer not null default 1,
   recorded_by    text not null default '',
-  modified_at    timestamptz not null default now()
+  modified_at    timestamptz not null default now(),
+  /*
+   * WHERE THE TICKET IS, projected from ticket_movements and maintained in the
+   * same transaction as the movement that moves it. 'desk' is a real place
+   * rather than a null, so no query over this column is an "everything except
+   * X" condition — the shape AUDIT.md §X names after three defects in one day.
+   *
+   * Nothing reads or writes it yet: 20260918100000 adds the ledger empty, and
+   * supabase/backfill-custody.sql, which nothing runs, is what makes this column
+   * true of a raffle that has already issued books.
+   */
+  holder         text not null default 'desk'
 );
+create index if not exists tickets_holder_idx on tickets (holder) where holder <> 'desk';
 
 -- ============ INDEXES ============
 -- Chosen from the queries the app actually makes, not by guesswork.
@@ -388,6 +400,81 @@ create table if not exists ticket_history (
   note          text not null default ''
 );
 create index if not exists ticket_history_ticket_idx on ticket_history (ticket_idx, at);
+
+
+/*
+ * WHERE EVERY TICKET HAS BEEN — the custody ledger, as rows rather than as a
+ * column. ARCHITECTURE-REVIEW.md §15, added empty by 20260918100000.
+ *
+ * Custody today is books.held_by_agent: one column, overwritten. Where a ticket
+ * has been is recorded nowhere, because a book has always moved whole — which
+ * is true, is why the backfill is exact, and stops being true the moment
+ * somebody hands back six of ten. This repository has paid four times for a
+ * figure stored against custody rather than derived from what happened.
+ *
+ * NOTHING READS OR WRITES IT YET. That is the point of shipping it first.
+ */
+create table if not exists ticket_movements (
+  id          bigint generated always as identity primary key,
+  -- Settable, not just defaulted: the backfill writes historic rows and a
+  -- ledger whose `at` is all one afternoon cannot be replayed in order.
+  at          timestamptz not null default now(),
+  ticket_idx  integer not null references tickets(idx),
+  -- 'desk' rather than null, for the reason given on tickets.holder above. It
+  -- is plain text rather than a reference to agents because the desk is not an
+  -- agent, and because a movement that happened must stay readable after the
+  -- seller who made it is deleted.
+  from_holder text not null,
+  to_holder   text not null,
+  kind        text not null check (kind in
+                ('issue','return','transfer','restock','lost','found','correction')),
+  -- One batch per user action: a whole book of ten is ten rows and one
+  -- batch_id, so "what did that person do at 14:12" is a query and not a join
+  -- on time.
+  batch_id    uuid not null,
+  by_user     text not null,
+  reason      text not null default '',
+  reverses    bigint references ticket_movements(id),
+  client_key  text,
+  -- Provenance, not a kind. §22 describes backfilled rows as kind='backfill',
+  -- which cannot be right: the replay check in the same paragraph needs to know
+  -- whether the row was an issue or a return, and 'backfill' has thrown that
+  -- away. kind stays semantic; `reason` names the source row.
+  backfilled  boolean not null default false,
+  check (from_holder <> to_holder or kind = 'correction')
+);
+-- Partial, and it has to be: every NULL is distinct in Postgres, so a plain
+-- unique column would be relying on that by accident. Two movements nobody gave
+-- a key are two movements.
+create unique index if not exists ticket_movements_client_key_idx
+  on ticket_movements (client_key) where client_key is not null;
+-- `id` rather than `at`: two rows in one batch share a timestamp and replay
+-- order has to be total.
+create index if not exists ticket_movements_ticket_idx
+  on ticket_movements (ticket_idx, id);
+create index if not exists ticket_movements_batch_idx on ticket_movements (batch_id);
+create index if not exists ticket_movements_holder_idx on ticket_movements (to_holder, id desc);
+
+-- Append only, all three ways. Truncate is the one people leave off: it is
+-- neither an update nor a delete and would empty the ledger without firing
+-- either of the other two.
+create or replace function ticket_movements_append_only() returns trigger as $$
+begin
+  raise exception 'ticket_movements is append only — % is not allowed on it', tg_op
+    using errcode = 'restrict_violation',
+          hint = 'Write the opposite movement instead, with reverses pointing at the row it undoes.';
+end $$ language plpgsql;
+
+drop trigger if exists ticket_movements_no_change on ticket_movements;
+create trigger ticket_movements_no_change before update or delete on ticket_movements
+  for each row execute function ticket_movements_append_only();
+
+drop trigger if exists ticket_movements_no_truncate on ticket_movements;
+create trigger ticket_movements_no_truncate before truncate on ticket_movements
+  for each statement execute function ticket_movements_append_only();
+
+alter table ticket_movements enable row level security;
+revoke all on ticket_movements from anon, authenticated;
 create index if not exists ticket_history_book_idx on ticket_history (book_idx, at);
 
 create or replace function record_ticket_history() returns trigger as $$
