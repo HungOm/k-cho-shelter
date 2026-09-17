@@ -186,11 +186,15 @@ begin
       -- A sale out of a book that is still with a seller is credited to that
       -- seller, whoever typed it in. They handed the ticket over; the money is
       -- on their balance and settlement checks it against their stubs.
-      sold_by_agent = coalesce(
-        (select b2.held_by_agent from books b2
-           join tickets t2 on t2.book_idx = b2.idx
-          where t2.number = trim(sale->>'ticketNumber') and b2.status = 'Out'),
-        sale->>'agentId', p_agent_id),
+      -- The same rule as sell_books, and it has to be: one ticket sold out of a
+      -- returned book and the whole book sold out of it credited two different
+      -- people. The agentId the caller sends is ignored for a book that is not
+      -- out with somebody — a sale at the desk belongs to no seller's balance.
+      sold_by_agent = (
+        select case when b2.status = 'Out' then b2.held_by_agent else null end
+          from books b2
+          join tickets t2 on t2.book_idx = b2.idx
+         where t2.number = trim(sale->>'ticketNumber')),
       amount = case when coalesce((sale->>'donated')::boolean, false) then 0 else price end,
       payment_status = coalesce(sale->>'paymentStatus', 'Paid'),
       sold_at = now(),
@@ -373,9 +377,35 @@ begin
        * is why nobody looked here: selling one ticket out of a returned book
        * and selling the whole book credited two different people.
        */
+      /*
+       * CREDIT FOLLOWS CUSTODY AT THE MOMENT OF SALE, and nothing else.
+       *
+       * Out with a seller: theirs. They are carrying the book, they handed the
+       * ticket over, and settlement checks the money against their stubs.
+       *
+       * ANYWHERE ELSE: THE DESK'S, and p_sold_by is deliberately ignored.
+       * A book that has been brought back is at the office, and a sale made
+       * from it afterwards is a sale the organiser made — the seller is not
+       * holding it, did not hand this ticket over, and has already accounted
+       * for what they sold. Crediting them puts money on the balance of
+       * somebody who has settled up and sends the chase list after them.
+       *
+       * THIS IS WHAT WENT WRONG. Book-004 was given to a seller at 01:02,
+       * brought back to the office at 01:04, and the whole book was sold at the
+       * desk at 01:27 — and both tickets were credited to the seller who had
+       * returned it two minutes after taking it. The screen offered their name
+       * in a "Who sold it?" list and this line accepted it.
+       *
+       * The organiser is not lost: recorded_by carries their address, and the
+       * book's history says "Written down by" them. What a null means here is
+       * "no seller's balance", which is the truth.
+       *
+       * NOT the count-in. settle_book credits the returning seller from
+       * held_by_agent on purpose: that path is recording what the seller sold
+       * before they handed the book back, not making a new sale.
+       */
       sold_by_agent = (
-        select case when bk.status = 'Out' then bk.held_by_agent
-                    else nullif(coalesce(p_sold_by, p_agent_id), '') end
+        select case when bk.status = 'Out' then bk.held_by_agent else null end
           from books bk where bk.idx = t.book_idx),
       amount = case when p_donated then 0 else price end,
       payment_status = 'Paid',

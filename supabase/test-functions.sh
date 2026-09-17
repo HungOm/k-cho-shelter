@@ -709,10 +709,25 @@ ok "$(P "select count(*) from tickets where book_idx=7 and status='Sold' and sol
 ok "$(P "select count(*) from tickets where book_idx=7 and sold_by_agent='A002'")" "0" "nobody is charged for a sale they were not there for"
 ok "$(P "select held_by_agent from books where idx=7")" "A002" "while the book still remembers who brought it back"
 
-# WHO WAS ACTUALLY AT THE DESK. The helper taking the money is usually not the
-# seller who handed the book in, and until the last argument existed there was
-# no way to say so: the sale was either credited to the wrong person or to
-# nobody at all.
+# NO SELLER IS CREDITED FOR A BOOK THAT IS NOT OUT WITH THEM, and the name the
+# caller sends is ignored rather than honoured.
+#
+# THIS REPLACES A DELIBERATE FEATURE AND SAYS SO. p_sold_by existed to name the
+# helper standing at the desk, on the reasoning that the person taking the money
+# is usually not the seller who handed the book in. The raffle's owner looked at
+# what that produced on real data and ruled the other way: a seller is credited
+# only when a book GIVEN OUT TO THEM is sold, and anything sold at the office is
+# the organiser's.
+#
+# What it cost, in the case that prompted it: Book-004 went out at 01:02, came
+# back at 01:04, and was sold whole at the desk at 01:27 — credited to the
+# seller who had returned it, because the screen offered their name and this
+# function accepted it. Money on the balance of somebody who had already
+# settled up, and the chase list sent after them for it.
+#
+# The organiser is not lost. recorded_by carries their address and the book's
+# history says "Written down by" them; a null sold_by_agent means "no seller's
+# balance", which is the truth.
 P "insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
      values (9,'Book-0009','KS-00081','KS-00090','Returned','A002');
    insert into tickets(idx,number,book_idx,status)
@@ -720,7 +735,9 @@ P "insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
    update config set value='90' where key='TOTAL_TICKETS'" >/dev/null
 ok "$(P "select count(*) from books where idx=9")" "1" "the third book is there too"
 r=$(P "select sell_books('Book-0009',null,null,'Desk Buyer','0125557777','',false,'me@x.com','recorder',null,'A001')")
-ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent='A001'")" "10" "the person at the desk is credited when they are named"
+ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent='A001'")" "0" "naming a seller for an office book no longer credits them"
+ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent is null")" "10" "it is the desk's, and the organiser is on recorded_by"
+ok "$(P "select count(*) from tickets where book_idx=9 and recorded_by='me@x.com'")" "10" "which is where the organiser's name actually lives"
 ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent='A002'")" "0" "and the seller who brought the book in still is not"
 # The other half of the same rule, unchanged: a book genuinely out with somebody
 # is theirs, and the money lands on their balance where settlement checks it

@@ -669,13 +669,26 @@ async function readVersion(_p: Record<string, unknown>, user: AppUser, ctx: Ctx)
       .gt('expires_at', new Date().toISOString())
     waiting = count ?? 0
   } else {
-    // Anybody else is told only about their own, which is what they are
-    // waiting on — "has mine been decided yet".
-    const { count } = await ctx.supabaseAdmin
+    /*
+     * THEIR OWN, AND WHAT IS WAITING ON THEM.
+     *
+     * "Has mine been decided yet" was the whole question while every row in the
+     * queue was answered by an organiser. An OFFER of books is answered by a
+     * seller, and it is written by somebody else — so under `requested_by`
+     * alone the badge stayed at zero for the one person who had to act, and
+     * they were never told at all. The books sat reserved until the offer
+     * expired.
+     *
+     * Counted with the same pair listApprovals scopes by, so the number on the
+     * badge and the rows behind it cannot disagree.
+     */
+    const q = ctx.supabaseAdmin
       .from('pending_approvals')
       .select('request_id', { count: 'exact', head: true })
-      .eq('requested_by', user.email)
       .eq('status', 'Pending')
+    const { count } = await (user.agentId
+      ? q.or(`requested_by.eq.${user.email},decide_by_agent.eq.${user.agentId}`)
+      : q.eq('requested_by', user.email))
     waiting = count ?? 0
   }
 

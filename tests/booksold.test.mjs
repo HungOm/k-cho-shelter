@@ -155,7 +155,7 @@ console.log('5b. a sold-out book carries a mark you can see, and still says wher
      'the legend wears the same seal, smaller, rather than a drawing of it')
 }
 
-console.log('6. and the form asks who sold it, rather than deciding')
+console.log('6. and the form does NOT ask who sold it — the book decides')
 {
   /*
    * A book OUT with somebody is theirs whatever this box says — the server
@@ -186,20 +186,34 @@ export const sellOverrideNeeded = () => false
 `
   const { setupOf } = await import('./screen.mjs')
   const { ctx, cleanup } = await setupOf('src/components/modals/SellBook.vue', store, { book: null })
-  ok(ctx.soldBy.value === 'A001',
-     'it defaults to the person signed in, who is the one at the desk')
-  ok(ctx.creditName.value === 'Amos Hung', 'and says whose name that is')
+
+  /*
+   * THE FORM NO LONGER ASKS, AND THAT IS THE POINT NOW.
+   *
+   * This block used to assert the opposite: a "Who sold it?" list, defaulting
+   * to whoever was signed in, sent to the server so it "does not have to
+   * guess". The server was not guessing — it knows who is holding the book,
+   * which is the only thing that decides whose money a sale is.
+   *
+   * What the asking produced: Book-004 went out to a seller at 01:02, came back
+   * to the office at 01:04, and was sold whole at the desk at 01:27 — credited
+   * to the seller who had returned it, because the list offered their name and
+   * sell_books accepted it. Money on the balance of somebody who had already
+   * settled up.
+   *
+   * The rule now is the raffle owner's: a seller is credited only when a book
+   * GIVEN OUT TO THEM is sold. Out with somebody — theirs. At the office — the
+   * office's, and the organiser is on recorded_by where their name belongs.
+   */
+  ok(ctx.soldBy === undefined, 'the form does not carry a seller to credit any more')
 
   globalThis.__sold = null
   ctx.from.value = '1'
   ctx.name.value = 'HTNAG'
   ctx.phone.value = '012345678'
   await ctx.sell()
-  ok(globalThis.__sold?.soldBy === 'A001', 'and sends it, so the server does not have to guess')
-
-  ctx.soldBy.value = ''
-  await ctx.sell()
-  ok(globalThis.__sold?.soldBy === '', 'nobody is a choice too — a sale no volunteer carried a book for')
+  ok(globalThis.__sold && !('soldBy' in globalThis.__sold),
+     'and does not send one, so the book decides rather than the person pressing')
   cleanup()
 }
 

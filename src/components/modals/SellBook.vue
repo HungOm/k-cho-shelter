@@ -40,13 +40,7 @@ const result = ref(null)
  * their own sale has nothing to choose, and the server refuses it anyway —
  * crediting a sale elsewhere moves what that person is shown as owing.
  */
-const soldBy = ref(state.user?.agentId || '')
 const iAmSeller = computed(() => state.user?.role === 'agent')
-const sellers = computed(() => state.agents || [])
-const creditName = computed(() => {
-  const a = sellers.value.find(x => x.id === soldBy.value)
-  return a ? a.name : ''
-})
 
 const cfg = computed(() => state.cfg)
 const count = computed(() => {
@@ -130,7 +124,6 @@ async function sell() {
       buyerName: name.value.trim(),
       buyerPhone: phone.value.trim(),
       buyerZone: zone.value.trim(),
-      soldBy: soldBy.value || '',
       reason: onBehalf.value.trim()
     })
     result.value = r
@@ -218,19 +211,17 @@ async function sell() {
         <input id="sbz" v-model="zone" autocomplete="off">
       </div>
 
-      <!-- Asked, not assumed. A book still out with a seller is credited to
-           that seller whatever is chosen here, and the hint says so rather than
-           leaving somebody to discover it on the ticket afterwards. -->
+      <!-- NOT ASKED ANY MORE, because it was not a question the person pressing
+           this button gets to answer. Who the money belongs to follows who is
+           holding the book, and offering a list of sellers for a book sitting
+           at the office is how a seller who had already handed their book back
+           was credited for two tickets sold at the desk twenty-three minutes
+           later. Stated, so nobody has to discover it on the ticket after. -->
       <div v-if="!iAmSeller" class="field">
-        <label for="sbs">Who sold it? <span class="opt">— for books in the office</span></label>
-        <select id="sbs" v-model="soldBy">
-          <option value="">Nobody — sold at the desk</option>
-          <option v-for="a in sellers" :key="a.id" :value="a.id">{{ a.name }}</option>
-        </select>
         <p class="hint">
-          <template v-if="creditName">Credited to {{ creditName }}.</template>
-          <template v-else>Credited to nobody, which is right for a sale nobody carried a book for.</template>
-          A book still out with a seller is always credited to that seller.
+          A book still out with a seller is credited to that seller. A book that
+          has been brought back is the office's, and this sale will be recorded
+          in your name.
         </p>
       </div>
 
