@@ -39,3 +39,8 @@ dist/
 # Apps Script link. Holds the script id, which identifies the project — keep it
 # out of a public repo for the same reason the client id came out of SETUP.md.
 .clasp.json
+
+# The public half of the backup key. Harmless to share — it can only seal a
+# backup, never open one — but a stray copy in the tree is how somebody later
+# wonders which key the weekly job is actually sealing to.
+backup-key.pub
