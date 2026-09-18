@@ -259,6 +259,15 @@ console.log('list_agents carries the seller picker the organiser uses')
   // deleted, and frozen here as the contract the seller picker reads.
   const expected = [
     'id', 'name', 'phone', 'zone', 'active', 'booksOut', 'notes',
+    /*
+     * Added deliberately, like every other key on this frozen list. Most sellers
+     * in this raffle cannot sign in — a seller is a paper identity and an
+     * account is an optional link — and the screens have to tell the two apart.
+     * Without it the sell screen asks a seller with no account to explain why an
+     * organiser is recording their sale, which is the only way it could ever
+     * have been recorded.
+     */
+    'hasLogin',
     'sharesName', 'sharesPhone', 'reportState', 'reportedAt', 'reportRound',
     'missedRounds', 'daysLate',
   ]

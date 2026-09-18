@@ -323,7 +323,28 @@ export function bookBlock(b) {
 export function overrideReasonNeeded(b) {
   if (!b || b.status !== 'Out' || !b.agentId) return false
   const me = state.user || {}
-  return b.agentId !== me.agentId
+  if (b.agentId === me.agentId) return false                  // it is in their own hands
+
+  /*
+   * AND ONLY IF THE SELLER COULD HAVE WRITTEN IT THEMSELVES.
+   *
+   * Most sellers here cannot sign in — a seller is a paper identity, and an
+   * account is an optional link nobody makes for the volunteer who takes one
+   * book round their church. Every sale they ever make is written down by an
+   * organiser, because there is no other way for it to be written down.
+   *
+   * So the question "why are you doing this instead of them?" would fire on all
+   * of that seller's sales and carry no signal — a box that is always required
+   * gets "x" typed into it, and the record then looks like evidence. The server
+   * makes the same judgement; this only stops the screen asking for something
+   * that will not be wanted. See holdersWhoCouldHaveWritten in tickets.ts.
+   *
+   * FAILS TOWARD ASKING when the seller is not in the list yet — an unknown
+   * holder is treated as one who could have, so the worst case is a question
+   * that did not need asking rather than an override that left no explanation.
+   */
+  const holder = agentMap.value[b.agentId]
+  return holder ? holder.hasLogin === true : true
 }
 
 /** The same question about a ticket, via the book it lives in. */

@@ -50,6 +50,25 @@ export async function listAgents(p: Record<string, unknown>, user: AppUser, ctx:
   // question before handing somebody more is always how much they already have.
   const { data: out } = await ctx.supabaseAdmin
     .from('books').select('held_by_agent').eq('status', 'Out')
+
+  /*
+   * WHICH SELLERS CAN SIGN IN, WHICH IS NOT MOST OF THEM.
+   *
+   * A seller in this raffle is a paper identity — agents has a name, a phone and
+   * a zone, and no email at all. An account is an OPTIONAL link, made by pointing
+   * an app_users row at an agent_id, and the ordinary volunteer carrying a book
+   * round their church never has one.
+   *
+   * The screens need to know which kind they are looking at, because rules that
+   * ask "why are you doing this instead of the seller?" have no meaning for a
+   * seller who could never have done it. Sent as a flag rather than the account,
+   * because that is the whole of the question and an email here would put a
+   * person's sign-in address on a list every role can read.
+   */
+  const { data: linked } = await ctx.supabaseAdmin
+    .from('app_users').select('agent_id').eq('active', true).not('agent_id', 'is', null)
+  const canSignIn = new Set(
+    (linked ?? []).map((r: { agent_id?: string | null }) => String(r.agent_id ?? '').trim()).filter(Boolean))
   const held = new Map<string, number>()
   for (const b of out ?? []) {
     const id = String((b as { held_by_agent?: string }).held_by_agent ?? '').trim()
@@ -165,6 +184,9 @@ export async function listAgents(p: Record<string, unknown>, user: AppUser, ctx:
       active: a.active !== false,
       booksOut: held.get(String(a.agent_id ?? '').trim()) ?? 0,
       notes: a.notes ?? '',
+      // Whether this seller has an account at all — see the note above. Most do
+      // not, and the screens must not treat that as a fault.
+      hasLogin: canSignIn.has(String(a.agent_id ?? '').trim()),
       // What this row shares with another active seller, so a screen can say
       // "JOHN (Saremban)" rather than "JOHN" twice. Empty when unambiguous.
       sharesName: (byName.get(String(a.name ?? '').trim().toLowerCase()) ?? 0) > 1,

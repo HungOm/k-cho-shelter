@@ -75,6 +75,22 @@ function world() {
     tickets: rows, books,
     agents: [{ agent_id: 'A001', name: 'Daw Hla', phone: '0125551111', zone: 'KL', active: true },
              { agent_id: 'A002', name: 'U Kyaw', phone: '0125552222', zone: 'KL', active: true }],
+    /*
+     * DAW HLA CAN SIGN IN. U KYAW CANNOT, and that is the ordinary case.
+     *
+     * A seller here is a paper identity — agents holds a name, a phone and a
+     * zone, and no email — and an account is an optional link made by pointing
+     * an app_users row at an agent_id. The volunteer who takes one book round
+     * their church never has one.
+     *
+     * The fixture carries both kinds because the rule below turns on exactly
+     * that difference, and a world where every seller had an account would have
+     * tested only half of it. That half is what these cases used to be.
+     */
+    app_users: [
+      { email: 'a@x.com', name: 'Daw Hla', role: 'agent', active: true, agent_id: 'A001' },
+      { email: 'admin@x.com', name: 'Admin', role: 'admin', active: true, agent_id: null },
+    ],
   })
 }
 
@@ -375,6 +391,65 @@ console.log('a batch and a whole book ask it too, or the question is a suggestio
   ok(code !== 'REASON_REQUIRED', `and with a reason the question is not what stops it (got ${code})`)
 }
 
+// ============ 4c. the seller who never signs in ============
+console.log('a seller with no account is not asked to explain themselves')
+{
+  /*
+   * WHO THIS IS. Most sellers in this raffle cannot sign in. `agents` holds a
+   * name, a phone and a zone and NO EMAIL — a seller is a paper identity, and an
+   * account is an optional link made by pointing an app_users row at an
+   * agent_id. Nobody makes one for the volunteer who takes a single book round
+   * their church.
+   *
+   * WHY THE RULE ABOVE BROKE FOR THEM. Every sale that volunteer makes is
+   * written down by an organiser, because there is no other way for it to be
+   * written down at all. So "why are you doing this instead of the seller?"
+   * fired on a hundred per cent of their sales — and a field that is always
+   * required carries no signal. It becomes the box somebody types "x" into, and
+   * the record then LOOKS like evidence, which is worse than an empty one.
+   *
+   * The override is "you did this instead of the person who could have". Where
+   * nobody could have, there is nothing to explain.
+   */
+  // Book-001 is Daw Hla's, and she can sign in, so it still asks. Move it to
+  // U Kyaw, who cannot, and the same act becomes ordinary.
+  const paper = world()
+  const b = paper.db.tables.books.find((x) => x.idx === 1)
+  b.held_by_agent = 'A002'
+  const sold = await sell(paper, 'KS-00004', users.admin)
+  eq(sold.status, 'Sold', 'no reason is asked for a seller who could not have recorded it')
+  eq(paper.row('tickets', (t) => t.number === 'KS-00004').sold_by_agent, 'A002',
+     'and it is still credited to the seller holding the book')
+
+  // AND NO LINE IN THE BOOK'S TRAIL. One row per sale saying "recorded for the
+  // seller" against the only possible route is not a record, it is noise in the
+  // one place a custody argument gets settled.
+  eq(paper.table('book_history').filter((h) => h.action === 'record_for_holder').length, 0,
+     "nothing is written to the book's trail, because nothing unusual happened")
+
+  // The batch and whole-book paths make the same judgement, or the rule is a
+  // suggestion — three doors, one answer.
+  const bulk = world()
+  bulk.db.tables.books.find((x) => x.idx === 1).held_by_agent = 'A002'
+  const rb = await tickets.bulkRecordSales({ sales: [
+    { ticketNumber: 'KS-00006', buyerName: 'Ma Nu', buyerPhone: '0125550100' }] }, users.admin, bulk.ctx)
+  ok(rb, 'a batch into a paper-only seller\'s book goes through unasked')
+  eq(bulk.table('book_history').filter((h) => h.action === 'record_for_holder').length, 0,
+     'and writes no override line either')
+
+  // AND THE HALF THAT MUST NOT SOFTEN: a seller who CAN sign in is still asked.
+  const signed = world()
+  eq(await codeOf(() => sell(signed, 'KS-00005', users.admin)), 'REASON_REQUIRED',
+     'a seller with an account is still asked why somebody else wrote it')
+
+  // A deactivated account is not an account. Somebody whose login was switched
+  // off cannot record anything, so they are the paper case from that moment.
+  const off = world()
+  off.db.tables.app_users.find((u) => u.agent_id === 'A001').active = false
+  const r2 = await sell(off, 'KS-00007', users.admin)
+  eq(r2.status, 'Sold', 'a suspended account cannot have written it, so nothing is asked')
+}
+
 // ============ 5. and the screens ask before the server has to refuse ============
 console.log('the screens ask why, rather than letting the refusal arrive as an error')
 {
@@ -396,7 +471,11 @@ console.log('the screens ask why, rather than letting the refusal arrive as an e
   // it, and that somebody is not me.
   ok(/status !== 'Out'/.test(fn), 'it only applies to a book that is out')
   ok(/!b\.agentId/.test(fn), 'and only when somebody is actually holding it')
-  ok(/b\.agentId !== me\.agentId/.test(fn), 'and not when that somebody is me')
+  ok(/b\.agentId === me\.agentId\) return false/.test(fn), 'and not when that somebody is me')
+  // The fourth part, added once it was clear the rule fired on every sale a
+  // paper-only seller ever made: only when that somebody could have done it.
+  ok(/hasLogin === true/.test(fn), 'and only when the holder could have written it themselves')
+  ok(/: true$/m.test(fn), 'failing toward asking when the seller is not in the list yet')
 
   // SEPARATE FROM bookBlock, which answers "may I" — folding the two together
   // would make the screens disable the case that is allowed.

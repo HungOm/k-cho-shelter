@@ -183,6 +183,40 @@ async function noteOverride(
 }
 
 /**
+ * WHETHER THE PERSON HOLDING THE BOOK COULD HAVE WRITTEN THIS THEMSELVES.
+ *
+ * The reason requirement below asks why you are recording a sale into a book
+ * that is in somebody else's bag. That question is worth asking when the holder
+ * has an account and chose not to use it — a seller who telephones their sales
+ * in rather than entering them, or a sale invented at a desk against their name.
+ *
+ * IT HAS NO MEANING FOR A SELLER WHO CANNOT SIGN IN, and most of them cannot. A
+ * seller here is a paper identity: agents carries a name, a phone and a zone,
+ * and no email. An account is an optional link nobody makes for the volunteer
+ * who takes one book round their church. Every sale that volunteer ever makes is
+ * written down by an organiser, because there is no other way for it to be
+ * written down at all.
+ *
+ * So asking them why would fire on a hundred per cent of that seller's sales,
+ * and a field that is always required carries no signal — it becomes a box
+ * somebody types "x" into, which is worse than no box, because the record then
+ * looks like evidence. The override is "you did this instead of the person who
+ * could have". Where nobody could have, it is not an override; it is the only
+ * route there is.
+ */
+async function holdersWhoCouldHaveWritten(
+  ctx: Ctx, agentIds: (string | null)[],
+): Promise<Set<string>> {
+  const ids = [...new Set(agentIds.map((a) => String(a ?? '').trim()).filter(Boolean))]
+  if (!ids.length) return new Set()
+  const { data } = await ctx.supabaseAdmin
+    .from('app_users').select('agent_id').eq('active', true).in('agent_id', ids)
+  return new Set((data ?? [])
+    .map((r: { agent_id?: string | null }) => String(r.agent_id ?? '').trim())
+    .filter(Boolean))
+}
+
+/**
  * The books in a write that are out with somebody other than the caller.
  *
  * Asked BEFORE the work, because the answer decides whether the work may
@@ -202,8 +236,12 @@ async function booksOutWithSomebodyElse(
   const { data } = await ctx.supabaseAdmin
     .from('books').select('idx,number,status,held_by_agent')
     .in('idx', idxs).eq('status', 'Out')
-  return ((data ?? []) as { idx: number; number: string; held_by_agent: string | null }[])
+  const out = ((data ?? []) as { idx: number; number: string; held_by_agent: string | null }[])
     .filter((b) => b.held_by_agent && b.held_by_agent !== user.agentId)
+  // Only the holders who could have written it themselves — see above.
+  const could = await holdersWhoCouldHaveWritten(ctx, out.map((b) => b.held_by_agent))
+  return out
+    .filter((b) => could.has(String(b.held_by_agent)))
     .map((b) => ({ idx: b.idx, number: b.number, holder: b.held_by_agent }))
 }
 
@@ -325,9 +363,20 @@ async function assertCanWrite(
         403,
       )
     }
-    // Permitted, and permitted only because of who is asking. That is the case
-    // that has to say why — see the note above OVERRIDE_ACTION.
+    /*
+     * Permitted, and permitted only because of who is asking. That is the case
+     * that has to say why — see the note above OVERRIDE_ACTION.
+     *
+     * UNLESS THE HOLDER COULD NEVER HAVE DONE IT. A seller with no account has
+     * every sale written down by an organiser, so asking why would fire on all
+     * of them and mean nothing. No question, and no line in the book's trail
+     * either: one row per sale saying "recorded for the seller" against the only
+     * possible route is not a record, it is noise in the one place a custody
+     * argument gets settled.
+     */
     if (!holdsIt) {
+      const could = await holdersWhoCouldHaveWritten(ctx, [book.held_by_agent])
+      if (!could.has(String(book.held_by_agent ?? '').trim())) return { override: null }
       if (!opts.reason) refuseOverride([book.number ?? ticket.number])
       return { override: { idx: ticket.book_idx, holder: book.held_by_agent } }
     }
