@@ -14,6 +14,7 @@ import { money, COUNTED_IN_HELP } from '../lib/format.js'
 import { resolveTicketNumber } from '../lib/books.js'
 import Bi from './ui/Bi.vue'
 import YourStock from './ui/YourStock.vue'
+import DeskStock from './ui/DeskStock.vue'
 
 const emit = defineEmits(['open', 'report-back'])
 
@@ -267,6 +268,12 @@ function phoneWarning(phone) {
          same short list is the answer on both screens. Renders nothing for
          anybody who is not holding books. -->
     <YourStock report-back @open="t => emit('open', t)" @report-back="emit('report-back')" />
+
+    <!-- The same answer for whoever is at the desk. YourStock draws nothing for
+         an organiser because they hold no books; this is what they hold
+         instead, which is the rest of the raffle. Exactly one of the two ever
+         draws, and each decides that for itself. -->
+    <DeskStock @open="t => emit('open', t)" />
 
     <div class="card">
       <h3><Bi text="One ticket" /></h3>
