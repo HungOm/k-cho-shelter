@@ -471,6 +471,40 @@ export async function offerBooks(p: Record<string, unknown>, user: AppUser, ctx:
     .from('agents').select('agent_id,name,phone').eq('agent_id', agentId).maybeSingle()
   if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${agentId}".`, null, 404)
 
+  /*
+   * A SELLER WHO CANNOT SIGN IN HAS NOBODY TO ACCEPT, so offering is issuing.
+   *
+   * Offering exists to put the seller's CONSENT on the record — they are told,
+   * they agree, and the books move. Most sellers here can never do that. A
+   * seller is a paper identity: agents holds a name, a phone and a zone and no
+   * email, and an account is an optional link nobody makes for the volunteer who
+   * takes a book round their church.
+   *
+   * Offered to one of them, a book waits for an answer that cannot come. It sits
+   * outside every count — not in the office, not with a seller — and the
+   * handover receipt, which lists what somebody is holding, shows nothing on the
+   * one screen an organiser opens at the moment of handing the paper over. Two
+   * books were in that state when this was written.
+   *
+   * An organiser can already accept on their behalf, so nothing was permanently
+   * stuck; it was a step with no meaning that somebody had to know to take. The
+   * organiser handing the books across IS the handover for this seller, and
+   * issue_books records exactly that, with their name on it in the book's trail.
+   *
+   * ISSUING THROUGH THE EXISTING HANDLER, not a copy of it: it carries the
+   * released-books check, the due-date rules, the empty-Returned judgement and
+   * the concurrency predicate, and a second implementation of any of those is
+   * how two paths come to disagree.
+   */
+  const { data: linked } = await ctx.supabaseAdmin
+    .from('app_users').select('agent_id').eq('active', true).eq('agent_id', agentId).limit(1)
+  if (!linked?.length) {
+    const done = await issueBooks(p, user, ctx)
+    // Named so the screen can say what happened rather than "undefined books
+    // offered — waiting for them to accept", which is what it would say.
+    return { ...done, direct: true, whyDirect: 'no_account' }
+  }
+
   const idxs = await resolveBooks(ctx, p)
   const liveBooks = await activeBookLimit(ctx)
 

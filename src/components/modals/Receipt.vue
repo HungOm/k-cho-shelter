@@ -213,7 +213,12 @@ const waLink = computed(() => {
           <tbody>
             <tr v-for="b in r.books" :key="b.book">
               <td>{{ b.book }}</td>
-              <td>{{ b.firstTicket }} – {{ b.lastTicket }}</td>
+              <td>{{ b.firstTicket }} – {{ b.lastTicket }}
+                <!-- Offered and not yet accepted. On the sheet because this is
+                     the paper that goes across the table with them; marked
+                     because until they accept, the books are not theirs. -->
+                <em v-if="b.awaiting" class="await">— waiting to be accepted</em>
+              </td>
               <td class="num">{{ b.tickets }}</td>
               <td>{{ date(b.due) }}</td>
             </tr>
@@ -273,6 +278,7 @@ const waLink = computed(() => {
 </template>
 
 <style scoped>
+.await { color: var(--warn); font-style: normal; font-size: .85rem; }
 .stamp {
   margin: 0 0 14px; padding: 8px 12px; border: 1.5px dashed var(--warn);
   border-radius: var(--r-sm); color: var(--warn);

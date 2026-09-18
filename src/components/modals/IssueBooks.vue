@@ -190,10 +190,25 @@ async function issue() {
       return
     }
 
-    // NOT "given to". Nothing has moved yet, and a receipt printed on the
-    // strength of this sentence would be paper the seller has not agreed to.
-    toast(`${r.offered} ${r.offered === 1 ? 'book' : 'books'} offered — ` +
-          `waiting for them to accept`, 'ok')
+    /*
+     * TWO ENDINGS, because there are two kinds of seller.
+     *
+     * Offering asks for consent, and a seller who cannot sign in can never give
+     * it — so for them the server issues instead, and "waiting for them to
+     * accept" would be waiting for something that cannot happen. It said exactly
+     * that, with `undefined` where the count should be, because an issue reply
+     * carries `issued` and not `offered`.
+     */
+    if (r.direct) {
+      toast(`${r.issued} ${r.issued === 1 ? 'book' : 'books'} given to ` +
+            `${r.agent?.name || 'them'} — they have no account to accept with, ` +
+            `so the handover is recorded against you`, 'ok')
+    } else {
+      // NOT "given to". Nothing has moved yet, and a receipt printed on the
+      // strength of this sentence would be paper the seller has not agreed to.
+      toast(`${r.offered} ${r.offered === 1 ? 'book' : 'books'} offered — ` +
+            `waiting for them to accept`, 'ok')
+    }
     // Close first. The write is done and the toast has said so; reloading the
     // whole ticket table before closing reads as a hang, which is exactly what
     // it looked like on a 20,000-ticket raffle.

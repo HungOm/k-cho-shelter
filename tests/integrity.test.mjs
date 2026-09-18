@@ -190,6 +190,59 @@ console.log('2b. a book that came back untouched goes out again without a settle
      'BOOKS_NOT_AVAILABLE', 'a counted-in book is restocked first, however empty it was')
 }
 
+console.log('2c. offering books to a seller who cannot sign in just gives them the books')
+{
+  /*
+   * OFFERING ASKS FOR CONSENT, AND MOST SELLERS CANNOT GIVE IT.
+   *
+   * A book is offered so the seller can agree before it becomes theirs. A seller
+   * here is a paper identity — agents holds a name, a phone and a zone and no
+   * email — and an account is an optional link nobody makes for the volunteer
+   * carrying one book round their church. Offered to one of them, a book waits
+   * for an answer that cannot come.
+   *
+   * WHAT THAT COST, on the live raffle: two books sat Offered to a seller with no
+   * account. They were in neither count — not in the office, not with a seller —
+   * and the handover receipt, which lists what somebody is holding, showed
+   * nothing on the one screen an organiser opens at the moment of putting the
+   * paper in their hand. It read as "the receipt is gone".
+   *
+   * So for that seller the offer IS the handover, and it is recorded as one,
+   * against the organiser who made it. Nobody was ever permanently stuck — an
+   * organiser could accept on their behalf — but that is a step with no meaning
+   * which somebody had to know to take.
+   */
+  const w = fakeDb({
+    config: baseConfig(), agents,
+    books: [book(1, { status: 'Unassigned', held_by_agent: null }),
+            book(2, { status: 'Unassigned', held_by_agent: null })],
+    book_ledger_all: [ledger(1, { status: 'Unassigned', held_by_agent: null }),
+                      ledger(2, { status: 'Unassigned', held_by_agent: null })],
+    // A001 can sign in. A002 cannot, which is the ordinary case.
+    app_users: [{ email: 'a@x.com', name: 'Daw Hla', role: 'agent', active: true, agent_id: 'A001' }],
+  })
+
+  const r = await books.offerBooks({ bookNumbers: ['Book-001'], agentId: 'A002' }, users.admin, w.ctx)
+  ok(r.direct === true, 'the reply says it went out rather than waiting')
+  eq(r.whyDirect, 'no_account', 'and why, so the screen can say so')
+  eq(r.issued, 1, 'one book given')
+  eq(w.row('books', (b) => b.idx === 1).status, 'Out', 'it is out, not Offered')
+  eq(w.row('books', (b) => b.idx === 1).held_by_agent, 'A002', 'and in their hands')
+  eq(w.table('book_history').filter((h) => h.book_idx === 1 && h.action === 'issue').length, 1,
+     "recorded as a handover on the book's trail")
+
+  // AND THE HALF THAT MUST NOT CHANGE: a seller who CAN sign in is still asked.
+  const signed = fakeDb({
+    config: baseConfig(), agents,
+    books: [book(2, { status: 'Unassigned', held_by_agent: null })],
+    book_ledger_all: [ledger(2, { status: 'Unassigned', held_by_agent: null })],
+    app_users: [{ email: 'a@x.com', name: 'Daw Hla', role: 'agent', active: true, agent_id: 'A001' }],
+  })
+  const r2 = await books.offerBooks({ bookNumbers: ['Book-002'], agentId: 'A001' }, users.admin, signed.ctx)
+  ok(!r2.direct, 'somebody with an account is still offered rather than handed')
+  eq(signed.row('books', (b) => b.idx === 2).status, 'Offered', 'and the book waits for their answer')
+}
+
 // ============ 3. the draw is not ready over what cannot be drawn ============
 
 console.log('3. sales nobody can draw, and requests nobody decided, keep the draw closed')

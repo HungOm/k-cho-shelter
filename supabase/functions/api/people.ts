@@ -632,9 +632,25 @@ export async function handoverReceipt(p: Record<string, unknown>, u: AppUser, ct
     .from('agents').select('agent_id,name,phone,zone').eq('agent_id', agentId).maybeSingle()
   if (!agent) throw new ApiError('AGENT_NOT_FOUND', `No agent with ID "${agentId}".`, null, 404)
 
+  /*
+   * WHAT THEY ARE HOLDING, AND WHAT THEY ARE BEING HANDED.
+   *
+   * This asked for status = 'Out' and nothing else, so a book that had been
+   * offered and not yet accepted was invisible — and that is precisely the
+   * moment somebody prints this sheet. The organiser puts two books across the
+   * table, opens the receipt to print the paper that goes with them, and is told
+   * the seller is holding nothing. The books were real and in their hand.
+   *
+   * So an offer is on the sheet, marked as waiting. It is the right piece of
+   * paper for that moment: this is what I am giving you, sign for it. What it
+   * must not do is say the books are theirs already, because until they accept
+   * they are not — the row carries its own status and the screen shows it.
+   */
   const { data: books } = await ctx.supabaseAdmin
-    .from('books').select('number,first_ticket,last_ticket,status,issued_at,due_at')
-    .eq('held_by_agent', agentId).eq('status', 'Out').order('idx')
+    .from('books').select('number,first_ticket,last_ticket,status,issued_at,due_at,offered_at')
+    .or(`and(held_by_agent.eq.${agentId},status.eq.Out),` +
+        `and(offered_to_agent.eq.${agentId},status.eq.Offered)`)
+    .order('idx')
 
   const { data: cfgRows } = await ctx.supabaseAdmin
     .from('config').select('key,value').in('key', ['TICKET_PRICE', 'CURRENCY', 'EVENT_NAME', 'ORG_NAME'])
@@ -660,6 +676,9 @@ export async function handoverReceipt(p: Record<string, unknown>, u: AppUser, ct
   }
 
   const list = (books ?? []).map((b: Record<string, unknown>) => ({
+    // Waiting, not held. The sheet says which, because a seller signing for
+    // books they have not accepted is the confusion this avoids.
+    awaiting: b.status === 'Offered',
     book: b.number,
     firstTicket: b.first_ticket,
     lastTicket: b.last_ticket,

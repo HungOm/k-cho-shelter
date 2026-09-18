@@ -61,7 +61,11 @@ const RECEIPT = {
   org: 'Somebody', event: 'Raffle', currency: 'RM',
   agent: { id: 'A1', name: 'JOHN', phone: '0123456789', zone: '' },
   books: [{ book: '31', firstTicket: 'KS-00301', lastTicket: 'KS-00310',
-            tickets: 10, issued: '2026-09-01', due: '2026-10-11', soldSoFar: 0 }],
+            tickets: 10, issued: '2026-09-01', due: '2026-10-11', soldSoFar: 0,
+            // Offered and not yet accepted, or already in their hands. The
+            // sheet now carries both, because it is printed at the moment of
+            // handing over — when a book has been offered and is not yet theirs.
+            awaiting: false }],
   bookCount: 1, ticketCount: 10, valueIfAllSold: 100,
   issuedBy: 'Admin', generatedAt: '2026-09-15T00:00:00Z'
 }
