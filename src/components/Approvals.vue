@@ -361,6 +361,18 @@ async function withdraw(r) {
   } finally { busy.value = '' }
 }
 
+/*
+ * WHO TURNED IT DOWN, in the fewest words that are true. A seller answering a
+ * row addressed to them is named; anybody else is "the organiser" or "the
+ * System Admin", because on this screen the role is the useful fact and the
+ * address is already on the line above.
+ */
+function whoSaidNo(r) {
+  if (isOffer(r) || isCountIn(r)) return r.detail?.agentName || 'The seller'
+  if (r.decidedBy && r.decidedBy === state.user?.email) return 'You'
+  return 'The organiser'
+}
+
 const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 </script>
 
@@ -616,7 +628,26 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
                 <span class="sub" style="white-space:normal;display:block">{{ r.summary }}</span>
                 <span class="sub" style="display:block">
                   Asked by {{ r.requestedBy }} · {{ dateTime(r.decidedAt || r.requestedAt) }}
-                  <template v-if="r.note"> · “{{ r.note }}”</template>
+                  <template v-if="r.note && r.status !== 'Rejected'"> · “{{ r.note }}”</template>
+                </span>
+                <!--
+                  WHY IT WAS TURNED DOWN, ON ITS OWN AND LOOKING LIKE THE POINT.
+                  It was a small grey clause at the end of an email address and a
+                  timestamp, in the same colour as both — present, and invisible.
+                  Reported as "the reason is not displayed", which is what being
+                  invisible means in practice.
+                  It is the one thing on a refused row that anybody can act on:
+                  the whole reason refusals now require words is so the person
+                  reading this can put it right.
+                -->
+                <span v-if="r.status === 'Rejected'" class="why">
+                  <template v-if="r.note">
+                    <b>{{ whoSaidNo(r) }} said:</b> “{{ r.note }}”
+                  </template>
+                  <template v-else>
+                    <b>No reason was given.</b>
+                    Turned down before a reason was required.
+                  </template>
                 </span>
               </span>
               <span :class="['pill', TONE[r.status] || '']">{{ r.status }}</span>
@@ -636,6 +667,17 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 </template>
 
 <style scoped>
+/* THE REFUSAL REASON. Tinted and set apart, because it is the one thing on a
+   refused row anybody can act on — and as a grey clause on the meta line it was
+   read as part of the timestamp. */
+.why {
+  display: block; margin-top: 7px; padding: 8px 10px;
+  border-radius: 9px; font-size: .9rem; line-height: 1.35;
+  background: color-mix(in srgb, var(--bad) 9%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--bad) 55%, transparent);
+  white-space: normal;
+}
+
 /* A COUNT-IN PUT TO THE SELLER. The numbers are the point of the panel, so they
    get the room: tiles in ticket order that a thumb can run down against the
    paper, rather than a sentence with a total in it. */
