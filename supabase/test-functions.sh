@@ -126,9 +126,17 @@ P "insert into config(key,value) values
    on conflict (key) do update set value = excluded.value;
    insert into agents(agent_id,name,phone) values
      ('A001','Pa Thang','0125551111'),('A002','Ma Nu','0125552222');
+   -- BOOK 1 SITS AT THE DESK. Every book here used to be Out, which was fine
+   -- while an organiser could sell from a seller's bag; now that only the
+   -- holder can, the cases below about batch mechanics — a clean batch, a bad
+   -- row rejecting the rest, every reason collected — had no sellable book to
+   -- use and failed for a reason that has nothing to do with what they test.
+   -- One book on the desk is what those cases always meant.
    insert into books(idx,number,first_ticket,last_ticket,status,held_by_agent)
      select g,'Book-'||lpad(g::text,4,'0'),'KS-'||lpad(((g-1)*10+1)::text,5,'0'),
-            'KS-'||lpad((g*10)::text,5,'0'),'Out', case when g<=3 then 'A001' else 'A002' end
+            'KS-'||lpad((g*10)::text,5,'0'),
+            case when g = 1 then 'Unassigned' else 'Out' end,
+            case when g = 1 then null when g<=3 then 'A001' else 'A002' end
      from generate_series(1,5) g;
    insert into tickets(idx,number,book_idx,status)
      select i,'KS-'||lpad(i::text,5,'0'),ceil(i/10.0),'Available' from generate_series(1,50) i;" >/dev/null
@@ -191,12 +199,20 @@ r=$(P "select sell_books('Book-0005',null,null,'X','0125550100','',false,'help@x
 has "$r" "BOOK_WITH_SELLER" "a helper cannot sell a whole book out of a seller's bag"
 ok "$(P "select count(*) from tickets where book_idx=5 and status='Sold'")" "0" "and not one ticket was written"
 
-# An organiser may, because that is transcribing what the seller reported —
-# and the sale is credited to the HOLDER, which is what keeps it honest: the
-# money lands on their balance where settlement checks it against their stubs.
+# AND NEITHER CAN AN ORGANISER, which is the change. This used to be allowed on
+# the reasoning that an organiser is transcribing what the seller telephoned in,
+# with the credit going to the holder to keep it honest. The raffle's owner
+# ruled otherwise: whoever is holding the paper is the only person who can sell
+# from it, and the way to sell a book that is out with somebody is to have it
+# brought back first. One sentence with no roles in it, which is a rule you can
+# settle an argument with at a desk.
 r=$(P "select sell_books('Book-0005',null,null,'Ma Hlaing','0125550100','',false,'admin@x.com','admin',null)")
-has "$r" '"sold": 10' "an organiser writing down the seller's report is fine"
-ok "$(P "select distinct sold_by_agent from tickets where book_idx=5")" "A002" "credited to whoever holds the book"
+has "$r" "BOOK_WITH_SELLER" "and neither can an organiser — the stubs decide, not the role"
+ok "$(P "select count(*) from tickets where book_idx=5 and status='Sold'")" "0" "still not one ticket written"
+# THE HOLDER THEMSELVES, though, always could and still can.
+r=$(P "select sell_books('Book-0005',null,null,'Ma Hlaing','0125550100','',false,'a2@x.com','agent','A002')")
+has "$r" '"sold": 10' "the seller holding it sells it as they always could"
+ok "$(P "select distinct sold_by_agent from tickets where book_idx=5")" "A002" "credited to them"
 
 echo "and a batch of stubs obeys the same rule"
 P "update books set status='Out', held_by_agent='A002' where idx=5;
@@ -206,8 +222,12 @@ has "$r" "BOOK_WITH_SELLER" "a helper's batch into a seller's book is refused"
 ok "$(P "select status from tickets where number='KS-00041'")" "Available" "and nothing was written"
 
 r=$(P "select bulk_record_sales('[{\"ticketNumber\":\"KS-00041\",\"buyerName\":\"A\",\"buyerPhone\":\"0125550100\",\"agentId\":\"A001\"}]'::jsonb,'admin@x.com','admin',null,false)")
-has "$r" '"recorded": 1' "an organiser transcribing it is fine"
-ok "$(P "select sold_by_agent from tickets where number='KS-00041'")" "A002" "and the named agent cannot take the credit from the holder"
+has "$r" "BOOK_WITH_SELLER" "an organiser's batch into a seller's book is refused too"
+ok "$(P "select status from tickets where number='KS-00041'")" "Available" "and nothing was written"
+# The holder, again, is unaffected.
+r=$(P "select bulk_record_sales('[{\"ticketNumber\":\"KS-00041\",\"buyerName\":\"A\",\"buyerPhone\":\"0125550100\"}]'::jsonb,'a2@x.com','agent','A002',false)")
+has "$r" '"recorded": 1' "the seller holding it records their own sale"
+ok "$(P "select sold_by_agent from tickets where number='KS-00041'")" "A002" "credited to them"
 
 echo "a book handed back is paper on the desk again"
 # The row people trip on. Returned means the book is physically here but not
@@ -749,11 +769,13 @@ ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent='A001'"
 ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent is null")" "10" "it is the desk's, and the organiser is on recorded_by"
 ok "$(P "select count(*) from tickets where book_idx=9 and recorded_by='me@x.com'")" "10" "which is where the organiser's name actually lives"
 ok "$(P "select count(*) from tickets where book_idx=9 and sold_by_agent='A002'")" "0" "and the seller who brought the book in still is not"
-# The other half of the same rule, unchanged: a book genuinely out with somebody
-# is theirs, and the money lands on their balance where settlement checks it
-# against the stubs they hand back.
-r=$(P "select sell_books('Book-0008',null,null,'Another Buyer','0125558888','',false,'me@x.com','admin',null)")
-ok "$(P "select count(*) from tickets where book_idx=8 and status='Sold' and sold_by_agent='A002'")" "10" "a book out with a seller is still credited to them"
+# The other half of the same rule: a book genuinely out with somebody is theirs,
+# and the money lands on their balance where settlement checks it against the
+# stubs they hand back. Sold BY that seller now, because an organiser can no
+# longer sell out of a book sitting in somebody's bag — which is the point of
+# the gate and does not change where the credit goes when the holder sells.
+r=$(P "select sell_books('Book-0008',null,null,'Another Buyer','0125558888','',false,'a2@x.com','agent','A002')")
+ok "$(P "select count(*) from tickets where book_idx=8 and status='Sold' and sold_by_agent='A002'")" "10" "a book out with a seller is credited to them when they sell it"
 
 echo "and neither can the record of who did it"
 # audit_log is where an override is written down. Whoever made the override is
@@ -941,8 +963,13 @@ ok "$(P "select count(*) from book_history where request_id='req-77'")" "1" "and
 echo "money taken at the desk is counted, paid or not"
 P "update config set value='' where key='ACTIVE_TICKETS';
    update books set status='Unassigned', held_by_agent=null, declared_sold=null, amount_due=null, amount_paid=null where idx=1;
-   update tickets set status='Available', buyer_name=null, buyer_phone=null, amount=null,
-     payment_status=null, sold_at=null, sold_by_agent=null where book_idx=1" >/dev/null
+   -- '' not null: buyer_name, buyer_phone and payment_status are NOT NULL, so
+   -- this statement has always errored and rolled the whole reset back. It never
+   -- showed, because book 1 had no sales at this point until it moved to the
+   -- desk — then two survived the reset, landed in the baseline, and the delta
+   -- came out 8 instead of 10.
+   update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,
+     payment_status='', sold_at=null, sold_by_agent=null where book_idx=1" >/dev/null
 before=$(P "select (desk_money()->>'sold')||'/'||(desk_money()->>'expected')||'/'||(desk_money()->>'collected')")
 P "update tickets set status='Sold', buyer_name='Desk '||idx, buyer_phone='0125550'||lpad(idx::text,3,'0'), amount=10,
      payment_status='Paid', sold_at=now(), source='app', sold_by_agent=null where book_idx=1;

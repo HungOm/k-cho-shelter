@@ -113,7 +113,10 @@ begin
     end if;
 
     select tk.idx, tk.status, tk.version, b.number as book_number,
-           b.status as book_status, b.held_by_agent
+           -- offered_to_agent comes along because the custody check below reads
+           -- it: an Offered book belongs to the seller it is waiting on, and
+           -- without this the check compares against a column that is not here.
+           b.status as book_status, b.held_by_agent, b.offered_to_agent
       into t
       from tickets tk join books b on b.idx = tk.book_idx
      where tk.number = num;
@@ -154,19 +157,38 @@ begin
       continue;
     end if;
 
-    -- You can only sell paper you can hand to the buyer. A book that is Out is
-    -- in a seller's bag; its stubs are not on this desk. The holder may record
-    -- against it, and an organiser may — that is transcribing what the seller
-    -- reported, which is most of what this screen is for. A helper cannot: ask
-    -- for the book to be marked returned, and then it is paper like any other.
-    -- The credit below is what keeps the organiser's path honest.
-    if t.book_status = 'Out'
-       and (p_agent_id is null or t.held_by_agent is distinct from p_agent_id)
-       and (p_role <> 'admin' or t.held_by_agent is null) then
+    /*
+     * YOU CAN ONLY SELL PAPER YOU CAN HAND TO THE BUYER, and that is now the
+     * whole of the rule rather than most of it.
+     *
+     * TWO THINGS CHANGED HERE, both asked for by the raffle's owner.
+     *
+     * OFFERED COUNTS. The condition asked about 'Out' alone, so a book reserved
+     * for a seller who had not even accepted it yet could be sold from the desk.
+     * Book-003 sat at Offered with nothing sold and "Sell it whole" live on it.
+     * An offer is a book somebody is about to be handed; it is not stock.
+     *
+     * AND THE ORGANISER'S EXEMPTION IS GONE. `p_role <> 'admin'` let an
+     * organiser write a sale into a book sitting in a seller's bag, on the
+     * reasoning that they were transcribing what the seller had telephoned in.
+     * The owner's rule is that the stubs decide: whoever is holding the paper is
+     * the only person who can sell from it, and the way to sell a book that is
+     * out with somebody is to get it back first. One sentence, no roles in it,
+     * nothing to argue about at a desk.
+     *
+     * The holder is the seller it is Out with, or — for an Offered book — the
+     * seller it is waiting on, who may sell from it the moment they accept.
+     */
+    if t.book_status in ('Out', 'Offered')
+       and (p_agent_id is null
+            or coalesce(t.held_by_agent, t.offered_to_agent) is distinct from p_agent_id) then
       failures := failures || jsonb_build_object('ticketNumber', num,
         'code', 'BOOK_WITH_SELLER',
         'message', 'Book ' || coalesce(t.book_number, '?') ||
-                   ' is out with a seller. Ask an organiser to mark it returned first.');
+                   case when t.book_status = 'Offered'
+                        then ' is being offered to a seller, so it is not here to sell.'
+                        else ' is out with a seller, so it is not here to sell.' end ||
+                   ' Have it brought back first.');
       continue;
     end if;
   end loop;
@@ -321,17 +343,19 @@ begin
       return jsonb_build_object('error', jsonb_build_object(
         'code', 'NOT_YOUR_BOOK', 'message', 'Book ' || b.number || ' is not issued to you.'));
     end if;
-    -- Same rule as a single ticket, and it matters more here: this hands a
-    -- whole book to one buyer. Until today the only check was that the book
-    -- existed, so a book could be sold entire while it sat in a seller's bag.
-    -- The sold_by_agent below already credits the holder.
-    if b.status = 'Out'
-       and (p_agent_id is null or b.held_by_agent is distinct from p_agent_id)
-       and (p_role <> 'admin' or b.held_by_agent is null) then
+    -- The same rule as a single ticket, word for word in intent: Offered counts,
+    -- and there is no organiser exemption. It matters more here, because this
+    -- hands a whole book to one buyer.
+    if b.status in ('Out', 'Offered')
+       and (p_agent_id is null
+            or coalesce(b.held_by_agent, b.offered_to_agent) is distinct from p_agent_id) then
       return jsonb_build_object('error', jsonb_build_object(
         'code', 'BOOK_WITH_SELLER',
-        'message', 'Book ' || b.number || ' is out with a seller, so it is not here to sell. ' ||
-                   'If it is back, ask an organiser to mark it returned first.'));
+        'message', 'Book ' || b.number ||
+                   case when b.status = 'Offered'
+                        then ' is being offered to a seller, so it is not here to sell.'
+                        else ' is out with a seller, so it is not here to sell.' end ||
+                   ' Have it brought back first.'));
     end if;
 
     /*

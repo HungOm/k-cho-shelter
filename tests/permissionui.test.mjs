@@ -54,7 +54,15 @@ console.log('the rule exists once and is asked from both places')
   // seller nothing they could act on; both ids do.
   ok(/A1/.test(bookBlock(asOther)(out) || '') && /A2/.test(bookBlock(asOther)(out) || ''),
      `a different seller is told whose it is and who they are (${bookBlock(asOther)(out)})`)
-  ok(bookBlock(asOrganiser)(out) === null, 'an organiser transcribing a report is not blocked')
+  /*
+   * AN ORGANISER IS BLOCKED TOO NOW, and that is the change rather than a
+   * regression. This asserted the exemption: the desk could write a sale into a
+   * book sitting in a seller's bag, called transcribing what they reported.
+   * The raffle's owner ruled that the stubs decide — whoever holds the paper is
+   * the only one who can sell from it, and a book that is out comes back first.
+   */
+  ok(/brought back/.test(bookBlock(asOrganiser)(out) || ''),
+     `an organiser is blocked too, and told the way round it (${bookBlock(asOrganiser)(out)})`)
   ok(bookBlock(asHelper)({ status: 'Unassigned' }) === null, 'a book in the office is free')
   ok(/settled/.test(bookBlock(asHelper)({ status: 'Settled' }) || ''), 'a closed book says so')
   ok(bookBlock(asHelper)(null) === null, 'an unknown book blocks nothing')

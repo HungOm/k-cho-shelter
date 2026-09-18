@@ -250,10 +250,18 @@ export function bookBlock(b) {
    */
   if (!b) return state.user?.role === 'agent' ? 'not one of your books' : null
   if (['Settled', 'Lost', 'Void'].includes(b.status)) return `book is ${b.status.toLowerCase()}`
-  if (b.status !== 'Out') return null
+  /*
+   * OFFERED COUNTS AS WITH A SELLER. A book reserved for somebody who has not
+   * accepted it yet is not stock: Book-003 sat at Offered with nothing sold and
+   * "Sell it whole" live on it. It is about to be handed over, and the person it
+   * is waiting on may sell from it the moment they take it.
+   */
+  if (b.status !== 'Out' && b.status !== 'Offered') return null
 
   const me = state.user || {}
-  if (me.agentId && b.agentId === me.agentId) return null       // it is in their hands
+  // The holder, or — while it is only an offer — the seller it is waiting on.
+  const heldBy = b.agentId || b.offeredTo || ''
+  if (me.agentId && heldBy === me.agentId) return null          // it is in their hands
   /*
    * NAMES BOTH SIDES, because "not your book" is unanswerable.
    *
@@ -265,10 +273,21 @@ export function bookBlock(b) {
    */
   if (me.role === 'agent') {
     if (!me.agentId) return 'your account is not linked to a seller'
-    return `with seller ${b.agentId || 'nobody'}, you are ${me.agentId}`
+    return `with seller ${heldBy || 'nobody'}, you are ${me.agentId}`
   }
-  if (me.role === 'admin' && b.agentId) return null             // transcribing a report
-  return `with ${b.agentName || 'a seller'}`
+  /*
+   * AND AN ORGANISER IS NOT AN EXCEPTION ANY MORE.
+   *
+   * This returned null for an organiser — "transcribing a report" — so the desk
+   * could write a sale into a book sitting in a seller's bag. The raffle's owner
+   * ruled that the stubs decide: whoever is holding the paper is the only person
+   * who can sell from it, and the way to sell a book that is out with somebody
+   * is to have it brought back first. The server refuses it now, so returning
+   * null here would only offer a button that fails after the press.
+   */
+  return b.status === 'Offered'
+    ? `being offered to ${b.agentName || heldBy || 'a seller'} — have it brought back first`
+    : `with ${b.agentName || 'a seller'} — have it brought back first`
 }
 
 /**

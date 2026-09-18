@@ -130,7 +130,10 @@ console.log('the screen says the same thing the backend will')
   ok(/lost/.test(sellBlock(lost) || ''), 'but is blocked on a lost book')
 
   state.user = { role: 'admin', agentId: null }
-  eq(sellBlock(inBag), null, 'an organiser may write down what the seller reported')
+  // The exemption is gone: only whoever is holding the paper can sell from it,
+  // and the way to sell a book that is out is to have it brought back.
+  ok(/brought back/.test(sellBlock(inBag) || ''),
+     'an organiser is blocked on a book in a seller\'s bag, and told what to do')
   ok(/lost/.test(sellBlock(lost) || ''), 'but a lost book is closed to them too')
 
   state.user = { role: 'agent', agentId: 'A001' }
