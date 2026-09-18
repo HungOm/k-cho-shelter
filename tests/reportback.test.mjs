@@ -67,9 +67,23 @@ const world = () => fakeDb({
     { email: 'seller@x.com', name: 'Daw Hla', role: 'agent', active: true, agent_id: 'A001' },
     { email: 'other@x.com', name: 'U Kyaw', role: 'agent', active: true, agent_id: 'A002' },
   ],
+  /*
+   * ONE OF EACH KIND OF SELLER, and the third one is the common kind.
+   *
+   * A001 and A002 have accounts. Pu Lian does not, and never will: `agents`
+   * holds a name, a telephone number and a zone, and an app_users row is an
+   * optional link that nobody makes for the volunteer carrying one book round
+   * their church. Most sellers in this raffle are that.
+   *
+   * A fixture made entirely of sellers who can sign in agrees with itself
+   * indefinitely while describing a raffle that does not exist — every case
+   * passes, and the reporting workflow is never once exercised the way most of
+   * it actually happens: the organiser doing it with the seller standing there.
+   */
   agents: [
     { agent_id: 'A001', name: 'Daw Hla', phone: '0125551111', zone: 'KL', active: true },
     { agent_id: 'A002', name: 'U Kyaw', phone: '0125552222', zone: 'KL', active: true },
+    { agent_id: 'A003', name: 'Pu Lian', phone: '0125553333', zone: 'KL', active: true },
   ],
   books: [
     book(1, { status: 'Out', held_by_agent: 'A001', due_at: '2026-10-01' }),
@@ -662,6 +676,65 @@ console.log('12. money beyond the books it pays for is a hand-over, and only tha
   eq(Number(onBook.amount), 20, 'the book gets what it comes to and no more')
   eq(Number(loose.amount), 30, 'and the remainder is a hand-over against her')
   eq(decided.body.data.result.overPaid, 30, 'which the result names rather than leaving to be derived')
+}
+
+console.log('13. the seller who cannot sign in reports through the organiser')
+{
+  /*
+   * THE KIND OF SELLER THIS RAFFLE IS MOSTLY MADE OF, and the one no test here
+   * had ever described. Pu Lian has no account. She cannot open the report
+   * screen, cannot press Send, and will never appear in the approvals queue —
+   * so every path proven above is a path she does not take.
+   *
+   * Hers is the organiser doing it with her standing at the table, which is
+   * `report_back` called directly rather than asked for: an organiser does not
+   * queue a request to themselves. The whole of the workflow has to work down
+   * that road too, and none of it was ever run down it.
+   */
+  const w = world()
+  Object.assign(w.db.tables.books.find((b) => b.idx === 3),
+                { status: 'Out', held_by_agent: 'A003', due_at: '2026-10-01' })
+  Object.assign(w.db.tables.book_ledger_all.find((b) => b.idx === 3),
+                { status: 'Out', held_by_agent: 'A003', agent_name: 'Pu Lian' })
+  for (const i of [21, 22, 23]) {
+    Object.assign(w.db.tables.tickets.find((t) => t.idx === i),
+      { status: 'Sold', buyer_name: 'Ma Aye', buyer_phone: '0125550200',
+        sold_by_agent: 'A003', amount: 10, payment_status: 'Paid' })
+  }
+
+  // The organiser opens her report. She has no account, so there is no "own"
+  // to fall back on and the id has to carry the whole answer.
+  const drafted = await call('report_draft', { agentId: 'A003' }, 'org@x.com', w)
+  ok(drafted.body.ok, `the draft builds for a seller with no account (${drafted.body.error?.code ?? ''})`)
+  eq(drafted.body.data.agentName, 'Pu Lian', 'and it is hers')
+  eq(drafted.body.data.owed, 30, 'three sold, thirty owed')
+  eq(drafted.body.data.books[0].suggest, 'keep',
+     'with seven tickets left, so she carries on selling — the same rule as anybody')
+
+  // And she hands over the thirty while keeping the book.
+  const done = await call('report_back', {
+    agentId: 'A003', books: [{ book: 'Book-003', action: 'keep' }], amountHanded: 30,
+  }, 'org@x.com', w)
+  ok(done.body.ok, `the organiser records it (${done.body.error?.code ?? ''} ${done.body.error?.message ?? ''})`)
+
+  const book = w.row('books', (b) => b.number === 'Book-003')
+  eq(book.status, 'Out', 'the book does not move')
+  eq(book.held_by_agent, 'A003', 'and stays with her, which is the point of keeping it')
+
+  const paid = w.table('payments')
+  eq(paid.length, 1, 'one payment')
+  eq(paid[0].source, 'hand', 'recorded as money handed over')
+  eq(paid[0].book_idx, null,
+     'against no book — it is interim money, and a book_idx would close a book that is still out')
+
+  ok(!!w.row('check_in_reports', (r) => r.agent_id === 'A003'),
+     'and she has answered the round, so the chase list leaves her alone')
+
+  const after = await call('report_draft', { agentId: 'A003' }, 'org@x.com', w)
+  eq(after.body.data.owed, 0, 'she owes nothing now')
+  eq(after.body.data.handedIn, 30,
+     'and the thirty is named as money against no book, which is what the count-in screen reads')
+  eq(after.body.data.books.length, 1, 'with the book still in her hands')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
