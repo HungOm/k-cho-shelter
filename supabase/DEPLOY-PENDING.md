@@ -23,7 +23,22 @@ database and treat the rest of this file as a starting point.
 | production migration head | `20260919500000` | `select max(version) from supabase_migrations.schema_migrations` |
 | migrations unapplied | **0** | `git ls-tree -r --name-only HEAD supabase/migrations/` against the above |
 | Edge Function | deployed from `75e84a2` | `supabase functions list` — compare `updated_at` against the commit time |
-| client on Pages | `75e84a2` | grep the served bundle for a string literal only that commit has |
+| client on Pages | built from `64483d4` | grep the served bundle for a string literal only that commit has |
+
+**THE TWO SHAS DIFFER AND THE TWO HALVES DO NOT.** `64483d4` changes this file
+and nothing else — `git diff --stat 75e84a2 64483d4 -- src/` is empty, so the
+rebuilt bundle is the same application. A sha comparison would call that a
+mismatch and send somebody looking for a drift that does not exist.
+
+So when the two halves disagree on paper, ask what actually differs:
+
+    git diff --name-only <function sha> <client sha> -- src/ supabase/functions/
+
+Empty means they are in step however far apart the shas are. Not empty is the
+only case worth acting on, and then it matters WHICH side moved: a client ahead
+of its function sends fields the server ignores and expects fields it does not
+send; a function ahead of its client enforces rules no screen can answer. The
+second is the one that was live for eighteen hours.
 | Postgres | **17.6** | `show server_version` |
 
 Last revised 2026-09-18, with the hold lifted for this deploy by the change's
