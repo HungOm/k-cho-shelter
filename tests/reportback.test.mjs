@@ -125,11 +125,106 @@ console.log('1. the report is ready when the seller opens it, not a blank form')
   const two = d.books.find((b) => b.book === 'Book-002')
   eq(one.recordedSold, 2, 'what is already written down in the part-sold one')
   eq(one.unsoldNumbers.length, 8, 'and the stubs that leaves')
-  eq(one.suggest, 'count', 'a book with sales in it is one to count in')
-  eq(two.suggest, 'return', 'and an untouched one is simply coming back')
+  /*
+   * WHAT THE SCREEN OPENS ON, and it changed the day "keep it" arrived.
+   *
+   * Both of these books have tickets left in them, so the honest suggestion
+   * for both is that the seller carries on selling. It used to be "count this
+   * one in, bring that one back" — the two ENDINGS — which at a mid-raffle
+   * checkpoint asks somebody holding eight live tickets to either close the
+   * book on them or hand them back. One live book froze exactly that way.
+   */
+  eq(one.suggest, 'keep', 'a book with tickets left in it is one to carry on selling')
+  eq(two.suggest, 'keep', 'and so is one that was never opened')
+  eq(d.stillSelling, true, 'because the raffle has not closed')
   eq(d.expected, 20, 'the money those sales come to')
   eq(d.owed, 20, 'none of it handed over yet')
+  eq(d.booksExpected, 20, 'which is also what the books in her hands come to')
+  eq(d.handedIn, 0, 'and nothing has been handed over against no book')
   eq(d.round, 1, 'the round it answers')
+}
+
+console.log('1b. a book with nothing left in it is one to count in')
+{
+  /*
+   * The other half of the rule. There is no selling to carry on with, so the
+   * suggestion is the ending — count the stubs while the seller is standing
+   * there, rather than send them away with a book that is finished.
+   */
+  const w = world()
+  for (let i = 1; i <= 10; i++) {
+    Object.assign(w.db.tables.tickets.find((t) => t.idx === i),
+                  { status: 'Sold', buyer_name: 'Ko Zaw', buyer_phone: '0125550100',
+                    sold_by_agent: 'A001', amount: 10, payment_status: 'Paid' })
+  }
+  const { body } = await call('report_draft', {}, 'seller@x.com', w)
+  const one = body.data.books.find((b) => b.book === 'Book-001')
+  eq(one.suggest, 'count', 'sold out, so it is finished with')
+  eq(one.unsoldNumbers.length, 0, 'and there is nothing to bring back from it')
+}
+
+console.log('1c. once selling has closed, keeping a book is not on offer')
+{
+  /*
+   * A suggestion to carry on selling after the sales date has passed is the
+   * screen telling a volunteer to do something the server refuses. Past either
+   * date the two endings come back: what has sales in it is counted in, and
+   * what does not comes back.
+   */
+  const w = withSales()
+  w.db.tables.config.push({ key: 'SALES_CLOSE_DATE', value: '2020-01-01' })
+  const { body } = await call('report_draft', {}, 'seller@x.com', w)
+  eq(body.data.stillSelling, false, 'the screen is told selling is over')
+  eq(body.data.books.find((b) => b.book === 'Book-001').suggest, 'count',
+     'the part-sold one is counted in')
+  eq(body.data.books.find((b) => b.book === 'Book-002').suggest, 'return',
+     'and the untouched one comes back')
+}
+
+console.log('1d. what she owes is the raffle\'s own figure, not this screen\'s')
+{
+  /*
+   * WHY THIS IS READ RATHER THAN RECOMPUTED.
+   *
+   * The screen used to work it out as "sold tickets in the books still in her
+   * hands, less every payment row with her name on it". Both halves go wrong
+   * the moment a book has been finished: the takings of a closed book are not
+   * in the first, and settle_book's own evidence row IS in the second — so
+   * finishing one book for RM100 while holding another with RM60 written down
+   * showed the seller RM40 IN CREDIT on the one screen that tells her what to
+   * bring. agent_money has always had it right; now this asks it.
+   */
+  const w = withSales()
+  // A book she finished last week: closed at RM100, paid in full.
+  Object.assign(w.db.tables.books.find((b) => b.idx === 3),
+                { status: 'Settled', held_by_agent: 'A001', settled_by_agent: 'A001',
+                  declared_sold: 10, amount_due: 100, amount_paid: 100 })
+  Object.assign(w.db.tables.book_ledger_all.find((b) => b.idx === 3),
+                { status: 'Settled', held_by_agent: 'A001', agent_name: 'Daw Hla',
+                  counted_sold: 10, counted_expected: 100, counted_collected: 100 })
+  // settle_book's own evidence row, which is not a hand-over and never was.
+  w.db.tables.payments.push(
+    { agent_id: 'A001', amount: 100, source: 'settle', book_idx: 3, method: 'cash' })
+
+  const { body } = await call('report_draft', {}, 'seller@x.com', w)
+  eq(body.data.owed, 20, 'she owes the RM20 in the book she is still holding')
+  eq(body.data.handedIn, 0, 'a settlement row is not money handed in against no book')
+}
+
+console.log('1e. interim money comes off what she owes, and is named')
+{
+  /*
+   * The case the whole workflow exists for: she has sold two, handed the RM20
+   * over, and is still carrying both books. She owes nothing and is holding
+   * everything, and both halves have to be sayable at once.
+   */
+  const w = withSales()
+  w.db.tables.payments.push(
+    { agent_id: 'A001', amount: 20, source: 'hand', book_idx: null, method: 'cash' })
+  const { body } = await call('report_draft', {}, 'seller@x.com', w)
+  eq(body.data.owed, 0, 'paid up')
+  eq(body.data.handedIn, 20, 'and the screen can say where that came from')
+  eq(body.data.books.length, 2, 'with both books still in her hands')
 }
 
 console.log('2. and it is nobody else\'s to read')
@@ -343,6 +438,77 @@ console.log('7. an empty report is not a report')
   }, 'seller@x.com', w)
   ok(!body.ok, 'refused')
   eq(body.error.code, 'NOTHING_TO_DO', 'with the reason said plainly')
+}
+
+console.log('7b. but "still selling, nothing yet" IS a report')
+{
+  /*
+   * THE ANSWER THE QUEUE USED TO REFUSE.
+   *
+   * A seller who has sold nothing since the last checkpoint has no book coming
+   * back and no money to hand over. The only truthful thing they can say is
+   * "both books are still with me, I am still selling" — and that was rejected
+   * as empty, so they sent nothing at all and the round recorded them as
+   * silent. Being chased for a checkpoint you turned up to is how a volunteer
+   * stops answering checkpoints.
+   *
+   * It is not empty. It is a dated statement of which books are in whose
+   * hands, and accepting it marks the round answered without moving anything.
+   */
+  const w = world()
+  const { body } = await call('request_approval', {
+    action: 'report_back',
+    payload: { books: [{ book: 'Book-001', action: 'keep' },
+                       { book: 'Book-002', action: 'keep' }], amountHanded: 0 },
+  }, 'seller@x.com', w)
+  ok(body.ok, `accepted (${body.error?.code ?? ''} ${body.error?.message ?? ''})`)
+  ok(/staying with them/.test(body.data.summary),
+     `the organiser is told what it says: "${body.data.summary}"`)
+  const row = w.row('pending_approvals', (r) => r.action === 'report_back')
+  eq(row.detail.lines.length, 0, 'and nothing is listed for them to DO')
+  eq(row.detail.keeping.length, 2, 'though both books are named as staying put')
+}
+
+console.log('7c. accepting it moves nothing and marks the round answered')
+{
+  const w = world()
+  const asked = await call('request_approval', {
+    action: 'report_back',
+    payload: { books: [{ book: 'Book-001', action: 'keep' }], amountHanded: 0 },
+  }, 'seller@x.com', w)
+  const decided = await call('decide_book_request',
+    { requestId: asked.body.data.requestId, approve: true }, 'org@x.com', w)
+  ok(decided.body.ok,
+     `accepted (${decided.body.error?.code ?? ''} ${decided.body.error?.message ?? ''})`)
+
+  const one = w.row('books', (b) => b.number === 'Book-001')
+  eq(one.status, 'Out', 'the book has not moved')
+  eq(one.held_by_agent, 'A001', 'and it is still hers')
+  eq(w.table('payments').length, 0, 'no money was invented')
+  ok(!!w.row('check_in_reports', (r) => r.agent_id === 'A001'),
+     'and she has answered the round, which is the whole point')
+}
+
+console.log('7d. a book that is no longer hers cannot be reported as kept')
+{
+  /*
+   * A kept book asks nothing of the organiser, which is not the same as being
+   * unchecked. The report SAYS it is in her hands; if it is not, the report is
+   * wrong and the whole of it is refused rather than half-applied.
+   */
+  const w = world()
+  const asked = await call('request_approval', {
+    action: 'report_back',
+    payload: { books: [{ book: 'Book-001', action: 'keep' }], amountHanded: 0 },
+  }, 'seller@x.com', w)
+  Object.assign(w.db.tables.books.find((b) => b.number === 'Book-001'),
+                { held_by_agent: 'A002' })
+  const decided = await call('decide_book_request',
+    { requestId: asked.body.data.requestId, approve: true }, 'org@x.com', w)
+  const code = decided.body.error?.code ?? decided.body.data?.error?.code
+  eq(code, 'REPORT_STALE', 'it is refused, because the paper is not where it says')
+  eq(w.row('books', (b) => b.number === 'Book-001').held_by_agent, 'A002',
+     'and nothing was changed on the way to finding out')
 }
 
 console.log('8. and there is a way in — including for the seller who cannot use it')

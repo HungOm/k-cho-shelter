@@ -80,6 +80,27 @@ onMounted(async () => {
   }
 })
 
+/**
+ * THE THREE THINGS THAT CAN HAPPEN TO A BOOK, and STILL SELLING comes first.
+ *
+ * Order is the argument. These were listed count-in, bring-back, keep — the two
+ * endings before the one thing most sellers are actually doing at a mid-raffle
+ * checkpoint — and `suggest` never chose the third, so a seller with four live
+ * tickets left opened this screen with "Counting it in" already lit. The likely
+ * act should be the first one read and the one already chosen; a seller who has
+ * finished a book has to say so on purpose, which is the right way round for
+ * the choice that closes a book for good.
+ *
+ * ONCE SELLING HAS CLOSED there is nothing left to keep a book for, and the
+ * option is not offered — the server would refuse a sale out of it anyway, and
+ * an option that leads to a refusal is worse than no option.
+ */
+const picks = computed(() => [
+  ...(draft.value?.stillSelling === false ? [] : [{ v: 'keep', t: 'Still selling it' }]),
+  { v: 'count', t: 'Counting it in' },
+  { v: 'return', t: 'Bringing it back' },
+])
+
 const lines = computed(() => draft.value?.books ?? [])
 const returning = computed(() => lines.value.filter(b => choice.value[b.book] === 'return'))
 const counting = computed(() => lines.value.filter(b => choice.value[b.book] === 'count'))
@@ -111,12 +132,51 @@ const ticketNo = (n) => String(n ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, 
 function allBack(b) { unsold.value[b.book] = new Set(b.unsoldNumbers) }
 function noneBack(b) { unsold.value[b.book] = new Set() }
 
-const dueNow = computed(() => soldFromCounted.value * (draft.value?.ticketPrice || 0))
+const price = computed(() => draft.value?.ticketPrice || 0)
 const handedNum = computed(() => parseFloat(handed.value) || 0)
-const short = computed(() => Math.round((dueNow.value - handedNum.value) * 100) / 100)
 
+/**
+ * SALES THIS REPORT ADDS, which are the only ones that change what is owed.
+ *
+ * Counting a book in charges every ticket in it that did not come back. Most
+ * of those are already written down and already in what the seller owes; the
+ * rest are tickets the count is declaring sold for the first time, and each
+ * one adds its price. Nought in the ordinary case, where the seller sold as
+ * they went and the book agrees with the screen.
+ */
+const extraDue = computed(() => counting.value.reduce(
+  (n, b) => n + Math.max(0, (b.held - unsoldIn(b)) - b.recordedSold) * price.value, 0))
+
+/**
+ * ONE NUMBER, AND IT IS THE ONE EVERY OTHER SCREEN SHOWS.
+ *
+ * WHAT THIS SAID BEFORE was whether the cash covered the books being counted
+ * in — and nothing else. It is the wrong question in both directions. A seller
+ * counting nothing in and handing over sixty pounds was told "60.00 more than
+ * those books come to", as though paying what they owed were an overpayment. A
+ * seller counting in one book while owing for two was told they were square.
+ *
+ * The question a seller is actually asking at a checkpoint is "how much do I
+ * owe, and how much will I owe when I have handed this over", and it does not
+ * have a per-book answer. Books are where tickets go; this is money. So the
+ * balance is the raffle's own figure for this person, plus whatever this
+ * report is about to declare sold, less what they are putting on the table.
+ */
+const owedNow = computed(() =>
+  Math.round(((draft.value?.owed || 0) + extraDue.value) * 100) / 100)
+const afterThis = computed(() =>
+  Math.round((owedNow.value - handedNum.value) * 100) / 100)
+
+/**
+ * A REPORT WITH BOOKS IN IT IS NEVER EMPTY, even when nothing has sold.
+ *
+ * "I have sold nothing, I am still selling, here are the books I am holding"
+ * is a truthful answer to a checkpoint and used to be unsendable — so the
+ * seller sent nothing and the round recorded them as silent. The server takes
+ * it now; this is the half that would not let them press the button.
+ */
 const nothingToSend = computed(() =>
-  !returning.value.length && !counting.value.length && handedNum.value <= 0)
+  !lines.value.length && handedNum.value <= 0)
 
 
 async function send() {
@@ -147,7 +207,19 @@ async function send() {
         // In the book's own order, which is how they will be read back at the
         // table — not in the order somebody happened to tap them.
         unsold: b.unsoldNumbers.filter(n => isUnsold(b, n))
-      }))
+      })),
+      /*
+       * AND THE ONES STAYING PUT, which move nothing and are sent anyway.
+       *
+       * A kept book asks nothing of the organiser — the accepted report checks
+       * it is still that seller's and still out, and leaves it exactly where it
+       * is. It is sent because the report is a STATEMENT of what somebody is
+       * holding at a dated checkpoint, and a statement that lists only the
+       * books changing hands cannot be checked against the books in the hand.
+       * It is also what makes "I have sold nothing and I am still selling" a
+       * report that can be sent at all.
+       */
+      ...keeping.value.map(b => ({ book: b.book, action: 'keep' }))
     ]
 
     await api('request_approval', {
@@ -212,11 +284,7 @@ async function send() {
             </span>
           </div>
           <div class="picks">
-            <button v-for="opt in [
-                      { v: 'count', t: 'Counting it in' },
-                      { v: 'return', t: 'Bringing it back' },
-                      { v: 'keep', t: 'Keeping it' }]"
-                    :key="opt.v" type="button"
+            <button v-for="opt in picks" :key="opt.v" type="button"
                     :class="['pick', { on: choice[b.book] === opt.v }]"
                     @click="choice[b.book] = opt.v">{{ opt.t }}</button>
           </div>
@@ -269,18 +337,55 @@ async function send() {
         <input id="rbn" v-model="note" placeholder="e.g. two tickets lost at the market">
       </div>
 
-      <div :class="['note', short > 0.005 ? 'warn' : 'info']">
+      <!-- TWO BLOCKS, NEVER ONE. The paper and the cash are separate questions
+           and used to be answered in a single run-on sentence that mixed a
+           count of books, a count of tickets and two sums of money — the exact
+           place a volunteer stops reading. Books first, because that is what
+           they are holding; then the money, on its own, as a balance. -->
+      <div class="note info">
+        <b>{{ keeping.length }}</b> staying with you ·
         <b>{{ counting.length }}</b> to count in ·
-        <b>{{ returning.length }}</b> coming back ·
-        <b>{{ keeping.length }}</b> staying with you<br>
-        <b>{{ soldFromCounted }}</b> sold from the books you are counting in, which is
-        <b>{{ money(dueNow, currency) }}</b>
-        <template v-if="handedNum"> · handing over <b>{{ money(handedNum, currency) }}</b></template>
-        <div v-if="Math.abs(short) > 0.005" style="margin-top:4px">
-          <b v-if="short > 0">{{ money(short, currency) }} short — say why in the note, or change it</b>
-          <b v-else>{{ money(-short, currency) }} more than those books come to</b>
+        <b>{{ returning.length }}</b> coming back
+        <template v-if="counting.length">
+          <br><b>{{ soldFromCounted }}</b> sold from the
+          {{ counting.length === 1 ? 'book' : 'books' }} you are counting in
+        </template>
+      </div>
+
+      <div class="sums">
+        <div class="sum">
+          <span>You owe</span><b>{{ money(owedNow, currency) }}</b>
+        </div>
+        <!-- Only when this report is declaring sales nobody had written down.
+             In the ordinary case the book agrees with the screen and this line
+             would be a nought that invites somebody to wonder what it means. -->
+        <div v-if="extraDue > 0.005" class="sum sub">
+          <span>— including this report’s new sales</span>
+          <b>{{ money(extraDue, currency) }}</b>
+        </div>
+        <div class="sum">
+          <span>Handing over</span>
+          <b>{{ handedNum ? '−' : '' }}{{ money(handedNum, currency) }}</b>
+        </div>
+        <div :class="['sum', 'tot', { good: Math.abs(afterThis) <= 0.005, over: afterThis < -0.005 }]">
+          <span>After this you owe</span>
+          <b v-if="afterThis < -0.005">{{ money(-afterThis, currency) }} in credit</b>
+          <b v-else>{{ money(Math.max(0, afterThis), currency) }}</b>
         </div>
       </div>
+      <!-- STILL OWING IS NOT A MISTAKE ANY MORE, and saying so matters. Before
+           there was a way to keep a book, a balance left over meant somebody
+           had got something wrong. Now it is the ordinary state of a seller
+           halfway through a book, and a warning on it would train people to
+           close books they should be selling from. -->
+      <p v-if="afterThis > 0.005" class="hint">
+        <template v-if="keeping.length">
+          That is fine — you are still selling. It comes off as you hand it in.
+        </template>
+        <template v-else>
+          You will still owe this. Say why in the note if it is not coming.
+        </template>
+      </p>
     </template>
 
     <template #actions>
@@ -302,6 +407,27 @@ async function send() {
 }
 .pick:hover { border-color: var(--brand); }
 .pick.on { border-color: var(--brand); background: var(--brand-soft); }
+/* The balance, as a column of figures that line up — the shape somebody
+   expects money to be in, rather than a sentence with numbers in it. */
+.sums {
+  border: 1.5px solid var(--border); border-radius: var(--r-sm);
+  padding: 4px 14px; margin-top: 12px;
+}
+.sum {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding: 8px 0;
+}
+.sum b { font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+.sum.sub { padding-top: 0; }
+.sum.sub span, .sum.sub b { font-size: .84rem; color: var(--muted); font-weight: 600; }
+/* The line that answers the question, so it is the one that looks like an
+   answer: ruled off above and a size larger than what fed into it. */
+.sum.tot { border-top: 1.5px solid var(--border); }
+.sum.tot span { font-weight: 700; }
+.sum.tot b { font-size: 1.3rem; font-weight: 800; }
+.sum.tot.good b { color: var(--ok, var(--brand)); }
+.sum.tot.over b { color: var(--warn, var(--brand)); }
+
 .stubs { margin-top: 12px; }
 .stubs .spread { align-items: center; margin-bottom: 8px; }
 .stubs label { margin: 0; }

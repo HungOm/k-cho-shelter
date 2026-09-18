@@ -15,6 +15,7 @@
 import { ApiError, agentBooks, seesBuyer, shortPhone, type AppUser } from './gate.ts'
 import {
   checkInRound, configDate, defaultDueDate, noteReportFromSettle, recordCheckIn,
+  salesCloseDate, today,
 } from './deadlines.ts'
 // The seller's accepted report hands money over the same way every other
 // hand-over does. money.ts imports nothing from here, so this is a leaf edge and
@@ -1377,6 +1378,21 @@ export async function reportDraft(p: Record<string, unknown>, user: AppUser, ctx
   const round = await checkInRound(ctx)
   const checkIn = await configDate(ctx, 'CHECK_IN_DATE')
 
+  /*
+   * WHETHER THERE IS STILL SELLING TO DO, which is what decides whether
+   * "keep it" is a sensible thing to suggest. Either date closes it: past the
+   * final deadline every book is due back whatever its state, and past the
+   * sales close no ticket may be sold from a book at all — so in both cases a
+   * book with tickets left in it is a book to bring back, not to carry on with.
+   * Unset dates mean neither has happened, which is the ordinary case for a
+   * raffle still being set up.
+   */
+  const now = today()
+  const closeDate = await salesCloseDate(ctx)
+  const finalDate = await configDate(ctx, 'FINAL_DEADLINE')
+  const stillSelling =
+    !(closeDate && closeDate < now) && !(finalDate && finalDate < now)
+
   // Already answered this round? The draft still builds — a seller who comes
   // back with more is the case recordCheckIn is written to accept — but the
   // screen has to say so rather than let somebody report twice by accident.
@@ -1440,25 +1456,82 @@ export async function reportDraft(p: Record<string, unknown>, user: AppUser, ctx
       /*
        * WHAT THE SCREEN SHOULD SUGGEST, and it is only a suggestion.
        *
-       * A book with nothing written down in it is one the seller either never
-       * opened or sold from without recording — the first is a bring-back, and
-       * the second is why the seller gets to change it. A book with sales in it
-       * is one to count in, because the money on it has to be reconciled before
-       * anybody else can carry it.
+       * IT USED TO OFFER ONLY THE TWO ENDINGS: count the book in, or bring it
+       * back. A seller who had sold six of ten had no way to say the true
+       * thing — "I have sold six, here is the money, I am still selling the
+       * other four" — so they either closed a book with four live tickets in
+       * it or handed back four tickets they could have sold. One live book
+       * froze exactly that way and is what this option is for.
+       *
+       * So a book with tickets left in it suggests KEEPING, which is what the
+       * seller is actually going to do, and the money is handed over all the
+       * same — nothing about a hand-over needs a book to close. A book with
+       * nothing left to sell suggests counting in: there is no selling left to
+       * continue and the stubs should be reconciled while the seller is here.
+       *
+       * ONCE SELLING HAS CLOSED THERE IS NOTHING TO KEEP A BOOK FOR, so the
+       * suggestion goes back to the two endings — count in what has sales in
+       * it, bring back what does not. A suggestion that says "keep selling"
+       * after the sales date has passed is the screen telling a volunteer to
+       * do something the server will refuse.
        */
-      suggest: sold.length ? 'count' : 'return',
+      suggest: stillSelling && unsold.length
+        ? 'keep'
+        : (sold.length ? 'count' : 'return'),
       inReport: alreadyReported.has(String(b.number)),
     }
   })
 
-  const expected = books.reduce((n, b) => n + b.recordedSold * price, 0)
+  const booksExpected = books.reduce((n, b) => n + b.recordedSold * price, 0)
 
-  // What they have already handed over, so the money box does not ask for it
-  // twice. Reversals are negative rows and net themselves out.
-  const { data: paid } = await ctx.supabaseAdmin
-    .from('payments').select('amount').eq('agent_id', agentId)
-  const collected = (paid ?? []).reduce(
-    (n: number, r: { amount: number }) => n + Number(r.amount ?? 0), 0)
+  /*
+   * WHAT THEY OWE IS READ, NOT RECOMPUTED, and that is the whole point.
+   *
+   * This screen used to work its own figure out: the sold tickets in the books
+   * still in their hands, less every payment row with their name on it. Both
+   * halves are wrong the moment a seller has finished a book.
+   *
+   *   The books half counts only books that are still OUT, so the takings of a
+   *   book counted in last week are not in it.
+   *
+   *   The payments half sums EVERY row, and settle_book writes a payment row
+   *   of its own for the money counted in with a book — evidence a restock
+   *   reverses against, and deliberately not part of "handed in" anywhere
+   *   else. Summing it here subtracts a book's takings from a total that never
+   *   added them.
+   *
+   * A seller who had settled one book for RM100 and was holding another with
+   * RM60 written down in it was therefore shown RM40 IN CREDIT, on the one
+   * screen whose job is to tell them what to bring. agent_money has had the
+   * right arithmetic all along — open books through their tickets, closed
+   * books through their declared figure, hand-overs and write-offs through
+   * payments by source — and it is what the Money screen, the chase list and
+   * the outstanding report all read.
+   *
+   * So this reads the same row they do. One number, and no screen in the app
+   * can disagree with another about what one person owes.
+   */
+  const { data: money } = await ctx.supabaseAdmin
+    .from('agent_money')
+    .select('expected,collected,outstanding')
+    .eq('agent_id', agentId).maybeSingle()
+  const expected = Number((money as { expected?: number } | null)?.expected ?? booksExpected)
+  const collected = Number((money as { collected?: number } | null)?.collected ?? 0)
+  const owed = Math.round(
+    Number((money as { outstanding?: number } | null)?.outstanding ?? (expected - collected)) * 100) / 100
+
+  /*
+   * CASH THEY HAVE HANDED OVER THAT IS NOT AGAINST ANY BOOK — the interim
+   * money. Counted separately from `collected` because the two answer
+   * different questions: `collected` is everything the raffle has had off
+   * them, and this is the part that arrived without a book closing behind it.
+   * A count-in screen that does not say this is one where somebody types a
+   * book's full value over money already in the tin.
+   */
+  const { data: hand } = await ctx.supabaseAdmin
+    .from('payments').select('amount').eq('agent_id', agentId).eq('source', 'hand')
+  const handedIn = Math.round((hand ?? []).reduce(
+    (n: number, r: { amount: number }) => n + Number(r.amount ?? 0), 0) * 100) / 100
 
   return {
     agentId,
@@ -1478,8 +1551,16 @@ export async function reportDraft(p: Record<string, unknown>, user: AppUser, ctx
     ticketsHeld: books.reduce((n, b) => n + b.held, 0),
     expected,
     collected,
-    // What the figures say is outstanding, which is what the money box starts at.
-    owed: Math.round((expected - collected) * 100) / 100,
+    // What the figures say is outstanding, which is what the money box starts
+    // at — and the same number the Money screen shows for this person.
+    owed,
+    // The takings written down in the books they are holding right now, which
+    // is a different question from what they owe and used to be the only one
+    // this screen could answer.
+    booksExpected: Math.round(booksExpected * 100) / 100,
+    handedIn,
+    // Whether "keep it" is worth offering at all, so the screen can say why not.
+    stillSelling,
     alreadyReported: already
       ? { at: already.reported_at, booksBack: already.books_back, amountPaid: already.amount_paid }
       : null,

@@ -331,11 +331,31 @@ function reportPetition(
   const lines = (Array.isArray(payload.books) ? payload.books : []) as Array<Record<string, unknown>>
   const returning = lines.filter((l) => String(l.action) === 'return').map((l) => String(l.book))
   const counting = lines.filter((l) => String(l.action) === 'count').map((l) => String(l.book))
+  const keeping = lines.filter((l) => String(l.action) === 'keep').map((l) => String(l.book))
   const handed = Number(payload.amountHanded ?? 0) || 0
 
-  if (!returning.length && !counting.length && handed <= 0) {
+  /*
+   * "STILL SELLING, NOTHING YET" IS A REPORT, and refusing it broke the round.
+   *
+   * This asked for a book or some money and called anything else empty. A
+   * seller who has sold nothing since the last checkpoint has neither: their
+   * books are staying with them and there is no cash to hand over. The only
+   * thing they can truthfully say is the one thing the queue would not take —
+   * so they said nothing, the round recorded no answer, and the chase list had
+   * them down as silent for a checkpoint they had in fact turned up to.
+   *
+   * A report naming books they are keeping is therefore enough on its own. It
+   * is not empty: it is a seller confirming, at a dated checkpoint, which books
+   * are still in their hands. The accepted report checks each one is still
+   * theirs and still out, and the round is marked answered — which is the whole
+   * purpose of a checkpoint.
+   *
+   * WHAT IS STILL EMPTY is a report with no books of any kind and no money.
+   * There is nothing in that to accept and nothing it could confirm.
+   */
+  if (!returning.length && !counting.length && !keeping.length && handed <= 0) {
     throw new ApiError('NOTHING_TO_DO',
-      'There is nothing in this report — no books coming back and no money. ' +
+      'There is nothing in this report — no books and no money. ' +
       'Say what you are bringing before you send it.')
   }
 
@@ -347,6 +367,13 @@ function reportPetition(
     said.push(`${returning.length} ${returning.length === 1 ? 'book' : 'books'} coming back unsold`)
   }
   if (handed > 0) said.push(`${handed.toFixed(2)} handed over`)
+  // Last, and only ever as the tail of the sentence: what an organiser has to
+  // DO is the books coming to the table, and a book staying where it is asks
+  // nothing of them. Said all the same, because "keeping 3, handing over 60"
+  // is a different evening from "handing over 60".
+  if (keeping.length) {
+    said.push(`${keeping.length} ${keeping.length === 1 ? 'book' : 'books'} staying with them`)
+  }
 
   const all = [...counting, ...returning].sort()
 
@@ -370,7 +397,7 @@ function reportPetition(
       action: String(l.action ?? ''),
       unsold: Array.isArray(l.unsold) ? l.unsold.length : 0,
     })).filter((l) => l.book && l.action !== 'keep'),
-    counting, returning, handed,
+    counting, returning, keeping, handed,
     stubsReturned: Number(payload.stubsReturned ?? 0) || 0,
     unsoldReturned: Number(payload.unsoldReturned ?? 0) || 0,
     ticketsSold: Number(payload.ticketsSold ?? 0) || 0,

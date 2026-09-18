@@ -14,7 +14,7 @@
  * counting yesterday's returns that "the seller is holding the tickets" sends
  * them looking for somebody who went home, so the words follow the book.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { state, api, toast, refresh, loadDelta, isSold } from '../../lib/store.js'
 import { money, COUNTED_IN_HELP } from '../../lib/format.js'
 import { resolveTicketNumber, expandTicketRange } from '../../lib/books.js'
@@ -28,6 +28,41 @@ const paid = ref('')
 const lost = ref(false)
 const soldCount = ref('')
 const busy = ref(false)
+
+/**
+ * WHAT THIS SELLER HAS ALREADY HANDED OVER, and why this screen has to say it.
+ *
+ * Money can now arrive without a book closing behind it: a seller halfway
+ * through a book hands over what they have taken and carries on selling. That
+ * cash is recorded against the SELLER, and the book it came out of still shows
+ * nothing paid — correctly, because nobody has counted it in yet.
+ *
+ * Which sets a trap at this screen. The organiser finally counts the book in,
+ * reads "10 sold, comes to RM100" and types 100 — over sixty pounds that is
+ * already in the tin. agent_money adds the book's figure to the hand-overs, so
+ * the seller comes out RM60 in credit on money nobody ever received twice.
+ *
+ * So the balance is shown and the box is filled with THE BALANCE, not the
+ * book's value. The organiser can still type anything; what they cannot do any
+ * more is type the obvious number and be wrong.
+ *
+ * FAILING QUIETLY IS RIGHT HERE. This is a hint on a screen whose real job is
+ * counting stubs, and a count-in must not be blocked because a second read did
+ * not come back.
+ */
+const standing = ref(null)
+onMounted(async () => {
+  const holder = String(props.book?.agentId || '')
+  if (!holder) return
+  const mine = String(state.user?.agentId || '') === holder
+  const staff = state.user?.role === 'admin' || state.user?.role === 'recorder'
+  if (!mine && !staff) return
+  try {
+    standing.value = await api('report_draft', mine ? {} : { agentId: holder })
+  } catch { standing.value = null }
+})
+/** Cash from this seller that is not against any book — the interim money. */
+const alreadyIn = computed(() => Number(standing.value?.handedIn || 0))
 
 const per = computed(() => state.cfg?.ticketsPerBook || 10)
 const price = computed(() => state.cfg?.ticketPrice || 0)
@@ -416,6 +451,27 @@ async function settle() {
       <label for="sp">How much money did they hand in? <span class="req">*</span></label>
       <input id="sp" v-model="paid" class="xl" type="number" inputmode="decimal" step="0.01"
              :placeholder="String(due)">
+      <!-- MONEY THAT IS ALREADY IN, said before the number is typed rather than
+           queried afterwards. Typing this book's full value over an interim
+           hand-over is the one mistake this screen makes that nothing else
+           catches: both figures are right on their own and the seller ends up
+           in credit for cash nobody received twice. The balance is offered as
+           a tap, and the organiser is still free to type whatever was actually
+           put on the table. -->
+      <div v-if="alreadyIn > 0.005" class="note warn" style="margin-top:8px">
+        <b>{{ money(alreadyIn, currency) }} already handed in</b>, against no book —
+        {{ props.book.agentName || 'they' }} paid it while still selling.
+        <div class="small" style="margin-top:4px">
+          This book comes to <b>{{ money(due, currency) }}</b>.
+          <template v-if="standing"> They owe <b>{{ money(standing.owed, currency) }}</b> in
+          total.</template>
+          Do not take it twice.
+        </div>
+        <button type="button" class="btn sm" style="margin-top:8px"
+                @click="paid = String(Math.max(0, Math.round((due - alreadyIn) * 100) / 100))">
+          Use {{ money(Math.max(0, due - alreadyIn), currency) }} — the balance on this book
+        </button>
+      </div>
     </div>
 
     <!-- A number here that is not a real ticket must never be sent quietly.
