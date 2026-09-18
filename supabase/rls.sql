@@ -747,3 +747,23 @@ grant execute on function server_now() to authenticated;
 -- The desk's money is an organiser's figure. The function reads it as the
 -- service role; a browser has no business calling it.
 revoke execute on function desk_money() from public, anon, authenticated;
+
+/*
+ * AND TELL PostgREST THAT THE SHAPE CHANGED.
+ *
+ * PostgREST keeps its own cache of the schema. Recreate a view with a new
+ * column and the DATABASE is correct immediately while the API keeps answering
+ * from the old shape — so a filter naming that column fails with
+ *
+ *     column book_ledger_all.offered_to_agent does not exist
+ *
+ * while `psql` selects it happily. That is a maddening half hour: every check
+ * you can run says the column is there, and every request says it is not.
+ *
+ * It happened on 18 September and cost a seller their whole app twice — once
+ * for the real missing column, and again after it was fixed, because nothing
+ * told PostgREST. This file is what a deploy re-applies and it is where views
+ * are created, so this is the right place for it: any deploy that reshapes a
+ * view now clears the cache in the same breath.
+ */
+notify pgrst, 'reload schema';
