@@ -491,6 +491,58 @@ console.log('the screens ask why, rather than letting the refusal arrive as an e
   ok((sellTicket.match(/reason: onBehalf\.value\.trim\(\)/g) || []).length === 2,
      'and sends the answer on both the sale and the hold')
 
+  /*
+   * EVERY DOOR, CHECKED AS A SET RATHER THAN ONE AT A TIME.
+   *
+   * This is the assertion that was missing, and its absence cost a live bug.
+   * The server refuses three actions for want of a reason; two screens asked for
+   * one and the third did not. Sell.vue — the transcription screen, where an
+   * organiser types up a seller's counterfoils, which is the ordinary batch this
+   * rule is about — sent no reason at all. The deployed function had been
+   * refusing those batches for eighteen hours with no box on the screen to
+   * answer it, so the whole batch was unsaveable by any route that screen
+   * offers.
+   *
+   * Checking each screen individually is what let that happen: every screen I
+   * had thought of passed. So the list is derived from the SERVER — the actions
+   * that can raise REASON_REQUIRED — and every caller of one must send a reason.
+   * A fourth screen calling one of these is caught the day it is written.
+   */
+  const server = readFileSync(new URL('../supabase/functions/api/tickets.ts', import.meta.url), 'utf8')
+  const asks = [...server.matchAll(/export async function (\w+)/g)]
+    .map((m) => m[1])
+    .filter((fn) => {
+      const body = server.slice(server.indexOf(`export async function ${fn}`))
+      const end = body.indexOf('\nexport async function ', 1)
+      const scoped = end === -1 ? body : body.slice(0, end)
+      return /refuseOverride\(|opts\.reason|reasonOf\(p\)/.test(scoped)
+    })
+  ok(asks.length >= 3, `the server can ask for a reason on ${asks.length} handlers (${asks.join(', ')})`)
+
+  const ACTION_OF = { sellTicket: 'sell_ticket', reserveTicket: 'reserve_ticket',
+                      bulkRecordSales: 'bulk_record_sales', sellBook: 'sell_book' }
+  const screens = ['src/components/Sell.vue', 'src/components/SellTicket.vue',
+                   'src/components/modals/SellBook.vue']
+  for (const fn of asks) {
+    const action = ACTION_OF[fn]
+    if (!action) continue
+    for (const f of screens) {
+      const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8')
+      if (!src.includes(`'${action}'`)) continue
+      ok(/reason: onBehalf\.value\.trim\(\)/.test(src),
+         `${f} calls ${action} and sends a reason with it`)
+    }
+  }
+
+  // And the transcription screen in particular, which is the one that was wrong:
+  // it has to NAME the books, refuse before the batch is sent, and explain the
+  // phrase it uses.
+  const bulk = readFileSync(new URL('../src/components/Sell.vue', import.meta.url), 'utf8')
+  ok(/onBehalfBooks/.test(bulk), 'the transcription screen works out which books it is reaching into')
+  ok(/onBehalfBooks\.value\.length && !onBehalf\.value\.trim\(\)/.test(bulk),
+     'and refuses the batch itself rather than letting the server refuse forty typed lines')
+  ok(/COUNTED_IN_HELP/.test(bulk), 'and explains "counted in", which it now says')
+
   const sellBook = readFileSync(new URL('../src/components/modals/SellBook.vue', import.meta.url), 'utf8')
   ok(/overrideReasonNeeded/.test(sellBook), 'the whole-book screen asks it too')
   ok(/reason: onBehalf\.value\.trim\(\)/.test(sellBook), 'and sends it')

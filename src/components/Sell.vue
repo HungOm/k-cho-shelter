@@ -8,9 +8,9 @@
  */
 import { ref, computed, nextTick } from 'vue'
 import { patchTickets } from '../lib/optimistic.js'
-import { state, api, toast, loadDelta, canWrite, sellBlock, isSold } from '../lib/store.js'
+import { state, api, toast, loadDelta, canWrite, sellBlock, sellOverrideNeeded, whereIs, isSold } from '../lib/store.js'
 import { phoneDigits, isDialable } from '../lib/search.js'
-import { money } from '../lib/format.js'
+import { money, COUNTED_IN_HELP } from '../lib/format.js'
 import { resolveTicketNumber } from '../lib/books.js'
 import Bi from './ui/Bi.vue'
 import YourStock from './ui/YourStock.vue'
@@ -36,6 +36,37 @@ let ticker = null
 const rowEls = ref([])
 
 function blank() { return { id: Math.random().toString(36).slice(2), num: '', name: '', phone: '' } }
+
+/**
+ * THE BOOKS THIS BATCH REACHES INTO THAT SOMEBODY ELSE IS CARRYING.
+ *
+ * This screen is transcription: a stack of counterfoils from a seller who has
+ * been out with a book. So the ordinary batch here is exactly the one the server
+ * asks about — an organiser writing sales into a book in somebody else's bag —
+ * and this screen had no way to answer.
+ *
+ * bulk_record_sales has refused such a batch since the reason rule went in, and
+ * the deployed function has carried that refusal since the afternoon it was
+ * deployed. With no box on the screen, the organiser met REASON_REQUIRED naming
+ * a book and had no way through it at all — the batch could not be saved by any
+ * route this screen offers. The single-ticket and whole-book screens both ask;
+ * this one did not, which is what a rule enforced on two doors of three looks
+ * like from the desk.
+ *
+ * NAMED rather than counted, like the other two: "a book is with a seller" sends
+ * somebody back to the grid to work out which.
+ */
+const onBehalfBooks = computed(() => {
+  const seen = new Map()
+  for (const r of rows.value) {
+    const t = resolve(r.num)
+    if (!t || !sellOverrideNeeded(t)) continue
+    const b = whereIs(t)
+    if (b && !seen.has(b.book)) seen.set(b.book, b)
+  }
+  return [...seen.values()]
+})
+const onBehalf = ref('')
 
 const filled = computed(() => rows.value.filter(r => r.num.trim()).length)
 const value = computed(() => filled.value * (state.cfg?.ticketPrice || 0))
@@ -153,6 +184,11 @@ async function saveAll() {
 
   if (local.length) { problems.value = local; return }
   if (!sales.length) return toast('Nothing to save yet', 'bad')
+  // The server refuses the whole batch without it, so the screen refuses first,
+  // next to the box that answers it rather than after forty lines are typed.
+  if (onBehalfBooks.value.length && !onBehalf.value.trim()) {
+    return toast('Say why you are recording these for them', 'bad')
+  }
 
   busy.value = true
   waited.value = 0
@@ -175,7 +211,8 @@ async function saveAll() {
   })))
 
   try {
-    const res = await api('bulk_record_sales', { sales }, { reconcile: true })
+    const res = await api('bulk_record_sales',
+    { sales, reason: onBehalf.value.trim() }, { reconcile: true })
     shown.commit()
     rows.value = [blank()]
     toast(`${res.recorded} sales written down`, 'ok')
@@ -293,6 +330,22 @@ function phoneWarning(phone) {
         <div v-for="p in problems" :key="p">{{ p }}</div>
       </div>
 
+      <!-- ABOVE THE SAVE BUTTON, because that is where the batch is refused.
+           An organiser typing up a seller's counterfoils is the ordinary use of
+           this screen and the server asks why every time; without a box the
+           whole batch was unsaveable by any route this screen offers. -->
+      <div v-if="onBehalfBooks.length" class="note warn mt">
+        <b>{{ onBehalfBooks.length === 1 ? 'This book is' : 'These books are' }} out with a seller</b> —
+        {{ onBehalfBooks.map(b => `${b.book} (${b.agentName || b.agentId})`).join(', ') }}.
+        Every ticket is credited to whoever is holding the book. Say why you are
+        writing these down, and it goes onto the book's record where they will
+        see it when the book is
+        <span class="helpword" :title="COUNTED_IN_HELP">counted in</span>.
+        <label class="why" for="bulkwhy">Why are you recording these for them? <span class="req">*</span></label>
+        <input id="bulkwhy" v-model="onBehalf" autocomplete="off"
+               placeholder="e.g. she brought the counterfoils back on Sunday">
+      </div>
+
       <div class="row mt">
         <button class="btn grow" @click="addRow(true)">+ Another line</button>
         <button class="btn primary grow lg" :disabled="busy || checking || !filled" @click="saveAll">
@@ -308,6 +361,8 @@ function phoneWarning(phone) {
 </template>
 
 <style scoped>
+/* The question sits inside the warning it belongs to. */
+.why { margin-top: 12px; }
 .rows { margin-top: 12px; }
 .stub {
   display: grid; gap: 8px; margin-bottom: 8px;
