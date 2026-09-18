@@ -877,6 +877,9 @@ async function readDelta(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
    * volunteer is standing there querying is simply not on the screen.
    */
   const LIMIT = 1000
+  // Books are ~2000 in the whole raffle; a window that touches more than this
+  // is a bulk act, and the answer to it is a full list rather than a cursor.
+  const BOOK_LIMIT = 500
   const { data, error } = await ctx.supabaseAdmin
     .from('tickets')
     .select(WIRE_SELECT)
@@ -926,6 +929,70 @@ async function readDelta(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
    */
   const hasMore = rows.length >= LIMIT && !!last
 
+  /*
+   * AND THE BOOKS, WHICH THIS DID NOT SEND AND THE SCREEN NEEDED.
+   *
+   * The nudge already fires on `books` — 20260916001500 puts a statement
+   * trigger on the table — so a book counted in woke every open page, which
+   * then asked for changed TICKETS, got them, and left state.books exactly as
+   * it was at sign-in. The grid stayed at whatever it said when the page
+   * loaded, for as long as the page stayed open.
+   *
+   * Nobody lost money to it: sell_books refuses with BOOK_CLOSED or
+   * BOOK_WITH_SELLER, and issue_books_tx carries a per-book status predicate
+   * with a rowcount check. The cost is a volunteer who reads a book as free,
+   * commits to giving it out, and is refused for a reason the screen never
+   * showed them.
+   *
+   * TWO THINGS CHANGE A BOOK, and only one of them touches the book row.
+   *
+   *   the row itself   issued, returned, counted in, restocked — books.modified_at
+   *                    moves, because books_bump_version bumps it on update
+   *   its tickets      counted_sold, available, counted_expected and the rest
+   *                    are derived in book_ledger_all from the TICKETS, so
+   *                    selling out of a book changes what the tile shows while
+   *                    the book row sits untouched
+   *
+   * Asking books.modified_at alone would have covered the first and missed the
+   * second — a book whose last ticket just sold would keep reading "3 left"
+   * until a reload. The second needs no extra query: the changed tickets are
+   * already in hand, and the books they belong to are their book_idx.
+   */
+  const touched = new Set<number>()
+  for (const r of rows) touched.add(Number((r as Record<string, unknown>).book_idx))
+  const { data: movedBooks } = await ctx.supabaseAdmin
+    .from('books').select('idx').gt('modified_at', since).limit(BOOK_LIMIT + 1)
+  for (const b of (movedBooks ?? []) as Array<Record<string, unknown>>) touched.add(Number(b.idx))
+  touched.delete(NaN)
+
+  /*
+   * A CAP, AND A FULL RELOAD RATHER THAN A SECOND CURSOR.
+   *
+   * Tickets page, because twenty thousand of them can change in an afternoon.
+   * Books cannot: there are about two thousand in the whole raffle and an
+   * ordinary window touches a handful. The shape that can exceed this is one
+   * bulk act — settling twenty books, issuing fifty — and answering that with a
+   * second paging cursor means a second cursor to get wrong, in a path nobody
+   * exercises. Saying "ask for the whole list again" is one round trip in a
+   * rare case, and it cannot skip a book.
+   */
+  let books: Array<Record<string, unknown>> = []
+  let booksComplete = true
+  if (touched.size > BOOK_LIMIT) {
+    booksComplete = false
+  } else if (touched.size) {
+    // book_ledger_all, not books: the client reads counted_sold, days_overdue
+    // and agent_name, which are the view's and not the table's. Same source as
+    // list_books, so a tile updated by a delta is identical to one that arrived
+    // in the snapshot.
+    let q = ctx.supabaseAdmin.from('book_ledger_all').select('*').in('idx', [...touched]).order('idx')
+    q = scopeBooks(q, user)
+    const { data: bookRows, error: bookErr } = await q
+    if (bookErr) throw new ApiError('QUERY_FAILED', bookErr.message)
+    const reported = await reportedBooks(user, ctx)
+    books = (bookRows ?? []).map((r: Record<string, unknown>) => bookWire(r, reported))
+  }
+
   // Same shape as a snapshot page. A delta that spoke a different dialect would
   // work on first load and quietly break every incremental refresh after it.
   return {
@@ -934,6 +1001,12 @@ async function readDelta(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
     count: rows.length,
     hasMore,
     nextSince: hasMore ? last : '',
+    // Identical objects to list_books', because both go through bookWire.
+    books,
+    // False means "too many to stream, ask for the whole list". Named rather
+    // than inferred from an empty array, which is also what "nothing changed"
+    // looks like.
+    booksComplete,
     serverTime: new Date().toISOString(),
   }
 }
@@ -982,103 +1055,22 @@ async function search(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   }
 }
 
-async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
-  // book_ledger_all, not book_ledger. The filtered one carries its own WHERE
-  // clause on app_role(), and this function reads as the service role with no
-  // JWT — so app_role() is null and the filtered view returns NOTHING to it.
-  // Every action built on it reported an empty raffle. The scoping this path
-  // needs is done in code below, because it has to be: the service role is
-  // above the policies, so nothing else can do it.
-  let query = ctx.supabaseAdmin.from('book_ledger_all').select('*').order('idx').limit(1000)
-  if (p.status) query = query.eq('status', String(p.status))
-  if (p.agentId) query = query.eq('held_by_agent', String(p.agentId))
 
-  /*
-   * A SELLER'S BOOK LIST IS THE BOOKS IN THEIR HANDS — which is what this said
-   * and not what it did.
-   *
-   * held_by_agent deliberately SURVIVES a return and a settlement, because
-   * settlement has to know whose money it is. So a seller who handed a book
-   * back last month, and watched an organiser count it in, kept seeing it on
-   * their own screen for the rest of the raffle: a book they no longer have,
-   * beside the ones they do, with no way to tell which is which. Asked for in
-   * exactly those terms — a book the organiser has accepted should no longer be
-   * the seller's to look at.
-   *
-   * 'Out' is that list. Returned and Settled are books the desk has; Lost and
-   * Void are closed. An organiser still sees every one of them, because the
-   * holder is how the money is chased.
-   */
-  /*
-   * AND THE BOOKS BEING OFFERED TO THEM, which are not Out and are not theirs.
-   *
-   * An offer that a seller cannot see is an offer they cannot answer. The row
-   * lands in their approvals queue naming books — and under 'Out' alone, every
-   * one of those books was invisible on the screen the queue points at. They
-   * would be asked to accept twenty books they had no way to look at.
-   *
-   * Offered rows carry no money and no buyer: held_by_agent is null, which is
-   * the whole design, so nothing about another seller's takings travels with
-   * them. It is the seller's own pending offer or it is not returned at all.
-   */
-  if (user.role === 'agent') {
-    const mine = user.agentId ?? '\u0000'
-    query = query.or(
-      `and(held_by_agent.eq.${mine},status.eq.Out),` +
-      `and(offered_to_agent.eq.${mine},status.eq.Offered)`)
-  }
-
-  const { data, error } = await query
-  if (error) throw new ApiError('QUERY_FAILED', error.message)
-
-  /*
-   * AND THE BOOKS THAT ARE IN A REPORT NOBODY HAS ACCEPTED YET.
-   *
-   * Sending a report changes nothing — that is the whole design — so those
-   * books are still Out, still the seller's, and still theirs to sell from
-   * until an organiser accepts. Which is right, and invisible: the seller sees
-   * a book that looks exactly as it did before they reported it, and so does
-   * the organiser looking at the same book from the other side.
-   *
-   * So the books a pending report names are marked, for both of them. For the
-   * seller it is "I have said I am bringing this back"; for the organiser it is
-   * "there is a report waiting on this one", which is the difference between
-   * counting a book in twice and knowing not to.
-   *
-   * Read from the queue rather than stored on the book: a request that lapses
-   * or is turned down stops marking it with nothing to clean up, and the book
-   * row keeps meaning exactly what it means.
-   */
-  const { data: waitingReports } = await ctx.supabaseAdmin
-    .from('pending_approvals').select('payload,requested_by')
-    .eq('action', 'report_back').eq('status', 'Pending')
-  const reported = new Set<string>()
-  for (const r of (waitingReports ?? []) as Array<Record<string, unknown>>) {
-    const payload = (r.payload ?? {}) as Record<string, unknown>
-    if (user.role === 'agent' && String(payload.agentId ?? '') !== (user.agentId ?? '')) continue
-    for (const line of (Array.isArray(payload.books) ? payload.books : []) as Array<Record<string, unknown>>) {
-      const n = String(line.book ?? '').trim()
-      if (n) reported.add(n)
-    }
-  }
-
-  /*
-   * MAPPED FIELD BY FIELD, not echoed.
-   *
-   * These are the view's snake_case columns and the client reads the Apps
-   * Script shape. Returning the rows raw made every book tile in the grid
-   * render "0": BookGrid calls bookShort(b.book), the view has no `book`
-   * column — it is `number` — so it fell through to its '0' fallback, a
-   * thousand times. The colours and the totals were right, which made it look
-   * half-working rather than broken.
-   *
-   * Everything else went the same way silently: agentName, due, daysOverdue,
-   * sold, expected, paid. Nothing threw. The screen just quietly said nothing.
-   *
-   * handleListBooks in Books.gs builds this shape explicitly, which is why the
-   * same screen was correct on Apps Script throughout.
-   */
-  const books = (data ?? []).map((r: Record<string, unknown>) => ({
+/*
+ * A BOOK ON THE WIRE, DEFINED ONCE.
+ *
+ * list_books and read_delta both send books to the same screen, so the shape
+ * has to be identical — and the way to guarantee that is one function rather
+ * than two that agree today. This repository has paid four times for the other
+ * arrangement: a rule written down twice drifts the day one copy changes, and
+ * the symptom is a grid that renders half-right.
+ *
+ * These are the view's snake_case columns mapped to the shape the client reads.
+ * Returning the rows raw made every book tile render "0", because BookGrid
+ * calls bookShort(b.book) and the view's column is `number`.
+ */
+function bookWire(r: Record<string, unknown>, reported: Set<string>) {
+  return {
     book: r.number,
     firstTicket: r.first_ticket,
     lastTicket: r.last_ticket,
@@ -1125,7 +1117,128 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
     settledAt: r.settled_at ?? null,
     missingContact: r.missing_contact ?? 0,
     pastFinal: !!r.past_final,
-  }))
+  }
+}
+
+/*
+ * WHICH BOOKS A CALLER MAY SEE, defined once for the same reason.
+ *
+ * A seller's list is the books in their hands, plus the ones being offered to
+ * them: held_by_agent survives a return and a settlement because settlement has
+ * to know whose money it is, so filtering on it alone shows a seller books an
+ * organiser counted in weeks ago. An offer they cannot read is an offer they
+ * cannot answer, and an Offered book has held_by_agent null by design.
+ *
+ * read_delta must apply exactly this. A delta that skipped it would stream a
+ * seller every book in the raffle, which is a bigger leak than the stale grid
+ * it was written to fix.
+ */
+function scopeBooks<T extends { or: (filter: string) => T }>(query: T, user: AppUser): T {
+  if (user.role !== 'agent') return query
+  const mine = user.agentId ?? '\u0000'
+  return query.or(
+    `and(held_by_agent.eq.${mine},status.eq.Out),` +
+    `and(offered_to_agent.eq.${mine},status.eq.Offered)`)
+}
+
+/* The books a pending report names, marked for the seller and the organiser
+ * alike — "I have said I am bringing this back" on one side, "there is a report
+ * waiting on this one" on the other, which is the difference between counting a
+ * book in twice and knowing not to. Read from the queue rather than stored on
+ * the book, so a lapsed request stops marking it with nothing to clean up. */
+async function reportedBooks(user: AppUser, ctx: Ctx): Promise<Set<string>> {
+  const { data } = await ctx.supabaseAdmin
+    .from('pending_approvals').select('payload,requested_by')
+    .eq('action', 'report_back').eq('status', 'Pending')
+  const out = new Set<string>()
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const payload = (r.payload ?? {}) as Record<string, unknown>
+    if (user.role === 'agent' && String(payload.agentId ?? '') !== (user.agentId ?? '')) continue
+    for (const line of (Array.isArray(payload.books) ? payload.books : []) as Array<Record<string, unknown>>) {
+      const n = String(line.book ?? '').trim()
+      if (n) out.add(n)
+    }
+  }
+  return out
+}
+
+async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  // book_ledger_all, not book_ledger. The filtered one carries its own WHERE
+  // clause on app_role(), and this function reads as the service role with no
+  // JWT — so app_role() is null and the filtered view returns NOTHING to it.
+  // Every action built on it reported an empty raffle. The scoping this path
+  // needs is done in code below, because it has to be: the service role is
+  // above the policies, so nothing else can do it.
+  /*
+   * THE CAP AND THE RAFFLE ARE THE SAME SIZE, WHICH IS NOT A MARGIN.
+   *
+   * book_ledger_all is already scoped to ACTIVE books, so at ACTIVE_TICKETS =
+   * 10000 and ten to a book it returns exactly 1000 rows — precisely this
+   * limit. Right today, and silently short the first time somebody releases
+   * more tickets: the grid would lose its tail and nothing would say so.
+   *
+   * So the caller is TOLD whether it got everything, rather than left to infer
+   * it from a row count it would have to know the cap to interpret.
+   */
+  const BOOKS_LIMIT = 1000
+  let query = ctx.supabaseAdmin.from('book_ledger_all').select('*').order('idx').limit(BOOKS_LIMIT)
+  if (p.status) query = query.eq('status', String(p.status))
+  if (p.agentId) query = query.eq('held_by_agent', String(p.agentId))
+
+  /*
+   * A SELLER'S BOOK LIST IS THE BOOKS IN THEIR HANDS — which is what this said
+   * and not what it did.
+   *
+   * held_by_agent deliberately SURVIVES a return and a settlement, because
+   * settlement has to know whose money it is. So a seller who handed a book
+   * back last month, and watched an organiser count it in, kept seeing it on
+   * their own screen for the rest of the raffle: a book they no longer have,
+   * beside the ones they do, with no way to tell which is which. Asked for in
+   * exactly those terms — a book the organiser has accepted should no longer be
+   * the seller's to look at.
+   *
+   * 'Out' is that list. Returned and Settled are books the desk has; Lost and
+   * Void are closed. An organiser still sees every one of them, because the
+   * holder is how the money is chased.
+   */
+  /*
+   * AND THE BOOKS BEING OFFERED TO THEM, which are not Out and are not theirs.
+   *
+   * An offer that a seller cannot see is an offer they cannot answer. The row
+   * lands in their approvals queue naming books — and under 'Out' alone, every
+   * one of those books was invisible on the screen the queue points at. They
+   * would be asked to accept twenty books they had no way to look at.
+   *
+   * Offered rows carry no money and no buyer: held_by_agent is null, which is
+   * the whole design, so nothing about another seller's takings travels with
+   * them. It is the seller's own pending offer or it is not returned at all.
+   */
+  query = scopeBooks(query, user)
+
+  const { data, error } = await query
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  /*
+   * AND THE BOOKS THAT ARE IN A REPORT NOBODY HAS ACCEPTED YET.
+   *
+   * Sending a report changes nothing — that is the whole design — so those
+   * books are still Out, still the seller's, and still theirs to sell from
+   * until an organiser accepts. Which is right, and invisible: the seller sees
+   * a book that looks exactly as it did before they reported it, and so does
+   * the organiser looking at the same book from the other side.
+   *
+   * So the books a pending report names are marked, for both of them. For the
+   * seller it is "I have said I am bringing this back"; for the organiser it is
+   * "there is a report waiting on this one", which is the difference between
+   * counting a book in twice and knowing not to.
+   *
+   * Read from the queue rather than stored on the book: a request that lapses
+   * or is turned down stops marking it with nothing to clean up, and the book
+   * row keeps meaning exactly what it means.
+   */
+  const reported = await reportedBooks(user, ctx)
+
+  const books = (data ?? []).map((r: Record<string, unknown>) => bookWire(r, reported))
 
   // The counts the home screen reads. Apps Script has always returned these and
   // this did not, which store.js papered over by overwriting bookStats from
@@ -1148,6 +1261,9 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const liveBooks = Math.ceil((await activeTickets(ctx)) / per)
 
   return {
+    // False means the list was cut at the cap: the caller must not derive
+    // totals from it, because they would describe part of the raffle.
+    complete: books.length < BOOKS_LIMIT,
     books,
     stats,
     total: books.length,

@@ -70,6 +70,9 @@ export const state = reactive({
   byNumber: {},
   books: [],
   bookStats: {},
+  // Until a list arrives, assume it is not complete: deriving counts from an
+  // empty array would show a raffle with no books in it.
+  booksAllLoaded: false,
   agents: [],
   overdue: [],
   totals: null,
@@ -626,6 +629,39 @@ export async function loadDelta() {
       applied++
     }
 
+    /*
+     * AND THE BOOKS, which this loop did not apply and the grid needed.
+     *
+     * The nudge has always fired on book changes, so counting a book in woke
+     * every open page — which then asked for changed tickets, got them, and
+     * left state.books exactly as it was at sign-in. An organiser read a book
+     * as free, went to give it out, and was refused by a server that knew
+     * better. The refusal is correct and the screen never showed the reason.
+     *
+     * Merged by book number, in place, because bookHolders and whereIs are
+     * computed over this array and Vue tracks the objects in it.
+     */
+    for (const b of d.books ?? []) {
+      const at = state.books.findIndex((x) => x.book === b.book)
+      if (at >= 0) Object.assign(state.books[at], b)
+      else state.books.push(b)
+      applied++
+    }
+
+    /*
+     * TOO MANY TO STREAM MEANS ASK FOR THE WHOLE LIST, which is what the server
+     * says with booksComplete rather than leaving it to be inferred from an
+     * empty array — an empty array is also what "nothing changed" looks like.
+     * One round trip in a rare case beats a second paging cursor in a path
+     * nobody exercises.
+     */
+    if (d.booksComplete === false) {
+      try {
+        const all = await api('list_books', {})
+        if (all.books) { state.books = all.books; applied++ }
+      } catch { /* the next nudge tries again; a stale grid is not worth an error screen */ }
+    }
+
     // nextSince repeats the last row's timestamp, so rows sharing it arrive
     // again. Applying a row twice is applying it once; losing one is not.
     if (!d.hasMore || !d.nextSince) break
@@ -683,6 +719,30 @@ export async function poll() {
 export function reindex() {
   state.byNumber = Object.fromEntries(state.tickets.map(t => [t.number, t]))
   index = buildIndex(state.tickets, agentMap.value, bookHolders.value)
+
+  /*
+   * THE NUMBER ABOVE A LIST HAS TO DESCRIBE THE LIST UNDERNEATH IT.
+   *
+   * bookStats arrived from the server and was then never refreshed, which was
+   * survivable while the grid was equally frozen. Now that books stream, a
+   * stored count would drift away from the tiles it sits above within minutes
+   * — "12 books out" over a grid showing eleven.
+   *
+   * Derived rather than transported, and it is not a third definition of the
+   * server's rule: it is the same count over the same rows, which is what
+   * list_books already says it does — "counted over exactly the rows this
+   * caller may see, so the number above a list always describes the list
+   * underneath it". Deriving it here makes that true continuously instead of
+   * at the moment of loading.
+   */
+  if (state.booksAllLoaded) {
+    const counts = {}
+    for (const b of state.books) {
+      const k = String(b.status ?? '')
+      counts[k] = (counts[k] ?? 0) + 1
+    }
+    state.bookStats = counts
+  }
 }
 
 /**
@@ -767,6 +827,16 @@ export async function refresh() {
       const books = await api('list_books', {})
       state.books = books.books ?? []
       state.bookStats = books.stats ?? {}
+      /*
+       * WHETHER THAT IS ALL OF THEM. list_books caps at 1000 and the view is
+       * scoped to active books, so the raffle currently sits exactly ON the cap
+       * — right today and short the first time somebody releases more tickets.
+       * The counts below are derived from this list only when it is the whole
+       * of it; otherwise the server's own totals stand, because a number
+       * derived from a truncated list describes part of the raffle while
+       * looking like all of it.
+       */
+      state.booksAllLoaded = books.complete !== false
     })
 
     reindex()
@@ -774,7 +844,16 @@ export async function refresh() {
     await step('totals', async () => {
       const draw = await api('report_draw_ready', {})
       state.totals = draw.totals ?? null
-      state.bookStats = draw.booksByStatus ?? {}
+      /*
+       * ONLY WHEN WE DO NOT HAVE THE LIST OURSELVES. Two sources for one number
+       * is how it ends up disagreeing with the grid beneath it: this ran after
+       * list_books and overwrote its count, and then nothing refreshed either
+       * of them for the life of the page. When we hold the whole list, the
+       * count is derived from it in reindex() and follows every streamed
+       * change; when we do not, the server's total is the better answer
+       * because ours would describe only the part we were sent.
+       */
+      if (!state.booksAllLoaded) state.bookStats = draw.booksByStatus ?? {}
     })
 
     // Skipped for roles that plainly cannot have it — not to avoid an error,
