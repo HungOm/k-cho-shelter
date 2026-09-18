@@ -18,6 +18,13 @@
  * app was translated around it.
  */
 export const ATTN = {
+  // A REFUSAL YOU HAVE NOT ANSWERED. Worded as the thing that happened rather
+  // than as a status: "turned down" is what a person would say about it, and
+  // the reason is one tap away on the screen this sends them to.
+  refusedOne: 'Something you asked for was turned down',
+  refusedMany: '{n} things you asked for were turned down',
+  refusedWhy: 'Read why, and ask again if it still needs doing',
+
   overdueOne: 'A book has not come back',
   overdueMany: '{n} books have not come back',
   overdueWhy: 'Past the date they were due back',

@@ -73,6 +73,8 @@ export const state = reactive({
   agents: [],
   overdue: [],
   totals: null,
+  // Requests of yours that were turned down and not asked again since.
+  refusedApprovals: 0,
 
   // Which reporting round is live, and the day everybody answers by. Carried on
   // the seller list rather than fetched on its own, because every screen that
@@ -369,9 +371,37 @@ export const overview = computed(() => {
 
 /** The "needs attention" list. Each item knows where it sends you. */
 export const attention = computed(() => {
-  const o = overview.value
-  if (!o) return []
   const items = []
+
+  /*
+   * SOMEBODY SAID NO, AND YOU HAVE NOT ANSWERED IT.
+   *
+   * FIRST, above overdue books, and the ordering is the point: an overdue book
+   * is drifting, a refusal has already gone wrong and is sitting still. A seller
+   * disputing a count-in means the figures are wrong NOW and stay wrong until
+   * somebody reads their words and asks again.
+   *
+   * BEFORE THE TOTALS GUARD, which is not tidiness — it is the difference
+   * between this working for a seller and not. Everything below needs
+   * `overview`, built from report_draw_ready, an action a SELLER IS REFUSED on
+   * purpose because the raffle's money is not theirs to see. So overview is null
+   * for them and this list returned empty before it asked a single question. A
+   * refusal has nothing to do with the totals.
+   *
+   * The server counts only refusals the asker has not followed up, so this
+   * clears by being ACTED ON. An alert you can tick away is one everybody ticks
+   * away, which is this app's rule and the reason there is no dismiss button.
+   */
+  if (state.refusedApprovals) items.push({
+    key: 'refused', tone: 'bad', icon: 'hand',
+    title: state.refusedApprovals === 1
+      ? { text: ATTN.refusedOne }
+      : { text: ATTN.refusedMany, vars: { n: state.refusedApprovals } },
+    detail: { text: ATTN.refusedWhy }, go: 'approvals'
+  })
+
+  const o = overview.value
+  if (!o) return items
   const late = state.overdue.length
   const open = (state.bookStats.Out || 0) + (state.bookStats.Returned || 0)
 

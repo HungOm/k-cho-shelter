@@ -695,6 +695,53 @@ async function readVersion(_p: Record<string, unknown>, user: AppUser, ctx: Ctx)
   }
 
   /*
+   * WHAT YOU ASKED FOR AND WERE TURNED DOWN ON.
+   *
+   * A refusal lands in "Already dealt with", which is an archive nobody has a
+   * reason to open. So the seller answers, the row goes grey, and unless
+   * somebody goes looking, nobody learns that a count-in was disputed — which
+   * is the one outcome that means the figures are wrong and somebody has to do
+   * something.
+   *
+   * IT CLEARS ITSELF, rather than being dismissed. This app's rule about alerts
+   * is that anything you can tick away is something everybody ticks away, so a
+   * refusal counts while it is still UNANSWERED: turned down, and the person who
+   * asked has not asked again since. Ask again and it goes, because you have
+   * done the thing it was telling you to do.
+   *
+   * A fortnight, for the same reason report_back gets one: a refusal from last
+   * month is history rather than a task, and a list that never empties is a list
+   * nobody reads.
+   */
+  const fortnight = new Date(Date.now() - 14 * 24 * 3600_000).toISOString()
+  const { data: refusedRows } = await ctx.supabaseAdmin
+    .from('pending_approvals')
+    .select('request_id,action,summary,note,decided_at,payload')
+    .eq('requested_by', user.email)
+    .eq('status', 'Rejected')
+    .gt('decided_at', fortnight)
+    .order('decided_at', { ascending: false })
+    .limit(20)
+
+  let refused = 0
+  if ((refusedRows ?? []).length) {
+    // "Asked again since" is judged per ACTION and per BOOK, because asking
+    // about a different book is not answering this refusal.
+    const bookOf = (r: Record<string, unknown>) =>
+      String((r.payload as { bookNumber?: string; fromBook?: string } | null)?.bookNumber ??
+             (r.payload as { fromBook?: string } | null)?.fromBook ?? '')
+    const { data: since } = await ctx.supabaseAdmin
+      .from('pending_approvals')
+      .select('action,requested_at,payload')
+      .eq('requested_by', user.email)
+      .gt('requested_at', fortnight)
+    refused = (refusedRows ?? []).filter((r: Record<string, unknown>) =>
+      !(since ?? []).some((n: Record<string, unknown>) =>
+        n.action === r.action && bookOf(n) === bookOf(r) &&
+        String(n.requested_at) > String(r.decided_at))).length
+  }
+
+  /*
    * BOOKS COMING DUE, so the banner clears itself.
    *
    * The counts come from the books, never from a dismissal. An alert somebody
@@ -729,6 +776,8 @@ async function readVersion(_p: Record<string, unknown>, user: AppUser, ctx: Ctx)
   return {
     tickets: data?.modified_at ?? null,
     approvalsWaiting: waiting,
+    // Turned down, and not asked again since. See the block above.
+    refusedWaiting: refused,
     // What the banner is made of. Both are counts of BOOKS still out, because a
     // book is the thing somebody physically brings back.
     booksLate,

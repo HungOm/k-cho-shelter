@@ -100,6 +100,35 @@ try {
   ok(Array.isArray(items), 'the home screen attention list built')
 } catch (err) { crash = err; ok(false, `attention threw: ${err.message}`) }
 
+/*
+ * A REFUSAL YOU HAVE NOT ANSWERED IS TOLD TO YOU, rather than left in an
+ * archive nobody opens. A seller disputing a count-in means the figures are
+ * wrong now and stay wrong until somebody reads their words and asks again, so
+ * it goes ABOVE overdue books: an overdue book is drifting, a refusal has
+ * already gone wrong and is sitting still.
+ *
+ * The server counts only refusals the asker has not followed up, so the row
+ * clears by being ACTED ON — this app's rule is that an alert you can tick away
+ * is one everybody ticks away.
+ */
+{
+  const was = store.state.refusedApprovals
+  store.state.refusedApprovals = 0
+  ok(!store.attention.value.some((i) => i.key === 'refused'),
+     'nothing is said when nothing of yours was turned down')
+
+  store.state.refusedApprovals = 2
+  const rows = store.attention.value
+  const row = rows.find((i) => i.key === 'refused')
+  ok(!!row, 'a refusal you have not answered is on the list')
+  ok(row && /\{n\}|turned down/i.test(row.title?.text || ''), 'and says what happened')
+  ok(row && row.title?.vars?.n === 2, 'counting them, through a template the other language can place')
+  ok(row && row.go === 'approvals', 'and sends you where the words are')
+  ok(rows.indexOf(row) === 0, 'first, above books that are merely drifting')
+
+  store.state.refusedApprovals = was
+}
+
 // As an ADMIN specifically: gettingStarted returns null for everyone else, so
 // a non-admin never reaches the state.bookStats.Out on its third step — which
 // is the same dereference that whited out the Sellers screen.
