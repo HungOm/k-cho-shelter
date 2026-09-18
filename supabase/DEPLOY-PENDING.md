@@ -1,8 +1,13 @@
 # What is on master and not yet on production
 
-Written 2026-09-17, when the repository owner held all deployment until the
-production reset. It is the state of the gap at that moment, so that whoever
-opens a deploy window does not have to reconstruct it at speed.
+**AS OF 2026-09-18 EVENING THIS GAP IS CLOSED.** The migrations were applied
+(head `20260919500000`), and the Edge Function was deployed from a clean
+checkout of `75e84a2`, which is master. The client on Pages carries the same
+commit — verified by fetching the served bundle and grepping it for a string
+only that commit contains, rather than by trusting a workflow's status.
+
+The file is kept because the SHAPE of the problem recurs every time anybody
+pushes, and because two of the failures below were found the expensive way.
 
 **Nothing here is a request to deploy.** It is what to check and in what order
 when somebody decides to.
@@ -10,18 +15,48 @@ when somebody decides to.
 ## What was true when this was last checked
 
 A handover document goes wrong by going stale invisibly, so every claim below is
-dated and every one of them is re-derivable in a line. If these four disagree
-with the database, trust the database and treat the rest of this file as a
-starting point rather than a report.
+dated and re-derivable in a line. If these disagree with the database, trust the
+database and treat the rest of this file as a starting point.
 
 | Checked | Value | How to re-derive |
 |---|---|---|
-| production migration head | `20260917150000` | `select max(version) from supabase_migrations.schema_migrations` |
-| migrations unapplied | **13** | `git ls-tree -r --name-only HEAD supabase/migrations/` against the above |
-| the four `*_books_tx` functions | **absent** from production | `select proname from pg_proc where proname like '%_books_tx'` |
+| production migration head | `20260919500000` | `select max(version) from supabase_migrations.schema_migrations` |
+| migrations unapplied | **0** | `git ls-tree -r --name-only HEAD supabase/migrations/` against the above |
+| Edge Function | deployed from `75e84a2` | `supabase functions list` — compare `updated_at` against the commit time |
+| client on Pages | `75e84a2` | grep the served bundle for a string literal only that commit has |
 | Postgres | **17.6** | `show server_version` |
 
-Last revised 2026-09-17, on top of master `018734a`, with the hold still in force.
+Last revised 2026-09-18, with the hold lifted for this deploy by the change's
+author and the repository owner's stop still in force for new work.
+
+## THE TWO HALVES DEPLOY SEPARATELY, AND THAT IS THE WHOLE TRAP
+
+Pushing to `master` publishes the CLIENT. The Edge Function and the database are
+deployed by hand. So a push ships the browser half on its own, and the two halves
+drift by however long nobody notices.
+
+Both failures found on 2026-09-18 were this, in opposite directions:
+
+- **New client, old function.** The client stopped asking a seller with no
+  account for a reason; the deployed function still demanded one. The sale would
+  have been refused with no box on screen to answer it. Caught before it could
+  be reached, because the only live seller had an account.
+- **Old client, new function** — the expensive one, live for eighteen hours.
+  `bulk_record_sales` began refusing batches that reach into a seller's book
+  without a reason at `2330e3d` (17th, 20:48). The function carrying that rule
+  was deployed on the 18th at 14:18. The transcription screen had no box at all,
+  so typing up a seller's counterfoils was simply impossible, on the live
+  raffle's only out-book, in the workflow that screen exists for.
+
+**The check that catches both**, before pushing anything that changes what the
+client sends or what the server requires: name the string literal the new code
+adds, and after the deploy grep the SERVED bundle for it —
+
+    A=$(curl -s https://shtrtickets.ceamalaysia.org/ | grep -o 'assets/index-[^"]*\.js' | head -1)
+    curl -s "https://shtrtickets.ceamalaysia.org/$A" | grep -c 'a string only the new code has'
+
+A STRING LITERAL, never a symbol: the minifier renames identifiers, so a function
+name reads 0 on a perfectly deployed site and teaches you nothing.
 
 ## The live site is ahead of the live backend
 
