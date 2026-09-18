@@ -3,7 +3,7 @@
  * Finding things. On a wide screen the list keeps its place beside the ticket
  * you opened, so you can work down a stack without losing where you were.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { state, searchResults, agentMap, whereIs, isSold, isAdmin, api, toast, go } from '../lib/store.js'
 import { STATUS_WORDS } from '../lib/format.js'
 import { isFreeToIssue } from '../lib/books.js'
@@ -121,10 +121,35 @@ async function askFor(t) {
     asking.value = ''
   }
 }
+/*
+ * A PAGE OF RESULTS, NOT THE FIRST THREE HUNDRED.
+ *
+ * This drew every hit in one list and said "(showing first 300)" underneath —
+ * a wall to scroll on a phone AND a list somebody had to notice was cut. The
+ * pager states the total where it can be acted on, and the search itself is no
+ * longer truncated, so page nine is real.
+ */
+const PAGE = 25
+const page = ref(1)
+const pageRows = computed(() =>
+  searchResults.value.results.slice((page.value - 1) * PAGE, page.value * PAGE))
+
+/* Back to the first page whenever the query or a filter changes: a new search
+   that lands somebody on page seven of the old one looks like no results. */
+watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhere],
+      () => { page.value = 1 })
 </script>
 
 <template>
   <div>
+    <!-- WHAT THEY ARE HOLDING, BEFORE THEY SEARCH FOR IT. A seller is confined
+         to the books in their hands, so on this screen the numbers that are
+         theirs are usually the answer — and looking one up by typing it is the
+         long way round. The same panel as the Sell screen, shared so the two
+         cannot disagree about what somebody is holding. It renders nothing for
+         an organiser, who holds no books. -->
+    <YourStock title="Your tickets" @open="t => emit('open', t)" />
+
     <h1>Find a ticket</h1>
 
     <div class="card searchcard">
@@ -167,9 +192,9 @@ async function askFor(t) {
         <template v-else-if="searchResults.total">
           {{ searchResults.total.toLocaleString() }}
           {{ searchResults.total === 1 ? 'ticket' : 'tickets' }}
-          <template v-if="searchResults.total > searchResults.results.length">
-            (showing first {{ searchResults.results.length }})
-          </template>
+          <!-- No "showing first N" any more: the pager under the list says which
+               page this is and how many there are in total, which is the same
+               fact stated where somebody can act on it. -->
         </template>
       </span>
     </div>
@@ -185,7 +210,7 @@ async function askFor(t) {
 
       <!-- results -->
       <TransitionGroup v-else-if="searchResults.results.length" name="list" tag="ul" class="list">
-        <li v-for="t in searchResults.results" :key="t.number" class="rowpair">
+        <li v-for="t in pageRows" :key="t.number" class="rowpair">
           <button class="item" @click="emit('open', t)">
             <span class="grow">
               <span class="lead">{{ t.number }}</span>
@@ -215,6 +240,11 @@ async function askFor(t) {
                   :aria-label="`Ask for ${askable(t).book}`" @click="askFor(t)">🙋</button>
         </li>
       </TransitionGroup>
+
+      <!-- Under the list, where somebody arrives after reading it. It states the
+           total and hides itself when everything fits. -->
+      <Pager v-if="!state.loadProgress" v-model:page="page"
+             :total="searchResults.results.length" :size="25" noun="tickets" />
 
       <!-- nothing -->
       <Empty v-else-if="!state.tickets.length" art="🎟️" title="No tickets yet">

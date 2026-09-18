@@ -328,9 +328,23 @@ export function sellOverrideNeeded(ticket) {
 
 export const searchResults = computed(() => {
   if (!index.length) return { total: 0, results: [] }
+  /*
+   * NO CAP, BECAUSE THE SCREEN PAGES NOW.
+   *
+   * runSearch defaults to the first 300 hits, and Find drew every one of them
+   * in a single list with "(showing first 300)" underneath — so a search that
+   * matched two thousand tickets was both a wall to scroll and a list somebody
+   * had to know was cut. Paging is the answer to both, and paging over a
+   * truncated array pages over the truncation.
+   *
+   * The cost is an array of references rather than a rendered row, which is
+   * what actually costs anything on a phone: twenty thousand entries is a few
+   * hundred kilobytes and twenty thousand list items is a dead tab.
+   */
   return runSearch(index, {
     query: state.query, status: state.filterStatus,
-    agent: state.filterAgent, where: state.filterWhere
+    agent: state.filterAgent, where: state.filterWhere,
+    limit: Infinity,
   })
 })
 
