@@ -203,6 +203,23 @@ ok "$(AS 'a1@x.com' "select count(*) from tickets_readable where book_idx<>1 and
 ok "$(AS 'a1@x.com' "select buyer_phone from tickets_readable where number='KS-00001'")" "0125550101" "their own buyer's number is intact"
 ok "$(AS 'a1@x.com' 'select count(*) from book_ledger')" "2" "and only their books in the ledger"
 
+echo "and the ledger views carry every column the function filters them by"
+# WHAT THIS CAUGHT, AFTER IT REACHED PRODUCTION. listBooks scopes a seller's
+# list to "held by me, or offered to me" and applies that through PostgREST
+# against book_ledger_all. The column exists on `books` and was not in the
+# view's select list, so the filter named a column that was not there:
+#
+#     column book_ledger_all.offered_to_agent does not exist
+#
+# A seller's entire books list failed to load, which is every screen they have.
+# Nothing here exercised the view's COLUMNS — only its rows — so a filter added
+# in the Edge Function could name anything at all and no suite would notice.
+for v in book_ledger book_ledger_all; do
+  ok "$(DB_ -tAc "select count(*) from information_schema.columns
+                   where table_name='$v' and column_name='offered_to_agent'" 2>&1 | tr -d ' ')" "1" \
+     "$v exposes offered_to_agent, which listBooks filters on"
+done
+
 echo "a seller can see the books being offered to them, and nobody else's offer"
 # AN OFFER THEY CANNOT SEE IS AN OFFER THEY CANNOT ANSWER. The row lands in
 # their approvals queue naming books; under "held by you" alone every one of

@@ -1033,6 +1033,10 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
     lastTicket: r.last_ticket,
     status: r.status,
     agentId: r.held_by_agent ?? '',
+    // The seller an Offered book is waiting on. bookBlock reads it to decide
+    // whether the person looking is the one it belongs to, and without it every
+    // offered book looked like nobody's.
+    offeredTo: r.offered_to_agent ?? '',
     agentName: r.agent_name ?? '',
     due: r.due_at,
     daysOverdue: r.days_overdue ?? 0,

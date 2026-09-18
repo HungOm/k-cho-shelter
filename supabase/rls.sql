@@ -352,7 +352,15 @@ select
   -- counterparty — on the one screen where somebody is checking a figure
   -- against the person who wrote it. Appended at the END of the column list,
   -- which is what create or replace view will accept.
-  b.settled_by, b.settled_at
+  b.settled_by, b.settled_at,
+  -- WHO IT IS WAITING ON, which the view did not carry and a filter needed.
+  -- listBooks scopes a seller's list to "held by me, or offered to me", and
+  -- filters through PostgREST against this view — so a column that exists on
+  -- `books` and not here is a column the filter cannot name:
+  --     column book_ledger_all.offered_to_agent does not exist
+  -- A seller's whole books list failed to load on that, which is every screen
+  -- they have. Appended at the END, which is what create or replace accepts.
+  b.offered_to_agent
 from books b
 left join agents a on a.agent_id = b.held_by_agent
 left join lateral (
@@ -465,7 +473,15 @@ select
   -- counterparty — on the one screen where somebody is checking a figure
   -- against the person who wrote it. Appended at the END of the column list,
   -- which is what create or replace view will accept.
-  b.settled_by, b.settled_at
+  b.settled_by, b.settled_at,
+  -- WHO IT IS WAITING ON, which the view did not carry and a filter needed.
+  -- listBooks scopes a seller's list to "held by me, or offered to me", and
+  -- filters through PostgREST against this view — so a column that exists on
+  -- `books` and not here is a column the filter cannot name:
+  --     column book_ledger_all.offered_to_agent does not exist
+  -- A seller's whole books list failed to load on that, which is every screen
+  -- they have. Appended at the END, which is what create or replace accepts.
+  b.offered_to_agent
 from books b
 left join agents a on a.agent_id = b.held_by_agent
 left join lateral (
