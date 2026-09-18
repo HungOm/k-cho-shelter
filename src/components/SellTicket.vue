@@ -48,6 +48,18 @@ const canSell = computed(() => nameOk.value && phoneOk.value)
 const agent = computed(() => agentMap.value[t.value?.agent])
 const place = computed(() => whereIs(t.value))
 
+/*
+ * IS THIS BOOK IN MY OWN HANDS?
+ *
+ * Every warning below is written for somebody looking at a ticket that is
+ * SOMEWHERE ELSE — 200km away in a seller's bag, possibly already sold on
+ * paper. Shown to the seller who is holding it, it says "this one is with TEST"
+ * to TEST, and tells them to check with themselves before selling it. Reported
+ * exactly that way, from their own account, while the sale worked perfectly.
+ */
+const mine = computed(() =>
+  !!state.user?.agentId && place.value?.agentId === state.user.agentId)
+
 /**
  * Set when the backend will REFUSE this sale, not merely when it is unwise.
  *
@@ -191,13 +203,15 @@ async function correct() {
 
     <!-- An unsold ticket in a book somebody is carrying is not free stock. It
          is 200km away, and it may already have been sold on paper. -->
-    <div v-if="blocked && place?.out && t.status === 'Available'" class="note bad">
+    <!-- `!mine` on both: the stubs are in this person's hand, so none of what
+         follows is true of them. -->
+    <div v-if="!mine && blocked && place?.out && t.status === 'Available'" class="note bad">
       <b>This one is with {{ place.agentName || place.agentId }}.</b>
       The ticket itself is not here, so it cannot be sold from this screen —
       they may already have sold it in person. If the book is back, ask an
       organiser to mark it returned first.
     </div>
-    <div v-else-if="!done && place?.out && t.status === 'Available'" class="note warn">
+    <div v-else-if="!mine && !done && place?.out && t.status === 'Available'" class="note warn">
       <b>This one is with {{ place.agentName || place.agentId }}.</b>
       The ticket itself is not here, and they may already have sold it without
       writing it down. Check with them before selling it to anybody else.
