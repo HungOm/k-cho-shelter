@@ -133,14 +133,36 @@ console.log('a book handed back with nothing sold from it is free to hand out')
    * be refused.
    */
   const { isFreeToIssue } = await import('../src/lib/books.js')
-  ok(isFreeToIssue({ status: 'Unassigned' }), 'a book in the office is free')
-  ok(isFreeToIssue({ status: 'Returned', sold: 0 }), 'and so is one handed back untouched')
-  ok(isFreeToIssue({ status: 'Returned' }), 'including one whose count has not loaded as a number')
-  ok(!isFreeToIssue({ status: 'Returned', sold: 3 }), 'but not one with sales recorded on it')
-  ok(!isFreeToIssue({ status: 'Settled', sold: 0 }), 'nor a counted-in book, however empty')
-  ok(!isFreeToIssue({ status: 'Out' }), 'nor one in somebody\'s bag')
-  ok(!isFreeToIssue({ status: 'Lost' }) && !isFreeToIssue({ status: 'Void' }), 'nor a lost or cancelled one')
+  /*
+   * AND THE TEST IS NOW "EVERY TICKET IS THERE", not "none sold".
+   *
+   * Asking only about sales let through a book with tickets RESERVED or VOIDED
+   * in it: nothing sold, so nothing to carry to the wrong seller, but not ten
+   * tickets a seller can sell either. The raffle's owner asked for whole books
+   * only — all of them available, in the office or in this person's hands.
+   *
+   * These fixtures gained `available` because the rule reads it. state.cfg is
+   * set above, so ticketsPerBook is 10.
+   */
+  ok(isFreeToIssue({ status: 'Unassigned', available: 10 }), 'a book in the office with all ten is free')
+  ok(isFreeToIssue({ status: 'Returned', available: 10 }), 'and so is one handed back untouched')
+  ok(!isFreeToIssue({ status: 'Unassigned', available: 8, sold: 2 }), 'but not one with two of its tickets sold')
+  ok(!isFreeToIssue({ status: 'Unassigned', available: 8 }), 'nor one with two reserved or voided — nothing sold, still not whole')
+  ok(!isFreeToIssue({ status: 'Returned', sold: 3, available: 7 }), 'nor one with sales recorded on it')
+  ok(!isFreeToIssue({ status: 'Settled', available: 10 }), 'nor a counted-in book, however empty')
+  ok(!isFreeToIssue({ status: 'Out', available: 10 }), 'nor one in somebody\'s bag')
+  ok(!isFreeToIssue({ status: 'Offered', available: 10 }), 'nor one already being offered to somebody')
+  ok(!isFreeToIssue({ status: 'Lost', available: 10 }) && !isFreeToIssue({ status: 'Void', available: 10 }),
+     'nor a lost or cancelled one')
   ok(!isFreeToIssue(null), 'and nothing at all is not free')
+  /*
+   * FAILS CLOSED ON A COUNT THAT HAS NOT LOADED, which reverses what this used
+   * to assert. The old rule read a missing number as nought sold and offered
+   * the book; the new one reads a missing number as "I do not know what is in
+   * it" and does not. Handing somebody a book on a count you have not got is
+   * the wrong way to be wrong.
+   */
+  ok(!isFreeToIssue({ status: 'Unassigned' }), 'a book whose count has not loaded is not offered')
 
   // Through the range reader, which is what the issuing screen actually calls.
   const kept = state.books

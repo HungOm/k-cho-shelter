@@ -201,9 +201,25 @@ export function holderLabel(book) {
  * two that are left are sold at the desk, one at a time, which is what the Sell
  * screen is for.
  */
-export const isFreeToIssue = (b) =>
-  !Number(b?.sold || 0) &&
-  (b?.status === 'Unassigned' || b?.status === 'Returned')
+/*
+ * AND "NONE SOLD" IS NOT THE SAME AS "ALL THERE".
+ *
+ * Asking only about sales let through a book with tickets RESERVED or VOIDED in
+ * it — nothing sold, so nothing to carry to the wrong seller, but not a whole
+ * book either. What a seller should be handed is ten tickets they can sell, and
+ * the honest test of that is that every ticket in the book is Available.
+ *
+ * `available` is the count of Available tickets in the book, straight from the
+ * ledger view. Compared against the configured book size rather than against
+ * "not sold", so reserved, voided and any status invented later all fail it
+ * without this line having to learn their names.
+ */
+export const isFreeToIssue = (b) => {
+  const per = Number(state.cfg?.ticketsPerBook || 0)
+  if (!per) return false          // no config yet: offer nothing rather than everything
+  return Number(b?.available ?? -1) === per &&
+    (b?.status === 'Unassigned' || b?.status === 'Returned')
+}
 
 export function inspectRange(from, to, isFree = isFreeToIssue) {
   const cfg = state.cfg

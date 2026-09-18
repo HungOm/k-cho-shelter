@@ -186,9 +186,8 @@ begin
         'code', 'BOOK_WITH_SELLER',
         'message', 'Book ' || coalesce(t.book_number, '?') ||
                    case when t.book_status = 'Offered'
-                        then ' is being offered to a seller, so it is not here to sell.'
-                        else ' is out with a seller, so it is not here to sell.' end ||
-                   ' Have it brought back first.');
+                        then ' is being offered to a seller. Take the offer back first if you need it.'
+                        else ' is out with a seller. Have it brought back first.' end);
       continue;
     end if;
   end loop;
@@ -353,9 +352,8 @@ begin
         'code', 'BOOK_WITH_SELLER',
         'message', 'Book ' || b.number ||
                    case when b.status = 'Offered'
-                        then ' is being offered to a seller, so it is not here to sell.'
-                        else ' is out with a seller, so it is not here to sell.' end ||
-                   ' Have it brought back first.'));
+                        then ' is being offered to a seller. Take the offer back first if you need it.'
+                        else ' is out with a seller. Have it brought back first.' end));
     end if;
 
     /*
@@ -1017,15 +1015,23 @@ begin
    * A book given to a seller is a book they can work. The two that are left are
    * sold at the desk, one at a time, which is what the Sell screen is for.
    */
+  /*
+   * EVERY TICKET IN IT, not merely none sold.
+   *
+   * Asking about sales alone let through a book with tickets RESERVED or VOIDED
+   * — not a whole book, and not ten tickets the seller can sell. The test is
+   * that every ticket in the book is Available, which fails reserved, voided,
+   * and any status invented later without this having to learn their names.
+   */
   select count(*), string_agg(b.number, ', ' order by b.idx)
     into wrong, offenders
     from books b
    where b.idx = any(p_idxs)
      and exists (select 1 from tickets tk
-                  where tk.book_idx = b.idx and tk.status in ('Sold', 'Donated'));
+                  where tk.book_idx = b.idx and tk.status <> 'Available');
 
   if wrong > 0 then
-    raise exception 'BOOK_NOT_WHOLE: % of % already have tickets sold from them — %',
+    raise exception 'BOOK_NOT_WHOLE: % of % are not whole books — %',
       wrong, array_length(p_idxs, 1), left(offenders, 200)
       using errcode = 'check_violation';
   end if;

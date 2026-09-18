@@ -285,8 +285,15 @@ export function bookBlock(b) {
    * is to have it brought back first. The server refuses it now, so returning
    * null here would only offer a button that fails after the press.
    */
+  /*
+   * TWO DIFFERENT WAYS ROUND IT, and saying the wrong one sends somebody to a
+   * screen that cannot help them. An OFFER has not been accepted, so nothing
+   * has to come back — the organiser takes the offer back and the book is on
+   * the shelf again. A book that is OUT has been accepted, and the only route
+   * is a return, or waiting for the seller's report at the deadline.
+   */
   return b.status === 'Offered'
-    ? `being offered to ${b.agentName || heldBy || 'a seller'} — have it brought back first`
+    ? `being offered to ${b.agentName || heldBy || 'a seller'} — take the offer back first`
     : `with ${b.agentName || 'a seller'} — have it brought back first`
 }
 
