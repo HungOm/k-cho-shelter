@@ -21,7 +21,7 @@ let pass = 0, fail = 0
 const ok = (cond, what) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}`) } }
 
 const store = () => `
-import { reactive } from 'vue'
+import { reactive, computed } from 'vue'
 export const state = reactive({
   cfg: { currency: 'RM', ticketPrice: 10, ticketsPerBook: 10 },
   user: { role: 'agent', agentId: 'A001' },
@@ -176,7 +176,7 @@ console.log('8. "nothing sold yet, both books still with me" can be sent')
  * is typed, by saying what is already in.
  */
 const settleStore = `
-import { reactive } from 'vue'
+import { reactive, computed } from 'vue'
 const TICKETS = Array.from({ length: 10 }, (_, i) => ({
   number: 'KS-000' + String(11 + i), book: 'Book-002', status: 'Available',
   name: '', phone: '', source: '',
@@ -189,6 +189,11 @@ export const state = reactive({
   byNumber: Object.fromEntries(TICKETS.map((t) => [t.number, t])),
 })
 export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
+// SettleBook reads this to tell a seller who can answer a count-in request
+// from one who has no account and therefore never will. Empty here: no
+// stub puts a seller in the list, and an unknown seller falls to "ask",
+// which is the behaviour these cases were written against.
+export const agentMap = { value: {} }
 export const api = async () => ({})
 export const toast = () => {}
 export const refresh = async () => {}
@@ -244,7 +249,7 @@ console.log('11. with nothing handed in, the screen says nothing about it')
  * no figure, because somebody acts on it.
  */
 const bookStore = `
-import { reactive } from 'vue'
+import { reactive, computed } from 'vue'
 export const state = reactive({
   cfg: { ticketsPerBook: 10, ticketPrice: 10, currency: 'RM' },
   user: { role: 'admin', agentId: null },

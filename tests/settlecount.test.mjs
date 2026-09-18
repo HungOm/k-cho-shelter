@@ -69,6 +69,11 @@ export const state = reactive({
 // a stub that only knew the first would let this suite pass a screen that gives
 // a donated ticket away twice.
 export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
+// SettleBook reads this to tell a seller who can answer a count-in request
+// from one who has no account and therefore never will. Empty here: no
+// stub puts a seller in the list, and an unknown seller falls to "ask",
+// which is the behaviour these cases were written against.
+export const agentMap = { value: {} }
 export const api = async () => ({ declaredSold: 0, variance: 0 })
 export const toast = () => {}
 export const refresh = async () => {}

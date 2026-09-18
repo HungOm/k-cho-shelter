@@ -243,6 +243,56 @@ console.log('2c. offering books to a seller who cannot sign in just gives them t
   eq(signed.row('books', (b) => b.idx === 2).status, 'Offered', 'and the book waits for their answer')
 }
 
+console.log('2d. counting in a book from a seller who cannot be asked')
+{
+  /*
+   * THE PROPOSAL IS ADDRESSED TO SOMEBODY WHO CAN READ IT.
+   *
+   * A book that is Out goes to its seller as figures to check: they hold the
+   * stubs and may have sold tickets this morning that are not written down, so
+   * their agreement is what settles it. Right, and written for a seller with an
+   * account.
+   *
+   * Most have none. Sent to them the request goes nowhere — the book stays Out,
+   * the money stays uncounted, and the organiser either finds the workaround
+   * (mark it brought back, then count it in) or stops recording. A workaround
+   * everybody uses is a rule that has stopped meaning anything, and worse than
+   * no rule: the record then says the book came back on a day it did not.
+   */
+  const world2 = () => fakeDb({
+    config: baseConfig(), agents,
+    books: [book(1, { status: 'Out', held_by_agent: 'A001' }),
+            book(2, { status: 'Out', held_by_agent: 'A002' })],
+    book_ledger_all: [ledger(1), ledger(2, { held_by_agent: 'A002' })],
+    app_users: [{ email: 'a@x.com', name: 'Daw Hla', role: 'agent', active: true, agent_id: 'A001' }],
+  })
+
+  // A002 cannot sign in: the organiser counts it in, and the record says so.
+  const w = world2()
+  const r = await books.requestCountIn(
+    { bookNumber: 'Book-002', unsoldTickets: [], amountPaid: 0 }, users.admin, w.ctx)
+  ok(r.direct === true, 'it is counted in rather than proposed')
+  eq(r.whyDirect, 'no_account', 'and says why, so the screen can too')
+
+  // A001 can: they are still asked, and nothing is settled behind their back.
+  const w2 = world2()
+  const r2 = await books.requestCountIn(
+    { bookNumber: 'Book-001', unsoldTickets: [], amountPaid: 0 }, users.admin, w2.ctx)
+  ok(!r2.direct, 'a seller with an account is still asked to check the figures')
+
+  // AND THE GUARD UNDERNEATH, which is what actually blocks it: settleBook
+  // refuses an Out book because the seller is the only one who knows what sold.
+  // That reason does not hold for somebody who cannot be asked.
+  const w3 = world2()
+  eq(await codeOf(() => books.settleBook(
+       { bookNumber: 'Book-001', unsoldTickets: [], amountPaid: 0 }, users.admin, w3.ctx)),
+     'SELLER_MUST_CONFIRM', 'a seller who can answer must still confirm')
+  const w4 = world2()
+  const direct = await books.settleBook(
+    { bookNumber: 'Book-002', unsoldTickets: [], amountPaid: 0 }, users.admin, w4.ctx)
+  ok(direct, 'one who cannot is counted in by the organiser')
+}
+
 // ============ 3. the draw is not ready over what cannot be drawn ============
 
 console.log('3. sales nobody can draw, and requests nobody decided, keep the draw closed')

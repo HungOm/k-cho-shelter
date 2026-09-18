@@ -463,6 +463,42 @@ export async function returnCheck(p: Record<string, unknown>, user: AppUser, ctx
 /**
  * ORGANISER: offer books to a seller. Reserves and moves nothing.
  */
+/**
+ * WHETHER THIS SELLER RUNS THEIR OWN TRACKER, or somebody runs it for them.
+ *
+ * A seller here is a paper identity: `agents` holds a name, a phone and a zone
+ * and no email. An account is an OPTIONAL link, made by pointing an app_users
+ * row at an agent_id, and nobody makes one for the volunteer who takes a book
+ * round their church. Most sellers in this raffle have none.
+ *
+ * Every rule that asks the SELLER to do something — agree to a count, accept an
+ * offer, explain why somebody else wrote a sale down — is meaningless for them,
+ * because they cannot see the screen it appears on. Applied anyway it does not
+ * make the raffle stricter; it makes a step that never completes, and the
+ * organiser either learns a workaround or gives up on the record.
+ *
+ * So: where the seller can act, ask them. Where they cannot, the organiser acts
+ * and the record carries the organiser's name, which is the honest account of
+ * what happened.
+ *
+ * TO COME, and it is the sharper rule: not "has an account" but "has used it in
+ * the last 24 hours". A seller with a login they never open is a paper seller in
+ * every way that matters, and nothing records a sign-in yet — app_users has no
+ * last_seen_at and whoami does not stamp one. When that lands, this function is
+ * the one place it changes.
+ */
+async function sellerRunsOwnTracker(ctx: Ctx, agentId: string): Promise<boolean> {
+  const id = String(agentId ?? '').trim()
+  if (!id) return false
+  const { data, error } = await ctx.supabaseAdmin
+    .from('app_users').select('agent_id').eq('active', true).eq('agent_id', id).limit(1)
+  // A FAILED LOOKUP SAYS YES, because that keeps today's behaviour: the seller is
+  // asked. Answering no on a failure would quietly move a decision from a seller
+  // to an organiser, which is not a thing a dropped connection should decide.
+  if (error) return true
+  return !!data?.length
+}
+
 export async function offerBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const agentId = String(p.agentId ?? '').trim()
   if (!agentId) throw new ApiError('MISSING_FIELD', 'Who are you offering them to?')
@@ -496,9 +532,7 @@ export async function offerBooks(p: Record<string, unknown>, user: AppUser, ctx:
    * the concurrency predicate, and a second implementation of any of those is
    * how two paths come to disagree.
    */
-  const { data: linked } = await ctx.supabaseAdmin
-    .from('app_users').select('agent_id').eq('active', true).eq('agent_id', agentId).limit(1)
-  if (!linked?.length) {
+  if (!await sellerRunsOwnTracker(ctx, agentId)) {
     const done = await issueBooks(p, user, ctx)
     // Named so the screen can say what happened rather than "undefined books
     // offered — waiting for them to accept", which is what it would say.
@@ -804,6 +838,28 @@ export async function requestCountIn(p: Record<string, unknown>, user: AppUser, 
     throw new ApiError('MISSING_FIELD', 'How much money are you expecting? (amountPaid)')
   }
 
+  /*
+   * A SELLER WHO CANNOT SIGN IN CANNOT CHECK THESE FIGURES.
+   *
+   * The proposal exists because the seller is holding the stubs and may have sold
+   * tickets this morning that are not written down — so the desk's reading goes
+   * TO them, and their agreement is what settles it. That is right, and it is
+   * addressed to somebody who can open the app.
+   *
+   * Sent to a seller with no account it becomes a request nobody will ever
+   * answer: the book stays Out, the money stays uncounted, and the organiser
+   * either finds the workaround (mark it brought back, then count it in) or
+   * stops recording. Neither is the seller agreeing to anything.
+   *
+   * So for that seller the organiser counts it in directly, and the record says
+   * the organiser did it — which is what happened. Through settleBook rather
+   * than a copy of it, so every rule it enforces still applies.
+   */
+  if (!await sellerRunsOwnTracker(ctx, String(b.held_by_agent))) {
+    const done = await settleBook(p, user, ctx)
+    return { ...done, direct: true, whyDirect: 'no_account' }
+  }
+
   return await openSellerDecision(ctx, user, {
     // Named through a constant, not an `action: '…'` literal. In this file that
     // shape means "a movement written into book_history", which is what
@@ -870,7 +926,24 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
    * their confirmation coming back through the queue.
    */
   const viaApproval = !!(ctx as unknown as { _viaApproval?: boolean })._viaApproval
-  if (held?.status === 'Out' && !viaApproval && !p.force) {
+  /*
+   * AND NOT WHEN THE SELLER CANNOT BE ASKED.
+   *
+   * The reason given below is that the seller is the only person who knows what
+   * sold, so ask them. Most sellers here cannot be asked: a seller is a paper
+   * identity and an account is an optional link nobody makes for the volunteer
+   * carrying one book. Against them this guard protects nothing and blocks
+   * everything — the book stays Out, the money stays uncounted, and the
+   * organiser learns a workaround (mark it returned, then count it in) or stops
+   * recording altogether.
+   *
+   * A workaround everybody uses is a rule that has stopped meaning anything, and
+   * it is worse than no rule: the record then says the book came back on a day
+   * it did not.
+   */
+  const askable = await sellerRunsOwnTracker(
+    ctx, String((held as { held_by_agent?: string } | null)?.held_by_agent ?? ''))
+  if (held?.status === 'Out' && !viaApproval && !p.force && askable) {
     throw new ApiError('SELLER_MUST_CONFIRM',
       `${bookNumber} is still out with its seller, and they are the only person ` +
       'who knows what sold. Ask them to count it in — they confirm the figures ' +

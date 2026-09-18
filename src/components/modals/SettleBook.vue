@@ -15,7 +15,7 @@
  * them looking for somebody who went home, so the words follow the book.
  */
 import { ref, computed, onMounted } from 'vue'
-import { state, api, toast, refresh, loadDelta, isSold } from '../../lib/store.js'
+import { state, api, toast, refresh, loadDelta, isSold, agentMap } from '../../lib/store.js'
 import { money, COUNTED_IN_HELP } from '../../lib/format.js'
 import { resolveTicketNumber, expandTicketRange } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
@@ -83,7 +83,32 @@ const handedBack = computed(() => props.book.status === 'Returned')
  */
 const recounting = computed(() => props.book.status === 'Settled')
 /** Still in the seller's hands, so this screen asks them rather than deciding. */
-const asking = computed(() => props.book.status === 'Out')
+/**
+ * WHETHER THE SELLER IS ASKED, OR THE ORGANISER SIMPLY COUNTS IT IN.
+ *
+ * A book that is Out goes to its seller as a proposal: they are holding the
+ * stubs, they may have sold tickets this morning that are not written down, and
+ * their agreement is what settles it.
+ *
+ * That is addressed to somebody who can open the app, and most sellers here
+ * cannot — a seller is a paper identity and an account is an optional link
+ * nobody makes for the volunteer carrying one book. Asked anyway, the request
+ * goes nowhere: the book stays Out, the money stays uncounted, and the organiser
+ * either finds the workaround or stops recording.
+ *
+ * So they are asked only if they could answer. The server makes the same
+ * judgement — see sellerRunsOwnTracker in books.ts — and this only stops the
+ * screen promising a conversation that cannot happen.
+ *
+ * FAILS TOWARD ASKING when the seller is not in the loaded list: today's
+ * behaviour, and the safe direction, since the cost is a proposal that could
+ * have been a direct count rather than a count nobody agreed to.
+ */
+const sellerCanAnswer = computed(() => {
+  const a = agentMap.value[props.book.agentId]
+  return a ? a.hasLogin === true : true
+})
+const asking = computed(() => props.book.status === 'Out' && sellerCanAnswer.value)
 
 const unsoldList = computed(() =>
   unsold.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))

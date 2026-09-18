@@ -236,6 +236,10 @@ export const state = reactive({
   byNumber: ${JSON.stringify(Object.fromEntries(TICKETS.map((t) => [t.number, t])))},
 })
 export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
+// SettleBook tells a seller who can answer a count-in request from one with
+// no account who never will. Empty: no stub here puts a seller in the list,
+// and an unknown seller falls to "ask", which is what these cases assume.
+export const agentMap = { value: {} }
 export const api = async (action, payload) => { globalThis.__call = [action, payload]; return {} }
 export const toast = () => {}
 export const refresh = async () => {}
@@ -282,6 +286,10 @@ export const state = reactive({
   byNumber: ${JSON.stringify(Object.fromEntries(TICKETS.map((t) => [t.number, t])))},
 })
 export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
+// SettleBook tells a seller who can answer a count-in request from one with
+// no account who never will. Empty: no stub here puts a seller in the list,
+// and an unknown seller falls to "ask", which is what these cases assume.
+export const agentMap = { value: {} }
 export const api = async () => ({})
 export const toast = () => {}
 export const refresh = async () => {}
