@@ -331,6 +331,11 @@ export const sellOverrideNeeded = () => false
 export const agentMap = computed(() => ({}))
 export function toast() {}
 export const isSold = (t) => /^(Sold|Donated)$/.test(String(t?.status || ''))
+// The sheet asks what the SELLER owes when a counted-in book still shows a
+// shortfall, because money handed over mid-book sits against no book and would
+// otherwise be drawn as a debt nobody has. This book is square, so the read is
+// never reached; the export is here because esbuild resolves imports, not calls.
+export const api = async () => ({})
 `
   const BOOK = {
     book: 'Book-084', firstTicket: 'KS-00831', lastTicket: 'KS-00840',

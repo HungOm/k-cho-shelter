@@ -234,5 +234,59 @@ console.log('11. with nothing handed in, the screen says nothing about it')
   ok(!/Do not take it twice/.test(html), 'and no instruction about a mistake nobody can make here')
 }
 
+/*
+ * AND THE SHEET AN ORGANISER DECIDES TO CHASE SOMEBODY FROM.
+ *
+ * A book counted in for the balance records the balance, so "Should have 100,
+ * Handed in 40" leaves "Still owed 60" — in red, on the screen whose whole
+ * purpose is deciding whether to go after somebody. The sixty is in the tin
+ * and went in weeks earlier against no book. A wrong red figure is worse than
+ * no figure, because somebody acts on it.
+ */
+const bookStore = `
+import { reactive } from 'vue'
+export const state = reactive({
+  cfg: { ticketsPerBook: 10, ticketPrice: 10, currency: 'RM' },
+  user: { role: 'admin', agentId: null },
+  tickets: [], byNumber: {},
+})
+export const isAdmin = () => true
+export const go = () => {}
+export const bookBlock = () => ''
+export const isSold = (t) => t?.status === 'Sold' || t?.status === 'Donated'
+export const api = async () => ({})
+`
+
+const COUNTED = {
+  book: 'Book-002', firstTicket: 'KS-00011', lastTicket: 'KS-00020',
+  status: 'Settled', agentId: 'A001', agentName: 'Daw Hla',
+  countedIn: true, sold: 10, expected: 100, paid: 40, variance: 0, available: 0,
+}
+
+const sheet = (handedIn, owed) => renderScreen(
+  'src/components/modals/BookDetail.vue', bookStore,
+  { props: { book: COUNTED },
+    drive: (b) => { b.standing.value = { handedIn, owed, currency: 'RM' } } })
+
+console.log('12. a book short by money that is already in is not a debt to chase')
+{
+  const html = await sheet(60, 0)
+  ok(/Still owed/.test(html), 'the book really is short, and the sheet still says so')
+  ok(/before this book was counted in/.test(html),
+     'and says where the rest of it went')
+  ok(/They owe nothing/.test(html), 'naming what the PERSON owes, which is the decision')
+  const row = html.slice(html.indexOf('Still owed'), html.indexOf('Still owed') + 220)
+  ok(!/--bad/.test(row), 'so it is not drawn in red — there is nobody to chase')
+}
+
+console.log('13. a book short by money nobody has handed over still is')
+{
+  const html = await sheet(0, 60)
+  ok(/Still owed/.test(html), 'the row is there')
+  ok(!/before this book was counted in/.test(html), 'with nothing to explain away')
+  const row = html.slice(html.indexOf('Still owed'), html.indexOf('Still owed') + 220)
+  ok(/--bad/.test(row), 'and it is red, because it is real')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -40,6 +40,11 @@ export function toast() {}
 // Behaviour stub of the store's own helper; the real one is the single place
 // the two sold statuses are spelled.
 export const isSold = t => /^(Sold|Donated)$/.test(String(t?.status || ''))
+// The sheet asks the server what the SELLER owes when a counted-in book still
+// shows a shortfall — money handed over mid-book sits against no book and would
+// otherwise be drawn as a debt nobody has. Stubbed as never answering, which is
+// the state every case here is written for.
+export const api = async () => { throw new Error('no server in this test') }
 `
 
 /*

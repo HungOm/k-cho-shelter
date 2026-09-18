@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue'
-import { state, isAdmin, go, bookBlock, isSold } from '../../lib/store.js'
+import { computed, ref, onMounted } from 'vue'
+import { state, isAdmin, go, bookBlock, isSold, api } from '../../lib/store.js'
 import { money, date, BOOK_WORDS, COUNTED_IN_HELP } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import RoleTag from '../ui/RoleTag.vue'
@@ -169,6 +169,61 @@ const frozen = computed(() =>
  */
 const owed = computed(() => Number(props.book.expected || 0) - Number(props.book.paid || 0))
 const owedLabel = computed(() => (owed.value < 0 ? 'Over by' : 'Still owed'))
+
+/**
+ * "STILL OWED" ON A BOOK STOPPED BEING THE WHOLE TRUTH THE DAY MONEY COULD
+ * ARRIVE WITHOUT A BOOK CLOSING.
+ *
+ * A seller halfway through a book can now hand over what they have taken and
+ * carry on selling. That cash is recorded against the SELLER; the book it came
+ * out of still shows nothing paid, because nobody has counted it in. When the
+ * book is finally counted in, the organiser takes the BALANCE — the rest of it
+ * — and the book records that. Correct, and the two lines above then read:
+ *
+ *     Should have   RM100
+ *     Handed in     RM40
+ *     Still owed    RM60      <- in red, and nobody owes it
+ *
+ * The sixty is in the tin. It went in weeks ago, against no book. This sheet
+ * cannot see it, so it drew a debt that does not exist on the screen an
+ * organiser opens to decide whether to chase somebody — which is worse than
+ * showing nothing, because a wrong red figure gets acted on.
+ *
+ * So the seller's own standing is fetched and the row is explained rather than
+ * hidden: the book really is short by sixty, and the person really does not owe
+ * it. Both are facts and the sheet now says which is which.
+ *
+ * FAILING QUIETLY IS RIGHT. This is one line on a sheet of twenty, and a book
+ * must still open when a second read does not come back.
+ */
+const standing = ref(null)
+onMounted(async () => {
+  /*
+   * ONLY WHERE THE QUESTION CAN ARISE. This sheet is opened constantly and the
+   * read behind it is not small, so it is not made on every book — only on one
+   * that has been counted in and still shows a shortfall, which is the only
+   * shape that can be a debt somebody already paid. Every other book opens
+   * exactly as fast as it did before.
+   */
+  if (!props.book?.countedIn || owed.value <= 0.005) return
+  const holder = String(props.book?.agentId || '')
+  if (!holder) return
+  const mine = String(state.user?.agentId || '') === holder
+  const staff = state.user?.role === 'admin' || state.user?.role === 'recorder'
+  if (!mine && !staff) return
+  try {
+    standing.value = await api('report_draft', mine ? {} : { agentId: holder })
+  } catch { standing.value = null }
+})
+/** Money from this seller that sits against no book at all. */
+const loose = computed(() => Number(standing.value?.handedIn || 0))
+/** What the PERSON owes, which is the number a chase decision is made on. */
+const theyOwe = computed(() => Number(standing.value?.owed ?? NaN))
+/* Only where the book's debt and the person's disagree. In the ordinary case
+   the two say the same thing and a second sentence about it is noise. */
+const debtIsExplained = computed(() =>
+  owed.value > 0.005 && loose.value > 0.005 && !Number.isNaN(theyOwe.value) &&
+  theyOwe.value < owed.value - 0.005)
 const countGap = computed(() => Number(props.book.variance || 0))
 const countGapLabel = computed(() => (countGap.value > 0
   ? 'Sold but not written down'
@@ -232,7 +287,20 @@ const showHistory = ref(false)
         </div>
         <div v-if="Math.abs(owed) > 0.005" class="f">
           <span>{{ owedLabel }}</span>
-          <b :style="owed > 0 ? 'color:var(--bad)' : ''">{{ money(Math.abs(owed), currency) }}</b>
+          <!-- Not red when the money is accounted for elsewhere. Red is the
+               signal to go and chase somebody, and there is nobody to chase. -->
+          <b :style="owed > 0 && !debtIsExplained ? 'color:var(--bad)' : ''">{{
+            money(Math.abs(owed), currency) }}</b>
+        </div>
+        <div v-if="debtIsExplained" class="f why">
+          <span>
+            {{ book.agentName || 'They' }} handed in
+            <b>{{ money(loose, currency) }}</b> before this book was counted in.
+            <template v-if="theyOwe > 0.005">
+              They owe <b>{{ money(theyOwe, currency) }}</b> in total.
+            </template>
+            <template v-else>They owe nothing.</template>
+          </span>
         </div>
         <div v-if="Math.abs(countGap) > 0.005" class="f">
           <span>{{ countGapLabel }}</span>
@@ -321,6 +389,11 @@ const showHistory = ref(false)
 .f { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
 .f span { color: var(--muted); }
 .f b { text-align: right; }
+/* The sentence under a figure that would otherwise be read as a debt. Full
+   width and left-aligned, because it is prose and the rows above are a table. */
+.f.why { display: block; }
+.f.why span { display: block; font-size: .84rem; line-height: 1.45; text-align: left; }
+.f.why b { color: var(--text); }
 /* A stated absence, not a figure. It must not read as an amount. */
 .pending { color: var(--muted); font-weight: 400; }
 </style>
