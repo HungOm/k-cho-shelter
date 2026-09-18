@@ -83,9 +83,24 @@ async function load() {
   try {
     const got = await api('handover_receipt', { agentId: props.agentId })
     if (!got.books?.length) {
-      nothing.value = 'There is nothing to print: this seller is not holding any books ' +
-        'right now. A receipt lists the books somebody currently has — once they are all ' +
-        'counted back in, there is nothing left to hand over.'
+      /*
+       * NAMED, because "this seller" cannot be checked.
+       *
+       * The reply resolves the seller before it looks at their books, so the
+       * name is always here — and without it this message is unanswerable. A
+       * raffle with two sellers gives you a dialog saying somebody is holding
+       * nothing, on a screen that does not say who, opened from a row you may
+       * have mis-tapped. The reader cannot tell a correct empty sheet from the
+       * wrong person, and the honest reaction is to assume the app is broken.
+       *
+       * It also says what to do instead, because "nothing to print" is only
+       * half an answer to somebody who came here wanting a sheet of paper.
+       */
+      const who = got.agent?.name || 'That seller'
+      nothing.value = `${who} is not holding any books right now, so there is nothing to ` +
+        'hand over and nothing to print. A receipt lists what somebody has in their hands ' +
+        'at this moment — once the books are counted back in, they leave it. To see what ' +
+        'they have had in the past, open a book and look at where it has been.'
       return
     }
     r.value = got

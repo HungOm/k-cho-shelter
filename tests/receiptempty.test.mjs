@@ -30,7 +30,19 @@ export const canWrite = computed(() => true)
 export const go = () => {}
 export const agentMap = computed(() => ({}))
 `
-const EMPTY = "return { books: [], generatedAt: '2026-09-15T00:00:00Z' }"
+/*
+ * THE AGENT IS ALWAYS THERE, EVEN WHEN THE BOOKS ARE NOT.
+ *
+ * handoverReceipt resolves the seller first and throws AGENT_NOT_FOUND if there
+ * is none, so every reply that gets as far as an empty book list carries their
+ * name. This fixture omitted it and so described a reply the server cannot
+ * send — the same mistake the comment below is about, made in the fixture for
+ * the case that comment was written for. It mattered the moment the empty
+ * message started naming the seller: the screen was correct and the test said
+ * otherwise, which is the failure direction that wastes an afternoon.
+ */
+const EMPTY = "return { books: [], agent: { id: 'A1', name: 'JOHN', phone: '0123456789', zone: '' }, " +
+              "generatedAt: '2026-09-15T00:00:00Z' }"
 const FAILS = "throw Object.assign(new Error('The server did not answer.'), { code: 'TIMEOUT' })"
 /*
  * THE FIXTURE IS BUILT FROM THE HANDLER'S OWN KEYS, not written by hand.
@@ -61,6 +73,22 @@ console.log('a seller holding nothing')
   await ctx.load(); await nextTick()
   ok(ctx.nothing.value !== '', 'the sheet has something to say')
   ok(/not holding any books/.test(ctx.nothing.value), 'and says the seller is holding none')
+  /*
+   * BY NAME, because "this seller" cannot be checked.
+   *
+   * This message was unanswerable: a dialog saying somebody is holding nothing,
+   * on a screen that does not say who, opened from a row in a list of sellers
+   * that may have been mis-tapped. With two sellers in the raffle the reader
+   * cannot tell a correct empty sheet from the wrong person, and the honest
+   * reaction to that is to assume the app is broken — which is how it was
+   * reported. The reply resolves the seller before it looks at their books, so
+   * the name is always available here.
+   */
+  ok(/JOHN/.test(ctx.nothing.value), 'and names them, so the reader can tell it is the right person')
+  ok(!/this seller/.test(ctx.nothing.value), 'rather than "this seller", which names nobody')
+  // Half an answer is what sends somebody back to ask. Say where the past is.
+  ok(/where it has been/.test(ctx.nothing.value),
+     'and says where to look for what they have held before')
   ok(ctx.r.value === null, 'with no receipt to show')
   cleanup()
 
