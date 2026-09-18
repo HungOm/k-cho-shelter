@@ -138,6 +138,10 @@ const CALLS = {
   // Offering is what the give-out screen calls now; issue_books stays for the
   // path where the seller asked and an organiser grants the petition.
   offer_books: { fromBook: 'Book-002', agentId: 'A001' },
+  // Taking an offer back from the book sheet, where the organiser knows the
+  // book and not the request id. NOTHING_TO_DO here is the honest answer for a
+  // fixture with no offer outstanding, and it is on the deliberate list.
+  withdraw_offer: { fromBook: 'Book-002' },
   transfer_books: { fromBook: 'Book-001', toAgentId: 'A001' },
   return_books: { fromBook: 'Book-001' },
   settle_book: { bookNumber: 'Book-001', amountPaid: 0, unsoldTickets: [] },

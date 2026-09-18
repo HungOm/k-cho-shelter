@@ -115,6 +115,10 @@ export const COUNTED_IN_HELP =
 
 export const BOOK_WORDS = {
   Unassigned: 'In the office',
+  // Offered is custody in mid-air: reserved for one seller, on nobody's balance,
+  // and not theirs until they say yes. "Offered" alone read as a place the book
+  // could be; this says what is actually waiting to happen.
+  Offered: 'Waiting to be accepted',
   Out: 'With a seller',
   Returned: 'Brought back',
   Settled: 'Finished',

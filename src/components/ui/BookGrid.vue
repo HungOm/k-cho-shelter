@@ -79,6 +79,7 @@ function sales(b) {
     </div>
     <div class="keys">
       <span><i class="s-Unassigned"></i><Bi text="In the office" /></span>
+      <span><i class="s-Offered"></i><Bi text="Waiting to be accepted" /></span>
       <span><i class="s-Out"></i><Bi text="With a seller" /></span>
       <span><i class="s-Returned"></i><Bi text="Brought back" /></span>
       <span><i class="s-Settled"></i><Bi text="Finished" /></span>
@@ -105,6 +106,19 @@ function sales(b) {
 /* Each custody state names its own colour, so the sold-out rule below can
    borrow it for the edge instead of repeating this list. */
 .s-Unassigned { --custody: var(--border); background: var(--surface-2); color: var(--muted); box-shadow: inset 0 0 0 1px var(--border); }
+/*
+ * OFFERED IS THE OUT COLOUR, HOLLOW. A book being offered is on its way to that
+ * seller and is not there yet, so it reads as the same custody with the fill
+ * taken out — the dashes say "not settled" without inventing a seventh hue that
+ * would be read as a seventh place a book can be.
+ *
+ * It had no style at all before this, so it fell through to the bare tile and
+ * rendered as a washed-out blank: the one state that needed to stand out was
+ * the only one that disappeared.
+ */
+.s-Offered    { --custody: #2563eb; color: #2563eb; font-weight: 800;
+                background: color-mix(in srgb, #2563eb 18%, transparent);
+                box-shadow: inset 0 0 0 2px var(--custody); }
 .s-Out        { --custody: #2563eb; background: var(--custody); }
 .s-Returned   { --custody: #c2700a; background: var(--custody); }
 .s-Settled    { --custody: #15803d; background: var(--custody); }

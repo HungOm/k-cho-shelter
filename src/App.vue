@@ -428,6 +428,31 @@ const bookAction = computed(() => {
     : { kind: p?.kind ?? '', book: p?.book ?? '' }
 })
 
+/**
+ * Taking an offer back, from the book sheet.
+ *
+ * DIRECT RATHER THAN THROUGH A CONFIRMATION SHEET, and deliberately: nothing
+ * has been accepted, nothing is on anybody's balance, and the books go straight
+ * back to the shelf where they can be offered again. It is the one book action
+ * with no consequence to weigh — the opposite of putting a settled book back,
+ * which clears figures and asks first.
+ *
+ * The whole offer comes back, not the one book, because the offer was one act
+ * and one sentence the seller read. The reply names what moved, so the toast
+ * can say it rather than "done".
+ */
+async function withdrawOffer(book) {
+  try {
+    const r = await api('withdraw_offer', { fromBook: book.book })
+    const n = r.released || 0
+    toast(`${n} ${n === 1 ? 'book is' : 'books are'} back on the shelf`, 'ok')
+    closeModal()
+    await refresh()
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+  }
+}
+
 function seeTickets(book) {
   closeModal()
   state.query = book.book
@@ -491,6 +516,7 @@ function seeTickets(book) {
                 @receipt="id => openModal('receipt', id)"
                 @sell-book="b => openModal('sellbook', b)"
                 @restock="b => openModal('bookaction', { kind: 'restock', book: b.book })"
+                @withdraw-offer="withdrawOffer"
                 @see-tickets="seeTickets" />
     <SettleBook v-else-if="modal?.kind === 'settle'" :book="modal.payload"
                 @close="closeModal" @settled="afterBookChange"

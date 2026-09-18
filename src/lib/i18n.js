@@ -176,6 +176,7 @@ export const MY = {
   'Given': 'လှူဒါန်းပြီး',
   'Cancelled': 'ပယ်ဖျက်ပြီး',
   'In the office': 'ရုံးတွင် ရှိသည်',
+  'Waiting to be accepted': 'ရောင်းသူ လက်ခံရန် စောင့်ဆိုင်းနေသည်',
   'With a seller': 'ရောင်းသူထံ ရောက်နေသည်',
   'Brought back': 'ပြန်ရောက်ပြီး',
   // A settled book is not merely 'finished' — the money in it has been

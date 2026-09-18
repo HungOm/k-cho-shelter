@@ -9,7 +9,7 @@ import StatusPill from '../ui/StatusPill.vue'
 import History from './History.vue'
 
 const props = defineProps({ book: Object })
-const emit = defineEmits(['close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock'])
+const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock'])
 const currency = computed(() => state.cfg?.currency || '')
 const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status))
 
@@ -287,6 +287,16 @@ const showHistory = ref(false)
       <!-- Before the shelf button, because it is the smaller correction and the
            one somebody usually wants: the book stays closed and its figures are
            put right. -->
+      <!-- TAKING AN OFFER BACK, on the screen where somebody is standing when
+           they decide to. Until this existed the only route was the Approvals
+           list, which is the SELLER'S list of things to answer rather than the
+           organiser's list of things they have sent — so an offer made by
+           mistake could only be undone by waiting a week for it to lapse.
+           Nothing has been accepted, so nothing has to come back: the books go
+           straight to the shelf and the seller's request closes as cancelled. -->
+      <button v-if="isAdmin && book.status === 'Offered'" class="btn primary"
+              @click="emit('withdraw-offer', book)">Take the offer back</button>
+
       <button v-if="canRecount" class="btn" @click="emit('settle', book)">Count it in again</button>
       <button v-if="canShelve" :class="['btn', frozen > 0 ? 'primary' : '']"
               @click="emit('restock', book)">Put it back on the shelf</button>

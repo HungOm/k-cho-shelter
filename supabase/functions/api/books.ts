@@ -592,8 +592,38 @@ export async function acceptOffer(p: Record<string, unknown>, user: AppUser, ctx
  * ORGANISER: take an offer back before the seller has answered.
  */
 export async function withdrawOffer(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
-  const requestId = String(p.requestId ?? '').trim()
-  if (!requestId) throw new ApiError('MISSING_FIELD', 'Which offer?')
+  /*
+   * BY REQUEST ID FROM THE QUEUE, OR BY BOOK FROM THE BOOK SHEET.
+   *
+   * An organiser looking at Book-005 knows the book and not the request id, and
+   * the book sheet is where somebody actually stands when they decide to take an
+   * offer back. Without this the only way out was the Approvals screen, which is
+   * the seller's list of things to answer, not the organiser's list of things
+   * they have sent.
+   *
+   * THE WHOLE OFFER COMES BACK, not the one book. An offer of five books was one
+   * act with one sentence the seller read, and withdrawing three of it leaves
+   * them a request that no longer says what it says. Named in the reply so the
+   * organiser sees what actually moved.
+   */
+  let requestId = String(p.requestId ?? '').trim()
+  if (!requestId) {
+    const idxs = await resolveBooks(ctx, p)
+    if (!idxs.length) throw new ApiError('MISSING_FIELD', 'Which offer?')
+    const { data: rows } = await ctx.supabaseAdmin
+      .from('pending_approvals').select('*')
+      .eq('status', 'Pending').not('decide_by_agent', 'is', null)
+    const hit = (rows ?? []).find((r: Record<string, unknown>) => {
+      const pay = (r.payload ?? {}) as { idxs?: unknown }
+      return Array.isArray(pay.idxs) && pay.idxs.some((i) => idxs.includes(Number(i)))
+    })
+    if (!hit) {
+      throw new ApiError('NOTHING_TO_DO',
+        'There is no offer waiting on those books. They may already have been ' +
+        'accepted, turned down, or run out of time.')
+    }
+    requestId = String(hit.request_id)
+  }
 
   const { data: r } = await ctx.supabaseAdmin
     .from('pending_approvals').select('*').eq('request_id', requestId).maybeSingle()
@@ -626,7 +656,13 @@ export async function withdrawOffer(p: Record<string, unknown>, user: AppUser, c
   // trail look like it was missing a translation it should never have had.
   await audit(ctx, 'OFFER_WITHDRAWN',
               { requestId, idxs, agentId: r.decide_by_agent }, user.email)
-  return { requestId, status: 'Cancelled', released: idxs.length }
+  const { data: freed } = await ctx.supabaseAdmin
+    .from('books').select('number').in('idx', idxs).order('idx')
+  return {
+    requestId, status: 'Cancelled', released: idxs.length,
+    books: (freed ?? []).map((b: { number: string }) => b.number),
+    agentId: r.decide_by_agent,
+  }
 }
 
 export async function returnBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
