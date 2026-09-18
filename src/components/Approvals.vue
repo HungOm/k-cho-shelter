@@ -11,7 +11,7 @@
  */
 import { ref, onMounted, onActivated, computed, watch, nextTick } from 'vue'
 import { api, toast, state, go, isAdmin } from '../lib/store.js'
-import { dateTime, relative, COUNTED_IN_HELP } from '../lib/format.js'
+import { dateTime, relative, money, COUNTED_IN_HELP } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 
 /** The seller this account is linked to, or '' for anybody who is not one. */
@@ -48,6 +48,11 @@ function reasonChips(r) {
     return ['The money does not match what you counted',
             'Some books are not here yet',
             'Please count the unsold stubs again']
+  }
+  if (isCountIn(r)) {
+    return ['I sold some of those numbers — they are not unsold',
+            'The money is not right',
+            'I have not finished this book yet']
   }
   if (isOffer(r)) {
     return ['I have not been given these books',
@@ -186,11 +191,23 @@ const isReport = (r) => r.detail?.kind === 'report_back'
  * an offer is neither — it is the organiser asking and the seller deciding.
  */
 const isOffer = (r) => r.detail?.kind === 'offer'
+/*
+ * A COUNT-IN THE DESK IS ASKING THIS SELLER TO CONFIRM.
+ *
+ * Addressed to them like an offer, and answered through the same door, but it
+ * is a different thing to read: an offer asks "will you take these books", and
+ * this asks "are these the ones that did not sell". The seller is holding the
+ * stubs, so the numbers have to be laid out as numbers they can look down —
+ * a sentence saying "3 tickets unsold" is not checkable against a handful of
+ * paper.
+ */
+const isCountIn = (r) => r.detail?.kind === 'count_in'
+const unsoldOf = (r) => Array.isArray(r.detail?.unsold) ? r.detail.unsold : []
 /** Mine to answer: the books were offered to the seller I am linked to. */
-const isMineToAccept = (r) => isOffer(r) && !!myAgentId.value &&
+const isMineToAccept = (r) => (isOffer(r) || isCountIn(r)) && !!myAgentId.value &&
   r.detail?.agentId === myAgentId.value
 /** Mine to withdraw: I am an organiser and nobody has answered yet. */
-const canWithdraw = (r) => isOffer(r) && isAdmin.value && r.status === 'Pending' &&
+const canWithdraw = (r) => (isOffer(r) || isCountIn(r)) && isAdmin.value && r.status === 'Pending' &&
   !isMineToAccept(r)
 
 /**
@@ -278,7 +295,7 @@ function canDecide(r) {
   // organiser and not by the system admin, because a handover agreed to on the
   // seller's behalf is the thing this whole feature exists to stop. The server
   // refuses it too; this is so the buttons are not there to press.
-  if (isOffer(r)) return isMineToAccept(r)
+  if (isOffer(r) || isCountIn(r)) return isMineToAccept(r)
   return youDecide.value || (isAdmin.value && isRequest(r))
 }
 
@@ -291,7 +308,7 @@ async function decide(r, approve) {
     // The organiser's door, not the System Admin's. Both end in the same
     // handler; which one is called is what decides whether this reader is
     // allowed to touch the row, and the server refuses the wrong pairing.
-    const door = isOffer(r) ? 'decide_offer'
+    const door = (isOffer(r) || isCountIn(r)) ? 'decide_offer'
                : youDecide.value ? 'decide_approval'
                : 'decide_book_request'
     const res = await api(door, {
@@ -390,6 +407,38 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
              would do to that book and whether it still can — the same check the
              server makes, made here, before the press rather than as a red
              error after it. -->
+        <template v-if="isCountIn(r)">
+          <div class="cin">
+            <div class="cin-h">
+              <b>{{ r.detail?.book }}</b>
+              <span class="muted small">check this against the stubs in your hand</span>
+            </div>
+
+            <!-- THE NUMBERS, AS NUMBERS. Laid out as tiles in ticket order so a
+                 seller can run down them against the paper — which is the whole
+                 act being asked for. A count in a sentence cannot be checked. -->
+            <p class="cin-lab">
+              These are the ones the office thinks did <b>not</b> sell
+              <template v-if="unsoldOf(r).length"> — {{ unsoldOf(r).length }} of them</template>:
+            </p>
+            <div v-if="unsoldOf(r).length" class="cin-tix">
+              <span v-for="n in unsoldOf(r)" :key="n">{{ n }}</span>
+            </div>
+            <p v-else class="cin-none">
+              None — the office thinks the whole book sold.
+            </p>
+
+            <div class="cin-sum">
+              <span><b>{{ r.detail?.recordedSold ?? 0 }}</b> sold</span>
+              <span><b>{{ money(r.detail?.amount, state.cfg?.currency) }}</b> to hand over</span>
+            </div>
+            <p class="hint tiny">
+              If you sold any of the numbers above, say no and tell them which —
+              agreeing puts those tickets back and takes the money off your total.
+            </p>
+          </div>
+        </template>
+
         <template v-if="isReport(r) && reportLines(r).length">
           <ul class="lines">
             <li v-for="l in reportLines(r)" :key="l.book" :class="{ stale: !l.ready }">
@@ -480,6 +529,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
             <button v-if="wantsReason !== r.requestId" class="btn danger grow"
                     :disabled="busy === r.requestId" @click="askWhy(r)">
               {{ isOffer(r) ? 'No, not mine'
+                 : isCountIn(r) ? 'No — that is not right'
                  : isReport(r) ? 'Not yet' : isRequest(r) ? 'Say no' : 'Turn down' }}
             </button>
             <button v-else class="btn danger grow"
@@ -491,6 +541,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
             <button class="btn primary grow" :disabled="busy === r.requestId" @click="decide(r, true)">
               {{ busy === r.requestId ? 'Working…'
                  : isOffer(r) ? 'Yes, I have them'
+                 : isCountIn(r) ? 'Yes, that is right'
                  : isReport(r) ? 'Accept the report'
                  : isRequest(r) ? 'Give them the books' : 'Approve and do it' }}
             </button>
@@ -520,14 +571,24 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
         </div>
         <div v-else-if="canWithdraw(r)" class="mt">
           <button class="btn" :disabled="busy === r.requestId" @click="withdraw(r)">
-            Take the offer back
+            {{ isCountIn(r) ? 'Take the question back' : 'Take the offer back' }}
           </button>
+          <!-- Two different consequences, so two different sentences. Taking an
+               OFFER back frees reserved books; taking a COUNT-IN question back
+               frees nothing — the book was never going anywhere, and what ends
+               is only the asking. -->
           <p class="hint">
-            The books go back on the shelf. Nothing was ever on
-            {{ r.detail?.agentName || 'their' }} balance.
+            <template v-if="isCountIn(r)">
+              {{ r.detail?.book }} stays where it is, with
+              {{ r.detail?.agentName || 'them' }}. Nothing is counted in.
+            </template>
+            <template v-else>
+              The books go back on the shelf. Nothing was ever on
+              {{ r.detail?.agentName || 'their' }} balance.
+            </template>
           </p>
         </div>
-        <div v-else-if="isOffer(r)" class="mt">
+        <div v-else-if="isOffer(r) || isCountIn(r)" class="mt">
           <!-- An offer somebody else has to answer. Said rather than shown as an
                empty space, because a queue row with no controls and no sentence
                reads as broken. -->
@@ -575,6 +636,29 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 </template>
 
 <style scoped>
+/* A COUNT-IN PUT TO THE SELLER. The numbers are the point of the panel, so they
+   get the room: tiles in ticket order that a thumb can run down against the
+   paper, rather than a sentence with a total in it. */
+.cin {
+  margin-top: 10px; padding: 12px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.cin-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cin-h b { font-size: 1.05rem; }
+.cin-lab { margin: 10px 0 7px; font-size: .92rem; }
+.cin-tix { display: flex; flex-wrap: wrap; gap: 5px; }
+.cin-tix span {
+  border: 1px solid var(--border); background: var(--surface);
+  border-radius: 7px; padding: 6px 9px;
+  font-weight: 700; font-variant-numeric: tabular-nums; font-size: .88rem;
+}
+.cin-none { margin: 4px 0 0; font-size: .92rem; font-weight: 600; }
+.cin-sum {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--border);
+  font-size: .95rem;
+}
+
 /* THE REASON STEP. Tinted with the refusal colour rather than neutral, so the
    panel itself says what is about to happen — an organiser who opened it by
    mistake should see that before they read a word. */

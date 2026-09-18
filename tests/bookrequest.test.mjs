@@ -311,8 +311,12 @@ console.log('12. and the screens offer it to the right person, in the right plac
   for (const door of ['decide_approval', 'decide_book_request', 'decide_offer']) {
     ok(approvals.includes(`'${door}'`), `the queue reaches ${door}`)
   }
-  ok(/isOffer\(r\) \? 'decide_offer'/.test(approvals),
-     'and an offer goes through the seller\'s door, chosen by the row and not by role')
+  // Two kinds of row are addressed to a seller now — an offer of books, and a
+  // count-in the desk is asking them to confirm — and both go through the same
+  // door for the same reason: it is the row that names who may answer, not a
+  // role. Asserted as "the seller's door is chosen by what the row is".
+  ok(/\(isOffer\(r\) \|\| isCountIn\(r\)\) \? 'decide_offer'/.test(approvals),
+     'and a row addressed to a seller goes through their door, chosen by the row and not by role')
   ok(/youDecide\.value \|\| \(isAdmin\.value && isRequest\(r\)\)/.test(approvals),
      'an organiser is offered the decision on a book request and on nothing else')
 }
