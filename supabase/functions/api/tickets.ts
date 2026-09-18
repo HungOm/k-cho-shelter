@@ -209,8 +209,31 @@ async function holdersWhoCouldHaveWritten(
 ): Promise<Set<string>> {
   const ids = [...new Set(agentIds.map((a) => String(a ?? '').trim()).filter(Boolean))]
   if (!ids.length) return new Set()
-  const { data } = await ctx.supabaseAdmin
+  const { data, error } = await ctx.supabaseAdmin
     .from('app_users').select('agent_id').eq('active', true).in('agent_id', ids)
+
+  /*
+   * A FAILED LOOKUP MEANS ASK, NOT SKIP.
+   *
+   * This read decides whether anybody is asked to explain themselves, and the
+   * first version of it destructured only `data`. A query that failed therefore
+   * came back as an empty set, every holder read as one who could not have
+   * written the sale, and the reason requirement switched itself off — with no
+   * error, no wrong figure and nothing on any screen. A rule that stops applying
+   * silently is worse than one that is wrong loudly: the wrong number gets
+   * queried by somebody, and this gets queried by nobody.
+   *
+   * So a failure falls the other way: treat every holder as one who could have,
+   * which asks a question that may not have been needed. The cost of the safe
+   * direction is a sentence somebody did not have to type. The cost of the other
+   * is a sale recorded into somebody else's book with no explanation and no
+   * trace that one was ever due.
+   *
+   * This is also what the client has claimed all along — overrideReasonNeeded
+   * treats an unknown seller as one who could have. The two now agree.
+   */
+  if (error) return new Set(ids)
+
   return new Set((data ?? [])
     .map((r: { agent_id?: string | null }) => String(r.agent_id ?? '').trim())
     .filter(Boolean))

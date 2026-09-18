@@ -450,6 +450,53 @@ console.log('a seller with no account is not asked to explain themselves')
   eq(r2.status, 'Sold', 'a suspended account cannot have written it, so nothing is asked')
 }
 
+console.log('and when the lookup itself fails, it asks rather than going quiet')
+{
+  /*
+   * THE FAILURE DIRECTION OF A RULE IS PART OF THE RULE.
+   *
+   * The lookup that decides whether anybody is asked to explain themselves used
+   * to destructure only `data`. A query that failed came back as an empty set,
+   * every holder read as somebody who could not have written the sale, and the
+   * reason requirement switched itself OFF — no error, no wrong figure, nothing
+   * on any screen.
+   *
+   * That is the worst shape a failure can take. A wrong number gets queried by
+   * whoever reads it; a rule that stops applying gets queried by nobody, and the
+   * only trace is sales recorded into other people's books with no explanation
+   * and nothing to say one was ever due.
+   *
+   * So it falls the other way. The cost of the safe direction is a sentence
+   * somebody did not have to type; the cost of the other is silence.
+   */
+  const w = world()
+  // A client whose app_users lookup fails and whose everything else works.
+  const broken = {
+    ...w.ctx.supabaseAdmin,
+    from: (t) => {
+      if (t !== 'app_users') return w.ctx.supabaseAdmin.from(t)
+      const dead = {
+        select: () => dead, eq: () => dead, in: () => dead, not: () => dead,
+        then: (res) => res({ data: null, error: { message: 'app_users is unreachable' } }),
+      }
+      return dead
+    },
+  }
+
+  // Book-001 is out with Daw Hla. With the lookup working this asks; with it
+  // broken it must still ask, rather than deciding she is a paper seller.
+  eq(await codeOf(() => tickets.sellTicket(
+       { ticketNumber: 'KS-00003', ...buyer }, users.admin, { supabaseAdmin: broken })),
+     'REASON_REQUIRED', 'a failed lookup asks anyway')
+
+  // And with a reason it goes through, so the failure costs a sentence and not
+  // the sale — an organiser is never stuck, only asked.
+  const ok2 = await tickets.sellTicket(
+    { ticketNumber: 'KS-00003', ...buyer, reason: 'she rang it in' },
+    users.admin, { supabaseAdmin: broken })
+  eq(ok2.status, 'Sold', 'and with one, the sale still happens')
+}
+
 // ============ 5. and the screens ask before the server has to refuse ============
 console.log('the screens ask why, rather than letting the refusal arrive as an error')
 {
