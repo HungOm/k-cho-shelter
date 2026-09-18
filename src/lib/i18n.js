@@ -112,6 +112,7 @@ export const MY = {
   'Waiting for approval': 'ခွင့်ပြုချက် စောင့်ဆိုင်းဆဲ',
   'Sell a whole book': 'စာအုပ်တစ်အုပ်လုံး ရောင်းရန်',
   'Four things, once.': 'လေးခု၊ တစ်ကြိမ်သာ။',
+  'Yours to sell': 'သင် ရောင်းရန် လက်မှတ်များ',
   'All good — nothing needs you right now.': 'အားလုံး အဆင်ပြေပါသည် — ယခု သင့်လုပ်ဆောင်ရန် မရှိပါ။',
   'Make the tickets': 'လက်မှတ်များ ပြုလုပ်ရန်',
   'Add your sellers': 'ရောင်းသူများ ထည့်ရန်',
