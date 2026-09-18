@@ -412,9 +412,18 @@ console.log('an APPROVED request actually runs — driven through decide, not ar
   const asked2 = await call('request_approval',
     { action: 'upsert_user', payload: { email: 'no@x.com', role: 'viewer' } },
     'admin@x.com', world)
-  const no = await call('decide_approval',
+  // A REASON IS REQUIRED NOW, and this is where that is asserted from the
+  // router's side: the same call without one must be refused, because a
+  // volunteer told "no" and nothing else cannot put anything right.
+  const noWhy = await call('decide_approval',
     { requestId: asked2.body.data.requestId, approve: false }, 'boss@x.com', world)
-  ok(no.body.ok, 'refusing succeeds')
+  ok(!noWhy.body.ok && noWhy.body.error?.code === 'REFUSAL_NEEDS_REASON',
+     `turning something down without saying why is refused (${noWhy.body.error?.code})`)
+
+  const no = await call('decide_approval',
+    { requestId: asked2.body.data.requestId, approve: false,
+      note: 'We already have somebody doing that job' }, 'boss@x.com', world)
+  ok(no.body.ok, 'refusing succeeds when a reason is given')
   eq(no.body.data?.executed, 'false', 'and reports that it did not execute')
   ok(!world.row('app_users', (u) => u.email === 'no@x.com'), 'nobody was added')
 }

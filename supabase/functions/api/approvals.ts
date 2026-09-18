@@ -767,9 +767,38 @@ export async function decideApproval(
   }
 
   if (!p.approve) {
+    /*
+     * A REFUSAL CARRIES A REASON, AND THE NOTE FIELD USED TO SAY "optional".
+     *
+     * The person on the other end of this is a volunteer who counted a book,
+     * added up cash and sent it in. Telling them no and nothing else is the
+     * worst outcome the whole queue can produce: they cannot fix it, cannot
+     * argue with it, and the only way forward is to ask somebody in person.
+     *
+     * Required for every refusal rather than for reports alone. There is no
+     * kind of request here where "no, and I will not say why" is the right
+     * thing to send somebody, and a rule with an exception in it is one people
+     * have to remember.
+     *
+     * A LENGTH, not just non-blank. "no" and "." clear a non-empty check and
+     * tell nobody anything; ten characters is about the shortest real reason
+     * somebody types ("wrong total", "money short").
+     */
+    const why = String(p.note ?? '').trim()
+    if (why.length < 10) {
+      // Its own code, not REASON_REQUIRED: that one already means "an organiser
+      // is writing into a book that is out with a seller and must say why", and
+      // it has a Burmese sentence to match. Two meanings on one code shows the
+      // wrong translation to the person who reads Burmese and nothing to anyone
+      // who reads the code.
+      throw new ApiError('REFUSAL_NEEDS_REASON',
+        'Say why you are turning this down. Whoever sent it sees your words, ' +
+        'and it is the only way they can put it right.')
+    }
+
     await ctx.supabaseAdmin.from('pending_approvals')
       .update({ status: 'Rejected', decided_by: user.email, decided_at: new Date().toISOString(),
-                note: String(p.note ?? '') })
+                note: why })
       .eq('request_id', requestId)
     // Turning down an offer is the seller saying "those are not mine", so the
     // books go back on the shelf. Without this the refusal is recorded and the

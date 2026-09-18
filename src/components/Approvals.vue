@@ -9,7 +9,7 @@
  * approved is what happens — an approval that merely unlocked the action for
  * later would let the payload change in between.
  */
-import { ref, onMounted, onActivated, computed, watch } from 'vue'
+import { ref, onMounted, onActivated, computed, watch, nextTick } from 'vue'
 import { api, toast, state, go, isAdmin } from '../lib/store.js'
 import { dateTime, relative, COUNTED_IN_HELP } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
@@ -21,6 +21,43 @@ const rows = ref(null)
 const youDecide = ref(false)
 const busy = ref('')
 const note = ref('')
+/** Which row has opened its "why" box. One at a time: this is a list. */
+const wantsReason = ref('')
+const whyInput = ref(null)
+
+function askWhy(r) {
+  wantsReason.value = r.requestId
+  note.value = ''
+  // Focus it, so the keyboard is already up on a phone and the chips are
+  // reachable without a second tap.
+  nextTick(() => {
+    const el = Array.isArray(whyInput.value) ? whyInput.value[0] : whyInput.value
+    el?.focus?.()
+  })
+}
+
+/*
+ * THE COMMON REASONS, WORDED AS THE VOLUNTEER WILL READ THEM.
+ *
+ * Not categories and not codes — the chip text goes straight into the note and
+ * straight to the person who sent it. Different for each kind of request,
+ * because "the money does not match" means nothing on a request for books.
+ */
+function reasonChips(r) {
+  if (isReport(r)) {
+    return ['The money does not match what you counted',
+            'Some books are not here yet',
+            'Please count the unsold stubs again']
+  }
+  if (isOffer(r)) {
+    return ['I have not been given these books',
+            'These are not mine — wrong seller',
+            'I cannot take them this time']
+  }
+  return ['Not right now — ask me again later',
+          'Somebody else is taking these',
+          'Please come and see me first']
+}
 
 onMounted(load)
 
@@ -264,6 +301,7 @@ async function decide(r, approve) {
       ...(approve && isReport(r) ? { verified: counted.value[r.requestId] } : {})
     })
     note.value = ''
+    wantsReason.value = ''
     if (res.executed) {
       toast(`Done — ${res.summary}`, 'ok')
     } else {
@@ -407,11 +445,48 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
             This is not what they said. What you counted is what gets recorded; their
             figures stay on this request, and the difference goes on their check-in.
           </p>
-          <input v-model="note" placeholder="A note, if you want (optional)">
+          <!--
+            THE REASON, AND WHY IT IS NOT JUST A REQUIRED BOX.
+            Making a field mandatory is the lazy half of this. The person here
+            is an organiser with twenty of these to get through, and a blank box
+            marked * is a thing to get past — which is how you get "no" typed
+            into it. So the common reasons are one tap, and the box is there for
+            everything else. Tapping fills it rather than submitting, because
+            the words are what the volunteer reads and they stay editable.
+          -->
+          <div v-if="wantsReason === r.requestId" class="whybox">
+            <label :for="`why-${r.requestId}`" class="whylab">
+              Why are you turning this down? <span class="req">*</span>
+            </label>
+            <div class="chips">
+              <button v-for="c in reasonChips(r)" :key="c" type="button" class="chip"
+                      @click="note = c">{{ c }}</button>
+            </div>
+            <input :id="`why-${r.requestId}`" v-model="note" ref="whyInput"
+                   placeholder="In your own words — they will read this">
+            <p class="hint tiny">
+              {{ note.trim().length >= 10
+                 ? 'They will see this and can put it right.'
+                 : 'A few words at least — "no" on its own tells them nothing.' }}
+            </p>
+          </div>
+          <input v-else v-model="note" placeholder="A note, if you want (optional)">
+
           <div class="row mt">
-            <button class="btn danger grow" :disabled="busy === r.requestId" @click="decide(r, false)">
+            <!-- FIRST PRESS ASKS, SECOND PRESS SENDS. Turning somebody down is
+                 not a thing to do by accident, and the reason is the part that
+                 makes it survivable — so the button opens the box, and only
+                 becomes a refusal once there is something to send. -->
+            <button v-if="wantsReason !== r.requestId" class="btn danger grow"
+                    :disabled="busy === r.requestId" @click="askWhy(r)">
               {{ isOffer(r) ? 'No, not mine'
                  : isReport(r) ? 'Not yet' : isRequest(r) ? 'Say no' : 'Turn down' }}
+            </button>
+            <button v-else class="btn danger grow"
+                    :disabled="busy === r.requestId || note.trim().length < 10"
+                    :title="note.trim().length < 10 ? 'Say why first' : undefined"
+                    @click="decide(r, false)">
+              {{ busy === r.requestId ? 'Working…' : 'Send the refusal' }}
             </button>
             <button class="btn primary grow" :disabled="busy === r.requestId" @click="decide(r, true)">
               {{ busy === r.requestId ? 'Working…'
@@ -500,6 +575,29 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 </template>
 
 <style scoped>
+/* THE REASON STEP. Tinted with the refusal colour rather than neutral, so the
+   panel itself says what is about to happen — an organiser who opened it by
+   mistake should see that before they read a word. */
+.whybox {
+  margin-top: 10px; padding: 12px; border-radius: var(--r);
+  background: color-mix(in srgb, var(--bad) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bad) 28%, transparent);
+}
+.whylab { display: block; font-weight: 700; font-size: .92rem; margin-bottom: 8px; }
+.whybox .req { color: var(--bad); }
+/* Wrapped, not scrolled: these are sentences, and a sideways scroller hides the
+   one somebody wanted. */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+.chip {
+  border: 1px solid var(--border); background: var(--surface); color: inherit;
+  border-radius: 99px; padding: 6px 11px; font-size: .84rem;
+  font-weight: 600; cursor: pointer; text-align: left; line-height: 1.25;
+  transition: border-color .12s var(--ease), color .12s var(--ease);
+}
+.chip:hover, .chip:focus-visible { border-color: var(--bad); color: var(--bad); }
+.whybox input { width: 100%; }
+.whybox .hint { margin: 6px 0 0; }
+
 .look { margin-top: 8px; }
 .lines { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .lines li {

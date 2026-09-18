@@ -258,6 +258,7 @@ export const MY_ERRORS = {
   // Not a refusal: the organiser MAY do this, and is being asked to say why.
   // The English underneath carries the rest; this has to read as a question
   // rather than as a wall, or somebody stops recording the sale at all.
+  REFUSAL_NEEDS_REASON: 'ငြင်းပယ်ရသည့် အကြောင်းရင်းကို ရေးပါ — ပို့သူက သင့်စာကို မြင်ရပြီး ပြင်ဆင်နိုင်ပါသည်',
   REASON_REQUIRED: 'ဤစာအုပ်သည် ရောင်းသူထံတွင် ရှိနေသည် — အဘယ်ကြောင့်ဟု အကြောင်းပြချက် ရေးပါ',
   // Asking for a book, by somebody whose account is not linked to a seller.
   // Books are handed to a person, and the record has to name which one.
