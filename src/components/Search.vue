@@ -199,6 +199,21 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
       </span>
     </div>
 
+    <!--
+      THE PAGER, TOP AND BOTTOM, and the top one is the point.
+      It was under the list only — below twenty-five rows, off the bottom of
+      every screen — so it was reported as not existing at all. A control nobody
+      scrolls to is a control nobody has. The top copy also puts the page you are
+      on beside the count, which is where somebody looks to find out where they
+      are in a long list.
+      Both sit OUTSIDE the v-if chain below. Wedged between the results and the
+      empty states, the pager orphaned them from the v-if they belonged to —
+      "nothing matches" then hung off the pager's own condition and could never
+      show while a search was running.
+    -->
+    <Pager v-if="!state.loadProgress" v-model:page="page"
+           :total="searchResults.results.length" :size="PAGE" noun="tickets" />
+
     <div class="card flush">
       <!-- loading -->
       <ul v-if="state.loadProgress" class="list">
@@ -241,11 +256,6 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
         </li>
       </TransitionGroup>
 
-      <!-- Under the list, where somebody arrives after reading it. It states the
-           total and hides itself when everything fits. -->
-      <Pager v-if="!state.loadProgress" v-model:page="page"
-             :total="searchResults.results.length" :size="25" noun="tickets" />
-
       <!-- nothing -->
       <Empty v-else-if="!state.tickets.length" art="🎟️" title="No tickets yet">
         The tickets have not been made. The organiser needs to set the numbers
@@ -257,6 +267,9 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
         or a phone number written any way you like.
       </Empty>
     </div>
+
+    <Pager v-if="!state.loadProgress" v-model:page="page"
+           :total="searchResults.results.length" :size="PAGE" noun="tickets" />
 
     <!-- On top of the list, not instead of it. -->
     <History v-if="showHistory" :ticket="showHistory" @close="showHistory = null" />
