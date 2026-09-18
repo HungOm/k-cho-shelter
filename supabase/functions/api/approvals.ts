@@ -53,6 +53,14 @@ const TTL_FOR: Record<string, number> = {
    * clears is stock the raffle cannot sell.
    */
   accept_offer: 24 * 7,
+  /*
+   * A WEEK TO CONFIRM A COUNT-IN, matching an offer. Long enough for somebody
+   * who is not on the app daily; short enough that a book is not held open by
+   * silence. When it lapses the ask is gone and the book is still Out — the
+   * organiser's way through is the deadline and a return, not a request that
+   * never expires.
+   */
+  settle_book: 24 * 7,
 }
 const ttlFor = (action: string) => TTL_FOR[action] ?? TTL_HOURS
 
@@ -543,6 +551,70 @@ async function releaseOffered(
   }
 }
 
+/**
+ * A ROW ADDRESSED TO ONE NAMED SELLER, whatever it is asking them.
+ *
+ * Offers were the first of these and the machinery was built inside openOffer.
+ * Asking a seller to confirm a count-in is the same row with different words,
+ * so the shape is lifted out here — one place that knows how a seller-decided
+ * request is written, rather than two that can drift about scoping, expiry or
+ * what the audit row says.
+ *
+ * decide_by_agent is the whole of the addressing. Both existing doors key on
+ * ROLE, and a role cannot say "this person and nobody else".
+ */
+export async function openSellerDecision(
+  ctx: Ctx,
+  organiser: AppUser,
+  spec: {
+    action: string
+    agentId: string
+    agentName?: string
+    payload: Record<string, unknown>
+    kind: string
+    detail: Record<string, unknown>
+    text: string
+    /*
+     * WHOSE ACT RUNS when they agree. An OFFER runs as the seller: accepting is
+     * them taking books on, and it belongs in their name. A COUNT-IN runs as
+     * the organiser: the desk is receiving money and closing a book, and the
+     * seller is attesting to the figures rather than performing the act.
+     */
+    runAs?: 'approver' | 'requester'
+  },
+) {
+  const detail = {
+    kind: spec.kind,
+    runAs: spec.runAs ?? 'requester',
+    agentId: spec.agentId,
+    agentName: spec.agentName ?? '',
+    offeredBy: organiser.email,
+    ...spec.detail,
+    text: spec.text,
+  }
+
+  const requestId = newId()
+  const expiresAt = new Date(Date.now() + ttlFor(spec.action) * 3600_000).toISOString()
+  const { error } = await ctx.supabaseAdmin.from('pending_approvals').insert({
+    request_id: requestId,
+    action: spec.action,
+    payload: spec.payload,
+    summary: spec.text,
+    detail,
+    requested_by: organiser.email,
+    decide_by_agent: spec.agentId,
+    expires_at: expiresAt,
+  })
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SELLER_ASKED',
+    details: { requestId, action: spec.action, agentId: spec.agentId, summary: spec.text },
+    email: organiser.email,
+  })
+  return { requestId, summary: spec.text, detail, expiresAt }
+}
+
 export async function openOffer(
   ctx: Ctx,
   organiser: AppUser,
@@ -729,18 +801,36 @@ export async function decideApproval(
    * So this row is refused to every door but the seller's own, and the seller's
    * door is refused every other row.
    */
-  const offer = !!r.decide_by_agent
+  /*
+   * TWO DIFFERENT QUESTIONS, and offers answered both with one flag.
+   *
+   *   sellerDecides  — is this row addressed to one named seller? That is the
+   *                    DOOR: who may answer it, and which door they come
+   *                    through. True of an offer and of a count-in ask.
+   *   offer          — is it specifically an offer of books? That decides two
+   *                    narrower things: turning it down releases the books, and
+   *                    agreeing runs in the SELLER'S name because taking books
+   *                    on is their act.
+   *
+   * A count-in is addressed to the seller and runs as the ORGANISER: the desk
+   * is receiving money and closing a book, and the seller is attesting to the
+   * figures rather than performing the act. Conflating the two would have
+   * settled a book under the seller's name and skipped the organiser's own
+   * permission re-check.
+   */
+  const sellerDecides = !!r.decide_by_agent
+  const offer = sellerDecides && r.action === 'accept_offer'
 
-  if (opts.offersOnly && !offer) {
+  if (opts.offersOnly && !sellerDecides) {
     throw new ApiError('NOT_YOUR_DECISION',
       'That request is not an offer of books to you.', null, 403)
   }
-  if (offer && !opts.offersOnly) {
+  if (sellerDecides && !opts.offersOnly) {
     throw new ApiError('SELLER_DECIDES',
-      'Those books were offered to a seller, and only they can accept or turn them down. ' +
-      'You can withdraw the offer instead.', null, 403)
+      'That one is addressed to a seller, and only they can answer it. ' +
+      'You can withdraw it instead.', null, 403)
   }
-  if (offer && r.decide_by_agent !== user.agentId) {
+  if (sellerDecides && r.decide_by_agent !== user.agentId) {
     throw new ApiError('NOT_YOUR_DECISION',
       'Those books were offered to somebody else.', null, 403)
   }
@@ -803,6 +893,9 @@ export async function decideApproval(
     // Turning down an offer is the seller saying "those are not mine", so the
     // books go back on the shelf. Without this the refusal is recorded and the
     // stock stays reserved for the person who refused it.
+    // Only an OFFER has books reserved behind it. A count-in the seller does
+    // not agree with leaves the book exactly where it is — out with them, which
+    // is the truth until somebody counts it.
     if (offer) {
       await releaseOffered(ctx, [r as Record<string, unknown>], user.email,
                            'The seller turned the offer down')

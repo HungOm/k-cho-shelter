@@ -32,7 +32,7 @@ const WRITES = new Set([
   // Offering books. All four mutate, so all four take the write timeout — a
   // read timeout on a request that succeeded reports it as failed, and the
   // volunteer presses again.
-  'offer_books', 'withdraw_offer', 'accept_offer',
+  'offer_books', 'withdraw_offer', 'accept_offer', 'request_count_in',
   'record_winner', 'expand_tickets', 'set_active_tickets',
   'set_ticket_ceiling', 'roll_check_in', 'set_final_deadline', 'record_check_in',
   'set_check_in_date', 'set_sales_close',

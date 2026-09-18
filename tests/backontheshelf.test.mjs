@@ -296,7 +296,11 @@ export const loadDelta = async () => {}
   ok(/freeze with it|frozen/i.test(said), 'and that the tickets freeze with the book')
   ok(/back on the shelf/i.test(said), 'and names the way out, as the ticket screen does')
   ok(/Mark it brought back/.test(said), 'and offers the act that is actually being asked for')
-  ok(/Count it in anyway/.test(said),
+  // Case-insensitive, because the sentence grew a prefix: a book still out with
+  // its seller is COUNTED IN BY THEM now, so the desk asks rather than decides
+  // and the button says so. The point of the line is unchanged — the count-in is
+  // still reachable for whoever means it, and it is not the obvious press.
+  ok(/count it in anyway/i.test(said),
      'with the count-in still there for whoever means it, and no longer the obvious press')
   ok(!/Finish this book/.test(said),
      'so the button that reads as the ordinary next step is not what a nought-value count-in looks like')

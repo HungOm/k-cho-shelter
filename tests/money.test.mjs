@@ -31,6 +31,20 @@
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
 import { fakeDb, baseConfig, users, codeOf } from './fakedb.mjs'
 
+/*
+ * A SETTLEMENT THE SELLER AGREED TO.
+ *
+ * A book still out with its seller cannot be counted in by the desk alone any
+ * more — the seller is the only person who knows what sold, so the organiser
+ * asks and the seller confirms. `_viaApproval` is what the queue sets when that
+ * confirmation comes back through it, and it is what these cases stand for:
+ * they are about what a settlement COMPUTES, not about who is allowed to start
+ * one, and rewriting each of them as a two-party exchange would test the queue
+ * over and over and the arithmetic once.
+ */
+const confirmed = (ctx) => Object.assign(ctx, { _viaApproval: true })
+
+
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 const eq = (g, w, what) => {
@@ -216,7 +230,7 @@ console.log('7. settling writes to the same ledger')
 {
   const w = world()
   await books.settleBook(
-    { bookNumber: 'Book-001', amountPaid: 70, unsoldTickets: [] }, users.boss, w.ctx)
+    { bookNumber: 'Book-001', amountPaid: 70, unsoldTickets: [] }, users.boss, confirmed(w.ctx))
 
   const rows = w.table('payments')
   eq(rows.length, 1, 'the settlement recorded a handover')
@@ -236,7 +250,7 @@ console.log('7. settling writes to the same ledger')
   const w2 = world()
   await M.recordPayment({ agentId: 'A001', amount: 30 }, users.boss, w2.ctx)
   await books.settleBook(
-    { bookNumber: 'Book-001', amountPaid: 70, unsoldTickets: [] }, users.boss, w2.ctx)
+    { bookNumber: 'Book-001', amountPaid: 70, unsoldTickets: [] }, users.boss, confirmed(w2.ctx))
   eq(w2.table('payments').filter((x) => x.source === 'settlement').length, 1,
      'the settlement left its row')
   const line = (await reports.reportOutstanding({}, users.boss, w2.ctx))
@@ -266,7 +280,7 @@ console.log('8. a settlement and its ledger row move together, or neither does')
   delete w.db.tables.payments
 
   eq(await codeOf(() => books.settleBook(
-    { bookNumber: 'Book-001', amountPaid: 70, unsoldTickets: [] }, users.boss, w.ctx)),
+    { bookNumber: 'Book-001', amountPaid: 70, unsoldTickets: [] }, users.boss, confirmed(w.ctx))),
     'QUERY_FAILED', 'a ledger that cannot be written refuses the settlement')
 }
 

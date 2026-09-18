@@ -142,6 +142,9 @@ const CALLS = {
   // book and not the request id. NOTHING_TO_DO here is the honest answer for a
   // fixture with no offer outstanding, and it is on the deliberate list.
   withdraw_offer: { fromBook: 'Book-002' },
+  // Asking a seller to count a book in. NOTHING_TO_DO for a fixture whose books
+  // are not out with anybody, which is on the deliberate list.
+  request_count_in: { bookNumber: 'Book-002', amountPaid: 0, unsoldTickets: [] },
   transfer_books: { fromBook: 'Book-001', toAgentId: 'A001' },
   return_books: { fromBook: 'Book-001' },
   settle_book: { bookNumber: 'Book-001', amountPaid: 0, unsoldTickets: [] },
@@ -220,6 +223,13 @@ const DELIBERATE = new Set([
   // is the super admin, so the two selling actions land on it — which is the
   // rule working rather than a gap in the fixture.
   'REASON_REQUIRED',
+  /*
+   * A book still out with its seller is counted in BY THEM now, not by the desk
+   * — they are the only person who knows what sold. The fixture's books are all
+   * out, so settle_book lands here, which is the rule working rather than a gap.
+   * request_count_in is the route, and it is exercised on its own line above.
+   */
+  'SELLER_MUST_CONFIRM',
   'DUPLICATE_IN_BATCH', 'BATCH_REJECTED',
 ])
 

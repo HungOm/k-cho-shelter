@@ -142,6 +142,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   list_books: { group: 'Books', label: 'See the books' },
   issue_books: { group: 'Books', label: 'Give books to a seller' },
   offer_books: { group: 'Books', label: 'Offer books to a seller' },
+  request_count_in: { group: 'Money', label: 'Ask a seller to count a book in' },
   withdraw_offer: { group: 'Books', label: 'Take back an offer nobody has answered' },
   accept_offer: { group: 'Books', label: 'Take on books offered to you' },
   decide_offer: { group: 'Books', label: 'Accept or turn down books offered to you' },
@@ -238,6 +239,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // --- books ---
   issue_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.issueBooks },
   offer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.offerBooks },
+  request_count_in: { roles: ADMIN_ONLY, kind: 'write', fn: books.requestCountIn },
   withdraw_offer: { roles: ADMIN_ONLY, kind: 'write', fn: books.withdrawOffer },
   /*
    * ADMIN_ONLY AND RUN BY A SELLER, WHICH IS NOT A CONTRADICTION.

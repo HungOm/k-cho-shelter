@@ -21,7 +21,7 @@ import {
 // not a cycle — deadlines.ts already depends on money.ts the same way.
 import { recordPayment } from './money.ts'
 // The approvals queue owns the row a seller answers; books.ts owns the books.
-import { openOffer } from './approvals.ts'
+import { openOffer, openSellerDecision } from './approvals.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any; rpc: (f: string, a: unknown) => any } }
 
@@ -706,6 +706,99 @@ export async function returnBooks(p: Record<string, unknown>, user: AppUser, ctx
  * Goes through a Postgres function because it writes a book row and up to ten
  * ticket rows together — half a settlement is a figure nobody can reconcile.
  */
+/**
+ * ORGANISER: ask the seller to count a book in.
+ *
+ * THE FOURTH CORNER OF A PATTERN THAT ALREADY HAD THREE. A seller asks for
+ * books and the organiser grants it; the organiser offers books and the seller
+ * accepts; the seller reports back and the organiser accepts. The one that was
+ * missing is the organiser proposing and the seller agreeing, and it is the one
+ * that decides money.
+ *
+ * WHAT GOES IN FRONT OF THE SELLER is the figures, not a question. The desk can
+ * see what has been written down in the book, so it proposes: these numbers
+ * look unsold, that is what the rest comes to. The seller is the one holding
+ * the stubs and can say "no — 47 and 48 went this morning". Agreeing is what
+ * writes; disagreeing sends it back with a reason, which the refusal rule
+ * already requires.
+ *
+ * IT RUNS AS THE ORGANISER, unlike an offer. Accepting an offer is the seller
+ * taking books on and belongs in their name. A settlement is the desk receiving
+ * money and closing a book — the organiser's act, which the seller is attesting
+ * to. decideApproval re-checks their permissions at the moment it runs, so a
+ * settlement cannot execute under the authority of somebody who has since been
+ * removed.
+ */
+/** The queue action a confirmed count-in runs. */
+const COUNT_IN_ACTION = 'settle_book'
+
+export async function requestCountIn(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const bookNumber = String(p.bookNumber ?? '').trim()
+  if (!bookNumber) throw new ApiError('MISSING_FIELD', 'Which book?')
+
+  const { data: b } = await ctx.supabaseAdmin
+    .from('book_ledger_all')
+    .select('idx,number,status,held_by_agent,agent_name,recorded_sold,recorded_amount,available')
+    .eq('number', bookNumber).maybeSingle()
+  if (!b) throw new ApiError('BOOK_NOT_FOUND', `No book called ${bookNumber}.`, null, 404)
+  if (b.status !== 'Out') {
+    throw new ApiError('NOTHING_TO_DO',
+      `${bookNumber} is not out with anybody, so there is nobody to ask. ` +
+      'Count it in from the desk.')
+  }
+  if (!b.held_by_agent) {
+    throw new ApiError('NOTHING_TO_DO', `${bookNumber} is out but not with a named seller.`)
+  }
+
+  // Only one ask at a time per book: two proposals for the same book are two
+  // different sets of figures, and whichever is answered second overwrites the
+  // first without either party seeing that happen.
+  const { data: already } = await ctx.supabaseAdmin
+    .from('pending_approvals').select('request_id,payload')
+    .eq('status', 'Pending').eq('action', 'settle_book')
+    .eq('decide_by_agent', b.held_by_agent)
+  if ((already ?? []).some((r: Record<string, unknown>) =>
+        String((r.payload as { bookNumber?: string })?.bookNumber ?? '') === bookNumber)) {
+    throw new ApiError('NOTHING_TO_DO',
+      `You have already asked them to count ${bookNumber} in. It is waiting on them.`)
+  }
+
+  const unsold = Array.isArray(p.unsoldTickets) ? p.unsoldTickets.map(String) : []
+  const amount = Number(p.amountPaid)
+  if (isNaN(amount) || amount < 0) {
+    throw new ApiError('MISSING_FIELD', 'How much money are you expecting? (amountPaid)')
+  }
+
+  return await openSellerDecision(ctx, user, {
+    // Named through a constant, not an `action: '…'` literal. In this file that
+    // shape means "a movement written into book_history", which is what
+    // tests/history.test.mjs reads books.ts for — and a queue action sitting in
+    // it made the screen's trail look short of a word it should never have had.
+    action: COUNT_IN_ACTION,
+    agentId: String(b.held_by_agent),
+    agentName: String(b.agent_name ?? ''),
+    payload: {
+      bookNumber,
+      unsoldTickets: unsold,
+      amountPaid: amount,
+      allowUnidentified: !!p.allowUnidentified,
+      soldCount: p.soldCount ?? null,
+      note: String(p.note ?? ''),
+    },
+    kind: 'count_in',
+    detail: {
+      book: bookNumber,
+      unsold,
+      unsoldCount: unsold.length,
+      amount,
+      recordedSold: Number(b.recorded_sold ?? 0),
+    },
+    text: `${user.name || user.email} is asking you to count ${bookNumber} in: ` +
+          `${unsold.length} ${unsold.length === 1 ? 'ticket' : 'tickets'} unsold, ` +
+          `${amount.toFixed(2)} to hand over. Check it against your stubs.`,
+  })
+}
+
 export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const bookNumber = String(p.bookNumber ?? '').trim()
   if (!bookNumber) throw new ApiError('MISSING_FIELD', 'Which book?')
@@ -718,7 +811,37 @@ export async function settleBook(p: Record<string, unknown>, user: AppUser, ctx:
   // Read before the settle: the function answers about the BOOK, and the report
   // this settlement stands for belongs to the person who was holding it.
   const { data: held } = await ctx.supabaseAdmin
-    .from('books').select('idx,held_by_agent').eq('number', bookNumber).maybeSingle()
+    .from('books').select('idx,held_by_agent,status').eq('number', bookNumber).maybeSingle()
+
+  /*
+   * A BOOK STILL OUT IS COUNTED IN BY ITS SELLER, NOT BY THE DESK ALONE.
+   *
+   * The seller is the only person who knows what sold. They are standing
+   * somewhere with the stubs; the organiser has a screen and a guess, and a
+   * count-in typed from that guess is recorded as fact — including the tickets
+   * the seller sold this morning and has not written down yet, which this
+   * declares unsold and returns to the pool.
+   *
+   * So the desk ASKS. request_count_in puts the proposed figures in front of
+   * the seller, they confirm or correct them, and confirming runs this. That is
+   * the same shape as a book offer: the organiser proposes, the seller agrees,
+   * and the agreement is what writes.
+   *
+   * NOT WHEN IT IS ALREADY BACK. A Returned book is on the desk with its stubs,
+   * which is precisely when somebody counts it — and it is the route out of
+   * every deadlock below.
+   *
+   * AND NOT WHEN THE SELLER HAS ALREADY AGREED: _viaApproval means this call IS
+   * their confirmation coming back through the queue.
+   */
+  const viaApproval = !!(ctx as unknown as { _viaApproval?: boolean })._viaApproval
+  if (held?.status === 'Out' && !viaApproval && !p.force) {
+    throw new ApiError('SELLER_MUST_CONFIRM',
+      `${bookNumber} is still out with its seller, and they are the only person ` +
+      'who knows what sold. Ask them to count it in — they confirm the figures ' +
+      'and it settles. If the book is back on the desk, mark it returned first.',
+      { book: bookNumber })
+  }
 
   const { data, error } = await ctx.supabaseAdmin.rpc('settle_book', {
     p_book_number: bookNumber,

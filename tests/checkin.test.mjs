@@ -34,6 +34,20 @@
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
 import { fakeDb, baseConfig, users, codeOf } from './fakedb.mjs'
 
+/*
+ * A SETTLEMENT THE SELLER AGREED TO.
+ *
+ * A book still out with its seller cannot be counted in by the desk alone any
+ * more — the seller is the only person who knows what sold, so the organiser
+ * asks and the seller confirms. `_viaApproval` is what the queue sets when that
+ * confirmation comes back through it, and it is what these cases stand for:
+ * they are about what a settlement COMPUTES, not about who is allowed to start
+ * one, and rewriting each of them as a two-party exchange would test the queue
+ * over and over and the arithmetic once.
+ */
+const confirmed = (ctx) => Object.assign(ctx, { _viaApproval: true })
+
+
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 const eq = (g, w, what) => {
@@ -372,7 +386,7 @@ console.log('11. settling a book is itself a report')
   eq(before.reportState, 'late', 'holding a book and silent, nine days on')
 
   await books.settleBook(
-    { bookNumber: 'Book-001', amountPaid: 0, unsoldTickets: [] }, users.admin, w.ctx)
+    { bookNumber: 'Book-001', amountPaid: 0, unsoldTickets: [] }, users.admin, confirmed(w.ctx))
 
   const after = (await people.listAgents({}, users.admin, w.ctx)).agents
     .find((a) => a.id === 'A001')
@@ -393,7 +407,7 @@ console.log('12. and it never overwrites what somebody typed')
   await D.recordCheckIn(
     { agentId: 'A001', ticketsSold: 7, note: 'Came to the hall' }, users.admin, w.ctx)
   await books.settleBook(
-    { bookNumber: 'Book-001', amountPaid: 0, unsoldTickets: [] }, users.admin, w.ctx)
+    { bookNumber: 'Book-001', amountPaid: 0, unsoldTickets: [] }, users.admin, confirmed(w.ctx))
 
   eq(w.table('check_in_reports').length, 1, 'still one row for the round')
   const row = w.row('check_in_reports', (x) => x.agent_id === 'A001')
@@ -422,7 +436,7 @@ console.log('13. and when the side note fails, it fails LOUDLY and alone')
   delete w.db.tables.check_in_reports
 
   const settled = await books.settleBook(
-    { bookNumber: 'Book-001', amountPaid: 40, unsoldTickets: [] }, users.admin, w.ctx)
+    { bookNumber: 'Book-001', amountPaid: 40, unsoldTickets: [] }, users.admin, confirmed(w.ctx))
   ok(!!settled, 'the settlement still goes through — the money is not held hostage')
 
   const complaint = w.table('audit_log').find((r) => r.action === 'CHECK_IN_NOT_RECORDED')

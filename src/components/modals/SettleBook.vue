@@ -47,6 +47,8 @@ const handedBack = computed(() => props.book.status === 'Returned')
  * and what is typed here replaces them.
  */
 const recounting = computed(() => props.book.status === 'Settled')
+/** Still in the seller's hands, so this screen asks them rather than deciding. */
+const asking = computed(() => props.book.status === 'Out')
 
 const unsoldList = computed(() =>
   unsold.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))
@@ -317,6 +319,26 @@ async function settle() {
     // above while anything on the list is still wrong.
     else payload.unsoldTickets = returned.value
 
+    /*
+     * A BOOK STILL OUT IS ASKED FOR, NOT COUNTED.
+     *
+     * The seller is the one holding the stubs, and the figures on this screen
+     * are the desk's reading of what has been written down — which does not
+     * include the tickets they sold this morning and have not entered. So for a
+     * book that is Out these numbers go TO them as a proposal, they check it
+     * against what is in their hand, and their agreement is what settles it.
+     *
+     * A book that is already back on the desk is counted here as it always was:
+     * the paper is present, and that is the whole difference.
+     */
+    if (asking.value) {
+      const r = await api('request_count_in', payload)
+      toast(`Asked ${r.detail?.agentName || 'the seller'} to check ${props.book.book}`, 'ok')
+      emit('settled')
+      loadDelta().then(refresh)
+      return
+    }
+
     const r = await api('settle_book', payload)
     toast(`${props.book.book} counted — ${r.declaredSold} sold`,
       Math.abs(r.variance) > 0.005 ? 'bad' : 'ok')
@@ -329,6 +351,14 @@ async function settle() {
 <template>
   <Sheet :title="recounting ? `Count in ${book.book} again` : `Count in ${book.book}`"
          :subtitle="book.agentName ? `from ${book.agentName}` : ''" @close="emit('close')">
+      <!-- SAID BEFORE THE FIGURES, because it changes what they mean: on a book
+           still out these are a proposal the seller checks, not a record. -->
+      <p v-if="asking" class="note">
+        <b>{{ book.agentName || 'The seller' }} has to agree to this.</b>
+        They are holding the stubs, and they may have sold tickets this morning
+        that are not written down yet. These figures go to them to check.
+      </p>
+
     <div v-if="recounting" class="note warn">
       <b>This book has already been counted in.</b>
       What you type here replaces the figures on it: the money recorded with the old
@@ -475,7 +505,10 @@ async function settle() {
       <button :class="['btn', nothingToCount ? 'ghost' : 'primary']"
               :disabled="busy || unresolved.length || wrongBook.length || alreadySold.length"
               @click="settle">
-        {{ busy ? 'Saving…' : nothingToCount ? 'Count it in anyway' : 'Finish this book' }}
+        {{ busy ? 'Saving…'
+           : asking && nothingToCount ? 'Ask them to count it in anyway'
+           : asking ? 'Ask them to check it'
+           : nothingToCount ? 'Count it in anyway' : 'Finish this book' }}
       </button>
     </template>
   </Sheet>
