@@ -109,7 +109,7 @@ onMounted(async () => {
 
 <style scoped>
 .one { margin-bottom: 18px }
-.ticketpreview { position: relative; width: 100%; border: 1px solid var(--line, #e3e3e8); border-radius: 6px; overflow: hidden }
+.ticketpreview { position: relative; width: 100%; border: 1px solid var(--border); border-radius: 6px; overflow: hidden }
 .ticketpreview img { display: block; width: 100%; height: auto }
 .ticketpreview .overlay { position: absolute; inset: 0 }
 .ticketpreview .overlay :deep(svg) { width: 100%; height: 100%; display: block }

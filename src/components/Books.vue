@@ -8,6 +8,7 @@ import { state, isAdmin, go } from '../lib/store.js'
 import { BOOK_WORDS, money, relative } from '../lib/format.js'
 import BookGrid from './ui/BookGrid.vue'
 import StatusPill from './ui/StatusPill.vue'
+import Icon from './ui/Icon.vue'
 import Empty from './ui/Empty.vue'
 import History from './modals/History.vue'
 
@@ -90,7 +91,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
                own control on the row, rather than two taps down inside a sheet
                that also gives books out. -->
           <button class="rowhist" :title="`Where ${b.book} has been`"
-                  :aria-label="`Where ${b.book} has been`" @click="showHistory = b.book">🕘</button>
+                  :aria-label="`Where ${b.book} has been`" @click="showHistory = b.book"><Icon name="clock" :size="17" /></button>
         </li>
       </TransitionGroup>
       <Empty v-else art="📚" :title="status ? `No books ${BOOK_WORDS[status].toLowerCase()}` : 'No books'"

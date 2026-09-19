@@ -546,7 +546,7 @@ a.person { color: var(--brand); text-decoration: underline; }
 .step {
   position: relative;
   padding: 0 0 18px 22px;
-  border-left: 2px solid var(--line, #e3e3e3);
+  border-left: 2px solid var(--border);
 }
 .step:last-child { border-left-color: transparent; padding-bottom: 0; }
 
@@ -563,7 +563,7 @@ a.person { color: var(--brand); text-decoration: underline; }
 .who { font-size: .85rem; color: var(--muted); margin-top: 2px; }
 .note-line {
   font-size: .85rem; margin-top: 4px;
-  padding-left: 10px; border-left: 2px solid var(--line, #e3e3e3);
+  padding-left: 10px; border-left: 2px solid var(--border);
 }
 .tiny { font-size: .8rem; }
 </style>

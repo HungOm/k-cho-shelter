@@ -130,5 +130,66 @@ console.log('the screen asks the server for what it draws')
   ok(html.length > 500, 'and produced a screen rather than an empty shell')
 }
 
+/*
+ * PLACING THINGS BY DRAGGING THEM.
+ *
+ * Every coordinate on this screen used to be reachable only by typing into a
+ * number field. The handles are a second way into the same values, and the
+ * risk they carry is silence: a handle layer that renders nothing looks
+ * identical to one that is working until somebody tries to drag.
+ *
+ * So this checks they are actually emitted, that each is positioned from the
+ * artwork rather than from a guess, and that one that is switched off says so
+ * instead of being quietly dropped — which is the permissionui rule applied to
+ * a handle rather than to a button.
+ */
+console.log('the placement handles are on the picture')
+{
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: settle,
+  })
+
+  const handles = html.match(/class="[^"]*\bhandle\b[^"]*"/g) ?? []
+  ok(handles.length >= 8, `a handle for each placeable thing (got ${handles.length})`)
+
+  // Two numbers, four buyer lines, two QR boxes — named, because a bare dot on
+  // a picture is unusable by keyboard and unreadable by a screen reader.
+  for (const name of ['Number — buyer half', 'Number — stub', 'Buyer — name', 'QR — buyer half']) {
+    ok(html.includes(`aria-label="${name}"`), `${name} is a named control`)
+  }
+
+  /*
+   * Positions are percentages of the artwork, never pixels. The picture is
+   * drawn at whatever width the column allows, so a pixel offset would put the
+   * handle in the right place on one screen and the wrong place on every other.
+   */
+  ok(/left:\s*[\d.]+%/.test(html), 'handles are placed as a share of the artwork, not in pixels')
+  ok(!/left:\s*\d+px/.test(html), 'and never in raw pixels')
+
+  /*
+   * qrStub ships disabled in DEFAULT_DESIGN. It stays on the picture, greyed
+   * and disabled with the reason — the same honesty the rest of the app owes a
+   * control somebody cannot use.
+   */
+  ok(/class="[^"]*handle[^"]*off/.test(html), 'a switched-off element still shows, greyed')
+  ok(/disabled/.test(html), 'and is disabled rather than removed')
+  ok(/is turned off below/.test(html), 'with the reason it cannot be moved')
+
+  // Nothing is selected on arrival, so the inspector is not taking up room.
+  ok(!/class="inspector"/.test(html), 'the inspector waits until something is picked')
+}
+
+console.log('picking one opens the numbers for it')
+{
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => { await b.load(); b.sel.value = 'main' },
+  })
+  ok(/class="inspector"/.test(html), 'the inspector appears')
+  const text = visibleText(html)
+  ok(/Number — buyer half/.test(text), 'saying which thing is being moved')
+  ok(/Across/.test(text) && /Down/.test(text), 'with its exact position, so it can be reproduced')
+  ok(/Shift/.test(text), 'and how to move it faster')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -10,6 +10,7 @@ import { isFreeToIssue } from '../lib/books.js'
 import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
 import History from './modals/History.vue'
+import Icon from './ui/Icon.vue'
 
 const emit = defineEmits(['open'])
 const box = ref(null)
@@ -244,7 +245,7 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
                a sale. Its own control, with its own label, because a row that
                does two things from one tap does the wrong one eventually. -->
           <button class="rowhist" :title="`Where ${t.number} has been`"
-                  :aria-label="`Where ${t.number} has been`" @click="showHistory = t">🕘</button>
+                  :aria-label="`Where ${t.number} has been`" @click="showHistory = t"><Icon name="clock" :size="17" /></button>
           <!-- A THIRD CONTROL, for the same reason the second one exists: a row
                that does several things from one tap does the wrong one
                eventually. A seller may only sell out of books they are
@@ -252,7 +253,7 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
                could not have with no way to ask for it. -->
           <button v-if="askable(t)" class="rowhist ask" :disabled="asking === t.number"
                   :title="`Ask for ${askable(t).book}`"
-                  :aria-label="`Ask for ${askable(t).book}`" @click="askFor(t)">🙋</button>
+                  :aria-label="`Ask for ${askable(t).book}`" @click="askFor(t)"><Icon name="hand" :size="17" /></button>
         </li>
       </TransitionGroup>
 

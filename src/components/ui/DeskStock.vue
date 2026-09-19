@@ -125,7 +125,7 @@ watch(sellable, () => { if ((page.value - 1) * PAGE >= sellable.value.length) pa
   font-variant-numeric: tabular-nums;
   padding: 6px 10px;
   border-radius: 8px;
-  border: 1px solid var(--line, #3a3a3a);
+  border: 1px solid var(--border);
   background: transparent;
   color: inherit;
   cursor: pointer;

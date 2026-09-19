@@ -16,7 +16,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { state, api, setConfig, toast, isAdmin } from '../lib/store.js'
 import { DEFAULT_DESIGN, designFor, validateDesign } from '../lib/ticketdesign.js'
-import { numberLayerSVG, qrModuleMM, placeBoth } from '../lib/ticketart.js'
+import { numberLayerSVG, qrModuleMM, placeBoth, ticketVerifyUrl } from '../lib/ticketart.js'
+import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
 
@@ -58,18 +59,183 @@ const SAMPLE_BUYER = {
   address: 'Klang, Selangor', seller: 'Pa Thang',
 }
 const showBuyer = ref(true)
+const realQr = ref(true)
+
+/* Whatever the verify address will be, so the sample encodes to the same length
+ * as a printed one — a shorter stand-in would under-report the density. */
+const sampleVerifyBase = computed(() => {
+  const set = String(state.cfg?.verifyUrl || '').trim()
+  return set || ((typeof location === 'undefined' ? '' : location.origin) + '/v')
+})
+
+/*
+ * What each line on the stub is called, in the words printed beside it. The
+ * model keys them `name`/`phone`/`address`/`seller` because that is what they
+ * are in the database; showing those keys on screen would be the model leaking
+ * into the interface, in lower case.
+ */
+const FIELD = {
+  name:    { name: 'Buyer\u2019s name', why: 'The first ruled line on the stub' },
+  phone:   { name: 'Phone number', why: 'The second line' },
+  address: { name: 'Address', why: 'The third line \u2014 the app stores this as their area' },
+  seller:  { name: 'Sold by', why: 'The fourth line, in Burmese on the printed stub' },
+}
 
 const sampleBook = computed(() => {
   const c2 = state.cfg || {}
   return String(c2.bookPrefix ?? 'Book-') + '8'.repeat(Math.max(1, Number(c2.bookDigits ?? 4)))
 })
 
+/* ---------- placing things by hand, on the picture ---------- */
+
+/*
+ * WHY THIS EXISTS. Every coordinate here was typed into a number field, which
+ * means the only way to answer "is the book number clear of the roundel" was to
+ * type, look, and type again. Dragging answers it in one gesture. The numbers
+ * stay — they are how you reproduce a position exactly, and how you nudge by a
+ * single unit — so this is a second way into the same values, not a replacement.
+ *
+ * ONE MOVER PER ELEMENT, used by the handle, the arrow keys and the nudge pad
+ * alike. A drag that moved a label differently from the arrow keys would be two
+ * sources of truth for one coordinate, and they would drift.
+ */
+const frame = ref(null)
+const sel = ref('')
+const drag = ref(null)
+
+const placeables = computed(() => {
+  const d = design.value
+  if (!d) return []
+  const out = []
+
+  /* A number sits in a box: left and right bound it, capTop and baseline set
+   * its height. Moving it moves all four, so the box keeps its shape. */
+  const label = (slot, name) => ({
+    key: slot,
+    name,
+    kind: 'text',
+    on: true,
+    x: () => d[slot].label.left,
+    y: () => d[slot].label.baseline,
+    move: (dx, dy) => {
+      const L = d[slot].label
+      L.left += dx; L.right += dx; L.capTop += dy; L.baseline += dy
+    },
+  })
+  out.push(label('main', 'Number — buyer half'))
+  out.push(label('stub', 'Number — stub'))
+
+  if (d.buyer?.enabled) {
+    for (const [k, f] of Object.entries(d.buyer.fields ?? {})) {
+      out.push({
+        key: `buyer.${k}`,
+        name: `Buyer — ${k}`,
+        kind: 'text',
+        on: f.enabled !== false,
+        /* maxRight stays put on purpose: it is where the printed rule ends,
+         * a fact about the artwork rather than about this field. Drag past it
+         * and the checks below say so. */
+        x: () => f.x,
+        y: () => f.baseline,
+        move: (dx, dy) => { f.x += dx; f.baseline += dy },
+      })
+    }
+  }
+
+  for (const [key, name] of [['qrMain', 'QR — buyer half'], ['qrStub', 'QR — stub']]) {
+    const q = d[key]
+    if (!q) continue
+    out.push({
+      key, name, kind: 'box', on: q.enabled !== false,
+      x: () => q.x, y: () => q.y, size: () => q.size,
+      move: (dx, dy) => { q.x += dx; q.y += dy },
+      resize: (dz) => { q.size = Math.max(24, q.size + dz) },
+    })
+  }
+  return out
+})
+
+const chosen = computed(() => placeables.value.find((h) => h.key === sel.value) || null)
+
+/* The picture is drawn at whatever width the column gives it, but every
+ * coordinate is in the artwork's own pixels — so a drag of N screen pixels is
+ * N * (artwork width / rendered width) of them. Without this the same gesture
+ * would mean different distances on a laptop and a phone. */
+function perPixel() {
+  const el = frame.value
+  const w = el?.clientWidth || 0
+  const aw = design.value?.artwork?.width || 0
+  return w && aw ? aw / w : 1
+}
+
+/* Handles are positioned as a percentage of the artwork, so they stay put
+ * when the picture is rendered at any width. */
+function pc(v, axis) {
+  const a = design.value?.artwork
+  const span = axis === 'w' ? a?.width : a?.height
+  return span ? `${(Number(v) / span) * 100}%` : '0%'
+}
+
+function startDrag(h, ev) {
+  if (!h.on) return
+  sel.value = h.key
+  ev.currentTarget.setPointerCapture?.(ev.pointerId)
+  drag.value = { key: h.key, px: ev.clientX, py: ev.clientY }
+}
+
+function onDrag(ev) {
+  const st = drag.value
+  if (!st || st.key !== sel.value) return
+  const h = chosen.value
+  if (!h) return
+  const k = perPixel()
+  const dx = (ev.clientX - st.px) * k
+  const dy = (ev.clientY - st.py) * k
+  /* Whole units only. Sub-pixel coordinates in a printed design are noise that
+   * makes two tickets that should match differ in the third decimal. */
+  const ix = Math.round(dx)
+  const iy = Math.round(dy)
+  if (!ix && !iy) return
+  h.move(ix, iy)
+  st.px += ix / k
+  st.py += iy / k
+}
+
+function endDrag() { drag.value = null }
+
+function nudge(dx, dy) {
+  const h = chosen.value
+  if (h?.on) h.move(dx, dy)
+}
+
+/* Shift for ten, because moving a label across a ticket one unit at a time is
+ * forty presses and nobody does it twice. */
+function onKey(ev) {
+  const step = ev.shiftKey ? 10 : 1
+  const map = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
+  const d = map[ev.key]
+  if (!d) return
+  ev.preventDefault()
+  nudge(d[0], d[1])
+}
+
 const preview = computed(() => {
   if (!design.value || !active.value) return ''
   try {
     return numberLayerSVG(design.value, sample.value, {
       guides: showGuides.value,
-      qrBoxes: true,
+      /*
+       * The REAL code, not an outline of where one would go. A placeholder
+       * rectangle hides the only thing about a QR that can fail on paper —
+       * whether it is dense enough to scan at this size, and whether it has
+       * enough quiet space around it against this artwork. Those are visual
+       * questions and this is the only place they can be answered before a
+       * press run. The payload is a sample of the real shape, so the version
+       * and module count match what will actually print.
+       */
+      qrBoxes: !realQr.value,
+      qrUrl: realQr.value ? ticketVerifyUrl(sampleVerifyBase.value, sample.value, 'SAMPLE0CODE0') : '',
+      encode: realQr.value ? encode : undefined,
       book: sampleBook.value,
       buyer: showBuyer.value ? SAMPLE_BUYER : null,
     })
@@ -82,6 +248,27 @@ const problems = computed(() => (design.value ? validateDesign(design.value, act
 
 /* How coarse the QR would print. This is the number that decides whether a
  * scanner will read it off paper, so it is shown rather than left implied. */
+/*
+ * HOW SHARPLY THIS WILL ACTUALLY PRINT.
+ *
+ * The artwork is a picture of a fixed pixel width being printed at a fixed
+ * width in millimetres, so the resolution it lands at is decided and knowable:
+ * pixels / (mm / 25.4). Three hundred is the usual floor for print, 200 is
+ * visibly soft at arm's length, and the accepted-size rule lets 1600 px
+ * through, which at 190 mm is 214.
+ *
+ * The screen recommended a pixel count in its help text and never told anybody
+ * what their own file came to. A recommendation you cannot check yourself is
+ * not much of a recommendation.
+ */
+const dpi = computed(() => {
+  const px = Number(active.value?.width ?? 0)
+  const mm = Number(design.value?.sheet?.widthMM ?? 0)
+  if (!px || !mm) return null
+  const v = Math.round(px / (mm / 25.4))
+  return { v, ok: v >= 300, soft: v < 200 }
+})
+
 const qrDensity = computed(() => {
   if (!design.value?.qrMain?.enabled) return null
   const mm = qrModuleMM(design.value, design.value.qrMain)
@@ -361,6 +548,16 @@ const kb = (n) => (n >= 1024 * 1024
       </div>
 
       <template v-if="active && design">
+        <!--
+          THE TICKET IS THE SUBJECT, so it holds the column and stays put while
+          the settings scroll past it. It was previously the third card of eight
+          in one long page, which meant moving the buyer's name a few pixels
+          involved scrolling a thousand of them away from the thing being moved
+          and back again. A design tool where the artifact is smaller than the
+          form configuring it is a settings page with a thumbnail in it.
+        -->
+        <div class="studio">
+          <div class="canvas">
         <!-- ---------- the preview ---------- -->
         <div class="card">
           <h3>How it will look</h3>
@@ -368,22 +565,80 @@ const kb = (n) => (n >= 1024 * 1024
             The number shown is this raffle&rsquo;s own prefix at its widest &mdash;
             {{ sample }} &mdash; so what you see is the worst case, not a flattering one.
           </p>
-          <div class="ticketpreview" style="margin-top:12px">
+          <div ref="frame" class="ticketpreview" style="margin-top:12px"
+               @pointermove="onDrag" @pointerup="endDrag" @pointercancel="endDrag">
             <img :src="active.url" alt="" >
             <div class="overlay" v-html="preview"></div>
+
+            <!--
+              One handle per placeable thing. They are buttons because they are
+              operated by keyboard as well as by pointer — arrow keys nudge
+              whichever is focused, which is how you place something exactly.
+            -->
+            <button
+              v-for="h in placeables" :key="h.key" type="button"
+              class="handle" :class="{ on: sel === h.key, off: !h.on, box: h.kind === 'box' }"
+              :style="h.kind === 'box'
+                ? { left: pc(h.x(), 'w'), top: pc(h.y(), 'h'), width: pc(h.size(), 'w'), height: pc(h.size(), 'w') }
+                : { left: pc(h.x(), 'w'), top: pc(h.y(), 'h') }"
+              :disabled="!h.on"
+              :title="h.on ? `${h.name} — drag, or focus and use the arrow keys` : `${h.name} is turned off below`"
+              :aria-label="h.name"
+              @pointerdown="startDrag(h, $event)"
+              @keydown="onKey"
+              @click="sel = h.key"
+            ><span class="dot"></span></button>
           </div>
+
           <div class="sub">
-            <label class="check">
+            <label class="choice">
               <input v-model="showGuides" type="checkbox"> Show the measuring guides
+            </label>
+            <label class="choice">
+              <input v-model="realQr" type="checkbox"> Draw the real QR code
             </label>
             <span class="grow"></span>
             <button class="btn sm" @click="printTest">Print a test page</button>
+          </div>
+
+          <!--
+            The inspector. Dragging answers "about here?"; this answers "exactly
+            where?" — and it is the only way to reproduce a position on a second
+            artwork, so it shows the same numbers the fields further down hold.
+          -->
+          <div v-if="chosen" class="inspector">
+            <div class="who">
+              <b>{{ chosen.name }}</b>
+              <span class="grow"></span>
+              <button class="btn sm ghost" @click="sel = ''">Done</button>
+            </div>
+            <div class="pad">
+              <button class="btn sm ghost" title="Left" @click="nudge(-1, 0)">←</button>
+              <div class="updown">
+                <button class="btn sm ghost" title="Up" @click="nudge(0, -1)">↑</button>
+                <button class="btn sm ghost" title="Down" @click="nudge(0, 1)">↓</button>
+              </div>
+              <button class="btn sm ghost" title="Right" @click="nudge(1, 0)">→</button>
+              <span class="grow"></span>
+              <span class="tiny muted">Hold Shift to move ten at a time</span>
+            </div>
+            <div class="grid">
+              <label>Across<input :value="chosen.x()" type="number" step="1"
+                @input="nudge(Number($event.target.value) - chosen.x(), 0)"></label>
+              <label>Down<input :value="chosen.y()" type="number" step="1"
+                @input="nudge(0, Number($event.target.value) - chosen.y())"></label>
+              <label v-if="chosen.resize">Size<input :value="chosen.size()" type="number" step="1"
+                @input="chosen.resize(Number($event.target.value) - chosen.size())"></label>
+            </div>
           </div>
           <p v-if="problems.length" class="note bad tiny" style="margin-top:10px">
             <span v-for="(p, i) in problems" :key="i">{{ p }}<br></span>
           </p>
         </div>
 
+          </div>
+
+          <div class="controls">
         <!-- ---------- where the number goes ---------- -->
         <div class="card">
           <h3>Where the number goes</h3>
@@ -435,7 +690,7 @@ const kb = (n) => (n >= 1024 * 1024
           </p>
           <div v-for="half in ['main', 'stub']" :key="'bk' + half" class="halfblock">
             <h4>{{ half === 'main' ? "The buyer's half" : 'The stub' }}</h4>
-            <label class="check">
+            <label class="choice">
               <input v-model="design.book[half].enabled" type="checkbox"> Print the book number here
             </label>
             <div v-if="design.book[half].enabled" class="grid">
@@ -445,7 +700,7 @@ const kb = (n) => (n >= 1024 * 1024
               <label v-else>Drop below the number
                 <input v-model.number="design.book[half].drop" type="number" step="0.05"></label>
               <label>Colour<input v-model="design.book[half].ink" type="text" spellcheck="false"></label>
-              <label class="check" style="align-self:end">
+              <label class="choice">
                 <input v-model="design.book[half].below" type="checkbox"> On its own line underneath
               </label>
             </div>
@@ -461,25 +716,34 @@ const kb = (n) => (n >= 1024 * 1024
             instead of copied out by hand. <b>Blank tickets going out to a seller always
             print blank lines</b> &mdash; the printing screen asks separately, each time.
           </p>
-          <label class="check" style="margin-top:8px">
+          <label class="choice">
             <input v-model="design.buyer.enabled" type="checkbox"> Allow the stub to be filled in
           </label>
-          <label class="check">
+          <label class="choice">
             <input v-model="showBuyer" type="checkbox"> Show a sample in the preview above
           </label>
 
           <template v-if="design.buyer.enabled">
             <div v-for="(f, key) in design.buyer.fields" :key="key" class="halfblock">
-              <h4>{{ key }}</h4>
-              <label class="check">
+              <h4>{{ FIELD[key]?.name ?? key }}</h4>
+              <p v-if="FIELD[key]" class="tiny muted" style="margin:2px 0 6px">{{ FIELD[key].why }}</p>
+              <label class="choice">
                 <input v-model="f.enabled" type="checkbox"> Print this one
               </label>
               <div v-if="f.enabled" class="grid">
-                <label>Starts at<input v-model.number="f.x" type="number" step="1"></label>
-                <label>Sits on<input v-model.number="f.baseline" type="number" step="1"></label>
-                <label>Height<input v-model.number="f.capHeight" type="number" step="1"></label>
-                <label>Stops before<input v-model.number="f.maxRight" type="number" step="1"></label>
-                <label>Colour<input v-model="f.ink" type="text" spellcheck="false"></label>
+                <label class="formrow"><span class="cap">From the left edge</span>
+                  <span class="wrap"><input v-model.number="f.x" type="number" step="1"><span class="unit">px</span></span></label>
+                <label class="formrow"><span class="cap">Sits on the line at</span>
+                  <span class="wrap"><input v-model.number="f.baseline" type="number" step="1"><span class="unit">px</span></span></label>
+                <label class="formrow"><span class="cap">Letter height</span>
+                  <span class="wrap"><input v-model.number="f.capHeight" type="number" step="1"><span class="unit">px</span></span></label>
+                <label class="formrow"><span class="cap">Must stop before</span>
+                  <span class="wrap"><input v-model.number="f.maxRight" type="number" step="1"><span class="unit">px</span></span></label>
+                <label class="formrow"><span class="cap">Ink</span>
+                  <span class="wrap ink">
+                    <input v-model="f.ink" type="color" :aria-label="`${FIELD[key]?.name ?? key} colour`">
+                    <input v-model="f.ink" type="text" spellcheck="false">
+                  </span></label>
               </div>
             </div>
           </template>
@@ -490,18 +754,19 @@ const kb = (n) => (n >= 1024 * 1024
           <h3>The QR code</h3>
           <p class="muted small">
             Where the code that proves a ticket is genuine will be printed. The box is
-            positioned now; the codes themselves are not part of this step, so the
-            preview shows the space rather than a scannable code.
+            positioned now. The preview draws a real code at the real length, so what you
+            see is the density that will print &mdash; but it carries a sample payload,
+            not a ticket&rsquo;s own, so do not scan it expecting an answer.
           </p>
           <div v-for="[name, box] in [['On the buyer’s half', design.qrMain], ['On the stub', design.qrStub]]"
                :key="name" class="halfblock">
             <h4>{{ name }}</h4>
-            <label class="check"><input v-model="box.enabled" type="checkbox"> Print a QR here</label>
+            <label class="choice"><input v-model="box.enabled" type="checkbox"> Print a QR here</label>
             <div v-if="box.enabled" class="grid">
               <label>Across<input v-model.number="box.x" type="number" step="1"></label>
               <label>Down<input v-model.number="box.y" type="number" step="1"></label>
               <label>Size<input v-model.number="box.size" type="number" step="1"></label>
-              <label class="check" style="align-self:end">
+              <label class="choice">
                 <input v-model="box.backing" type="checkbox"> White behind it
               </label>
             </div>
@@ -529,7 +794,7 @@ const kb = (n) => (n >= 1024 * 1024
               <input v-model.number="design.sheet.gapMM" type="number" step="1"></label>
             <label>Page margin, mm
               <input v-model.number="design.sheet.marginMM" type="number" step="1"></label>
-            <label class="check" style="align-self:end">
+            <label class="choice">
               <input v-model="design.sheet.cutlines" type="checkbox"> Dashed line to cut along
             </label>
           </div>
@@ -539,6 +804,21 @@ const kb = (n) => (n >= 1024 * 1024
             which is the artwork&rsquo;s own shape. Print at 100% scale with background
             graphics turned on.
           </p>
+          <p v-if="dpi" class="tiny" :class="dpi.soft ? 'bad' : (dpi.ok ? 'muted' : 'warn')">
+            <b>{{ dpi.v }} dots per inch</b> at this size &mdash;
+            <template v-if="dpi.ok">sharp enough for a print shop.</template>
+            <template v-else-if="dpi.soft">
+              soft enough to see. Re-export the artwork at
+              {{ Math.ceil((300 * design.sheet.widthMM) / 25.4) }} px wide or more.
+            </template>
+            <template v-else>
+              fine on an office printer, under the 300 a press usually asks for.
+              {{ Math.ceil((300 * design.sheet.widthMM) / 25.4) }} px wide would reach it.
+            </template>
+          </p>
+        </div>
+
+          </div>
         </div>
 
         <div class="card sticky">
@@ -559,21 +839,74 @@ const kb = (n) => (n >= 1024 * 1024
 
 <style scoped>
 .head { margin-bottom: 14px }
-.halfblock { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line, #e3e3e8) }
+.halfblock { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border) }
 .halfblock h4 { margin: 0 0 8px; font-size: 14px }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 14px }
-.grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted, #6b6b74) }
-.grid input[type=number], .grid input[type=text] { width: 100% }
-.check { display: flex; align-items: center; gap: 7px; font-size: 13px }
-.ticketpreview { position: relative; width: 100%; overflow: hidden; border: 1px solid var(--line, #e3e3e8); border-radius: 6px }
+.ticketpreview { position: relative; width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: 6px }
 .ticketpreview img { display: block; width: 100%; height: auto }
-.ticketpreview .overlay { position: absolute; inset: 0 }
+.ticketpreview .overlay { position: absolute; inset: 0; pointer-events: none }
+
+/*
+ * HANDLE SIZE IS A DELIBERATE EXCEPTION to --tap. A 52px target is right for a
+ * seller pressing a button one-handed in a car park; here it would be a third
+ * of the ticket's height and would cover the thing being positioned. This
+ * screen is organisers at a desk placing print artwork to the pixel, so the
+ * visible dot is small and the invisible hit area around it is generous.
+ */
+.handle {
+  touch-action: none;
+  position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px;
+  padding: 0; border: 0; background: none; cursor: grab;
+  display: grid; place-items: center; border-radius: 50%;
+}
+.handle .dot {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--brand); border: 2px solid var(--brand-ink);
+  box-shadow: 0 0 0 1px var(--brand);
+}
+.handle:hover .dot { transform: scale(1.25) }
+.handle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px }
+.handle.on .dot { background: var(--warn); box-shadow: 0 0 0 1px var(--warn), var(--shadow) }
+.handle.off { cursor: not-allowed }
+.handle.off .dot { background: var(--muted); opacity: .45 }
+.handle:active { cursor: grabbing }
+
+/* A QR is an area, not a point, so its handle is the area — dragging anywhere
+ * inside it moves it, and you can see what it will cover. */
+.handle.box {
+  margin: 0; border-radius: 2px; place-items: start;
+  border: 2px dashed var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+.handle.box .dot { margin: -6px 0 0 -6px }
+.handle.box.on { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent) }
+
+.inspector { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px }
+.inspector .who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px }
+.inspector .pad { display: flex; align-items: center; gap: 6px; margin-bottom: 10px }
+.inspector .updown { display: flex; flex-direction: column; gap: 4px }
+.inspector .grid { margin: 0 }
 .ticketpreview .overlay :deep(svg) { width: 100%; height: 100%; display: block }
 .rows { width: 100%; border-collapse: collapse; font-size: 13px }
-.rows th, .rows td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line, #e3e3e8) }
+.rows th, .rows td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--border) }
 .rows th { color: var(--muted, #6b6b74); font-weight: 500 }
 .rows td.n, .rows th.n { font-variant-numeric: tabular-nums }
 .rows .right { text-align: right; white-space: nowrap }
 .rows tr.on td { background: var(--brand-soft, #f2f8f6) }
+.formrow .wrap.ink { gap: 8px }
+.formrow .wrap.ink input[type=text] { font-variant-numeric: tabular-nums; text-transform: uppercase }
+/*
+ * TWO COLUMNS WHERE THERE IS ROOM, one where there is not. The canvas sticks so
+ * a change and its effect are visible at the same moment; below 1100px the
+ * columns stack and it un-sticks, because a preview pinned to the top of a
+ * phone screen would leave no room to edit underneath it.
+ */
+.studio { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 16px; align-items: start }
+.studio .canvas { position: sticky; top: 12px }
+.studio .controls { display: flex; flex-direction: column; gap: 16px; min-width: 0 }
+.studio .controls > .card { margin: 0 }
+@media (max-width: 1100px) {
+  .studio { grid-template-columns: 1fr }
+  .studio .canvas { position: static }
+}
 .sticky { position: sticky; bottom: 8px }
 </style>

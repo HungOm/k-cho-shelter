@@ -460,7 +460,7 @@ function explain(err) {
 <style scoped>
 .movebox {
   margin: 8px 0 14px; padding: 12px;
-  border: 1px solid var(--line, #e3e3e3); border-radius: 10px;
+  border: 1px solid var(--border); border-radius: 10px;
   background: var(--surface-2, transparent);
 }
 .mt6 { margin-top: 6px; }

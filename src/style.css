@@ -80,6 +80,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- utility ---------- */
 .muted { color: var(--muted); }
+/*
+ * Text colours for a state. These were being used before they existed —
+ * `:class="ok ? 'muted' : 'bad'"` on the QR density warning resolved to nothing,
+ * so the one line telling an organiser their QR was too coarse to scan rendered
+ * in ordinary grey. A class that silently does nothing is worse than no class:
+ * the code reads as though the warning is handled.
+ */
+.bad   { color: var(--bad); }
+.warn  { color: var(--warn); }
+.ok    { color: var(--ok); }
 .small { font-size: .92rem; }
 .tiny  { font-size: .82rem; }
 .big   { font-size: 1.15rem; }
@@ -152,6 +162,63 @@ input:focus, select:focus, textarea:focus {
 }
 input.xl { font-size: 1.3rem; padding: 18px; min-height: 64px; }
 textarea { min-height: 84px; resize: vertical; }
+
+/*
+ * CONTROLS THAT ARE NOT TEXT FIELDS.
+ *
+ * The rule above is written for something you type into: full width, a 52px
+ * tap target, room for the text. A checkbox inherits all three and becomes a
+ * 52px box stretched across its container, in the operating system's blue
+ * rather than ours, with its label shoved to the far edge.
+ *
+ * It went unseen while the app had twelve of them. One screen added nine more
+ * and it became the worst-looking page in the product. The touch target is met
+ * by the LABEL ROW below, not by the box — 52px of clickable label with a 20px
+ * box in it is both usable and not absurd.
+ */
+input[type=checkbox], input[type=radio] {
+  width: 20px; min-width: 20px; height: 20px; min-height: 0;
+  padding: 0; margin: 0; flex: none;
+  accent-color: var(--brand); cursor: pointer;
+}
+input[type=checkbox]:focus-visible, input[type=radio]:focus-visible {
+  outline: 2px solid var(--brand); outline-offset: 2px; box-shadow: none;
+}
+input[type=color] {
+  width: 44px; min-width: 44px; padding: 2px; cursor: pointer;
+}
+input[type=range] { min-height: 0; padding: 0; background: none; border: 0 }
+input[type=file] { padding: 10px }
+
+/*
+ * A CHOICE, AS ONE ROW. The label is the target, so the whole row is clickable
+ * rather than a 20px square somebody has to hit. `font-weight` and `margin` are
+ * reset because the base `label` rule above is written for a field caption
+ * sitting above its input, which is the opposite arrangement.
+ */
+.choice {
+  display: flex; align-items: center; gap: 10px;
+  min-height: var(--tap); margin: 0; padding: 2px 0;
+  font-size: .95rem; font-weight: 500; color: var(--text); cursor: pointer;
+}
+.choice:hover { color: var(--brand) }
+.choice input { flex: none }
+.choice .why { display: block; font-size: .84rem; font-weight: 400; color: var(--muted) }
+
+/*
+ * A FIELD, WITH ITS UNIT. A number with no unit is a number somebody has to go
+ * and look up, so the unit sits inside the box at the trailing edge rather than
+ * in a caption that scrolls away from it.
+ */
+.formrow { display: flex; flex-direction: column; gap: 5px; margin: 0 }
+.formrow > .cap { font-size: .82rem; font-weight: 500; color: var(--muted); margin: 0 }
+.formrow .wrap { position: relative; display: flex; align-items: center }
+.formrow .wrap input { width: 100% }
+.formrow .unit {
+  position: absolute; right: 12px; pointer-events: none;
+  font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.formrow .wrap input[type=number] { padding-right: 46px }
 .hint { font-size: .86rem; color: var(--muted); margin-top: 6px; }
 .req { color: var(--bad); }
 
