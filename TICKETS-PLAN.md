@@ -1,6 +1,6 @@
 # Printing tickets, digital tickets, and a QR that can be checked
 
-**Status: phases 1, 2 and 3 built, 2026-09-19. Nothing is deployed.**
+**Status: phases 1, 2, 3 and 4 built, 2026-09-19. Nothing is deployed.**
 
 Artwork upload and the Ticket design screen; codes, the public verify function
 and the verify page; and printing — by book, by a run of books, by typed
@@ -12,8 +12,10 @@ across fifty cases, and one printed ticket was rendered by a browser and scanned
 back to its verify address end to end.
 
 Still true and worth repeating: **nothing is committed to production or
-deployed.** Phases 4 (the digital ticket a buyer is sent) and 5 (checking at the
-draw, rate limiting, the scan log) remain.
+deployed.** Phase 5 (checking at the draw, rate limiting, the scan log) remains, and
+phase 6 is housekeeping the designer rebuild left behind — a revision on the design
+document so two writers cannot silently lose each other's work, and the removal of
+the second copy of the design that exists only to keep older browsers correct.
 
 ---
 
@@ -42,10 +44,36 @@ the app in phase 1 and stops being a separate thing.
 |---|---|
 | **Who may do any of this** | **Organisers and the System Admin only** — uploading artwork, changing the design, generating codes, printing, and sending a digital ticket. Not sellers, not desk helpers, and **it cannot be granted to them from the Access screen.** |
 | **What a stranger sees when they scan** | genuine or not, the ticket number, and whether it is sold. **Never the buyer's name or phone.** |
-| **When a digital ticket may be sent** | only after the sale is recorded, and it carries the buyer's name so a forwarded copy is visibly someone else's. |
+| **When a digital ticket may be sent** | only after the sale is recorded. **The picture is the buyer's half, cut at the perforation** — see below; the rule about carrying their name was written against a picture of the whole ticket and no longer describes what is sent. |
 | **The QR already on the artwork** | a general CEAM link — it is replaced by the per-ticket QR. The verify page carries a CEAM link instead. |
 | **Accepted sizes** | ships with one — this artwork, 190 × 61.4 mm. The design page lets an organiser add others. |
 | **The code** | minted once and **kept**. A reprint of a ticket prints the same code it had before. |
+
+#### What the digital ticket carries, and an open decision
+
+The rule above said the picture carries the buyer's name, so a forwarded copy is
+visibly somebody else's. That was written against a picture of the WHOLE ticket,
+and it is no longer true, for a reason worth keeping: on this artwork the name,
+phone, area and seller are all printed on the STUB. A picture of the whole ticket
+is therefore a forwardable image of somebody's own contact details, and the stub
+is the organiser's counterfoil — the half that comes back for the draw — so a
+buyer holding a picture of it has an artefact that looks like something it is
+not. The picture is now cut at `design.stubAt` and is the buyer's half only:
+ticket number, book, and the QR. No contact details leave the building.
+
+**That trades an anti-transfer marker for a privacy protection, and the two are
+not the same thing.** In practice the marker was deterrence rather than a
+control — the verify page already says the raffle is settled on the records and
+not on the paper, so a forwarded picture never let anybody claim anything.
+
+**The mockup specifies a third option that is better than either, and it is not
+built.** Panel 3 of the design PDF does not show the whole ticket or the buyer's
+half — it shows a purpose-drawn card carrying the ticket number, the book, the
+buyer's NAME and the QR together, which on the real artwork come from opposite
+sides of the perforation. That keeps the anti-transfer marker AND leaks no phone,
+area or seller, because only the name is on it. Building it means a digital
+layout rather than a crop of the printed one. Until somebody decides, the crop
+ships: it is the option that removes a live leak, and it is reversible.
 
 ### How "organisers only" is actually enforced
 
@@ -133,7 +161,7 @@ raffle, so an organiser has to be able to point them somewhere they control.
 | The artwork | bucket `ticket-artwork`, created **in a migration** | once, up to 4 MB |
 | A smaller copy for the screen | same bucket, made in the browser on upload | once, ~300 KB |
 | Per ticket | a `ticket_codes` row | ~60 bytes |
-| The design (where the number and QR sit, print settings) | `ticket_templates.design` | ~2 KB |
+| The design (what is printed, where it sits, print settings) | `ticket_templates.design` | ~4 KB |
 | Printed sheets, digital tickets | nowhere — drawn and discarded | 0 |
 
 A whole raffle is under 10 MB. Twenty thousand generated tickets add about 1.2 MB of
@@ -231,11 +259,32 @@ downloads self-contained files for the press — one per 50 books, artwork embed
 
 ## Phase 4 — The digital ticket
 
-`digital_ticket` refuses anything not sold, and **never generates a code** — if the
-book was never printed it says so, rather than becoming a side door into minting.
-The picture is drawn on the phone and shared; there is always a WhatsApp text
-fallback carrying the verify link, because canvas export fails on some browsers.
-The button appears for organisers only.
+**Built 2026-09-19, and it needed no new server action.** The plan called for a
+`digital_ticket` handler. It turned out there was nothing for it to do:
+`render_tickets` already returns the template, the code, the buyer and the status to
+an organiser, and that request is already ADMIN_ONLY and registered as a write. So
+the picture is drawn in `ViewTicket.vue` from what is already on screen — a canvas,
+the artwork fetched a second time with `crossOrigin` set, and the SVG overlay drawn
+on top. Adding a handler would have been a second door to data the caller could
+already see.
+
+The rules the plan set are kept, in the place they can be kept honestly:
+
+- **Never a side door into minting.** Nothing in this path generates a code.
+  `render_tickets` lists what has not been generated and refuses to invent it.
+- **Nothing that is not sold.** The buttons are shown DISABLED WITH THE REASON —
+  "the sale is not recorded yet, so there is nothing to send a buyer" — rather than
+  hidden, per the `permissionui` rule. Note this is a UI gate on data the organiser
+  can already see, not a permission boundary; the boundary is `render_tickets`.
+- **A text fallback, always.** Canvas export fails when Storage does not answer with
+  a CORS header, and on browsers without file sharing. Both fall through to a
+  WhatsApp message carrying the verify link — which is the part that actually
+  matters, because it is what lets the buyer prove the ticket later.
+
+One thing the plan did not anticipate: a webfont does not load inside an SVG drawn
+into a canvas, so a Burmese name renders in whatever Myanmar font the phone itself
+has. That is the same bet the printed ticket makes, and the reason `TEXT_FAMILY`
+ends in a system fallback rather than at Padauk.
 
 ## Phase 5 — The draw, and hardening
 
@@ -244,6 +293,152 @@ browser has `BarcodeDetector`. Rate limiting on the public endpoint. Optionally 
 scan log, which is a public write and so needs its own care. Then the documents:
 `ARCHITECTURE-REVIEW.md`, `RESET-RUNBOOK.md`, `README.md`, `SETUP.md`, and
 `ticket-lab/README.md` rewritten as a pointer to where it all went.
+
+## Phase 6 — One design, one writer, one representation
+
+Two pieces of housekeeping that the ticket-designer rebuild left behind. Neither is
+urgent; both get worse the longer they wait, and the second cannot start until the
+first has been deployed long enough for browsers to turn over.
+
+### 6a — The design document gets a revision
+
+**The defect, stated plainly: `ticket_templates.design` is a single JSON document,
+overwritten wholesale, with no concurrency control.** Last write wins, silently.
+Two organisers editing the design on two phones lose one of the two edits with no
+error on either screen. That is true today, it has nothing to do with any deploy,
+and nothing in the suite would catch it.
+
+The same defect shows up a second way during a staged deploy. A push deploys the
+browser app while the function and the migrations stay held, so the two halves of
+the system are routinely different ages. A browser still running a bundle from
+before the element rebuild echoes back an `elements` array it does not understand
+alongside its own edited slots, and the newer bundle then reads the list and
+silently discards the older bundle's edit. A revision closes that as a special case
+of the general one, which is why it is the right fix rather than a third patch on
+the symptom.
+
+- **Migration:** `alter table ticket_templates add column design_rev integer not null
+  default 0`. There is no `updated_at` on this table to reuse, and an integer is
+  better than a timestamp here — monotonic, and no clock to disagree about. Also
+  `schema.sql` and `fakedb.mjs`.
+- **`list_templates`** returns `designRev` alongside the design.
+- **`set_template_design`** takes the rev the client loaded and writes
+  `... where id = $1 and design_rev = $2`, setting `design_rev = design_rev + 1`.
+  Zero rows updated means somebody else got there first → `ApiError('STALE_DESIGN')`,
+  which by the table below also needs a Burmese line in `MY_ERRORS`.
+- **`TicketDesign.vue`** holds the rev it loaded and, on a refusal, says that
+  somebody else saved while this was being edited and offers to reload — rather than
+  overwriting them or silently keeping both.
+
+**One decision to make when this is built.** An older client sends no rev at all.
+Refusing those writes locks out any browser that has not reloaded; accepting them
+keeps the hole open for exactly as long as such browsers exist. Take the second
+until 6b lands, then flip to refusing, and say which is in force in the handler's
+own header so the next reader does not have to infer it.
+
+### 6b — Delete the second representation
+
+The design is currently stored **twice**: as `elements`, and as the named slots
+(`main`, `stub`, `book`, `buyer`, `qrMain`, `qrStub`) the list was derived from.
+Nothing here reads the slots once a list exists — `elementsOf` takes the list
+outright — but a browser running a pre-rebuild bundle does, so
+`legacyFromElements` writes them back in step on every save. Without that, an old
+tab prints a whole run from where an element used to be, with no error on either
+machine; `tests/ticketart.test.mjs` pins it.
+
+**That bridge is transitional, and its fragility is specific: any future code that
+writes `elements` without calling `legacyFromElements` reintroduces the divergence,
+and nothing would report it.** So it gets a removal date rather than an indefinite
+life.
+
+- **When:** once no browser predating the element rebuild can still be running — one
+  full client deploy, plus enough time for organiser tabs to turn over. Check the
+  stored rows first: no design should be without an `elements` array.
+- **What goes:** the legacy slots from the stored design on next save;
+  `legacyFromElements` and `elementsFromLegacy` from `ticketelements.js`; the two
+  tests that pin them (*the old slots are kept in step* and *a design migrated to
+  elements draws what it drew before*); and whatever `DEFAULT_DESIGN` carries that
+  only the old shape needed.
+- **What is left:** one representation, so there is nothing to diverge.
+
+### Worth doing alongside, and client-only
+
+`__APP_VERSION__` already exists in `vite.config.js` and is shown on the Admin
+screen and nowhere else — nothing compares it to anything. Having the app notice it
+is older than the build being served and offer a reload would shrink the stale-tab
+window for **every** screen, not only this one, and needs no migration and no
+function deploy. It does not fix two organisers editing at once; only 6a does.
+
+## Phase 7 — Resetting a raffle, and seeding one
+
+Asked for on 2026-09-20: a reset the System Admin can drive from the app, per
+feature, with the confirmation typed by hand — and a seed that covers every
+feature. **Part of it is built; the destructive half deliberately is not.**
+
+### What is built
+
+`supabase/functions/_shared/resetplan.ts` and `tests/resetplan.test.mjs` — the
+model that decides what a reset would destroy, with no ability to destroy
+anything. It answers, for any set of ticked features: what must go with them,
+what cannot be done from here at all, in what order rows come out, and what
+survives pointing at nothing.
+
+**The finding that shaped it: a foreign key is not the same question as "is this
+safe to reset alone".** Sixteen of twenty-one tables have nothing referencing
+them, and three of those are the most dangerous single resets in the system —
+`payments` (what a seller owes is a book figure plus hand payments, so deleting
+one door changes the answer), `config` (every ticket was issued under the
+numbering it holds), and `ticket_codes` (codes for printed books exist on paper;
+deleting them stops real tickets verifying). So the model carries two kinds of
+edge: foreign keys, DERIVED and checked against schema.sql in both directions,
+and logical dependencies, declared by hand with the sentence explaining each.
+
+A table nobody has classified is a test failure, not a default. That is the
+`money_entries` shape from `resetcovers`: absent from the list, it survives the
+reset silently and the next raffle starts with the last one's rows in it.
+
+`on delete` matters and the first version got it wrong: `restrict` refuses,
+`cascade` deletes the child too, `set null` keeps the row and empties the link.
+Treating all three as forcing made "reset the sellers" drag in accounts through
+a `set null` that deletes nobody, and refuse the lot.
+
+### What is deliberately not built
+
+**The deleting.** Three existing tests refuse it in TypeScript — `custodyledger`
+and `moneyjournal` fail any handler naming `ticket_movements` or
+`money_entries`, and they are right: a handler that writes the ledger lets the
+projection drift from it. The destruction belongs in a **SQL function** that
+takes the triggers off, empties in one transaction and puts them back before it
+commits, called by both `supabase/reset.sql` and the new action. One
+implementation, not two, for the reason `resetcovers` exists.
+
+### What it still needs, in order
+
+1. **The SQL function**, plus a migration. `reset.sql` refactored to call it so
+   the two cannot drift.
+2. **`reset_preview` and `reset_apply`**, SUPER_ADMIN_ONLY and registered as
+   writes so no permissions row can hand them out — the `templates.ts`
+   precedent. Both need the registry entries and the Burmese error lines the
+   table below requires.
+3. **The confirmation names the damage, not a token.** `RESET-THE-RAFFLE`
+   becomes muscle memory; `DELETE 4182 TICKETS AND 312 PAYMENTS` has to be read.
+   Generated server-side and **re-checked against live counts at execution** —
+   somebody may have been selling while the dialog sat open.
+4. **A backup first, and a refusal without one.**
+5. **The printed-paper guard**: refuse a codes reset for any book with
+   `printed_at` set, unless the whole raffle is going, and name the books.
+6. **The screen**, in Admin — the feature list, what each selection grew into
+   and why, the counts, and the phrase to type.
+7. **The seed**, separately: idempotent, refusing on a non-empty system unless
+   paired with a reset. `seedagree` already pins that three seed routes must
+   agree on numbering; a fourth joins that test.
+
+### Still to decide
+
+Whether this is for **starting the next raffle round** on a live system or for
+**demo and evaluation installs**. Reset and seed are separable and both are
+worth having, but they want opposite defaults — maximum friction against one
+button — and that decides the shape of 6 and 7.
 
 ---
 
@@ -294,3 +489,11 @@ and `supabase functions deploy` bundles what is on disk rather than what is comm
 - **A photocopy verifies.** Stated above; the book decides, not the paper.
 - **`BOOK_DIGITS` disagrees with itself** — 4 in the schema seed, 3 in `reset.sql` and in
   both code paths. Every book label must come from the live setting, never a seed.
+- **The design is stored twice until phase 6b.** `elements` is the truth; the old named
+  slots are written back in step by `legacyFromElements` purely so a browser running a
+  pre-rebuild bundle stays correct. Anything that writes `elements` without calling it
+  puts the two out of step, and nothing reports that — an older tab then prints from
+  where an element used to be. Treat the bridge as load-bearing until it is deleted.
+- **Two organisers can overwrite each other's design, today.** The document has no
+  revision and the last write wins in silence. Phase 6a is the fix; until then it is
+  a real hazard on a screen two people can both reach.
