@@ -3,7 +3,8 @@
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "Raffle ticket books, sellers and money — who holds what, what sold, and what is still owed",
+  "description": "Charity raffle ticket books, sellers and money — who holds what, what sold, and what is still owed",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

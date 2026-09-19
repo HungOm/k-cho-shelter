@@ -2,7 +2,7 @@
 
 **Raffle ticket books, sellers and money.** Who holds which book, what sold, and what is still to come in.
 
-A ticket and book inventory tracker for a community fundraising raffle. Paper tickets are printed in
+A ticket and book inventory tracker for a small community charity fundraising raffle. Paper tickets are printed in
 books, handed to agents, sold for cash, and reconciled when the books come back.
 
 **No money moves through this system.** It records what was handed out, what was sold, and what was
@@ -298,3 +298,61 @@ mode for whoever is keying in a stack of stubs.
 a secret on the Edge Function. Nothing in the app can grant it, and no admin can
 disable or demote it; that takes the Supabase dashboard, which only its owners
 can open. It is also the way back in before the allowlist has any rows.
+
+## Legal and compliance notice
+
+This is a general-purpose ticket design and tracking utility. It was written for small
+and medium charity fundraising inside a community — a church, an association or a
+neighbourhood group printing a few thousand paper tickets for a cause, handing books to
+volunteers, and keeping track of who holds what and what came back. That is what it is
+for, and that is the only thing it is built to do well.
+
+Saying what it is for is not saying that any particular event is permitted. This software
+does not give legal advice, does not determine whether a raffle, lottery, lucky draw,
+fundraising activity or other event is lawful, and does not verify that any required
+permit, licence, registration or approval has been obtained.
+
+Raffles, lotteries, lucky draws, gaming and fundraising are regulated or restricted in
+many places, and what applies depends on the jurisdiction and the circumstances. Anyone
+running this software is solely responsible for working out which laws, regulations,
+permit requirements and licence requirements apply to their event, and for complying with
+them. That this software exists and can be downloaded is not authorization, approval or
+endorsement of any particular event or activity.
+
+**What it does** is the rest of this README: it numbers tickets and draws the artwork to
+print them, records which paper books are with which seller, records a sale against a
+buyer's name and phone number, records cash a seller has handed in, answers *is this
+ticket real* from a stored code, and records a winning number after somebody types it in.
+
+**What it does not do**, because none of it is implemented here:
+
+- **It does not sell tickets.** There is no public purchase, checkout or ordering flow.
+  Every sale is keyed in afterwards by somebody who handed over paper and took the money
+  in person.
+- **It does not process payments.** There is no payment gateway, no card handling, no
+  transfer of funds. `record_payment` writes a bookkeeping row about cash that has
+  already changed hands.
+- **It does not collect or hold money** from buyers, sellers or anybody else.
+- **It does not run the draw.** Nothing here picks a ticket. The draw happens however the
+  organiser runs it, off the system, and the number is typed in afterwards against a
+  prize on the schedule.
+- **It does not issue, check or verify permits, licences or registrations**, and has no
+  concept of them.
+- **It does not decide whether an event is lawful**, and it does not certify compliance
+  with any jurisdiction's rules.
+- **It is not an operator or an organiser.** It is software that somebody else runs on
+  their own Supabase project and their own page.
+
+The warranty disclaimer and the limitation of liability that apply to this software are
+the ones written into the MIT License itself. Nothing in this notice adds to them, and
+nothing here is a claim about what they achieve in any particular jurisdiction.
+
+## License
+
+Released under the MIT License. See [LICENSE](LICENSE) for the full text.
+
+That covers the code. It is not a trademark licence: the logo files in `public/` are one
+organisation's mark, kept here because this repository is that organisation's deployment,
+and every logo the running app shows comes from config rather than from a bundled asset
+([`src/components/ui/Logo.vue`](src/components/ui/Logo.vue)) — so a fork shows its own
+mark, or Raffled's, and never theirs by accident.
