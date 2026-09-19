@@ -187,8 +187,51 @@ console.log('picking one opens the numbers for it')
   ok(/class="inspector"/.test(html), 'the inspector appears')
   const text = visibleText(html)
   ok(/Number — buyer half/.test(text), 'saying which thing is being moved')
-  ok(/Across/.test(text) && /Down/.test(text), 'with its exact position, so it can be reproduced')
   ok(/Shift/.test(text), 'and how to move it faster')
+  /*
+   * The measurements themselves are <Dim> props, and this harness renders a
+   * child's slots and not its props — so asserting on "Across" here would fail
+   * against a screen that is perfectly fine. The block below renders Dim on its
+   * own, where its template really runs, and checks the readout there instead.
+   */
+  ok(/class="pad"/.test(html), 'and the nudge pad, which is the no-typing route')
+}
+
+
+/*
+ * A MEASUREMENT IS DRAGGED, AND STILL READS AS A NUMBER.
+ *
+ * Rendered directly rather than through the screen, because the screen stubs
+ * its children: inside TicketDesign a <Dim> contributes nothing to the HTML, so
+ * every assertion about a measurement has to happen here.
+ */
+console.log('a dimension is a slider that still shows its number')
+{
+  const html = await renderScreen('src/components/ui/Dim.vue', 'export const state = {}', {
+    props: { label: 'Letter height', modelValue: 21, min: 4, max: 80, mm: 0.11875 },
+  })
+
+  ok(/type="range"/.test(html), 'it is a slider')
+  ok(/value="21"/.test(html), 'set to the value it was given')
+  ok(/min="4"/.test(html) && /max="80"/.test(html), 'within the range it was given')
+  ok(visibleText(html).includes('Letter height'), 'and says what it measures')
+
+  /*
+   * RULE: anything positioned by dragging must still show its exact number.
+   * The slider answers "does that look right"; the number is what makes the
+   * answer reproducible on a second artwork and sayable over the phone.
+   */
+  ok(/type="number"/.test(html), 'the exact figure is there to be read')
+  ok(/class="num"/.test(html), 'and to be typed when the slider will not do')
+
+  // 21 px at 0.11875 mm/px is 2.49 mm. The file counts pixels; the organiser
+  // is holding a printed ticket and a ruler.
+  ok(visibleText(html).includes('2.49 mm'), 'shown in millimetres as well as pixels')
+
+  // Keyboard: the slider itself must be reachable, or the only way to place
+  // something by keyboard is to type a coordinate — the thing this replaces.
+  ok(!/tabindex="-1"/.test(html), 'the slider is in the tab order')
+  ok(!/aria-hidden/.test(html), 'and is not hidden from a screen reader')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -20,6 +20,7 @@ import { numberLayerSVG, qrModuleMM, placeBoth, ticketVerifyUrl } from '../lib/t
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
+import Dim from './ui/Dim.vue'
 
 const templates = ref([])
 const activeId = ref('')
@@ -267,6 +268,15 @@ const dpi = computed(() => {
   if (!px || !mm) return null
   const v = Math.round(px / (mm / 25.4))
   return { v, ok: v >= 300, soft: v < 200 }
+})
+
+/* One artwork pixel, in millimetres of printed ticket. Everything measured on
+ * the canvas can therefore be shown in both, which is the only way a number
+ * here means anything to somebody holding a ruler. */
+const mmPer = computed(() => {
+  const w = Number(design.value?.artwork?.width ?? 0)
+  const mm = Number(design.value?.sheet?.widthMM ?? 0)
+  return w && mm ? mm / w : 0
 })
 
 const qrDensity = computed(() => {
@@ -623,12 +633,20 @@ const kb = (n) => (n >= 1024 * 1024
               <span class="tiny muted">Hold Shift to move ten at a time</span>
             </div>
             <div class="grid">
-              <label>Across<input :value="chosen.x()" type="number" step="1"
-                @input="nudge(Number($event.target.value) - chosen.x(), 0)"></label>
-              <label>Down<input :value="chosen.y()" type="number" step="1"
-                @input="nudge(0, Number($event.target.value) - chosen.y())"></label>
-              <label v-if="chosen.resize">Size<input :value="chosen.size()" type="number" step="1"
-                @input="chosen.resize(Number($event.target.value) - chosen.size())"></label>
+              <!--
+                These write through the same mover the dragging uses, as a delta
+                rather than as an assignment, so a label box keeps its shape and
+                the two ways of moving something cannot drift apart.
+              -->
+              <Dim :model-value="chosen.x()" label="Across"
+                   :min="0" :max="design.artwork?.width ?? 1600" :mm="mmPer"
+                   @update:model-value="(v) => nudge(v - chosen.x(), 0)" />
+              <Dim :model-value="chosen.y()" label="Down"
+                   :min="0" :max="design.artwork?.height ?? 517" :mm="mmPer"
+                   @update:model-value="(v) => nudge(0, v - chosen.y())" />
+              <Dim v-if="chosen.resize" :model-value="chosen.size()" label="Size"
+                   :min="40" :max="400" :mm="mmPer"
+                   @update:model-value="(v) => chosen.resize(v - chosen.size())" />
             </div>
           </div>
           <p v-if="problems.length" class="note bad tiny" style="margin-top:10px">
@@ -653,18 +671,22 @@ const kb = (n) => (n >= 1024 * 1024
           <div v-for="half in ['main', 'stub']" :key="half" class="halfblock">
             <h4>{{ half === 'main' ? "The buyer's half" : 'The stub' }}</h4>
             <div class="grid">
-              <label>Starts after
-                <input v-model.number="design[half].label.right" type="number" step="1"></label>
-              <label>Baseline
-                <input v-model.number="design[half].label.baseline" type="number" step="1"></label>
-              <label>Height of the digits
-                <input v-model.number="design[half].capHeight" type="number" step="1"></label>
-              <label>Must stop before
-                <input v-model.number="design[half].clearRight" type="number" step="1"></label>
-              <label>Size against the label
-                <input v-model.number="design[half].scale" type="number" step="0.05" min="0.2"></label>
-              <label>Colour
-                <input v-model="design[half].ink" type="text" spellcheck="false"></label>
+              <Dim v-model="design[half].label.right" label="Starts after"
+                   :min="0" :max="design.artwork?.width ?? 1600" :mm="mmPer" />
+              <Dim v-model="design[half].label.baseline" label="Baseline"
+                   :min="0" :max="design.artwork?.height ?? 517" :mm="mmPer" />
+              <Dim v-model="design[half].capHeight" label="Height of the digits"
+                   :min="4" :max="80" :mm="mmPer" />
+              <Dim v-model="design[half].clearRight" label="Must stop before"
+                   :min="0" :max="design.artwork?.width ?? 1600" :mm="mmPer" />
+              <Dim v-model="design[half].scale" label="Size against the label"
+                   :min="0.2" :max="2" :step="0.05" unit="&times;"
+                   hint="1 matches the printed label" />
+              <label class="formrow"><span class="cap">Colour</span>
+                <span class="wrap ink">
+                  <input v-model="design[half].ink" type="color" :aria-label="`${half} colour`">
+                  <input v-model="design[half].ink" type="text" spellcheck="false">
+                </span></label>
             </div>
             <p v-if="placed" class="tiny muted">
               {{ sample }} measures {{ Math.round(placed[half].width) }} px and ends at
@@ -694,12 +716,19 @@ const kb = (n) => (n >= 1024 * 1024
               <input v-model="design.book[half].enabled" type="checkbox"> Print the book number here
             </label>
             <div v-if="design.book[half].enabled" class="grid">
-              <label>Height<input v-model.number="design.book[half].capHeight" type="number" step="1"></label>
-              <label v-if="!design.book[half].below">Gap after the number
-                <input v-model.number="design.book[half].gap" type="number" step="0.1"></label>
-              <label v-else>Drop below the number
-                <input v-model.number="design.book[half].drop" type="number" step="0.05"></label>
-              <label>Colour<input v-model="design.book[half].ink" type="text" spellcheck="false"></label>
+              <Dim v-model="design.book[half].capHeight" label="Height"
+                   :min="4" :max="40" :mm="mmPer" />
+              <Dim v-if="!design.book[half].below" v-model="design.book[half].gap"
+                   label="Gap after the number" :min="0" :max="6" :step="0.1" unit="em"
+                   hint="measured in letter heights" />
+              <Dim v-else v-model="design.book[half].drop" label="Drop below the number"
+                   :min="0.2" :max="6" :step="0.05" unit="em"
+                   hint="measured in letter heights" />
+              <label class="formrow"><span class="cap">Colour</span>
+                <span class="wrap ink">
+                  <input v-model="design.book[half].ink" type="color" :aria-label="`book ${half} colour`">
+                  <input v-model="design.book[half].ink" type="text" spellcheck="false">
+                </span></label>
               <label class="choice">
                 <input v-model="design.book[half].below" type="checkbox"> On its own line underneath
               </label>
@@ -731,14 +760,13 @@ const kb = (n) => (n >= 1024 * 1024
                 <input v-model="f.enabled" type="checkbox"> Print this one
               </label>
               <div v-if="f.enabled" class="grid">
-                <label class="formrow"><span class="cap">From the left edge</span>
-                  <span class="wrap"><input v-model.number="f.x" type="number" step="1"><span class="unit">px</span></span></label>
-                <label class="formrow"><span class="cap">Sits on the line at</span>
-                  <span class="wrap"><input v-model.number="f.baseline" type="number" step="1"><span class="unit">px</span></span></label>
-                <label class="formrow"><span class="cap">Letter height</span>
-                  <span class="wrap"><input v-model.number="f.capHeight" type="number" step="1"><span class="unit">px</span></span></label>
-                <label class="formrow"><span class="cap">Must stop before</span>
-                  <span class="wrap"><input v-model.number="f.maxRight" type="number" step="1"><span class="unit">px</span></span></label>
+                <Dim v-model="f.x" label="From the left edge"
+                     :min="0" :max="design.artwork?.width ?? 1600" :mm="mmPer" />
+                <Dim v-model="f.baseline" label="Sits on the line at"
+                     :min="0" :max="design.artwork?.height ?? 517" :mm="mmPer" />
+                <Dim v-model="f.capHeight" label="Letter height" :min="4" :max="60" :mm="mmPer" />
+                <Dim v-model="f.maxRight" label="Must stop before"
+                     :min="0" :max="design.artwork?.width ?? 1600" :mm="mmPer" />
                 <label class="formrow"><span class="cap">Ink</span>
                   <span class="wrap ink">
                     <input v-model="f.ink" type="color" :aria-label="`${FIELD[key]?.name ?? key} colour`">
@@ -763,9 +791,9 @@ const kb = (n) => (n >= 1024 * 1024
             <h4>{{ name }}</h4>
             <label class="choice"><input v-model="box.enabled" type="checkbox"> Print a QR here</label>
             <div v-if="box.enabled" class="grid">
-              <label>Across<input v-model.number="box.x" type="number" step="1"></label>
-              <label>Down<input v-model.number="box.y" type="number" step="1"></label>
-              <label>Size<input v-model.number="box.size" type="number" step="1"></label>
+              <Dim v-model="box.x" label="Across" :min="0" :max="design.artwork?.width ?? 1600" :mm="mmPer" />
+              <Dim v-model="box.y" label="Down" :min="0" :max="design.artwork?.height ?? 517" :mm="mmPer" />
+              <Dim v-model="box.size" label="Size" :min="40" :max="400" :mm="mmPer" />
               <label class="choice">
                 <input v-model="box.backing" type="checkbox"> White behind it
               </label>
@@ -786,14 +814,10 @@ const kb = (n) => (n >= 1024 * 1024
         <div class="card">
           <h3>Printing</h3>
           <div class="grid">
-            <label>Ticket width, mm
-              <input v-model.number="design.sheet.widthMM" type="number" step="1"></label>
-            <label>Tickets to a page
-              <input v-model.number="design.sheet.perPage" type="number" step="1" min="1"></label>
-            <label>Gap between, mm
-              <input v-model.number="design.sheet.gapMM" type="number" step="1"></label>
-            <label>Page margin, mm
-              <input v-model.number="design.sheet.marginMM" type="number" step="1"></label>
+            <Dim v-model="design.sheet.widthMM" label="Ticket width" :min="40" :max="210" unit="mm" />
+            <Dim v-model="design.sheet.perPage" label="Tickets to a page" :min="1" :max="12" unit="" />
+            <Dim v-model="design.sheet.gapMM" label="Gap between" :min="0" :max="30" unit="mm" />
+            <Dim v-model="design.sheet.marginMM" label="Page margin" :min="0" :max="30" unit="mm" />
             <label class="choice">
               <input v-model="design.sheet.cutlines" type="checkbox"> Dashed line to cut along
             </label>
@@ -890,6 +914,15 @@ const kb = (n) => (n >= 1024 * 1024
 .rows th, .rows td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--border) }
 .rows th { color: var(--muted, #6b6b74); font-weight: 500 }
 .rows td.n, .rows th.n { font-variant-numeric: tabular-nums }
+/* A specification is typed, not slid — 190 by 61.39 at a 2% tolerance is a
+ * figure somebody was given, not one they feel their way to. So these stay
+ * fields, and get what a column of numbers needs instead: one width, one
+ * alignment, and figures that line up. */
+.rows input[type=number] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums; text-align: right;
+  min-height: 34px; padding: 4px 8px; max-width: 110px;
+}
 .rows .right { text-align: right; white-space: nowrap }
 .rows tr.on td { background: var(--brand-soft, #f2f8f6) }
 .formrow .wrap.ink { gap: 8px }
