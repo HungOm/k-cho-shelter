@@ -11,6 +11,15 @@ exports/
 # Secrets
 .env
 .env.*
+
+# ...EXCEPT the templates, which hold no secret and are the thing somebody is
+# told to copy. `.env.*` above matched `.env.local.example` too, so the file
+# SETUP.md step 2 says to `cp` was on the machine of everybody who had already
+# set the project up and in nobody else's clone. A setup guide that names a
+# missing file reads as a broken repository, and the reader cannot tell which
+# of the two it is.
+!.env.*.example
+
 *.pem
 *.key
 credentials*.json

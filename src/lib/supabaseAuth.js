@@ -127,9 +127,10 @@ export async function signInWithGoogleToken(credential, nonce) {
     // of people giving up quietly.
     const err = new Error('Sign-in is not set up on this raffle yet.')
     err.notYou = true
-    err.detail = 'For the organiser: the app\'s Google client ID has to be listed under ' +
-      'Authentication → Providers → Google → Authorized Client IDs on the Supabase project. ' +
-      'Until it is, every sign-in is refused.'
+    err.detail = 'For the organiser: the app\'s Google client ID has to be listed on the ' +
+      'Supabase project — under Authentication → Providers → Google → Authorized Client IDs ' +
+      'on a hosted project, or as GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID on a self-hosted one. ' +
+      'Until it is, every sign-in is refused. See supabase/SELF-HOST.md for the second case.'
     throw err
   }
   if (!data?.session?.access_token) throw new Error('Google signed in but no session came back.')

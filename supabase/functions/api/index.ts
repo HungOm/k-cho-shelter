@@ -24,6 +24,7 @@
  */
 import { withSupabase } from 'npm:@supabase/server'
 import { createAdminClient } from 'npm:@supabase/server/core'
+import { sessionSecret, withSecretSession } from '../_shared/session.ts'
 import {
   ApiError,
   isActionAllowed,
@@ -1517,111 +1518,119 @@ const int = (v: unknown, d: number) => num(v, d)
 
 // ============ THE ROUTER ============
 
-export default {
-  fetch: withSupabase({ auth: 'user' }, async (req: Request, ctx: Ctx) => {
-    let body: { action?: string; payload?: Record<string, unknown> }
-    try {
-      body = await req.json()
-    } catch {
-      return fail(new ApiError('BAD_REQUEST', 'Request body could not be read.'))
+/**
+ * ONE REQUEST, once it is known who is asking.
+ *
+ * Lifted out of the export and named, because the export now has to CHOOSE how
+ * that gets established, and a choice about authentication belongs above the
+ * code it protects rather than inside it. Everything from here down is the same
+ * on either kind of project: the same claims, the same allowlist read fresh,
+ * the same registry, the same audit trail. Only the proof of identity differs,
+ * and it has been checked before this line runs.
+ */
+const route = async (req: Request, ctx: Ctx): Promise<Response> => {
+  let body: { action?: string; payload?: Record<string, unknown> }
+  try {
+    body = await req.json()
+  } catch {
+    return fail(new ApiError('BAD_REQUEST', 'Request body could not be read.'))
+  }
+
+  const action = String(body.action ?? '')
+  const spec = REGISTRY[action]
+  if (!spec) return fail(new ApiError('UNKNOWN_ACTION', `Unknown action: ${action}`, null, 404))
+
+  try {
+    // The JWT is already verified by the time we get here; what it proves is
+    // WHO is calling. Whether they may be here at all is the allowlist, which
+    // is read fresh every request so revoking access takes effect at once.
+    const email = String(ctx.userClaims?.email ?? '').trim().toLowerCase()
+    if (!email) throw new ApiError('AUTH_REQUIRED', 'No signed-in user.', null, 401)
+
+    const row = await userCache.get(email, async () => {
+      const { data } = await ctx.supabaseAdmin
+        .from('app_users').select('name,role,active,agent_id').eq('email', email).maybeSingle()
+      return data ?? null
+    })
+
+    const user = resolveUser(email, row, Deno.env)
+
+    const overrides = await permsCache.get('all', async () => {
+      const { data } = await ctx.supabaseAdmin.from('permissions').select('action,role,allowed')
+      const out: Record<string, Partial<Record<Role, boolean>>> = {}
+      for (const p of data ?? []) (out[p.action] ??= {})[p.role as Role] = p.allowed
+      return out
+    })
+
+    if (!isActionAllowed(action, spec, user, overrides)) {
+      // Two different refusals, because they need two different actions from
+      // the person reading them. "Not switched on" sends an organiser to the
+      // Access screen to turn it on — right for an ordinary permission, and
+      // actively misleading for a super-admin-only one where no such switch
+      // exists or ever can.
+      if (spec.sup && !user.isSuperAdmin) {
+        throw new ApiError('SUPER_ADMIN_ONLY',
+          'Only the system admin can do this. It cannot be switched on for anybody else.',
+          null, 403)
+      }
+      throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.', null, 403)
     }
 
-    const action = String(body.action ?? '')
-    const spec = REGISTRY[action]
-    if (!spec) return fail(new ApiError('UNKNOWN_ACTION', `Unknown action: ${action}`, null, 404))
-
-    try {
-      // The JWT is already verified by the time we get here; what it proves is
-      // WHO is calling. Whether they may be here at all is the allowlist, which
-      // is read fresh every request so revoking access takes effect at once.
-      const email = String(ctx.userClaims?.email ?? '').trim().toLowerCase()
-      if (!email) throw new ApiError('AUTH_REQUIRED', 'No signed-in user.', null, 401)
-
-      const row = await userCache.get(email, async () => {
-        const { data } = await ctx.supabaseAdmin
-          .from('app_users').select('name,role,active,agent_id').eq('email', email).maybeSingle()
-        return data ?? null
-      })
-
-      const user = resolveUser(email, row, Deno.env)
-
-      const overrides = await permsCache.get('all', async () => {
-        const { data } = await ctx.supabaseAdmin.from('permissions').select('action,role,allowed')
-        const out: Record<string, Partial<Record<Role, boolean>>> = {}
-        for (const p of data ?? []) (out[p.action] ??= {})[p.role as Role] = p.allowed
-        return out
-      })
-
-      if (!isActionAllowed(action, spec, user, overrides)) {
-        // Two different refusals, because they need two different actions from
-        // the person reading them. "Not switched on" sends an organiser to the
-        // Access screen to turn it on — right for an ordinary permission, and
-        // actively misleading for a super-admin-only one where no such switch
-        // exists or ever can.
-        if (spec.sup && !user.isSuperAdmin) {
-          throw new ApiError('SUPER_ADMIN_ONLY',
-            'Only the system admin can do this. It cannot be switched on for anybody else.',
-            null, 403)
-        }
-        throw new ApiError('INSUFFICIENT_ROLE', 'This is not switched on for your account.', null, 403)
+    // Two-person control, checked before the action runs rather than after.
+    // The super admin is exempt: they are the person who would approve it.
+    if (!user.isSuperAdmin) {
+      const needsTwo = await approvals.approvalNeeded(action, body.payload ?? {}, ctx)
+      if (needsTwo) {
+        throw new ApiError('APPROVAL_REQUIRED', needsTwo.text,
+          { action, summary: needsTwo.text, detail: needsTwo }, 403)
       }
-
-      // Two-person control, checked before the action runs rather than after.
-      // The super admin is exempt: they are the person who would approve it.
-      if (!user.isSuperAdmin) {
-        const needsTwo = await approvals.approvalNeeded(action, body.payload ?? {}, ctx)
-        if (needsTwo) {
-          throw new ApiError('APPROVAL_REQUIRED', needsTwo.text,
-            { action, summary: needsTwo.text, detail: needsTwo }, 403)
-        }
-      }
-
-      // Handed to decideApproval so an approved action is re-checked against
-      // the same overrides this request was.
-      ;(ctx as unknown as { _overrides?: unknown })._overrides = overrides
-
-      /*
-       * ONE ID FOR EVERYTHING THIS REQUEST TOUCHES.
-       *
-       * Counting a book in writes to four tables — the tickets it marks sold,
-       * the payments row for the cash, the book's custody line and the audit
-       * log — and nothing joined them. "Show me everything that happened when
-       * Book-0031 was counted in" was a join on TIME, which is approximately
-       * right, always available, and wrong in exactly the cases worth
-       * investigating: two people working the same minute.
-       *
-       * CARRIED AS A HEADER rather than threaded through fifty inserts. Every
-       * call this client makes carries it, PostgREST puts the request's headers
-       * where SQL can see them, and a column DEFAULT picks it up — which is
-       * also how the rows written INSIDE settle_book get stamped without that
-       * function growing a parameter. No handler is changed and no handler can
-       * forget.
-       *
-       * Replaced rather than reconfigured, because a client's headers are fixed
-       * when it is built and this id is per request. Cheap: it is an HTTP
-       * client, not a connection.
-       */
-      const requestId = crypto.randomUUID()
-      const ctxWithId = ctx as unknown as { supabaseAdmin: unknown; requestId?: string }
-      ctxWithId.requestId = requestId
-      // KEPT IF IT CANNOT BE BUILT. The id is bookkeeping; the client is the
-      // raffle. Anything that stops a second admin client being made — an
-      // environment this package cannot read, a test harness with no project to
-      // talk to — must cost the correlation id and not the request, so the one
-      // the platform already handed us stands and the rows carry ''.
-      const stamped = createAdminClient({
-        supabaseOptions: { global: { headers: { 'x-request-id': requestId } } },
-      })
-      if (stamped) ctxWithId.supabaseAdmin = stamped
-
-      const data = await spec.fn(body.payload ?? {}, user, ctx)
-      // Returned so a person reporting something odd can name the one action
-      // rather than a time and a screen.
-      return Response.json({ ok: true, data, requestId, serverTime: new Date().toISOString() })
-    } catch (err) {
-      return fail(err)
     }
-  }),
+
+    // Handed to decideApproval so an approved action is re-checked against
+    // the same overrides this request was.
+    ;(ctx as unknown as { _overrides?: unknown })._overrides = overrides
+
+    /*
+     * ONE ID FOR EVERYTHING THIS REQUEST TOUCHES.
+     *
+     * Counting a book in writes to four tables — the tickets it marks sold,
+     * the payments row for the cash, the book's custody line and the audit
+     * log — and nothing joined them. "Show me everything that happened when
+     * Book-0031 was counted in" was a join on TIME, which is approximately
+     * right, always available, and wrong in exactly the cases worth
+     * investigating: two people working the same minute.
+     *
+     * CARRIED AS A HEADER rather than threaded through fifty inserts. Every
+     * call this client makes carries it, PostgREST puts the request's headers
+     * where SQL can see them, and a column DEFAULT picks it up — which is
+     * also how the rows written INSIDE settle_book get stamped without that
+     * function growing a parameter. No handler is changed and no handler can
+     * forget.
+     *
+     * Replaced rather than reconfigured, because a client's headers are fixed
+     * when it is built and this id is per request. Cheap: it is an HTTP
+     * client, not a connection.
+     */
+    const requestId = crypto.randomUUID()
+    const ctxWithId = ctx as unknown as { supabaseAdmin: unknown; requestId?: string }
+    ctxWithId.requestId = requestId
+    // KEPT IF IT CANNOT BE BUILT. The id is bookkeeping; the client is the
+    // raffle. Anything that stops a second admin client being made — an
+    // environment this package cannot read, a test harness with no project to
+    // talk to — must cost the correlation id and not the request, so the one
+    // the platform already handed us stands and the rows carry ''.
+    const stamped = createAdminClient({
+      supabaseOptions: { global: { headers: { 'x-request-id': requestId } } },
+    })
+    if (stamped) ctxWithId.supabaseAdmin = stamped
+
+    const data = await spec.fn(body.payload ?? {}, user, ctx)
+    // Returned so a person reporting something odd can name the one action
+    // rather than a time and a screen.
+    return Response.json({ ok: true, data, requestId, serverTime: new Date().toISOString() })
+  } catch (err) {
+    return fail(err)
+  }
 }
 
 function fail(err: unknown) {
@@ -1632,4 +1641,47 @@ function fail(err: unknown) {
     { ok: false, error: { code: e.code, message: e.message, details: e.details } },
     { status: e.status },
   )
+}
+
+/**
+ * HOW THIS FUNCTION KNOWS WHO IS CALLING, on either kind of project.
+ *
+ * Decided once, at boot, from one variable. _shared/session.ts holds the whole
+ * reasoning; the short of it is that the two kinds of project sign sessions
+ * differently and a token cannot be asked which kind it came from.
+ *
+ * SUPABASE_JWT_SECRET UNSET — every Supabase-hosted project, and the local CLI.
+ * `auth: 'user'` verifies the session against the project's JWKS exactly as it
+ * did before this choice existed. Not one line of the self-hosted path is
+ * reachable, which is the requirement: a deployment that works today must not
+ * begin depending on new code to keep working.
+ *
+ * SUPABASE_JWT_SECRET SET — a self-hosted stack signing with one shared secret.
+ * withSupabase still runs, because it is what answers the CORS preflight and
+ * builds the admin client, but with `auth: 'none'`, because the package cannot
+ * verify a token that carries no `kid` and would refuse every volunteer in the
+ * hall. The verification it would have done is done by withSecretSession
+ * instead, before `route` is called.
+ *
+ * `auth: 'none'` HERE MEANS "THE PACKAGE IS NOT THE ONE CHECKING". It does not
+ * mean nobody is: a request without a verified session gets a 401 and never
+ * reaches `route`. Said plainly because the phrase appears in exactly one other
+ * place in this project — the public ticket check — where it means the opposite
+ * and is correct there too.
+ */
+const SESSION_SECRET = sessionSecret(Deno.env)
+
+export default {
+  fetch: SESSION_SECRET
+    ? withSupabase(
+      { auth: 'none' },
+      withSecretSession(
+        SESSION_SECRET,
+        // The same envelope every other refusal leaves in, so the client's
+        // renew-and-retry recognises it. See withSecretSession.
+        (code, message) => fail(new ApiError(code, message, null, 401)),
+        route,
+      ),
+    )
+    : withSupabase({ auth: 'user' }, route),
 }

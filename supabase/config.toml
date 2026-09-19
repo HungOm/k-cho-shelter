@@ -31,3 +31,16 @@ verify_jwt = true
 # sitting — and tests/verify.test.mjs reads the file and fails if it ever
 # mentions a buyer, a phone, a seller or a user.
 verify_jwt = false
+
+[functions.main]
+# NOT A FUNCTION OF THIS APP, and never deployed to a hosted project.
+#
+# A self-hosted stack runs one edge-runtime container over this whole directory
+# and needs a main service to route by name — supabase/functions/main/index.ts
+# is that, and it exists only for that. On a hosted project Supabase does the
+# routing itself, so deploying this would publish a third endpoint that serves
+# nothing anybody calls.
+#
+# `enabled = false` keeps it out of `supabase functions deploy` even when run
+# with no arguments, which is the form that deploys everything it finds.
+enabled = false

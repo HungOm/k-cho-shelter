@@ -18,6 +18,12 @@ Everything below builds one Supabase project: Postgres, one Edge Function in fro
 static page on GitHub Pages. Two of the steps below — **Creating the Google sign-in ID** and
 **Putting the app online** — are the only ones that touch anything outside it.
 
+**Running your own Supabase instead?** The same tree deploys to a stack you host yourself — no
+fork and no build flag. Everything in this guide still applies except the four steps that assume a
+hosted project: creating it, linking the CLI, deploying the functions, and the dashboard. Those
+four are in [supabase/SELF-HOST.md](supabase/SELF-HOST.md), which says which parts of this file to
+skip and what replaces them. Read that one alongside this, not instead of it.
+
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough) and
    `supabase link --project-ref <ref>`.
 2. `cp supabase/.env.local.example supabase/.env.local` and fill in the URL and the **secret** key
