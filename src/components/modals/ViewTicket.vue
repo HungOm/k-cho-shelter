@@ -76,7 +76,12 @@ function layerFor(t) {
 const sharing = ref('')
 /* Keyed by ticket number: viewing a book draws ten of these, and a single
  * message would appear under all of them however few actually failed. */
-const shareErr = ref({})
+/*
+ * What to tell them about the last share — no longer only failures, so it is
+ * not called shareErr any more. The desktop route succeeds and still leaves
+ * something the person needs to know.
+ */
+const shareNote = ref({})
 
 const soldState = (t) => String(t?.status ?? '').toLowerCase()
 const isSold = (t) => ['sold', 'donated'].includes(soldState(t))
@@ -177,7 +182,13 @@ const cardFor = (t) => digitalCardSVG(design.value, cardValues(t), {
  * from the design's own colours and a QR made of rectangles, so it is one
  * self-contained SVG with no request in it.
  */
-async function pictureOf(t) {
+/*
+ * `mime` exists because the clipboard and the file want different formats.
+ * WhatsApp takes the JPEG happily as a file, but every browser that will put an
+ * image on the clipboard at all takes PNG and only PNG. Rather than a second
+ * copy of the drawing, the encoder is the parameter.
+ */
+async function pictureOf(t, mime = 'image/jpeg') {
   const d = design.value
   const W = Math.max(400, Number(d.digital?.widthPx ?? 1200))
   const H = Math.round(W * (CARD.height / CARD.width))
@@ -193,7 +204,7 @@ async function pictureOf(t) {
 
   const blob = await new Promise((res, rej) => {
     canvas.toBlob((b) => (b ? res(b) : rej(new Error('the picture came back empty'))),
-      'image/jpeg', Number(d.digital?.quality ?? 0.92))
+      mime, mime === 'image/jpeg' ? Number(d.digital?.quality ?? 0.92) : undefined)
   })
   return blob
 }
@@ -232,6 +243,26 @@ function messageFor(t) {
  * picture is saved and the message opened beside it, which was already written
  * and was simply unreachable.
  */
+/*
+ * PUT IT ON THE CLIPBOARD, so the desktop route is one paste rather than a hunt
+ * through Downloads. WhatsApp Web accepts a pasted image, which is as close as a
+ * browser gets to attaching one — no link can carry a picture, wa.me included.
+ *
+ * Every part of this is refused somewhere: the API is absent in Firefox, the
+ * constructor throws outside a secure context, and some browsers accept no type
+ * but PNG. None of that is worth reporting to somebody in the middle of selling
+ * a ticket — the download is the backstop, and the message says which happened.
+ */
+async function copyPicture(blob) {
+  try {
+    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') return false
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    return true
+  } catch {
+    return false
+  }
+}
+
 function canHandFileToAnApp(file) {
   if (!navigator.canShare?.({ files: [file] })) return false
   if (navigator.userAgentData?.mobile === true) return true
@@ -250,7 +281,7 @@ function canHandFileToAnApp(file) {
  * what lets the buyer prove the ticket later. The picture is the nicety.
  */
 async function send(t) {
-  shareErr.value = { ...shareErr.value, [t.number]: '' }
+  shareNote.value = { ...shareNote.value, [t.number]: '' }
   sharing.value = t.number
   try {
     const blob = await pictureOf(t)
@@ -259,13 +290,26 @@ async function send(t) {
       await navigator.share({ files: [file], text: messageFor(t) })
       return
     }
-    /* No file sharing here, so save the picture and open the message beside it
-     * — between them the buyer gets both. */
+    /*
+     * No file sharing here. The picture is copied and saved, the message opened
+     * beside it, and — the part that was missing — the screen SAYS so.
+     *
+     * Reported as "WhatsApp didn't get the picture, only the thank-you note,
+     * ticket number and verification link". It had made the picture: it was in
+     * Downloads. Nothing on screen mentioned that, and the only note this panel
+     * could show fired when the picture FAILED — so a working desktop share
+     * looked exactly like a broken one. A silent side-effect is not a feature
+     * somebody has; it is one they have to be told about.
+     */
+    const pasted = await copyPicture(await pictureOf(t, 'image/png'))
     saveBlob(blob, `${t.number}.jpg`)
     window.open(`https://wa.me/?text=${encodeURIComponent(messageFor(t))}`, '_blank', 'noopener')
+    shareNote.value = { ...shareNote.value, [t.number]: pasted
+      ? 'WhatsApp cannot be handed a picture from a link, so the ticket is on your clipboard — paste it into the chat. It is in your Downloads too.'
+      : 'WhatsApp cannot be handed a picture from a link, so the ticket is in your Downloads — drag it into the chat.' }
   } catch (e) {
     if (e?.name === 'AbortError') return          // they closed the share sheet
-    shareErr.value = { ...shareErr.value, [t.number]: 'The picture could not be made on this device, so the check link is being sent instead.' }
+    shareNote.value = { ...shareNote.value, [t.number]: 'The picture could not be made on this device, so the check link is being sent instead.' }
     window.open(`https://wa.me/?text=${encodeURIComponent(messageFor(t))}`, '_blank', 'noopener')
   } finally {
     sharing.value = ''
@@ -282,12 +326,12 @@ function saveBlob(blob, name) {
 }
 
 async function savePicture(t) {
-  shareErr.value = { ...shareErr.value, [t.number]: '' }
+  shareNote.value = { ...shareNote.value, [t.number]: '' }
   sharing.value = t.number
   try {
     saveBlob(await pictureOf(t), `${t.number}.jpg`)
   } catch {
-    shareErr.value = { ...shareErr.value, [t.number]: 'The picture could not be made on this device. Send the check link instead.' }
+    shareNote.value = { ...shareNote.value, [t.number]: 'The picture could not be made on this device. Send the check link instead.' }
   } finally {
     sharing.value = ''
   }
@@ -389,7 +433,7 @@ onMounted(async () => {
             Sending is refused until the sale is recorded, and it never mints a code for
             an unprinted book.
           </p>
-          <p v-if="shareErr[t.number]" class="note tiny">{{ shareErr[t.number] }}</p>
+          <p v-if="shareNote[t.number]" class="note tiny">{{ shareNote[t.number] }}</p>
         </div>
       </div>
     </template>
