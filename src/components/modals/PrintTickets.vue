@@ -32,17 +32,39 @@ import { numberLayerSVG, ticketVerifyUrl } from '../../lib/ticketart.js'
 import { sheetHTML, pageFit, PAGE } from '../../lib/ticketsheet.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { expandTicketRange, bookNumber, storedBook } from '../../lib/books.js'
+// Across into the check page's own folder on purpose: the sample book and the
+// marker its QR carries are one contract shared with the page that answers it,
+// and that page may not import from lib/. See src/verify/sample.js.
+import { sampleBook, sampleVerifyUrl, SAMPLE_BOOK } from '../../verify/sample.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ payload: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['close'])
 
-/* A book was named, so that is the obvious thing to print. */
-const mode = ref(props.payload?.book ? 'book' : 'range')
+/* A book was named, so that is the obvious thing to print — unless samples
+ * were asked for, which is a choice somebody made on the way in. */
+const mode = ref(props.payload?.sample ? 'sample' : props.payload?.book ? 'book' : 'range')
 const book = ref(String(props.payload?.book ?? ''))
 const fromBook = ref(String(props.payload?.book ?? ''))
 const toBook = ref(String(props.payload?.book ?? ''))
 const numbers = ref('')
+
+/*
+ * SAMPLES ARE A SCOPE, NOT A MODE, and that is the whole of their safety.
+ *
+ * A mode is a thing somebody leaves switched on: real tickets printed with a
+ * watermark across them, or — far worse — one browser set to samples and
+ * another not, both printing what they believe is the same book. A scope
+ * cannot be left on. You choose it for one run, the run says what it is, and
+ * the next run starts from whatever you pick then.
+ *
+ * The confirmation below is the second half of what was asked for: the screen
+ * says which kind of paper this will be before it draws anything, and will not
+ * draw until that has been read. The watermark is the third half — a mistake
+ * that gets past both is still obvious on the paper itself.
+ */
+const isSample = computed(() => mode.value === 'sample')
+const sampleOk = ref(false)
 
 const busy = ref(false)
 const err = ref('')
@@ -220,6 +242,8 @@ const bookHint = computed(() => bookNumber('1') || 'Book-001')
 const bookHintLast = computed(() => bookNumber('10') || 'Book-010')
 
 const scope = computed(() => {
+  // A sample asks the server for nothing. loadSample builds the batch.
+  if (mode.value === 'sample') return null
   if (mode.value === 'book') {
     const one = storedBook(book.value)
     return one ? { book: one } : null
@@ -279,6 +303,7 @@ const inBatch = computed(() => tickets.value.length + missing.value.length)
 
 /** One window of tickets, starting after `from`. */
 async function load(from) {
+  if (mode.value === 'sample') return loadSample()
   if (!scope.value) { err.value = scopeProblem.value || 'Say which tickets to print.'; return }
   busy.value = true
   err.value = ''
@@ -288,6 +313,42 @@ async function load(from) {
     batchStart.value = from
     cursor.value = r.after ?? from
     doneAll.value = !!r.done
+    pageNo.value = 0
+  } catch (e) {
+    err.value = e.message
+    result.value = null
+    if (e.code) toast(e.message, 'bad', e.code)
+  } finally {
+    busy.value = false
+  }
+}
+
+/*
+ * The sample batch, assembled here rather than asked for.
+ *
+ * One request still goes out, and only for the ARTWORK: the template lives on
+ * the server and a sample has to be drawn on the same paper as a real ticket
+ * or it demonstrates nothing. render_tickets is read-only — it stamps nothing
+ * as printed — and it returns the template even when its scope matches no
+ * tickets, which is what makes this work on a raffle that has not been
+ * numbered yet.
+ */
+async function loadSample() {
+  busy.value = true
+  err.value = ''
+  try {
+    const r = await api('render_tickets', { all: true, after: 0, withBuyer: false })
+    result.value = {
+      template: r.template,
+      verifyBase: r.verifyBase,
+      tickets: sampleBook(),
+      notGenerated: [],
+      done: true,
+      after: null,
+    }
+    batchStart.value = 0
+    cursor.value = 0
+    doneAll.value = true
     pageNo.value = 0
   } catch (e) {
     err.value = e.message
@@ -337,7 +398,16 @@ function layerFor(t) {
   return numberLayerSVG(design.value, t.number, {
     book: t.book,
     buyer: t.buyer,
-    qrUrl: ticketVerifyUrl(verifyBase.value, t.number, t.code),
+    /*
+     * A sample's QR carries the marker, never the compact <number>.<code>
+     * form. Sent as a lookup it would be a ticket that does not exist, and the
+     * page would answer a demonstration ticket in red as though somebody had
+     * forged it.
+     */
+    qrUrl: isSample.value
+      ? sampleVerifyUrl(verifyBase.value, t.number)
+      : ticketVerifyUrl(verifyBase.value, t.number, t.code),
+    watermark: isSample.value ? 'SAMPLE' : '',
     encode,
   })
 }
@@ -352,13 +422,20 @@ function openSheet(download) {
   const html = sheetHTML(design.value, tickets.value.map((t) => t.number), result.value.template.url, {
     title: `Tickets ${tickets.value[0].number} to ${tickets.value[tickets.value.length - 1].number}`,
     layers: Object.fromEntries(tickets.value.map((t) => [t.number, layerFor(t)])),
+    /*
+     * The sheet prints itself once its images have loaded. It used to be a
+     * 600ms timer out here, which is fine on a warm cache and prints a blank
+     * page on a cold one — or declines to print and leaves somebody looking
+     * at the sheet wondering what happened. The document is the only thing
+     * that knows when it is ready.
+     */
+    autoPrint: !download,
     ...sheetOpts.value,
   })
   const w = window.open('', '_blank')
   if (!w) { toast('Allow pop-ups to print', 'bad'); return }
   w.document.write(html)
   w.document.close()
-  if (!download) setTimeout(() => { try { w.print() } catch { /* the person can print it themselves */ } }, 600)
 }
 
 /** Mark this batch printed, then open it. */
@@ -384,7 +461,7 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
 
 <template>
   <Sheet title="Printing tickets"
-         :subtitle="tickets.length ? `${tickets[0].number} — ${tickets[tickets.length - 1].number}` : 'a book, a run of books, or the whole raffle'"
+         :subtitle="tickets.length ? `${tickets[0].number} — ${tickets[tickets.length - 1].number}` : 'a book, a run of books, the whole raffle, or ten samples'"
          wide @close="emit('close')">
     <p v-if="!hasArtwork" class="note bad">
       There is no ticket artwork yet, so nothing can be printed. Upload it on the
@@ -396,6 +473,15 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
         <span class="pill bad">Organisers only</span>
         <span class="tiny muted">Cannot be handed to sellers from the Access screen.</span>
       </p>
+
+      <!--
+        WHICH KIND OF PAPER THIS IS, across the top rather than only beside the
+        control that chose it. Somebody scrolls to the sheet, prints, and walks
+        away; the answer has to be where they end up, not only where they began.
+      -->
+      <div v-if="isSample" class="samplestrip">
+        SAMPLE RUN — watermarked, not in the raffle, cannot be sold
+      </div>
 
       <div class="printroom">
         <!-- ---------- the sheet ---------- -->
@@ -506,6 +592,19 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
 
             <label class="choice"><input v-model="mode" type="radio" value="all"> The whole raffle</label>
 
+            <label class="choice"><input v-model="mode" type="radio" value="sample"> Sample book</label>
+            <div v-if="isSample" class="samplebox">
+              <p class="tiny">
+                <b>Ten sample tickets, {{ SAMPLE_BOOK }}.</b> They are watermarked SAMPLE across
+                the face, they are not in the raffle, and they cannot be sold. Nothing is written
+                down: no ticket, no book, no code. Scanning one shows a sample page.
+              </p>
+              <label class="choice tiny">
+                <input v-model="sampleOk" type="checkbox">
+                <span>I understand these are not sellable tickets</span>
+              </label>
+            </div>
+
             <!-- The hint is nested inside the label's own text rather than beside
                  the checkbox: .choice is a flex row, so a sibling span becomes a
                  second column and the label wraps to three words a line. -->
@@ -519,8 +618,10 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
               </span>
             </label>
 
-            <button class="btn sm wide" :disabled="busy" @click="look">
-              {{ busy ? 'Working…' : 'See what is there' }}
+            <button class="btn sm wide" :disabled="busy || (isSample && !sampleOk)"
+                    :title="isSample && !sampleOk ? 'Confirm you understand these are samples' : ''"
+                    @click="look">
+              {{ busy ? 'Working…' : isSample ? 'Draw the sample book' : 'See what is there' }}
             </button>
             <p v-if="progress" class="tiny muted">{{ progress }}</p>
             <p v-if="err" class="note bad tiny">{{ err }}</p>
@@ -532,7 +633,7 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
               second one is refused until the first has been done. Generating is
               once-only; a reprint must carry the code the ticket already has.
             -->
-            <div class="cgroup">
+            <div v-if="!isSample" class="cgroup">
               <p class="rubric"><span class="step">1</span> Give them codes</p>
               <p class="tiny muted">
                 <template v-if="missing.length">
@@ -558,16 +659,20 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
             </div>
 
             <div class="cgroup">
-              <p class="rubric"><span class="step">2</span> Put them on paper</p>
-              <button class="btn sm primary wide" :disabled="busy || !tickets.length"
+              <p class="rubric"><span class="step" v-if="!isSample">2</span> Put them on paper</p>
+              <p v-if="isSample" class="tiny muted">
+                There is nothing to stamp as printed — a sample is not a ticket and the
+                books do not know about it. Print as many as you like.
+              </p>
+              <button v-if="!isSample" class="btn sm primary wide" :disabled="busy || !tickets.length"
                       :title="tickets.length ? 'Marks this batch printed, then opens the print dialog' : 'Nothing to print'"
                       @click="printThem">
                 Print {{ pages.length }} sheet{{ pages.length === 1 ? '' : 's' }} now
               </button>
-              <button class="btn sm wide" :disabled="busy || !tickets.length"
+              <button class="btn sm wide" :class="{ primary: isSample }" :disabled="busy || !tickets.length"
                       :title="tickets.length ? 'Opens the same sheets without stamping the book as printed' : 'Nothing to open'"
                       @click="openSheet(true)">
-                Open without marking printed
+                {{ isSample ? 'Open the sample sheet' : 'Open without marking printed' }}
               </button>
               <button v-if="!doneAll" class="btn sm wide" :disabled="busy" @click="nextBatch">
                 Next batch &rarr;
@@ -630,6 +735,16 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
 </template>
 
 <style scoped>
+.samplebox {
+  margin: 6px 0 10px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--warn-soft); border: 1px solid var(--warn);
+}
+.samplebox p { margin: 0 0 6px; }
+.samplestrip {
+  margin: 0 0 10px; padding: 8px 12px; border-radius: var(--r-sm);
+  background: var(--warn-soft); border: 1px solid var(--warn);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-align: center;
+}
 .whoonly { display: flex; align-items: center; gap: 8px; margin: 0 0 12px }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
 .grow { flex: 1; min-width: 0 }

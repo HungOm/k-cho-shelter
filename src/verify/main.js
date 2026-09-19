@@ -24,6 +24,7 @@
  * somebody could edit.
  */
 import { S } from './strings.js'
+import { sampleFromSearch } from './sample.js'
 
 const root = document.getElementById('app')
 
@@ -101,9 +102,20 @@ function whyOneAnswer() {
 }
 
 function panel(tone, headKey, noteKey, extra = '') {
+  const mark = tone === 'good' ? '✓' : tone === 'bad' ? '✗' : tone === 'sample' ? '✱' : '!'
+  /*
+   * The watermark is on the card for the same reason it is on the paper: this
+   * page is a screenshot away from being passed around on its own. It is one
+   * Latin word, aria-hidden and decorative — the verdict itself is in both
+   * languages, through say(), like everything else here.
+   */
+  const wash = tone === 'sample'
+    ? '<div class="wash" aria-hidden="true"><span>SAMPLE SAMPLE SAMPLE SAMPLE</span></div>'
+    : ''
   return `
     <div class="card ${tone}">
-      <div class="mark" aria-hidden="true">${tone === 'good' ? '✓' : tone === 'bad' ? '✗' : '!'}</div>
+      ${wash}
+      <div class="mark" aria-hidden="true">${mark}</div>
       <h1>${say(headKey)}</h1>
       ${extra}
       <p class="note">${say(noteKey)}</p>
@@ -129,6 +141,21 @@ function params() {
 }
 
 async function run() {
+  /*
+   * BEFORE params(), because params() would hand this to the server.
+   *
+   * A sample has nothing to verify and nothing to look up — there is no row
+   * behind it anywhere, by design. Answering it here means a sample QR works
+   * off a printer with no connection, on a raffle that has not been numbered,
+   * and years after the one it was printed for was wiped.
+   */
+  const sample = sampleFromSearch(window.location.search)
+  if (sample) {
+    render(panel('sample', 'sampleHead', 'sampleNote',
+      `<p class="number"><span class="label">${say('ticketNo')}</span><b>${escapeHtml(sample)}</b></p>`))
+    return
+  }
+
   render(`<div class="card wait"><p>${say('checking')}</p></div>`)
 
   const p = params()

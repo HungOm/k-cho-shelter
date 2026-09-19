@@ -21,7 +21,7 @@ import { date } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ payload: { type: Object, default: () => ({}) } })
-const emit = defineEmits(['close', 'print'])
+const emit = defineEmits(['close', 'print', 'print-sample'])
 
 const busy = ref(true)
 const err = ref('')
@@ -269,6 +269,9 @@ onMounted(async () => {
 
     <template #actions>
       <button v-if="tickets.length" class="btn" @click="emit('print', payload)">Print</button>
+      <button v-if="tickets.length" class="btn"
+              title="Ten watermarked sample tickets. Not in the raffle, cannot be sold."
+              @click="emit('print-sample')">Print samples</button>
       <button class="btn ghost" @click="emit('close')">Close</button>
     </template>
   </Sheet>

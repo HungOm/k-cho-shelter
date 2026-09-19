@@ -67,6 +67,56 @@ export function pageFit(design, opts = {}) {
  * @param {string}   imageHref the artwork: a URL, or a data: URI to stand alone
  * @param {object}   opts      title, and anything numberLayerSVG takes
  */
+/*
+ * PRINTING WHEN THE PAPER IS ACTUALLY READY, WHICH A TIMER CANNOT KNOW.
+ *
+ * The caller used to open this document and call print() on it 600ms later.
+ * On a warm cache that is plenty and it looks perfect; on a cold one, a large
+ * artwork, or a phone tethered in a hall, the images have not arrived and the
+ * dialog opens over a blank page — or the browser declines to print an
+ * unfinished document at all and you are left looking at the sheet wondering
+ * why nothing happened. Both were reported, and a timer cannot tell the two
+ * apart because it never asked.
+ *
+ * So the document prints ITSELF, once every image it contains has either
+ * loaded or failed. It lives here rather than in the caller because every
+ * caller has the same problem, and the one that forgot — the design screen's
+ * test page, which never called print at all — is exactly the kind of thing
+ * that survives for months as "sometimes it just opens a page".
+ *
+ * `error` counts as ready on purpose: one artwork that 404s should cost that
+ * picture, not the whole print run. What comes out says clearly which ticket
+ * is missing its background.
+ */
+const AUTO_PRINT = `<script>
+(function () {
+  var done = false
+  function go() {
+    if (done) return
+    done = true
+    try { window.focus() } catch (e) {}
+    try { window.print() } catch (e) {}
+  }
+  var imgs = [].slice.call(document.images)
+  var left = imgs.length
+  if (!left) return setTimeout(go, 60)
+  // A long stop, so a hung request cannot leave somebody staring at a sheet
+  // that will never print. Ten seconds is past any reasonable artwork.
+  var bell = setTimeout(go, 10000)
+  imgs.forEach(function (img) {
+    if (img.complete) return ready()
+    img.addEventListener('load', ready)
+    img.addEventListener('error', ready)
+  })
+  function ready() {
+    if (--left > 0) return
+    clearTimeout(bell)
+    // One frame, so the last decode is painted before the dialog freezes it.
+    setTimeout(go, 120)
+  }
+}())
+<\/script>`
+
 export function sheetHTML(design, numbers, imageHref, opts = {}) {
   const sheet = design?.sheet ?? {}
   const widthMM = Number(opts.widthMM ?? sheet.widthMM ?? 190)
@@ -75,6 +125,7 @@ export function sheetHTML(design, numbers, imageHref, opts = {}) {
   const cutlines = opts.cutlines ?? sheet.cutlines ?? true
   const page = String(opts.page ?? 'A4 portrait')
   const title = String(opts.title ?? 'Raffle tickets')
+  const autoPrint = opts.autoPrint === true
 
   const artW = Number(design?.artwork?.width ?? 1600)
   const artH = Number(design?.artwork?.height ?? 517)
@@ -151,6 +202,7 @@ export function sheetHTML(design, numbers, imageHref, opts = {}) {
   </div>
 ${tickets}
 </div>
+${autoPrint ? AUTO_PRINT : ''}
 </body>
 </html>`
 }

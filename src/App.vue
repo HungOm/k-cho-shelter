@@ -486,6 +486,7 @@ function seeTickets(book) {
                    @issue="openModal('issue')"
                    @sell-book="b => openModal('sellbook', b)"
                    @print-range="() => openModal('printtickets', {})"
+                   @print-sample="() => openModal('printtickets', { sample: true })"
                    @transfer="openModal('bookaction', 'transfer')"
                    @return-books="openModal('bookaction', 'return')"
                    @restock="openModal('bookaction', 'restock')"
@@ -519,7 +520,8 @@ function seeTickets(book) {
                   @close="closeModal" />
     <ViewTicket v-else-if="modal?.kind === 'viewticket'" :payload="modal.payload"
                 @close="closeModal"
-                @print="p => openModal('printtickets', p)" />
+                @print="p => openModal('printtickets', p)"
+                @print-sample="() => openModal('printtickets', { sample: true })" />
     <BookDetail v-else-if="modal?.kind === 'book'" :book="modal.payload"
                 @close="closeModal"
                 @settle="b => openModal('settle', b)"
@@ -529,7 +531,8 @@ function seeTickets(book) {
                 @withdraw-offer="withdrawOffer"
                 @see-tickets="seeTickets"
                 @view-book="b => openModal('viewticket', { book: b.book })"
-                @print-book="b => openModal('printtickets', { book: b.book })" />
+                @print-book="b => openModal('printtickets', { book: b.book })"
+                @print-sample="() => openModal('printtickets', { sample: true })" />
     <SettleBook v-else-if="modal?.kind === 'settle'" :book="modal.payload"
                 @close="closeModal" @settled="afterBookChange"
                 @put-back="afterBookChange" />

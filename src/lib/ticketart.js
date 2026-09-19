@@ -555,6 +555,10 @@ export function numberLayerSVG(design, text, opts = {}) {
    */
   const real = qrUrl && encode
   const body = [
+    // Before the codes, so their white backing punches it out. Same rule as
+    // the element renderer; both paths draw the same ticket or neither is
+    // worth having.
+    watermarkSVG(design, opts.watermark ?? '', opts),
     real ? qrLayer(design.qrMain, qrUrl, { encode }) : (qrBoxes ? qrPlaceholder(design.qrMain, 'QR') : ''),
     real ? qrLayer(design.qrStub, qrUrl, { encode }) : (qrBoxes ? qrPlaceholder(design.qrStub, 'QR') : ''),
     textEl(p.main, pinWidth),
@@ -785,8 +789,114 @@ function elementGuide(p) {
  * backing that covers whatever is under it, so a code painted after a number
  * would erase the number. Paint order here is the z-order on paper.
  */
+/*
+ * A DIAGONAL WATERMARK, DRAWN TWICE BECAUSE THE TICKET HAS TWO BACKGROUNDS.
+ *
+ * The main half of this artwork is dark and the stub is white. One ink cannot
+ * serve both: an opacity that reads on the dark half is invisible on the stub,
+ * and one that reads on the stub is a smear on the dark half. So each half is
+ * drawn into its own nested <svg> — which clips at its own edges, needing no
+ * clipPath and therefore no id, which matters because a printed sheet puts
+ * fifty of these overlays in one document and ids would collide across them.
+ * `design.stubAt` is the boundary, a share of the width, and exists for
+ * exactly this kind of question.
+ *
+ * THE INKS ARE CHOSEN BY LUMINANCE, NOT HUE, because these are printed on an
+ * office laser as often as not and two colours that look distinct on screen
+ * converge to one gray on paper. White on the dark half, near-black on the
+ * stub, both at an opacity low enough to read a serial number through.
+ *
+ * THE TWO OPACITIES ARE NOT THE SAME NUMBER AND MUST NOT BE MADE ONE. They
+ * were measured, by rendering the artwork with and without the watermark and
+ * comparing mean luma per half: white at 0.24 on the dark side is a stroke of
+ * about 33, and matching it on the white stub takes 0.18. At 0.13 — which
+ * looks right on screen — the stub carries three-quarters the weight of the
+ * main half, and the gap widens rather than closes in grayscale.
+ *
+ * THE ANGLE IS THE TICKET'S OWN DIAGONAL, atan(height / width) — about 18° on
+ * a 1600×517 ticket. A 45° line leaves a ticket this wide almost immediately
+ * and reads as a slash in one corner rather than as a watermark across it.
+ *
+ * NO textLength ANYWHERE. Pinning a width is only honest for text measured in
+ * FONT.advance; on anything else it stretches or crushes the glyphs, which is
+ * how a place name once printed as "K l a n g".
+ *
+ * IT SURVIVES A NON-LATIN LABEL, AND ONE PATH WILL NOT DRAW IT WELL. The
+ * repeat count is estimated rather than measured when the glyphs have no
+ * measured width, so "နမူနာ" renders instead of throwing — the print sheet
+ * and the on-screen preview both parse this SVG inline, where the page's own
+ * Padauk applies, and they are fine. The DIGITAL TICKET is not: it rasterises
+ * the overlay through an Image onto a canvas, a webfont does not load on that
+ * path, and the picture falls back to whatever Myanmar font the device has.
+ * A phone with none draws boxes, silently, in the exported picture only. The
+ * same limitation as a Burmese buyer's name on a digital ticket, for the same
+ * reason. So: the caller decides the label, and today every caller passes
+ * "SAMPLE". Anything that lets somebody TYPE one needs a Burmese reader to
+ * look at an exported picture first — "it rendered" is not "it is correct"
+ * in a script none of us reads.
+ *
+ * IT IS PAINTED FIRST, BEFORE THE CODES, and that is a correctness matter
+ * rather than an aesthetic one. qrLayer lays a white backing rectangle under
+ * every QR, so a watermark drawn first is punched cleanly out from under the
+ * code: quiet zone intact, modules unobstructed. Drawn afterwards it would lie
+ * a diagonal stroke across a live QR whose modules are about 0.39mm, and the
+ * ticket would photograph as unscannable.
+ */
+export function watermarkSVG(design, text, opts = {}) {
+  const label = String(text ?? '').trim()
+  if (!label) return ''
+  const width = Number(design?.artwork?.width ?? 1600)
+  const height = Number(design?.artwork?.height ?? 517)
+  const stubAt = Number(design?.stubAt ?? 0.6875)
+  const split = Math.max(0, Math.min(width, width * stubAt))
+
+  const angle = -(Math.atan2(height, width) * 180) / Math.PI
+  const size = Number(opts.watermarkSize ?? height * 0.2)
+  const rows = 3
+  const gap = size * 1.45
+
+  // Enough repeats to cross the longest half on the diagonal, plus one so the
+  // ends are never visible inside the ticket.
+  const half = (x0, x1, fill, opacity) => {
+    const w = x1 - x0
+    if (w <= 1) return ''
+    const span = Math.hypot(w, height)
+    /*
+     * MEASURED IF IT CAN BE, ESTIMATED OTHERWISE, AND NEVER THROWN OVER.
+     *
+     * advanceOf raises on any glyph with no measured width, which is every
+     * Burmese one — and "နမူနာ" is the obvious thing for somebody to put here
+     * on a ticket that is bilingual everywhere else. An unguarded call turns
+     * that request into an exception that takes the whole print sheet with it,
+     * not just the watermark.
+     *
+     * All this number does is decide how many times to repeat the word, and
+     * the nested viewport clips whatever overspills, so an estimate is worth
+     * exactly as much as a measurement here. It is also why the width is never
+     * pinned: see the textLength note above.
+     */
+    const advance = measurable(label, 'bold') ? advanceOf(label, 'bold') : label.length * 0.62
+    const per = Math.max(1, Math.ceil(span / (Math.max(advance, 0.1) * size * 0.9)) + 1)
+    const line = Array(per).fill(label).join('   ')
+    const lines = []
+    for (let i = 0; i < rows; i++) {
+      const y = height / 2 + (i - (rows - 1) / 2) * gap + size * 0.35
+      lines.push(`<text x="${round(w / 2)}" y="${round(y)}" text-anchor="middle">${esc(line)}</text>`)
+    }
+    return `<svg x="${round(x0)}" y="0" width="${round(w)}" height="${round(height)}" ` +
+      `viewBox="0 0 ${round(w)} ${round(height)}" preserveAspectRatio="none">` +
+      `<g transform="rotate(${round(angle)} ${round(w / 2)} ${round(height / 2)})" ` +
+      `fill="${fill}" fill-opacity="${opacity}" font-family='${TEXT_FAMILY}' ` +
+      `font-size="${round(size)}" font-weight="700" letter-spacing="${round(size * 0.12)}">` +
+      `${lines.join('')}</g></svg>`
+  }
+
+  return half(0, split, opts.watermarkInkMain ?? '#ffffff', opts.watermarkOpacityMain ?? 0.24) +
+    half(split, width, opts.watermarkInkStub ?? '#111111', opts.watermarkOpacityStub ?? 0.18)
+}
+
 export function elementLayerSVG(design, values = {}, opts = {}) {
-  const { guides = false, pinWidth = true, qrBoxes = false, qrUrl = '', encode } = opts
+  const { guides = false, pinWidth = true, qrBoxes = false, qrUrl = '', encode, watermark = '' } = opts
   const width = Number(design?.artwork?.width ?? 1600)
   const height = Number(design?.artwork?.height ?? 517)
   const placed = placeElements(design, values)
@@ -816,6 +926,8 @@ export function elementLayerSVG(design, values = {}, opts = {}) {
   }
 
   const body = [
+    // First, so that qrLayer's white backing punches it out from under the code.
+    watermarkSVG(design, watermark, opts),
     ...codes,
     ...texts,
     ...(guides ? placed.map(elementGuide) : []),

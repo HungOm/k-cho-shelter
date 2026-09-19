@@ -922,6 +922,17 @@ function printTest() {
   const numbers = [1, 2, 3, 4].map((n) => prefix + String(n).padStart(digits, '0'))
   const html = sheetHTML(design.value, numbers, active.value.url, {
     title: 'Ticket design — test page (not real tickets)',
+    /*
+     * IT SAYS "not real tickets" IN A BOX THAT DOES NOT PRINT. Everything
+     * that came out of here was four tickets carrying the raffle's own
+     * prefix and the next four numbers in sequence, with nothing on the paper
+     * to say otherwise — the one artefact in this app that looked exactly
+     * like stock and was not. The watermark is on the paper now, where the
+     * person holding it is.
+     */
+    watermark: 'SAMPLE',
+    // And it prints, rather than opening a page and waiting to be noticed.
+    autoPrint: true,
   })
   const w = window.open('', '_blank')
   if (!w) { toast('Allow pop-ups to print a test page', 'bad'); return }

@@ -10,7 +10,7 @@ import StatusPill from '../ui/StatusPill.vue'
 import History from './History.vue'
 
 const props = defineProps({ book: Object })
-const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock', 'view-book', 'print-book'])
+const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock', 'view-book', 'print-book', 'print-sample'])
 
 /*
  * Whether this raffle has artwork to print tickets onto. A yes or no carried on
@@ -361,6 +361,9 @@ const showHistory = ref(false)
       <button v-if="isAdmin" class="btn" :disabled="!hasArtwork"
               :title="hasArtwork ? null : noArtworkWhy"
               @click="emit('print-book', book)">Print this book</button>
+      <button v-if="isAdmin" class="btn" :disabled="!hasArtwork"
+              title="Ten watermarked sample tickets. Not in the raffle, cannot be sold."
+              @click="emit('print-sample')">Print samples</button>
       <button class="btn" @click="showHistory = true">Where it has been</button>
       <!-- Shown and DISABLED rather than hidden, when this person cannot sell
            from this book. Hiding it makes the app look different to different

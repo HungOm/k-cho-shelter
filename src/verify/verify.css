@@ -4,12 +4,12 @@
  */
 :root {
   --ink: #17171b; --muted: #5f6368; --line: #e3e3e8; --bg: #f4f5f7; --card: #fff;
-  --good: #0a7d32; --bad: #b3261e; --warn: #9a6700;
+  --good: #0a7d32; --bad: #b3261e; --warn: #9a6700; --sample: #5b5f66;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #e9e9ee; --muted: #a0a0aa; --line: #33333b; --bg: #131317; --card: #1c1c22;
-    --good: #5bd07f; --bad: #ff8a80; --warn: #e0b341;
+    --good: #5bd07f; --bad: #ff8a80; --warn: #e0b341; --sample: #9aa0a8;
   }
 }
 * { box-sizing: border-box }
@@ -72,6 +72,23 @@ h1, .note, .state, .stamp, .about, .my, .en,
 .good .mark { background: var(--good) }
 .bad .mark { background: var(--bad) }
 .warn .mark { background: var(--warn) }
+.sample .mark { background: var(--sample) }
+/*
+ * The watermark, on the card rather than behind the text: `overflow: hidden`
+ * on a positioned card clips the rotated band at the card's own edges, so it
+ * cannot run under the rest of the page. Pointer events off, so it never
+ * swallows a tap on a phone.
+ */
+.card.sample { position: relative; overflow: hidden }
+.card.sample > *:not(.wash) { position: relative; z-index: 1 }
+.wash {
+  position: absolute; inset: -30%; display: flex; align-items: center; justify-content: center;
+  transform: rotate(-18deg); pointer-events: none; user-select: none;
+}
+.wash span {
+  font: 700 clamp(26px, 9vw, 44px)/1.9 system-ui, sans-serif; letter-spacing: 0.12em;
+  color: var(--sample); opacity: 0.16; white-space: normal; text-align: center;
+}
 h1 { font-size: 19px; margin: 0 0 12px }
 .en { display: block }
 .my { display: block; font-size: 0.86em; opacity: 0.75; font-family: Padauk, "Noto Sans Myanmar", sans-serif }

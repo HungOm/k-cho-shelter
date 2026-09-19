@@ -122,6 +122,20 @@ export const S = {
 
   aboutMore: { en: 'More about this raffle', my: 'အသေးစိတ် ဖတ်ရှုရန်' },
 
+  /*
+   * A THIRD VERDICT, and it is neither of the other two.
+   *
+   * A sample is not genuine and is not a forgery — it is a demonstration, and
+   * saying either of the other things about it would be wrong in a way that
+   * matters. Shown in red it accuses whoever is holding it; shown in green it
+   * turns a page anybody can print into something that vouches for itself.
+   */
+  sampleHead: { en: 'This is a sample ticket', my: 'ဤသည်မှာ နမူနာလက်မှတ် ဖြစ်ပါသည်' },
+  sampleNote: {
+    en: 'It was printed to show what a ticket looks like. It is not entered in the raffle, it cannot win a prize, and it is not for sale. A real ticket has a number without the word Sample in it.',
+    my: 'လက်မှတ်ပုံစံ ပြသရန်အတွက်သာ ရိုက်နှိပ်ထားခြင်း ဖြစ်ပါသည်။ ကံစမ်းမဲတွင် ပါဝင်ခြင်း မရှိပါ၊ ဆုမဲ ပေါက်နိုင်ခွင့် မရှိပါ၊ ရောင်းချရန်လည်း မဟုတ်ပါ။ စစ်မှန်သော လက်မှတ်တွင် Sample ဟူသော စာလုံး ပါဝင်မည် မဟုတ်ပါ။',
+  },
+
   checkedAt: { en: 'Checked', my: 'စစ်ဆေးချိန်' },
   photocopy: {
     en: 'A real ticket can still be copied. The raffle is decided by its own records, not by a printed ticket.',
