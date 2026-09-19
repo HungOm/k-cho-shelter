@@ -13,11 +13,12 @@
  * listed by number instead, with the reason.
  */
 import { ref, computed, onMounted } from 'vue'
-import { api, toast } from '../../lib/store.js'
-import { designFor } from '../../lib/ticketdesign.js'
-import { numberLayerSVG, ticketVerifyUrl } from '../../lib/ticketart.js'
+import { state, api, toast } from '../../lib/store.js'
+import { designFor, stubShare } from '../../lib/ticketdesign.js'
+import { numberLayerSVG, ticketVerifyUrl, digitalCardSVG, CARD } from '../../lib/ticketart.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { date } from '../../lib/format.js'
+import { inkFor } from '../../lib/brand.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ payload: { type: Object, default: () => ({}) } })
@@ -111,10 +112,75 @@ function loadImage(src, crossOrigin) {
  * itself has — the same bet the printed ticket makes, and the reason
  * TEXT_FAMILY ends in a system fallback rather than at Padauk.
  */
+/*
+ * THE ORGANISATION'S OWN MARK, INLINED.
+ *
+ * An SVG rendered through an <img> will not fetch anything external — that is a
+ * security rule of the format, not a bug — so a logo referenced by URL simply
+ * does not appear in the exported picture while looking fine on screen. It has
+ * to be fetched here and handed over as a data URI.
+ *
+ * Fetched once and remembered, and any failure is silent: a bucket without CORS
+ * headers, an offline phone, a logo nobody uploaded. The card draws the
+ * organisation's initial instead, which is a mark rather than a gap.
+ */
+const logoUri = ref('')
+async function loadLogo() {
+  const url = String(state.cfg?.orgLogoSmall || state.cfg?.orgLogo || '').trim()
+  if (!url || logoUri.value) return
+  try {
+    const r = await fetch(url, { mode: 'cors' })
+    if (!r.ok) return
+    const blob = await r.blob()
+    logoUri.value = await new Promise((res) => {
+      const f = new FileReader()
+      f.onload = () => res(String(f.result))
+      f.onerror = () => res('')
+      f.readAsDataURL(blob)
+    })
+  } catch { /* no mark is a card with an initial on it, not a failure */ }
+}
+
+/* What goes on the card, from what this screen and the config already hold. */
+function cardValues(t) {
+  const c = state.cfg || {}
+  const brand = String(c.brandColor || '').trim()
+  return {
+    number: t.number,
+    name: t.buyer?.name ?? '',
+    org: String(c.orgName ?? '').trim(),
+    event: String(c.eventName ?? '').trim(),
+    drawOn: c.drawDate ? date(c.drawDate) : '',
+    price: c.ticketPrice ? `${c.currency ?? ''} ${c.ticketPrice}`.trim() : '',
+    brand,
+    /* Computed, never configured — an organisation choosing a colour is not
+     * choosing a contrast ratio. See brand.js. */
+    ink: inkFor(brand) || '#ffffff',
+    logo: logoUri.value,
+    thanks: THANKS_EN,
+    link: ticketVerifyUrl(verifyBase.value, t.number, t.code).replace(/^https?:\/\//, ''),
+  }
+}
+
+const cardFor = (t) => digitalCardSVG(design.value, cardValues(t), {
+  qrUrl: ticketVerifyUrl(verifyBase.value, t.number, t.code),
+  encode,
+})
+
+/*
+ * The card, rasterised for sharing.
+ *
+ * NOTHING CROSS-ORIGIN GOES INTO IT, which is the quiet win here. The printed
+ * ticket had to be fetched from Storage with crossOrigin set, and a bucket that
+ * does not answer with the header taints the canvas and toBlob throws — the
+ * failure the WhatsApp text fallback existed for. The card is drawn entirely
+ * from the design's own colours and a QR made of rectangles, so it is one
+ * self-contained SVG with no request in it.
+ */
 async function pictureOf(t) {
   const d = design.value
   const W = Math.max(400, Number(d.digital?.widthPx ?? 1200))
-  const H = Math.round(W * (d.artwork.height / d.artwork.width))
+  const H = Math.round(W * (CARD.height / CARD.width))
 
   const canvas = document.createElement('canvas')
   canvas.width = W
@@ -122,10 +188,7 @@ async function pictureOf(t) {
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('this browser cannot draw the picture')
 
-  const art = await loadImage(result.value.template.url, true)
-  ctx.drawImage(art, 0, 0, W, H)
-
-  const svg = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(layerFor(t))}`
+  const svg = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(cardFor(t))}`
   ctx.drawImage(await loadImage(svg, false), 0, 0, W, H)
 
   const blob = await new Promise((res, rej) => {
@@ -135,9 +198,48 @@ async function pictureOf(t) {
   return blob
 }
 
-/** What a buyer is told, with the address that proves the ticket. */
+/*
+ * WHAT THE BUYER IS TOLD, and it goes with the picture rather than instead of
+ * it. The address is the part that matters: it is what lets them check the
+ * ticket later, and it is the whole of the message when the picture cannot be
+ * made.
+ *
+ * THE BURMESE HERE HAS HAD NO NATIVE READER, the same as the six keys added to
+ * the verify page. The English below it is the sentence that was meant; if the
+ * two disagree, correct the Burmese against the English.
+ */
+const THANKS_MY = 'ဝယ်ယူသူအားပေးမှုအတွက် ကျေးဇူးတင်ပါသည်။'
+const THANKS_EN = 'Thank you — this keeps the shelter open.'
+
 function messageFor(t) {
-  return `${t.number}\n${ticketVerifyUrl(verifyBase.value, t.number, t.code)}`
+  return [t.number, THANKS_MY, THANKS_EN, ticketVerifyUrl(verifyBase.value, t.number, t.code)].join('\n')
+}
+
+/*
+ * CAN THIS DEVICE HAND A FILE TO WHATSAPP — which is not what canShare asks.
+ *
+ * `navigator.canShare({files})` answers true in desktop Chrome, so a button
+ * labelled "Send on WhatsApp" opened the macOS share sheet: Mail, Messages,
+ * AirDrop, Notes, Freeform. No WhatsApp anywhere on it. The browser could
+ * indeed share a file; the chooser it opened simply had nothing useful in it.
+ *
+ * The real question is whether the operating system's chooser has WhatsApp in
+ * it, and that is a question about the device rather than about the API. On a
+ * phone it does. On a desktop it does not, and wa.me does better there anyway —
+ * it opens WhatsApp Web, which is the thing the button promised.
+ *
+ * So the file route is taken only where it beats the link. Everywhere else the
+ * picture is saved and the message opened beside it, which was already written
+ * and was simply unreachable.
+ */
+function canHandFileToAnApp(file) {
+  if (!navigator.canShare?.({ files: [file] })) return false
+  if (navigator.userAgentData?.mobile === true) return true
+  const ua = navigator.userAgent || ''
+  /* iPadOS reports itself as a Macintosh, and only the touch points give it
+   * away. Everything else is an honest phone or tablet string. */
+  const iPadOS = /Macintosh/.test(ua) && Number(navigator.maxTouchPoints) > 1
+  return /Android|iPhone|iPad|iPod/i.test(ua) || iPadOS
 }
 
 /*
@@ -153,7 +255,7 @@ async function send(t) {
   try {
     const blob = await pictureOf(t)
     const file = new File([blob], `${t.number}.jpg`, { type: 'image/jpeg' })
-    if (navigator.canShare?.({ files: [file] })) {
+    if (canHandFileToAnApp(file)) {
       await navigator.share({ files: [file], text: messageFor(t) })
       return
     }
@@ -208,6 +310,7 @@ onMounted(async () => {
   } finally {
     busy.value = false
   }
+  loadLogo()
 })
 </script>
 
@@ -245,25 +348,49 @@ onMounted(async () => {
           so an organiser learns that the sale needs recording rather than
           concluding the button has gone.
         -->
-        <div class="sendrow">
-          <span v-if="isSold(t)" class="pill ok">sold</span>
-          <span v-else class="pill">not sold yet</span>
-          <span class="grow"></span>
-          <button class="btn sm primary" :disabled="!!cannotSend(t) || sharing === t.number"
+        <!--
+          THE CARD A BUYER IS SENT, shown as it will be sent.
+          It is not the ticket above: the name lives on the stub and the code on
+          the buyer's half, so what belongs to the buyer is composed rather than
+          cropped. See digitalCardSVG.
+        -->
+        <div class="send" :class="{ off: !!cannotSend(t) }">
+          <div class="sendhead">
+            <b class="mono">{{ t.number }}</b>
+            <span class="grow"></span>
+            <span v-if="isSold(t)" class="pill ok">sold</span>
+            <span v-else class="pill">not sold yet</span>
+          </div>
+
+          <div class="card" v-html="cardFor(t)"></div>
+
+          <p class="tiny muted">
+            The buyer&rsquo;s name is printed on it, so a copy passed to someone else is
+            visibly not theirs. Their phone, area and seller stay on the stub and are
+            never sent.
+          </p>
+
+          <button class="btn primary wide" :disabled="!!cannotSend(t) || sharing === t.number"
                   :title="cannotSend(t) || 'Send this ticket and its check link to the buyer'"
                   @click="send(t)">
             {{ sharing === t.number ? 'Working…' : 'Send on WhatsApp' }}
           </button>
-          <button class="btn sm" :disabled="!!cannotSend(t) || sharing === t.number"
-                  :title="cannotSend(t) || 'Save the ticket as a picture'"
+          <button class="btn wide" :disabled="!!cannotSend(t) || sharing === t.number"
+                  :title="cannotSend(t) || 'Save the card as a picture'"
                   @click="savePicture(t)">Save the picture</button>
+
+          <p class="note tiny fallback">
+            If the phone cannot make the picture, a WhatsApp message carrying the check
+            link is sent instead.
+          </p>
+
+          <p v-if="cannotSend(t)" class="tiny muted">{{ cannotSend(t) }}</p>
+          <p v-else class="tiny muted">
+            Sending is refused until the sale is recorded, and it never mints a code for
+            an unprinted book.
+          </p>
+          <p v-if="shareErr[t.number]" class="note tiny">{{ shareErr[t.number] }}</p>
         </div>
-        <p v-if="cannotSend(t)" class="tiny muted sendwhy">{{ cannotSend(t) }}</p>
-        <p v-else class="tiny muted sendwhy">
-          The buyer's name is printed on it, so a copy passed to someone else is
-          visibly not theirs. Sending never mints a code for an unprinted book.
-        </p>
-        <p v-if="shareErr[t.number]" class="note tiny sendwhy">{{ shareErr[t.number] }}</p>
       </div>
     </template>
 
@@ -279,9 +406,24 @@ onMounted(async () => {
 
 <style scoped>
 .one { margin-bottom: 18px }
-.sendrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px }
-.sendrow .grow { flex: 1; min-width: 0 }
-.sendwhy { margin: 6px 0 0 }
+/*
+ * The send panel. One column, because the card is the subject and two buttons
+ * stacked under it is how the mockup reads — a row of equal buttons beside a
+ * picture makes the picture look like an illustration of them.
+ */
+.send { display: flex; flex-direction: column; gap: 8px; margin-top: 10px;
+        padding-top: 12px; border-top: 1px solid var(--border) }
+.send.off { opacity: .6 }
+.send p { margin: 0 }
+.sendhead { display: flex; align-items: center; gap: 8px }
+.sendhead .grow { flex: 1; min-width: 0 }
+.send .wide { width: 100% }
+.card { border-radius: 8px; overflow: hidden; box-shadow: var(--shadow) }
+.card :deep(svg) { display: block; width: 100%; height: auto }
+/* The fallback is information, not a warning: it is what happens next, and a
+ * red note would read as something having gone wrong before it has. */
+.fallback { border-left: 3px solid var(--info); background: var(--info-soft); color: var(--info) }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
 .ticketpreview { position: relative; width: 100%; border: 1px solid var(--border); border-radius: 6px; overflow: hidden }
 .ticketpreview img { display: block; width: 100%; height: auto }
 .ticketpreview .overlay { position: absolute; inset: 0 }

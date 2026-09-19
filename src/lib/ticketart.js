@@ -1012,3 +1012,133 @@ export function elementLayerSVG(design, values = {}, opts = {}) {
   ].join('')
   return `<svg class="numbers" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${body}</svg>`
 }
+
+/* ============ the card a buyer is sent ============ */
+
+/*
+ * THE DIGITAL TICKET IS DRAWN, NOT PHOTOGRAPHED.
+ *
+ * Everything else in this file puts ink on a picture of a printed ticket. This
+ * makes a different object, and the reason is that the printed one cannot be
+ * cropped into what a buyer should receive.
+ *
+ * On the artwork the buyer's NAME is on the stub and the QR is on the main
+ * half, on opposite sides of the perforation. So a picture of the whole ticket
+ * carries the name, the phone, the area and the seller — a forwardable image of
+ * somebody's own contact details, and a picture of the organiser's counterfoil,
+ * which is the half that comes back for the draw. A picture of the buyer's half
+ * carries the QR and no name at all, which loses the one thing that made a
+ * forwarded copy visibly somebody else's.
+ *
+ * Neither is right, so the card takes what belongs to the buyer from both
+ * sides: the number, the book, their name, and the code. Nobody's phone, area
+ * or seller is on it.
+ *
+ * ITS COLOURS COME FROM THE DESIGN rather than from here, so a second charity's
+ * card matches their own ticket without anybody restyling this. The dark is the
+ * ink the stub is printed in — on this artwork that is the green of the main
+ * half — and the lettering is the ink the number is printed in.
+ */
+export const CARD = { width: 1200, height: 760 }
+
+/*
+ * WHAT GOES ON IT, and why each line earns its place.
+ *
+ * A digital ticket is a receipt and a claim check at once, so it answers the
+ * questions somebody actually asks of one, in the order they ask them:
+ *
+ *   who issued it   the organisation's mark and name — a stranger's screenshot
+ *                   of a green rectangle proves nothing without an issuer
+ *   what it is      the event, when a raffle has a name of its own
+ *   which ticket    the number, largest thing on the card, because it is what
+ *                   gets read out on the phone
+ *   whose it is     the buyer's name — the marker that makes a forwarded copy
+ *                   visibly somebody else's. Name only: no phone, no area, no
+ *                   seller, all of which live on the stub and stay there
+ *   when            the draw date. A ticket that does not say when to look is a
+ *                   ticket somebody forgets they hold
+ *   what was paid   the price, because this is the only receipt they get
+ *   how to check    the QR, and the SAME ADDRESS IN TEXT underneath it. A QR
+ *                   that will not scan — a cracked screen, a bad camera, a
+ *                   photo of a photo — leaves a link somebody can still type
+ *
+ * The book number is deliberately absent. It is how the raffle files a stub,
+ * not something the buyer has any use for.
+ *
+ * ITS COLOUR IS THE ORGANISATION'S, NOT THE ARTWORK'S. This used to take the
+ * ticket's printed inks, which tied the card to a template that may not exist
+ * — a raffle can sell before it has uploaded artwork, and the card should not
+ * wait for a picture it never draws. brandColor is one value an organisation
+ * already sets, and the lettering on it is COMPUTED rather than chosen, for the
+ * reason brand.js gives: an organisation picking a colour is not picking a
+ * contrast ratio, and white on pale yellow is unreadable in sunlight.
+ */
+export function digitalCardSVG(design, values = {}, opts = {}) {
+  const { width: W, height: H } = CARD
+  const paper = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
+  const ink = String(values.ink || '#ffffff')
+  const quiet = ink.toLowerCase() === '#ffffff' ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.62)'
+  const hair = ink.toLowerCase() === '#ffffff' ? 'rgba(255,255,255,.28)' : 'rgba(0,0,0,.22)'
+
+  const s = (v) => String(v ?? '').trim()
+  const number = s(values.number)
+  const name = s(values.name)
+  const org = s(values.org)
+  const event = s(values.event)
+  const draw = s(values.drawOn)
+  const price = s(values.price)
+  const link = s(values.link)
+  const logo = s(values.logo)
+
+  /* The number is the one string whose width is known, so it is the only one in
+   * the measured stack. Everything else may be Burmese — Myanmar chain, and no
+   * width pinned, which is the bug that printed "Klang" as "K l a n g". */
+  const t = (str, x, y, size, fill, family, extra = '') => (str
+    ? `<text x="${round(x)}" y="${round(y)}" font-family='${family}' font-size="${round(size)}" `
+      + `fill="${fill}" ${extra} xml:space="preserve">${esc(str)}</text>`
+    : '')
+  const cap = (str, x, y) => t(str, x, y, 24, quiet, TEXT_FAMILY, 'letter-spacing="3"')
+
+  /*
+   * The mark. An organisation's own logo when there is one and it could be
+   * inlined — an <img>-rendered SVG will not fetch anything external, so the
+   * caller hands it over as a data URI or not at all. Otherwise the initial in
+   * a roundel, which is a mark rather than an apology for not having one.
+   */
+  const initial = (org || event || '?').trim().charAt(0).toUpperCase()
+  const mark = logo
+    ? `<image href="${esc(logo)}" x="64" y="52" width="76" height="76" preserveAspectRatio="xMidYMid meet"/>`
+    : `<circle cx="102" cy="90" r="38" fill="none" stroke="${hair}" stroke-width="2"/>`
+      + t(initial, 102, 104, 42, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')
+
+  const qr = { enabled: true, x: W - 316, y: 250, size: 236, ecc: 'M', backing: true }
+  const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
+    + `<rect width="${W}" height="${H}" fill="${paper}"/>`
+    + mark
+    + t(org, 166, 84, 38, ink, TEXT_FAMILY, 'font-weight="700"')
+    + t(event, 166, 124, 28, quiet, TEXT_FAMILY)
+    + `<line x1="64" y1="168" x2="${W - 64}" y2="168" stroke="${hair}" stroke-width="2"/>`
+
+    + cap('TICKET', 64, 226)
+    + t(number, 64, 310, 76, ink, FONT.family, 'font-weight="700"')
+
+    + (name ? cap('ISSUED TO', 64, 386) : '')
+    + t(name, 64, 438, 42, ink, TEXT_FAMILY, 'font-weight="700"')
+
+    + (draw ? cap('DRAW', 64, 520) : '')
+    + t(draw, 64, 566, 34, ink, TEXT_FAMILY)
+    + (price ? cap('PRICE', 400, 520) : '')
+    + t(price, 400, 566, 34, ink, TEXT_FAMILY)
+
+    + code
+    + t(code ? 'Scan to check this ticket' : '', W - 198, 528, 22, quiet, TEXT_FAMILY, 'text-anchor="middle"')
+
+    + `<line x1="64" y1="628" x2="${W - 64}" y2="628" stroke="${hair}" stroke-width="2"/>`
+    + t(s(values.thanks), 64, 676, 30, ink, TEXT_FAMILY)
+    /* The address in words as well as in the code: a QR that will not scan is
+     * still a link somebody can type. */
+    + t(link, 64, 718, 22, quiet, FONT.family)
+    + '</svg>'
+}
