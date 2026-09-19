@@ -46,8 +46,8 @@ const WRITES = new Set([
    */
   'upload_template', 'list_templates', 'set_template_design',
   'set_active_template', 'remove_template', 'set_ticket_sizes',
-  // Minting the codes that make a printed ticket provable.
-  'generate_tickets',
+  // Minting the codes that make a printed ticket provable, and drawing them.
+  'generate_tickets', 'render_tickets',
   'record_payment', 'reverse_payment',
   'upsert_prize', 'remove_prize', 'upsert_prize_type', 'set_winner_status',
   'acknowledge_books',

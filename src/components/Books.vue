@@ -11,7 +11,7 @@ import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
 import History from './modals/History.vue'
 
-const emit = defineEmits(['issue', 'transfer', 'return-books', 'restock', 'mark', 'open-book', 'sell-book'])
+const emit = defineEmits(['issue', 'transfer', 'return-books', 'restock', 'mark', 'open-book', 'sell-book', 'print-range'])
 
 /* The book whose trail is open, or null. */
 const showHistory = ref(null)
@@ -63,6 +63,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
         <button class="btn" @click="emit('transfer')">Pass books to someone else</button>
         <button class="btn" @click="emit('return-books')">Mark books brought back</button>
         <button class="btn" @click="emit('restock')">Put books back on the shelf</button>
+        <button class="btn" @click="emit('print-range')">Print tickets</button>
         <button class="btn danger" @click="emit('mark')">Report books lost</button>
       </div>
     </div>

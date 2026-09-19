@@ -10,7 +10,16 @@ import StatusPill from '../ui/StatusPill.vue'
 import History from './History.vue'
 
 const props = defineProps({ book: Object })
-const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock'])
+const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock', 'view-book', 'print-book'])
+
+/*
+ * Whether this raffle has artwork to print tickets onto. A yes or no carried on
+ * the boot config — not the artwork itself, which would be kilobytes of
+ * coordinates sent to every screen to answer a question two buttons ask.
+ */
+const hasArtwork = computed(() => !!state.cfg?.ticketArtwork)
+const noArtworkWhy = 'No ticket artwork has been uploaded yet — see the Ticket design screen.'
+
 const currency = computed(() => state.cfg?.currency || '')
 const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status))
 
@@ -339,6 +348,19 @@ const showHistory = ref(false)
 
     <template #actions>
       <button class="btn" @click="emit('see-tickets', book)">See its tickets</button>
+      <!--
+        Looking at the printed ticket, and printing it. Both are organisers'
+        work and both need artwork to exist, so they are shown DISABLED with
+        the reason rather than refused after the press — the rule every other
+        control on this sheet is held to. The title is bound only when there is
+        something to say, because a valueless title attribute is its own bug.
+      -->
+      <button v-if="isAdmin" class="btn" :disabled="!hasArtwork"
+              :title="hasArtwork ? null : noArtworkWhy"
+              @click="emit('view-book', book)">View a ticket</button>
+      <button v-if="isAdmin" class="btn" :disabled="!hasArtwork"
+              :title="hasArtwork ? null : noArtworkWhy"
+              @click="emit('print-book', book)">Print this book</button>
       <button class="btn" @click="showHistory = true">Where it has been</button>
       <!-- Shown and DISABLED rather than hidden, when this person cannot sell
            from this book. Hiding it makes the app look different to different

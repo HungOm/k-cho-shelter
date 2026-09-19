@@ -44,10 +44,18 @@ export function sheetHTML(design, numbers, imageHref, opts = {}) {
   const heightMM = widthMM * (artH / artW)
 
   const list = Array.isArray(numbers) ? numbers : []
+  /*
+   * `layers` lets the caller hand in an overlay it has already drawn, and the
+   * printing screen always does: an overlay carries the ticket's QR code, and
+   * the code is a fact about that ticket that this file has no way to look up.
+   * Without one it falls back to drawing the number alone, which is what a
+   * design-screen test page wants.
+   */
+  const layers = opts.layers && typeof opts.layers === 'object' ? opts.layers : null
   const tickets = list.map((n) => `
     <div class="ticket" data-number="${esc(n)}">
       <div class="art"></div>
-      ${numberLayerSVG(design, n, { ...opts, guides: false, qrBoxes: false })}
+      ${(layers && layers[n]) || numberLayerSVG(design, n, { ...opts, guides: false, qrBoxes: false })}
     </div>`).join('')
 
   return `<!doctype html>

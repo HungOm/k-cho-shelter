@@ -27,6 +27,8 @@ import Permissions from './components/Permissions.vue'
 import Approvals from './components/Approvals.vue'
 
 import SellTicket from './components/SellTicket.vue'
+import PrintTickets from './components/modals/PrintTickets.vue'
+import ViewTicket from './components/modals/ViewTicket.vue'
 import AgentForm from './components/modals/AgentForm.vue'
 import UserForm from './components/modals/UserForm.vue'
 import IssueBooks from './components/modals/IssueBooks.vue'
@@ -483,6 +485,7 @@ function seeTickets(book) {
                    @edit-user="u => openModal('user', u)"
                    @issue="openModal('issue')"
                    @sell-book="b => openModal('sellbook', b)"
+                   @print-range="() => openModal('printtickets', {})"
                    @transfer="openModal('bookaction', 'transfer')"
                    @return-books="openModal('bookaction', 'return')"
                    @restock="openModal('bookaction', 'restock')"
@@ -512,6 +515,11 @@ function seeTickets(book) {
     <IssueBooks v-else-if="modal?.kind === 'issue'"
                 @close="closeModal" @issued="id => openModal('receipt', id)" />
     <Receipt v-else-if="modal?.kind === 'receipt'" :agent-id="modal.payload" @close="closeModal" />
+    <PrintTickets v-else-if="modal?.kind === 'printtickets'" :payload="modal.payload"
+                  @close="closeModal" />
+    <ViewTicket v-else-if="modal?.kind === 'viewticket'" :payload="modal.payload"
+                @close="closeModal"
+                @print="p => openModal('printtickets', p)" />
     <BookDetail v-else-if="modal?.kind === 'book'" :book="modal.payload"
                 @close="closeModal"
                 @settle="b => openModal('settle', b)"
@@ -519,7 +527,9 @@ function seeTickets(book) {
                 @sell-book="b => openModal('sellbook', b)"
                 @restock="b => openModal('bookaction', { kind: 'restock', book: b.book })"
                 @withdraw-offer="withdrawOffer"
-                @see-tickets="seeTickets" />
+                @see-tickets="seeTickets"
+                @view-book="b => openModal('viewticket', { book: b.book })"
+                @print-book="b => openModal('printtickets', { book: b.book })" />
     <SettleBook v-else-if="modal?.kind === 'settle'" :book="modal.payload"
                 @close="closeModal" @settled="afterBookChange"
                 @put-back="afterBookChange" />

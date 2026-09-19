@@ -292,15 +292,28 @@ console.log('there is nobody to collect from when you sold it yourself')
   ok(/nobody to collect from here/.test(mine),
      'and hovering says why, rather than leaving a dead button unexplained')
 
+  /*
+   * SCOPED TO THE BUTTON THIS BLOCK IS ABOUT, not to the whole sheet.
+   *
+   * These three used to ask whether the word "disabled" appeared ANYWHERE in
+   * the rendered sheet, which was true enough while Count it in was the only
+   * control that could be greyed. It stopped being true when the sheet gained
+   * View and Print, which are correctly disabled on a raffle with no ticket
+   * artwork uploaded — so the assertions began failing on a state that is not
+   * what they are about. What they mean is "the Count it in button is live",
+   * and that is now what they ask.
+   */
+  const countInDead = (html) => /<button[^>]*disabled[^>]*>\s*Count it in/.test(html)
+
   const theirs = await sheet2({ user: { email: me }, tickets: [t(1, 'someone@else.org'), t(2, 'someone@else.org')] })
-  ok(!/disabled/.test(theirs), 'a book somebody else wrote down is still countable')
+  ok(!countInDead(theirs), 'a book somebody else wrote down is still countable')
 
   const mixed = await sheet2({ user: { email: me }, tickets: [t(1, me), t(2, 'someone@else.org')] })
-  ok(!/disabled/.test(mixed),
+  ok(!countInDead(mixed),
      'and ONE desk sale among a seller\'s nine does not strand the seller\'s money')
 
   const loading = await sheet2({ user: { email: me }, tickets: [] })
-  ok(!/disabled/.test(loading),
+  ok(!countInDead(loading),
      'before the tickets have loaded it fails toward the button working, not away from it')
 }
 

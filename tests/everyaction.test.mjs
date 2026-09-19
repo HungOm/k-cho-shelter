@@ -229,6 +229,8 @@ const CALLS = {
    * tickets that cannot be drawn would mint something nobody can print.
    */
   generate_tickets: { book: 'Book-0001' },
+  // Same fixture, same refusal: no artwork, so there is nothing to draw onto.
+  render_tickets: { book: 'Book-0001' },
   reverse_payment: { paymentId: 999, reason: 'recorded twice' },
   list_payments: { agentId: 'A001' },
 }

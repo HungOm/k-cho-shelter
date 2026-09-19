@@ -183,6 +183,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   remove_template: { group: 'Access', label: 'Remove a ticket artwork', danger: true },
   set_ticket_sizes: { group: 'Access', label: 'Change the accepted ticket sizes', danger: true },
   generate_tickets: { group: 'Books', label: 'Generate ticket codes for printing', danger: true },
+  render_tickets: { group: 'Books', label: 'Draw tickets for printing' },
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
   record_payment: { group: 'Money', label: 'Record money handed in' },
   reverse_payment: { group: 'Money', label: 'Undo a recorded payment', danger: true },
@@ -402,6 +403,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // above, and for a sharper reason: whoever can generate a code can make a
   // forgery verify.
   generate_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.generateTickets },
+  render_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.renderTickets },
 
   // --- reports ---
   report_outstanding: { roles: ['viewer', 'recorder', 'agent'], kind: 'report', fn: reports.reportOutstanding },

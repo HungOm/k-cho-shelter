@@ -1,17 +1,19 @@
 # Printing tickets, digital tickets, and a QR that can be checked
 
-**Status: phases 1 and 2 built, 2026-09-19. Nothing is deployed.**
+**Status: phases 1, 2 and 3 built, 2026-09-19. Nothing is deployed.**
 
-Phase 1 (artwork upload, measuring, the Ticket design screen) and phase 2 (codes,
-the public verify function, the verify page) are written and tested — 107 node
-suites and 322 SQL assertions against a real Postgres, all green. Phases 3 to 5
-are still only this document.
+Artwork upload and the Ticket design screen; codes, the public verify function
+and the verify page; and printing — by book, by a run of books, by typed
+numbers, or the whole raffle — plus viewing a ticket as it will print.
 
-Two things are worth being plain about. Nothing here is committed or deployed, so
-none of it is running anywhere. And what exists is not yet useful on its own: you
-can upload artwork, place the number, generate codes and verify one by URL, but
-there is no screen that prints a book yet. That is phase 3, and it is the point at
-which this becomes something an organiser can use.
+Tested: 109 node suites and 322 SQL assertions against a real Postgres, all
+green. The QR encoder was checked by decoding its output with a real scanner
+across fifty cases, and one printed ticket was rendered by a browser and scanned
+back to its verify address end to end.
+
+Still true and worth repeating: **nothing is committed to production or
+deployed.** Phases 4 (the digital ticket a buyer is sent) and 5 (checking at the
+draw, rate limiting, the scan log) remain.
 
 ---
 

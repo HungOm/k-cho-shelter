@@ -272,6 +272,57 @@ export function qrModuleMM(design, box, modules = 33) {
   return (perModulePx * widthMM) / artworkWidth
 }
 
+/*
+ * THE QR ITSELF, drawn as rectangles in the artwork's own coordinate space.
+ *
+ * One <rect> per dark module rather than an image, for two reasons. It prints
+ * at whatever resolution the printer has, instead of at whatever resolution a
+ * raster was generated at — which on a 300 dpi press is the difference between
+ * crisp edges and soft ones. And it needs no canvas, so the same code runs in a
+ * print preview, in a downloaded file and under node in the tests.
+ *
+ * THE WHITE BACKING IS NOT DECORATION. The artwork already has a placeholder QR
+ * printed in this box, and a code drawn over another code scans as neither. The
+ * backing also supplies the quiet zone the specification requires — four
+ * modules of light on every side, without which many scanners will not see the
+ * code at all.
+ */
+export function qrLayer(box, url, opts = {}) {
+  if (!box?.enabled) return ''
+  const { encode } = opts
+  if (typeof encode !== 'function') throw new Error('qrLayer needs the encoder passed in')
+
+  const code = encode(url, { ecc: box.ecc || 'M' })
+  const quiet = 4
+  const span = code.size + quiet * 2
+  const unit = Number(box.size) / span
+  const originX = Number(box.x) + quiet * unit
+  const originY = Number(box.y) + quiet * unit
+
+  const parts = []
+  if (box.backing !== false) {
+    parts.push(`<rect x="${round(box.x)}" y="${round(box.y)}" width="${round(box.size)}" height="${round(box.size)}" fill="#ffffff"/>`)
+  }
+  /*
+   * Runs of adjacent dark modules become one rectangle. A version 4 code is
+   * 1089 modules and about 540 of them are dark; merging runs takes that to
+   * roughly 200 rectangles, which matters when a sheet carries ten tickets and
+   * a browser has to lay all of it out to print.
+   */
+  for (let y = 0; y < code.size; y++) {
+    let run = 0
+    for (let x = 0; x <= code.size; x++) {
+      const dark = x < code.size && code.modules[y][x]
+      if (dark) { run++; continue }
+      if (run > 0) {
+        parts.push(`<rect x="${round(originX + (x - run) * unit)}" y="${round(originY + y * unit)}" width="${round(run * unit)}" height="${round(unit)}" fill="#000000"/>`)
+        run = 0
+      }
+    }
+  }
+  return parts.join('')
+}
+
 function qrPlaceholder(box, label) {
   if (!box?.enabled) return ''
   const x = round(box.x)
@@ -294,16 +345,39 @@ function qrPlaceholder(box, label) {
  * paper that is going to a buyer.
  */
 export function numberLayerSVG(design, text, opts = {}) {
-  const { guides = false, pinWidth = true, qrBoxes = false, ...placeOpts } = opts
+  const { guides = false, pinWidth = true, qrBoxes = false, qrUrl = '', encode, ...placeOpts } = opts
   const p = placeBoth(design, text, placeOpts)
   const width = Number(design?.artwork?.width ?? 1600)
   const height = Number(design?.artwork?.height ?? 517)
+  /*
+   * A real code when there is an address to put in it, an outline when there is
+   * not. The design screen has no ticket and no code, so it shows the box; a
+   * printed ticket always has both.
+   */
+  const real = qrUrl && encode
   const body = [
-    qrBoxes ? qrPlaceholder(design.qrMain, 'QR') : '',
-    qrBoxes ? qrPlaceholder(design.qrStub, 'QR') : '',
+    real ? qrLayer(design.qrMain, qrUrl, { encode }) : (qrBoxes ? qrPlaceholder(design.qrMain, 'QR') : ''),
+    real ? qrLayer(design.qrStub, qrUrl, { encode }) : (qrBoxes ? qrPlaceholder(design.qrStub, 'QR') : ''),
     textEl(p.main, pinWidth),
     textEl(p.stub, pinWidth),
     ...(guides ? [guidesFor(design, 'main', p.main), guidesFor(design, 'stub', p.stub)] : []),
   ].join('')
   return `<svg class="numbers" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${body}</svg>`
+}
+
+/**
+ * The address a printed ticket's QR points at.
+ *
+ * `base` is the raffle's VERIFY_URL if an organiser has set one, and otherwise
+ * this site — printed codes outlive the raffle, so an organiser has to be able
+ * to aim them somewhere they will still control.
+ *
+ * THE COMPACT FORM, `?KS-00123.CODE`, and not `?t=..&c=..`. Every character in
+ * the address is a module in the QR, and a shorter address prints with larger
+ * squares, which is the difference between scanning from across a table and
+ * having to hold a phone against the paper. The verify function accepts both.
+ */
+export function ticketVerifyUrl(base, number, code) {
+  const root = String(base || '').replace(/\/+$/, '')
+  return `${root}/?${encodeURIComponent(String(number))}.${encodeURIComponent(String(code))}`
 }

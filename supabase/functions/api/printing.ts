@@ -41,6 +41,15 @@ type Ctx = {
  */
 export const MAX_PER_CALL = 5000
 
+/*
+ * And how many can be DRAWN at once, which is a far smaller number.
+ *
+ * Generating writes sixty bytes a ticket; drawing lays out a full page of
+ * artwork per ticket in a browser. Two hundred is about a printer's worth and
+ * comfortably inside what a phone can render without falling over.
+ */
+export const MAX_PER_PRINT = 200
+
 /** Rows per insert. Postgres is happy with far more; the wire is the limit. */
 const CHUNK = 500
 
@@ -224,5 +233,120 @@ export async function generateTickets(p: Record<string, unknown>, user: AppUser,
     total: scope.length,
     first: todo[0]?.number ?? null,
     last: todo[todo.length - 1]?.number ?? null,
+  }
+}
+
+/*
+ * Everything needed to draw a set of tickets, and nothing more.
+ *
+ * ONLY TICKETS THAT HAVE A CODE. A ticket without one has never been generated
+ * and cannot be proved genuine, so printing it would put a ticket into the
+ * world that the verify page would reject. The ones that are missing come back
+ * by name in `notGenerated` — named rather than counted, because the screen
+ * offers to generate exactly those and a count would make that offer a guess.
+ *
+ * A WRITE, THOUGH IT MOSTLY READS. Two reasons, and the second is the one that
+ * decided it. It stamps printed_at when a real print run happens. And a read or
+ * a report can be handed to another role by a permissions row, which must not
+ * be possible for the action that hands out ticket codes — see
+ * tests/strictactions.
+ */
+export async function renderTickets(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const cfg = await currentConfig(ctx)
+
+  const templateId = String(cfg.TICKET_ARTWORK_ID ?? '')
+  if (!templateId) {
+    throw new ApiError('NO_TEMPLATE',
+      'There is no ticket artwork yet, so tickets cannot be printed. ' +
+      'Upload it on the Ticket design screen first.')
+  }
+  const { data: tpl, error: tplErr } = await ctx.supabaseAdmin
+    .from('ticket_templates')
+    .select('id,name,content_type,width_px,height_px,url,design')
+    .eq('id', templateId).limit(1)
+  if (tplErr) throw new ApiError('QUERY_FAILED', tplErr.message)
+  const template = (tpl ?? [])[0]
+  if (!template) {
+    throw new ApiError('NO_TEMPLATE',
+      'The ticket artwork this raffle prints from is no longer there. ' +
+      'Choose one on the Ticket design screen.')
+  }
+
+  const scope = await resolveScope(p, ctx)
+  if (scope.length > MAX_PER_PRINT) {
+    throw new ApiError('RANGE_TOO_LARGE',
+      `That is ${scope.length} tickets. ${MAX_PER_PRINT} is the most that can be drawn at once — ` +
+      'the screen does this a chunk at a time.')
+  }
+
+  const byIdx = new Map(scope.map((t) => [t.idx, t]))
+  const { data: codes, error: codeErr } = await ctx.supabaseAdmin
+    .from('ticket_codes').select('ticket_idx,code,generated_at,printed_at')
+    .in('ticket_idx', scope.map((t) => t.idx))
+  if (codeErr) throw new ApiError('QUERY_FAILED', codeErr.message)
+
+  /*
+   * The status comes from the ticket row, and it is the ONLY thing about the
+   * sale that travels: no buyer, no phone, no seller. A printed blank ticket
+   * has nobody's name on it, and the person printing a book does not need one.
+   */
+  const { data: rows, error: rowErr } = await ctx.supabaseAdmin
+    .from('tickets').select('idx,number,status').in('idx', scope.map((t) => t.idx))
+  if (rowErr) throw new ApiError('QUERY_FAILED', rowErr.message)
+  const statusOf = new Map((rows ?? []).map((r: any) => [Number(r.idx), String(r.status ?? '')]))
+
+  const tickets: Record<string, unknown>[] = []
+  const notGenerated: string[] = []
+  for (const c of codes ?? []) {
+    const t = byIdx.get(Number(c.ticket_idx))
+    if (!t) continue
+    tickets.push({
+      number: t.number,
+      status: statusOf.get(t.idx) ?? '',
+      code: String(c.code ?? ''),
+      generatedAt: c.generated_at ?? null,
+      printedAt: c.printed_at ?? null,
+    })
+  }
+  const have = new Set((codes ?? []).map((c: any) => Number(c.ticket_idx)))
+  for (const t of scope) if (!have.has(t.idx)) notGenerated.push(t.number)
+  tickets.sort((a, b) => String(a.number).localeCompare(String(b.number)))
+
+  /*
+   * Marked as printed only when somebody is actually printing. Opening a ticket
+   * to look at it is not a print run, and a printed_at that meant "somebody
+   * glanced at this" would answer no useful question.
+   */
+  if (p.print === true && tickets.length) {
+    const now = new Date().toISOString()
+    const { error } = await ctx.supabaseAdmin.from('ticket_codes')
+      .update({ printed_at: now, printed_by: user.email })
+      .in('ticket_idx', [...have])
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
+    await ctx.supabaseAdmin.from('audit_log').insert({
+      action: 'TICKETS_PRINTED',
+      details: { count: tickets.length, first: tickets[0]?.number, last: tickets[tickets.length - 1]?.number },
+      email: user.email,
+    })
+  }
+
+  return {
+    template: {
+      id: String(template.id),
+      name: String(template.name ?? ''),
+      url: String(template.url ?? ''),
+      width: Number(template.width_px ?? 0),
+      height: Number(template.height_px ?? 0),
+      design: template.design ?? {},
+    },
+    /*
+     * Where a scanned code should point. The server decides, not the browser:
+     * printed codes outlive the raffle and an organiser has to be able to aim
+     * them at an address they will still control. Blank means "this site", and
+     * the screen fills in its own origin.
+     */
+    verifyBase: String(cfg.VERIFY_URL ?? ''),
+    tickets,
+    notGenerated,
   }
 }

@@ -67,6 +67,8 @@ const STRICT = [
   // Phase 2: minting the codes that make a ticket provable. Whoever can
   // generate a code can make a forgery verify, so it sits at the same bar.
   'generate_tickets',
+  // Drawing them: it hands out the codes themselves and stamps printed_at.
+  'render_tickets',
 ]
 
 console.log('the instrument read the registry')
@@ -103,7 +105,7 @@ for (const action of STRICT) {
 }
 
 console.log('and the list has not quietly shrunk')
-eq(STRICT.length, 7, 'seven actions are pinned')
+eq(STRICT.length, 8, 'eight actions are pinned')
 
 console.log('the screen behind them is organisers-only too')
 /*
