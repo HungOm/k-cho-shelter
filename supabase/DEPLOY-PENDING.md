@@ -1,10 +1,25 @@
 # What is on master and not yet on production
 
-**AS OF 2026-09-18 EVENING THIS GAP IS CLOSED.** The migrations were applied
-(head `20260919500000`), and the Edge Function was deployed from a clean
-checkout of `75e84a2`, which is master. The client on Pages carries the same
-commit — verified by fetching the served bundle and grepping it for a string
-only that commit contains, rather than by trusting a workflow's status.
+**AS OF 2026-09-19 23:55 THIS GAP IS CLOSED.** Every migration is applied and
+the Edge Function carries every action the client calls — both checked against
+the platform tonight, not inferred. See the table below for the values and the
+command that produced each.
+
+**THIS FILE WENT STALE AND COST TWO SESSIONS AN EVENING.** The paragraph here
+said the function was from `75e84a2`, dated the 18th. It was true when written
+and was four deploys out of date by the 19th — the function went 52, 53, 55,
+56, 58 in a few hours, none of them recorded here. Two sessions read it,
+believed it, and independently concluded that pushing the client would strand
+it against a database missing `ticket_templates` and `ticket_codes`. Both
+tables had existed for hours. One of the two nearly held a correct release
+overnight on the strength of a sentence in a markdown file.
+
+So: **this file is a record, never evidence.** It is worth reading for the
+SHAPE of the problem and the order to do things in. Every number in it is
+stale the moment somebody deploys without editing it, and nobody ever
+remembers. Before acting on any value below, re-derive it with the command
+beside it — the file already said to, and that is exactly the instruction that
+got skipped.
 
 The file is kept because the SHAPE of the problem recurs every time anybody
 pushes, and because two of the failures below were found the expensive way.
@@ -20,12 +35,32 @@ database and treat the rest of this file as a starting point.
 
 | Checked | Value | How to re-derive |
 |---|---|---|
-| production migration head | `20260919500000` | `select max(version) from supabase_migrations.schema_migrations` |
-| migrations unapplied | **0** | `git ls-tree -r --name-only HEAD supabase/migrations/` against the above |
-| Edge Function | deployed from `75e84a2` | `supabase functions list` — compare `updated_at` against the commit time |
-| client on Pages | built from `64483d4` | grep the served bundle for a string literal only that commit has |
+| production migration head | `20260920200000` | `supabase migration list --linked` — every row's `local` equals its `remote` |
+| migrations unapplied | **0** (43 of 43 applied) | the same command; a pending one shows a `local` with no `remote` |
+| Edge Function `api` | **v58**, 19 Sep 21:28 | `supabase functions list` |
+| what v58 actually contains | all **62** actions the client calls | `supabase functions download api --project-ref <ref>` into a SCRATCH dir, then grep it for each `api('…')` in `src/` |
+| Edge Function `verify` | **v1**, 19 Sep 17:45, live | `curl -s -o /dev/null -w '%{http_code}' https://shtrtickets.ceamalaysia.org/v/?X.Y` → 200 |
+| undeployed server code | `_shared/session.ts`, `api/index.ts`, `main/index.ts` (the self-hosting rework) | `git diff --name-only <last deployed sha> HEAD -- supabase/functions/` |
+| client on Pages | whatever was last pushed | grep the served bundle for a string literal only the new commit has |
 
-**THE TWO SHAS DIFFER AND THE TWO HALVES DO NOT.** `64483d4` changes this file
+**DOWNLOAD THE FUNCTION RATHER THAN DATING IT.** `functions list` gives a
+version and a timestamp, and a timestamp only lets you guess which commit was
+on the deployer's disk. Downloading the deployed source and grepping it for
+every action the client calls answers the question that actually matters —
+whether any screen calls something the server has never heard of — and it took
+one command. Download into a scratch directory: it writes into
+`supabase/functions/` of whatever project it is run from, and will overwrite
+the working tree.
+
+Two traps in that grep, both paid for: the downloaded bundle is transpiled, so
+search for the bare action name and not `'quoted'` — a quoted search reported
+all 62 actions missing from a function that had every one of them. And for the
+CLIENT bundle, grep a string literal rather than an identifier, because the
+minifier renames symbols; prove the literal is new to the commit first, or one
+that already existed reads as a successful deploy of nothing.
+
+**THE TWO SHAS DIFFER AND THE TWO HALVES DO NOT.** (From 18 Sep, kept because
+the reasoning is still right.) `64483d4` changes this file
 and nothing else — `git diff --stat 75e84a2 64483d4 -- src/` is empty, so the
 rebuilt bundle is the same application. A sha comparison would call that a
 mismatch and send somebody looking for a drift that does not exist.
