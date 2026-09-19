@@ -116,6 +116,13 @@ export const MY = {
   // The desk's counterpart to 'Yours to sell', and built the same way so the
   // two panels read as a pair: possessor, ရောင်းရန် (to sell), လက်မှတ်များ
   // (tickets). ရုံးတွင် is taken from 'In the office' below.
+  //
+  // COMPOSED, THEN CHECKED. This was assembled from fragments already in this
+  // map rather than translated, so the pieces were sound but the grammar of the
+  // assembly was an assumption. The organiser, who reads Burmese, confirmed it
+  // on 2026-09-20. Noted because the next person to read "composed from
+  // fragments" would be right to doubt it otherwise, and would have no way to
+  // tell that somebody had already looked.
   'To sell in the office': 'ရုံးတွင် ရောင်းရန် လက်မှတ်များ',
   'All good — nothing needs you right now.': 'အားလုံး အဆင်ပြေပါသည် — ယခု သင့်လုပ်ဆောင်ရန် မရှိပါ။',
   'Make the tickets': 'လက်မှတ်များ ပြုလုပ်ရန်',
