@@ -23,6 +23,35 @@ console.log('no duplicate keys')
   const seen = new Set(), dupes = new Set()
   for (const k of keys) { seen.has(k) ? dupes.add(k) : seen.add(k) }
   ok(dupes.size === 0, `duplicate keys: ${[...dupes].join(', ')}`)
+
+  /*
+   * AND THE OTHER OBJECT, WHOSE KEYS ARE NOT QUOTED.
+   *
+   * The check above matches `'some phrase':` at the start of a line, which is
+   * the shape MY uses. MY_ERRORS keys are bare identifiers — RESET_FAILED, not
+   * 'RESET_FAILED' — so it has never been checked at all, and a duplicate there
+   * is the same silent loss: legal JavaScript, later value wins, and the next
+   * person to correct a translation corrects the one that does nothing.
+   *
+   * It also does not anchor to the line start, because that was how this got
+   * through: an edit joined two entries onto one line, and a rule that only
+   * looks at line beginnings cannot see the second.
+   */
+  const errBody = src.slice(src.indexOf('export const MY_ERRORS = {'))
+  const errKeys = [...errBody.slice(0, errBody.indexOf('\n}')).matchAll(/([A-Z][A-Z0-9_]*)\s*:\s*'/g)].map(m => m[1])
+  const errSeen = new Set(), errDupes = new Set()
+  for (const k of errKeys) { errSeen.has(k) ? errDupes.add(k) : errSeen.add(k) }
+  ok(errKeys.length > 50, `MY_ERRORS was actually read (${errKeys.length} codes)`)
+  ok(errDupes.size === 0, `duplicate error codes: ${[...errDupes].join(', ')}`)
+
+  /*
+   * One key to a line, in both. Not a style rule — it is what makes every check
+   * above readable by a person scanning a diff, and joining two entries is how
+   * the duplicate arrived in the first place.
+   */
+  const crowded = errBody.slice(0, errBody.indexOf('\n}')).split('\n')
+    .filter((l) => (l.match(/[A-Z][A-Z0-9_]*\s*:\s*'/g) ?? []).length > 1)
+  ok(crowded.length === 0, `two error codes on one line: ${crowded.map((l) => l.trim().slice(0, 48)).join(' | ')}`)
   ok(keys.length > 100, `map has ${keys.length} entries`)
 }
 
