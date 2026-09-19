@@ -43,6 +43,38 @@ create table if not exists config (
   notes        text not null default ''
 );
 
+/*
+ * The picture a ticket is printed on, and where the number sits on it.
+ *
+ * One row per uploaded artwork. `design` holds the coordinates of the space the
+ * artwork leaves for the number and the QR, in the picture's own pixel space —
+ * written by the "Ticket design" screen, read by whatever draws a ticket.
+ *
+ * NOTHING IS STORED PER TICKET. A ticket is drawn in the browser at the moment
+ * somebody opens or prints it and then thrown away. That is what lets twenty
+ * thousand tickets cost nothing until one is looked at.
+ *
+ * WHICH ONE IS IN USE IS THE CONFIG ROW TICKET_ARTWORK_ID, not a column here.
+ * A boolean beside it would be a second place for the same fact, and a pair of
+ * facts that can disagree has cost this repository more than one evening.
+ */
+create table if not exists ticket_templates (
+  id           text primary key,
+  name         text not null default '',
+  content_type text not null check (content_type in ('image/png', 'image/jpeg', 'image/webp')),
+  width_px     integer not null,
+  height_px    integer not null,
+  bytes        integer not null default 0,
+  url          text not null default '',
+  design       jsonb not null default '{}'::jsonb,
+  uploaded_by  text not null default '',
+  uploaded_at  timestamptz not null default now()
+);
+
+alter table ticket_templates enable row level security;
+revoke all on ticket_templates from anon, authenticated;
+
+
 create table if not exists agents (
   agent_id     text primary key,
   name         text not null,
@@ -496,6 +528,46 @@ create trigger ticket_movements_no_truncate before truncate on ticket_movements
 
 alter table ticket_movements enable row level security;
 revoke all on ticket_movements from anon, authenticated;
+
+/*
+ * ORDER MATTERS HERE, and it is why this sits beside ticket_movements rather
+ * than up beside ticket_templates where it was first written. Both tables
+ * reference tickets(idx), so both have to be created AFTER it. Applying
+ * schema.sql to a real Postgres is what said so -- "relation tickets does not
+ * exist" -- and no in-memory test could have: the fake database has no notion
+ * of a foreign key, let alone of the order they must be declared in.
+ */
+/*
+ * The code printed on a ticket, so a forgery can be told from the real thing.
+ *
+ * A ticket number is public by design -- printed in large type, running in
+ * sequence. The code is the part that cannot be guessed. A ticket is genuine
+ * when the code on the paper matches the code in this table.
+ *
+ * A TABLE AND NOT A COLUMN ON tickets, for two reasons. A code belongs to the
+ * PRINTING rather than to the sale -- which artwork, which batch, printed or
+ * not. And every update to `tickets` fires bump_version() and
+ * record_ticket_history(), so minting twenty thousand codes on the ticket row
+ * would raise twenty thousand versions and hand every connected phone twenty
+ * thousand changed tickets to re-download.
+ *
+ * ON DELETE RESTRICT, matching ticket_movements: reset.sql clears this BEFORE
+ * tickets, and would be refused otherwise.
+ */
+create table if not exists ticket_codes (
+  ticket_idx   integer primary key references tickets(idx) on delete restrict,
+  code         text not null unique,
+  template_id  text,
+  batch_id     uuid not null,
+  generated_at timestamptz not null default now(),
+  generated_by text not null default '',
+  printed_at   timestamptz,
+  printed_by   text not null default ''
+);
+
+alter table ticket_codes enable row level security;
+revoke all on ticket_codes from anon, authenticated;
+create index if not exists ticket_codes_batch_idx on ticket_codes (batch_id);
 create index if not exists ticket_history_book_idx on ticket_history (book_idx, at);
 
 create or replace function record_ticket_history() returns trigger as $$
@@ -1386,7 +1458,10 @@ insert into config (key, value, notes) values
   ('PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. NOT part of ticket numbers, so it is safe to change at any time.'),
   ('ACTIVE_TICKETS', '', 'How many of the generated tickets are IN PLAY, counting from the first. Blank means all of them. Lower than TOTAL_TICKETS holds the rest back: they are not loaded, not sellable, and their books cannot be given out until released. Must be a whole number of books. Change it on the "Tickets in play" screen, not by hand.'),
   ('TICKET_CEILING', '', 'How many tickets this raffle plans to reach in the end, e.g. 20000. A guard, not a promise: releasing more than this is refused, so a slipped digit cannot generate ten times the tickets you meant. Blank means no ceiling.'),
-  ('DRAW_DATE', '', 'Draw date, e.g. 2026-12-20.')
+  ('DRAW_DATE', '', 'Draw date, e.g. 2026-12-20.'),
+  ('TICKET_ARTWORK_ID', '', 'Which uploaded ticket artwork is printed from. Set on the "Ticket design" screen. Blank means there is none yet and printing is refused.'),
+  ('TICKET_SIZES', '', 'The shapes of paper this raffle prints, as JSON. Blank means the built-in list, which is the 190 x 61 mm ticket. An upload whose shape is not on the list is refused, because a picture of the wrong shape is either stretched or cropped on every ticket and neither can be fixed afterwards.'),
+  ('VERIFY_URL', '', 'Where the QR code on a printed ticket points. Blank means this site. Printed codes outlive the raffle, so an organiser has to be able to point them at an address they will still control.')
 on conflict (key) do nothing;
 
 /*
@@ -1456,3 +1531,29 @@ end $$;
 drop trigger if exists config_numbering_locked on config;
 create trigger config_numbering_locked before update on config
   for each row execute function config_numbering_locked();
+
+/*
+ * THE STORAGE BUCKETS.
+ *
+ * `ticket-artwork` holds the picture a ticket is printed on. `branding` holds
+ * the organiser's logo and has existed since that feature shipped — created by
+ * hand in the dashboard, and listed as debt in ARCHITECTURE-REVIEW.md ever
+ * since, because a bucket a handler depends on should not be a thing somebody
+ * remembered to click.
+ *
+ * Guarded: supabase/test-functions.sh builds a plain postgres image with no
+ * storage schema at all, and this has to be a no-op there rather than an error
+ * in the middle of a suite that is testing something else entirely.
+ */
+do $$
+begin
+  if to_regclass('storage.buckets') is not null then
+    insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values
+      ('ticket-artwork', 'ticket-artwork', true, 4194304,
+       array['image/png', 'image/jpeg', 'image/webp']),
+      ('branding', 'branding', true, 524288,
+       array['image/png', 'image/jpeg', 'image/webp'])
+    on conflict (id) do nothing;
+  end if;
+end $$;

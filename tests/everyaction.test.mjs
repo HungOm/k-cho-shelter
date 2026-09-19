@@ -194,6 +194,41 @@ const CALLS = {
     contentType: 'image/png'
   },
   set_brand_color: { color: '#0d7a6f' },
+  /*
+   * The ticket artwork. A PNG header declaring 1600 x 517 — the shape of a
+   * raffle ticket, which is what the handler checks, and NOT a 1x1 like the
+   * logo above: this one measures the picture and refuses anything that is not
+   * one of the accepted shapes, so a square would be refused for the right
+   * reason and exercise the wrong path.
+   *
+   * Header only, no pixel data. The handler sniffs the magic bytes and reads
+   * IHDR; it never decodes an image, and a file that made it do so would be
+   * testing a decoder nobody wrote.
+   */
+  upload_template: {
+    data: 'iVBORw0KGgoAAAANSUhEUgAABkAAAAIFCAIAAAAFtKY8AAAAAElFTkSuQmCC',
+    contentType: 'image/png',
+    name: 'test ticket',
+  },
+  list_templates: {},
+  // No artwork exists in the fixture, so these two refuse — deliberately, and
+  // by name. That IS the path worth exercising: the screen reaches them with an
+  // id it read a moment ago, and the interesting case is the one where somebody
+  // else removed it in between.
+  set_template_design: { id: 'tpl-nope', design: { main: { capHeight: 21 } } },
+  remove_template: { id: 'tpl-nope' },
+  // Blank is a real value: it means "print from nothing", which is how an
+  // organiser turns printing off without deleting the artwork.
+  set_active_template: { id: '' },
+  set_ticket_sizes: {
+    sizes: [{ id: 'a7', label: 'A7', widthMM: 105, heightMM: 74, tolerance: 0.02, minWidthPx: 800 }],
+  },
+  /*
+   * The fixture has no ticket artwork, so this refuses with NO_TEMPLATE —
+   * deliberately, and it is the right path to exercise: generating codes for
+   * tickets that cannot be drawn would mint something nobody can print.
+   */
+  generate_tickets: { book: 'Book-0001' },
   reverse_payment: { paymentId: 999, reason: 'recorded twice' },
   list_payments: { agentId: 'A001' },
 }
@@ -217,6 +252,13 @@ const DELIBERATE = new Set([
   'TICKETS_IN_USE', 'BOOKS_IN_USE', 'NOT_GENERATED', 'ABOVE_CEILING',
   'CANNOT_SHRINK', 'SCHEMA_DRIFT', 'NOT_ELIGIBLE', 'NOT_IN_BOOK',
   'NOT_RESERVED', 'MISSING_FIELD', 'BAD_REQUEST', 'RANGE_TOO_LARGE',
+  // Naming an artwork that is not there. The design screen reaches these with
+  // an id it read a moment ago, so the case that matters is the one where
+  // somebody else removed it in between — and it refuses by name rather than
+  // writing a design onto nothing.
+  'TEMPLATE_NOT_FOUND',
+  // Asking to generate ticket codes before any artwork has been uploaded.
+  'NO_TEMPLATE',
   'BELOW_GENERATED', 'NOT_YOUR_BOOK', 'BOOK_WITH_SELLER', 'BOOK_CLOSED',
   // An organiser writing into a book that is out with a seller: allowed, and
   // now asked to say why. This fixture's books are out with A001 and the caller

@@ -41,6 +41,13 @@ const SCREENS = [
   { id: 'money',  icon: 'money', label: 'Money',   roles: ['admin', 'viewer', 'agent', 'recorder'] },
   { id: 'draw',   icon: 'trophy', label: 'Draw',    roles: ['admin', 'recorder', 'viewer'] },
   { id: 'admin',  icon: 'gear', label: 'Setup',   roles: ['admin'] },
+  /*
+   * Organisers only, and the server says so too — every action behind this
+   * screen is registered as an admin-only WRITE precisely so that no
+   * permissions row can hand it to a seller. Hiding the tab is a courtesy;
+   * it is not what makes it safe.
+   */
+  { id: 'ticketdesign', icon: 'ticket', label: 'Ticket design', roles: ['admin'] },
   // Super admin only, so it is filtered by more than role — see `visible`.
   { id: 'permissions', icon: 'key', label: 'Access', roles: ['admin'], sup: true },
   { id: 'approvals', icon: 'hand', label: 'Approvals', roles: ['admin', 'recorder', 'agent'] }

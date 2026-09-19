@@ -37,6 +37,17 @@ const WRITES = new Set([
   'set_ticket_ceiling', 'roll_check_in', 'set_final_deadline', 'record_check_in',
   'set_check_in_date', 'set_sales_close',
   'upload_logo', 'set_brand_color',
+  /*
+   * The ticket artwork. `list_templates` only reads, and is in here because the
+   * server registers it as a write — the only way to say "no permissions row
+   * may hand this to a seller", since a row may widen a read and never a write.
+   * It belongs in this set for the plain reason that this set must match the
+   * server's `kind`, which tests/clientcoverage checks in both directions.
+   */
+  'upload_template', 'list_templates', 'set_template_design',
+  'set_active_template', 'remove_template', 'set_ticket_sizes',
+  // Minting the codes that make a printed ticket provable.
+  'generate_tickets',
   'record_payment', 'reverse_payment',
   'upsert_prize', 'remove_prize', 'upsert_prize_type', 'set_winner_status',
   'acknowledge_books',

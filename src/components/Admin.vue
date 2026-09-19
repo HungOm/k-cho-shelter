@@ -501,6 +501,17 @@ function details(d) {
         <button class="btn sm primary" :disabled="brandSaving || (!!brand && !inkFor(brand))"
                 @click="saveBrand">{{ brandSaving ? 'Saving\u2026' : 'Save colour' }}</button>
       </div>
+
+      <!-- The ticket itself is a screen of its own rather than another card
+           here: it carries a picture, a live preview and a dozen measurements,
+           and none of that belongs beside a colour swatch. -->
+      <div class="sub" style="margin-top:14px">
+        <span class="muted small grow">
+          The ticket your buyers hold &mdash; its artwork, and where the number is printed on it.
+          <template v-if="!c?.ticketArtwork"><b>No artwork uploaded yet</b>, so tickets cannot be printed.</template>
+        </span>
+        <button class="btn sm" @click="go('ticketdesign')">Ticket design &rarr;</button>
+      </div>
     </div>
 
     <!-- An organiser may read the change log of their own raffle. It used to be

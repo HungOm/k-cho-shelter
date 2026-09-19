@@ -295,6 +295,14 @@ export const MY_ERRORS = {
   WRONG_IMAGE_TYPE: 'ဖိုင်အမျိုးအစား မကိုက်ညီပါ',
   IMAGE_TOO_BIG: 'ဓာတ်ပုံ အရွယ်အစား ကြီးလွန်းသည်',
   BAD_COLOUR: 'အရောင်ကုဒ် မမှန်ပါ — #0B7285 ပုံစံ',
+  // The ticket artwork. Same reasoning as the logo above: an organiser at a
+  // desk reads these, the English underneath carries what to do about it.
+  TEMPLATE_TOO_BIG: 'လက်မှတ်ပုံ အရွယ်အစား ကြီးလွန်းသည်',
+  BAD_SIZE: 'လက်မှတ်ပုံ၏ အချိုးအစား မကိုက်ညီပါ',
+  BAD_SIZES: 'ခွင့်ပြုသည့် အရွယ်အစားစာရင်း မမှန်ပါ',
+  BAD_DESIGN: 'ဒီဇိုင်း အတိုင်းအတာ မမှန်ပါ',
+  TEMPLATE_NOT_FOUND: 'ထိုလက်မှတ်ပုံ မတွေ့ပါ — စာမျက်နှာ ပြန်ဖွင့်ပါ',
+  NO_TEMPLATE: 'လက်မှတ်ပုံ မရှိသေးပါ — အရင်တင်ပါ',
   // Dates and deadlines. Short on purpose: the English underneath carries the
   // detail, and a gloss that runs to three lines stops being a gloss.
   BAD_DATE: 'ရက်စွဲကို ဖတ်၍ မရပါ',

@@ -63,6 +63,8 @@ select 'DESTROYING: '
   -- told what the money journal holds, not only what payments holds.
   || (select count(*) from money_entries)   || ' journal entries, '
   || (select count(*) from ticket_movements)|| ' custody movements, '
+  || (select count(*) from ticket_templates)|| ' ticket artworks, '
+  || (select count(*) from ticket_codes)   || ' ticket codes, '
   || (select count(*) from agents)         || ' sellers, '
   || (select count(*) from winners)        || ' winners' as about_to_go;
 
@@ -109,6 +111,20 @@ delete from check_in_reports;
 delete from check_in_dates;
 delete from pending_approvals;
 delete from audit_log;
+-- BEFORE tickets, which it references with ON DELETE RESTRICT -- so with a
+-- single row present, `delete from tickets` below is REFUSED and the whole
+-- reset rolls back. Same trap ticket_movements documents a few lines up, and
+-- the reason both are written down before anything writes to them.
+--
+-- Deleting it is also what makes last raffle's printed tickets stop verifying:
+-- their codes match nothing, and there is no key to rotate.
+delete from ticket_codes;
+-- The ticket artwork goes the way the logo goes: a reset is factory defaults,
+-- and the next raffle uploads its own. No foreign key, so the position here is
+-- free. NOTE that this deletes the ROWS and not the files in the storage
+-- bucket, which are orphaned rather than removed -- they cost a few megabytes
+-- and nothing points at them. RESET-RUNBOOK.md says so.
+delete from ticket_templates;
 delete from tickets;
 delete from books;
 delete from agents;
@@ -168,15 +184,28 @@ insert into config (key, value, notes) values
   ('TICKET_DIGITS', '5', 'Zero padding, e.g. 5 gives KS-00001. LOCKED once tickets exist.'),
   ('TOTAL_TICKETS', '0', 'How many ticket rows EXIST. Raised only by the System Admin, and only upwards.'),
   ('TICKETS_PER_BOOK', '10', 'Tickets in one physical book. LOCKED once tickets exist.'),
-  -- THREE, WHICH IS WHAT THE RAFFLE ALREADY USES AND WHAT THE PRINTED BOOKS
-  -- SAY. An earlier version of this file set four and explained at length that
-  -- three "cannot count to a thousand". That was a fact about SQL's lpad, which
-  -- this script was wrongly using, and not about the raffle: padStart pads to a
-  -- minimum and truncates nothing, so production runs two thousand books on
-  -- three digits -- Book-001 to Book-999, then Book-1000 to Book-2000. Keeping
-  -- three means every physical label in a volunteer's hands still matches.
+  -- FOUR, MATCHING schema.sql AND THE CONFIG-DEFAULTS MIGRATION, settled by the
+  -- owner on 2026-09-19.
+  --
+  -- This file said three, alone, and the two paths into a raffle therefore
+  -- disagreed: a fresh install or a migrated project seeded four and numbered
+  -- Book-0001, a reset seeded three and numbered Book-001. Whichever way a
+  -- raffle happened to be created decided what its books were called, which is
+  -- not something anybody chose.
+  --
+  -- The comment that stood here argued for three on the grounds that the
+  -- printed labels already said Book-001. That was true of the raffle running
+  -- at the time; the reset this file exists for reprints the books, so it is
+  -- the wrong side of the decision to preserve. tests/freshinstall.test.mjs has
+  -- asserted Book-0001 throughout, and tests/seedagree.test.mjs now fails if
+  -- these three files ever drift apart again.
+  --
+  -- Note that neither value is about capacity: padStart pads to a minimum and
+  -- truncates nothing, so three digits count past a thousand perfectly well --
+  -- Book-999 then Book-1000. The old note's "cannot count to a thousand" was a
+  -- fact about SQL's lpad, which this script no longer uses.
   ('BOOK_PREFIX', 'Book-', 'Text before the book number. LOCKED once tickets exist.'),
-  ('BOOK_DIGITS', '3', 'Zero padding, e.g. 3 gives Book-001. LOCKED once tickets exist.'),
+  ('BOOK_DIGITS', '4', 'Zero padding, e.g. 4 gives Book-0001. LOCKED once tickets exist.'),
   ('TICKET_PRICE', '10', 'Price of one ticket. Can be changed later.'),
   ('CURRENCY', 'RM', 'Shown on reports and receipts.'),
   ('CHECK_IN_DATE', '', 'The one date every seller reports by this round. The SAME date for everybody.'),
@@ -196,7 +225,13 @@ insert into config (key, value, notes) values
   -- and the ceiling is how far this raffle is ever planned to grow. Generating
   -- 10000 rows because 10000 are active would quietly halve the raffle.
   ('ACTIVE_TICKETS', '10000', 'How many of the existing tickets are in play. Raised as the raffle sells.'),
-  ('TICKET_CEILING', '20000', 'How far this raffle is planned to grow. expand_tickets refuses to pass it.');
+  ('TICKET_CEILING', '20000', 'How far this raffle is planned to grow. expand_tickets refuses to pass it.'),
+  -- Blank, and blank is the point: the artwork rows were just deleted, so a
+  -- TICKET_ARTWORK_ID naming one of them would point at nothing and printing
+  -- would fail with something unhelpful instead of "there is no artwork yet".
+  ('TICKET_ARTWORK_ID', '', 'Which uploaded ticket artwork is printed from. Set on the "Ticket design" screen. Blank means there is none yet.'),
+  ('TICKET_SIZES', '', 'The shapes of paper this raffle prints, as JSON. Blank means the built-in list.'),
+  ('VERIFY_URL', '', 'Where the QR code on a printed ticket points. Blank means this site.');
 
 -- PADSTART, NOT LPAD. The one function every number in this raffle goes
 -- through, and the difference is not cosmetic: lpad TRUNCATES anything longer
@@ -232,11 +267,13 @@ begin
   -- would collide with book 100. That was true of lpad and false of the raffle:
   -- every number in this system is built by JavaScript's padStart (see
   -- src/lib/books.js:17 and functions/api/people.ts:779), which pads to a
-  -- MINIMUM width and lets anything longer through untouched. Production proves
-  -- it -- Book-001 through Book-999, then Book-1000 through Book-2000, two
-  -- thousand books on three digits with no duplicate. So `pad` below is
-  -- padStart, not lpad, and a collision is not reachable: distinct integers
-  -- cannot produce the same string when nothing is cut off.
+  -- MINIMUM width and lets anything longer through untouched. The raffle this
+  -- replaced proved it -- Book-001 through Book-999, then Book-1000 through
+  -- Book-2000, two thousand books on THREE digits with no duplicate. So `pad`
+  -- below is padStart, not lpad, and a collision is not reachable: distinct
+  -- integers cannot produce the same string when nothing is cut off. That
+  -- argument is unchanged by this file now seeding four digits, which is a
+  -- choice about what the labels read and not about capacity.
   if length((t_start + total - 1)::text) > t_dig then
     raise exception 'TICKET_DIGITS is % but the last ticket number needs %', t_dig, length((t_start + total - 1)::text);
   end if;
@@ -292,7 +329,7 @@ begin
   if (select count(*) from app_users) <> 1 then bad := bad || ' app_users is not exactly the super admin'; end if;
   if (select count(*) from app_users where role = 'superadmin' and status = 'active') <> 1 then bad := bad || ' the surviving account is not an active superadmin'; end if;
   if (select count(*) from tickets where number = 'KS-00001') <> 1 then bad := bad || ' first ticket is not KS-00001'; end if;
-  if (select count(*) from books where number = 'Book-001') <> 1 then bad := bad || ' first book is not Book-001'; end if;
+  if (select count(*) from books where number = 'Book-0001') <> 1 then bad := bad || ' first book is not Book-0001'; end if;
   if (select count(*) from books where number = 'Book-2000') <> 1 then bad := bad || ' last book is not Book-2000 -- padding truncated'; end if;
   -- THE GUARDS MUST ALL BE BACK ON, and this asks about every table rather
   -- than the three it used to name. Another session added book_history to the

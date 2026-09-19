@@ -1,0 +1,59 @@
+/*
+ * Styles for the verify page. Inline-simple on purpose: this loads on a
+ * stranger's phone, often on mobile data, to show four lines of text.
+ */
+:root {
+  --ink: #17171b; --muted: #5f6368; --line: #e3e3e8; --bg: #f4f5f7; --card: #fff;
+  --good: #0a7d32; --bad: #b3261e; --warn: #9a6700;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e9e9ee; --muted: #a0a0aa; --line: #33333b; --bg: #131317; --card: #1c1c22;
+    --good: #5bd07f; --bad: #ff8a80; --warn: #e0b341;
+  }
+}
+* { box-sizing: border-box }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  min-height: 100vh; padding: 24px 16px;
+}
+/*
+ * Block layout with automatic margins rather than flex centring.
+ *
+ * Not a bug fix — the flex version measured correctly — but the safer of the
+ * two here. A flex item's min-width is `auto`, so it will not shrink below its
+ * own content, and a Burmese clause often has no space to break at. On a narrow
+ * enough phone that is a card wider than the screen, which is a thing nobody
+ * would see until somebody with a small phone scanned a ticket.
+ */
+#app { width: 100%; max-width: 420px; margin: 0 auto; min-width: 0 }
+
+/*
+ * And the text may break mid-word. English wraps at spaces; Burmese frequently
+ * has none for a whole clause, so without this one sentence would decide how
+ * wide the page is.
+ */
+h1, .note, .state, .stamp, .my, .en { overflow-wrap: anywhere; word-break: normal }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 26px 20px; text-align: center;
+}
+.card.wait { color: var(--muted) }
+.mark {
+  width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; line-height: 1; color: #fff;
+}
+.good .mark { background: var(--good) }
+.bad .mark { background: var(--bad) }
+.warn .mark { background: var(--warn) }
+h1 { font-size: 19px; margin: 0 0 12px }
+.en { display: block }
+.my { display: block; font-size: 0.86em; opacity: 0.75; font-family: Padauk, "Noto Sans Myanmar", sans-serif }
+.number { margin: 16px 0 6px }
+.number .label { display: block; font-size: 12px; color: var(--muted) }
+.number b { font-size: 26px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums }
+.state { margin: 6px 0 0; font-weight: 600 }
+.note { margin: 16px 0 0; font-size: 13px; color: var(--muted); text-align: left }
+.stamp { margin: 12px 4px 0; font-size: 11px; color: var(--muted); text-align: center }

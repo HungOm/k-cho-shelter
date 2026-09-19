@@ -119,6 +119,8 @@ const REPORTS = [
   'report_draw_ready', 'agent_statement', 'list_books', 'list_agents',
   'list_users', 'list_winners', 'list_approvals', 'list_permissions',
   'deadline_status', 'book_history', 'handover_receipt', 'whoami',
+  // The ticket design screen reads templates, active, sizes and config off it.
+  'list_templates',
 ]
 
 console.log('the instrument reads both ends')

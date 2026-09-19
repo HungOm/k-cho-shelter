@@ -369,8 +369,30 @@ good: rounds are numbered, dates derived, silence survives the roll.
 
 ### DO NOT IMPLEMENT
 - Event-sourcing the whole ledger, message queues, realtime subscriptions to
-  approvals, blockchain, a separate accounting service, per-ticket barcodes
-  (the numbers are already unique and printed).
+  approvals, blockchain, a separate accounting service.
+
+**Per-ticket codes: reversed, 2026-09-19, by the owner.** This list used to end
+with "per-ticket barcodes (the numbers are already unique and printed)", and the
+reasoning was sound for the question it was answering. A barcode that carries the
+ticket number adds nothing: the number is already unique, already printed, and
+already readable by a person, so scanning it is a convenience and not a capability.
+
+The question that reopened it is a different one. A ticket number is *public* —
+printed in large type, running in sequence — so anybody holding one ticket can
+write a plausible one on a ticket of their own. Nothing in the system could tell
+that apart from a real ticket, because there was nothing on a ticket that was not
+guessable. That is not identification, it is forgery detection, and a number
+cannot do it however unique it is.
+
+So each printed ticket now carries a random code, stored in `ticket_codes` and
+checked by a public `verify` function. See TICKETS-PLAN.md, and
+`supabase/functions/_shared/ticketcode.ts` for why the codes are stored rather
+than derived from a signing key.
+
+What has NOT changed is the rest of the line. There is still no barcode of the
+ticket number, no scanning as a data-entry route, and no expectation that a QR
+replaces the books: a photocopy of a genuine ticket carries a genuine code and
+verifies, so the draw is settled by what is recorded, exactly as before.
 
 ---
 

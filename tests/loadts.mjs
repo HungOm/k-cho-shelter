@@ -50,7 +50,18 @@ export async function loadModule(name) {
   if (loaded.has(name)) return loaded.get(name)
   if (!dir) dir = mkdtempSync(join(tmpdir(), 'api-'))
 
-  const out = join(dir, basename(name, '.ts') + '.mjs')
+  /*
+   * Named from the WHOLE relative path, not the basename.
+   *
+   * There is more than one function now — supabase/functions/api/index.ts and
+   * supabase/functions/verify/index.ts — and `basename` gave both of them
+   * `index.mjs` in the same temp directory. The second bundle overwrote the
+   * first. It happened to work while only one existed, and would have gone on
+   * appearing to work: the import below is cache-busted, so whichever module
+   * was loaded last is the one every later caller gets, silently, under the
+   * other one's name.
+   */
+  const out = join(dir, name.replace(/[^a-z0-9]+/gi, '_').replace(/_ts$/, '') + '.mjs')
   execFileSync(ESBUILD, [
     join(API, name),
     '--bundle',

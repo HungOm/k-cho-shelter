@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Check a raffle ticket</title>
+  <!--
+    NO SIGN-IN SCRIPT HERE, deliberately. index.html loads Google Identity
+    Services because the app needs a session; this page has none and must not
+    ask for one. tests/verifypage.test.mjs fails if it ever appears.
+  -->
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Padauk&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../src/verify/verify.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="../src/verify/main.js"></script>
+</body>
+</html>

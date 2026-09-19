@@ -34,6 +34,31 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     // One small bundle beats several round trips on a phone on mobile data.
-    chunkSizeWarningLimit: 700
+    chunkSizeWarningLimit: 700,
+    /*
+     * TWO PAGES, NOT ONE.
+     *
+     * `v/index.html` is the ticket check: somebody scans the QR on a raffle
+     * ticket and lands there with no account and no session. It shares nothing
+     * with the app — no store, no Supabase client, no sign-in script — because
+     * none of that is any use without a session and all of it is weight on a
+     * phone in a hall on one bar of signal.
+     *
+     * A DIRECTORY WITH AN index.html, not `v.html`, and that is not a
+     * preference. GitHub Pages serves both, but `vite preview` and most static
+     * hosts will not reliably answer `/v` for a file called `v.html` — so the
+     * form below is the one that works everywhere, including on the machine of
+     * whoever is checking it before it goes out. It costs one character in the
+     * QR, which is nothing.
+     *
+     * `base: './'` above means each page emits its own relative asset paths, so
+     * dist/v/index.html correctly reaches ../assets/ without any more config.
+     */
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        verify: 'v/index.html',
+      },
+    },
   }
 })

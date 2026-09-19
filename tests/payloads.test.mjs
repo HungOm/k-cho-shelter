@@ -314,6 +314,11 @@ console.log('whoami carries what the app boots on')
     'defaultDueDays', 'checkInDate', 'finalDeadline', 'salesCloseDate',
     'eventName', 'orgName', 'orgLogo', 'orgLogoSmall', 'brandColor',
     'projectCode', 'drawDate',
+    // Whether this raffle has artwork to print tickets from. A yes or no, not
+    // the artwork — it is here so "Print this book" can be shown DISABLED with
+    // the reason rather than enabled and then refused, which is the rule every
+    // other control on that screen is held to.
+    'ticketArtwork',
   ]
   ok(keys.length >= 15, `the boot config contract names ${keys.length} keys`)
 

@@ -581,7 +581,7 @@ export function fakeDb(seed = {}) {
       book_history: [], audit_log: [], pending_approvals: [], winners: [],
       permissions: [], book_ledger: [], book_ledger_all: [], check_in_reports: [],
       payments: [], ticket_history: [], round_snapshots: [],
-      prizes: [], prize_types: [],
+      prizes: [], prize_types: [], ticket_templates: [], ticket_codes: [],
       ...seeded(copy(seed)),
     },
     writes: [],

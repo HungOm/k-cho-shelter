@@ -176,6 +176,18 @@ console.log('5. no action is registered on the server that nothing can call')
      * request would be the handshake with the handshake taken out.
      */
     accept_offer: 'run by the queue when a seller accepts, never called by a screen',
+    /*
+     * SHIPPED AHEAD OF ITS SCREEN, ON PURPOSE. Minting the codes that make a
+     * printed ticket provable. The screen that calls it is the printing one,
+     * which lands with the rendering in the next step — and the handler goes
+     * first so that the day tickets start carrying codes is not also the day
+     * the table, the handler and the screen are all new at once.
+     *
+     * REMOVE THIS LINE in the commit that adds the printing screen. The check
+     * below runs in both directions, so a name left here after its screen
+     * exists fails rather than lingering.
+     */
+    generate_tickets: 'the printing screen calls it; shipped one step ahead of that screen',
   }
 
   const idx = read('supabase/functions/api/index.ts')

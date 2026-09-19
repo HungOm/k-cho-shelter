@@ -28,6 +28,18 @@ type Ctx = {
 export const BUCKET = 'branding'
 
 /*
+ * `decode`, `sniff` and `ALLOWED` are exported for templates.ts, which accepts
+ * the ticket artwork and needs exactly the same refusals — a renamed SVG is no
+ * safer on a ticket than on a logo, and both are served from this origin.
+ *
+ * Exported rather than copied on purpose. The sniff is a security check, and a
+ * second copy is a second thing to remember when a format is added or a hole is
+ * found; the WebP RIFF/WEBP pair below was already subtle enough to get wrong
+ * once. templates.ts sets its own size cap, because a print-resolution ticket
+ * is legitimately larger than a logo drawn at 40px.
+ */
+
+/*
  * WHAT MAY BE STORED, and SVG is refused on purpose.
  *
  * An SVG can carry script, and this one would be served from the raffle's own
@@ -37,7 +49,7 @@ export const BUCKET = 'branding'
  * refusing it is one line, and a logo that only exists as SVG can be exported
  * to PNG by whoever supplies it.
  */
-const ALLOWED: Record<string, { ext: string; magic: number[][] }> = {
+export const ALLOWED: Record<string, { ext: string; magic: number[][] }> = {
   'image/png': { ext: 'png', magic: [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]] },
   'image/jpeg': { ext: 'jpg', magic: [[0xff, 0xd8, 0xff]] },
   'image/webp': { ext: 'webp', magic: [] },   // checked below: RIFF....WEBP
@@ -46,7 +58,7 @@ const ALLOWED: Record<string, { ext: string; magic: number[][] }> = {
 /** 512 KB per file. Base64 inflates by a third, so ~683 KB on the wire. */
 const MAX_BYTES = 512 * 1024
 
-function decode(b64: string): Uint8Array {
+export function decode(b64: string): Uint8Array {
   const clean = String(b64 ?? '').replace(/^data:[^,]*,/, '').replace(/\s/g, '')
   if (!clean) throw new ApiError('MISSING_FIELD', 'No image was sent.')
   let bin: string
@@ -69,7 +81,7 @@ function decode(b64: string): Uint8Array {
  * must match it. The filename is not consulted at all here — the stored name is
  * ours, so the one the browser sent tells us nothing an attacker cannot change.
  */
-function sniff(bytes: Uint8Array): string | null {
+export function sniff(bytes: Uint8Array): string | null {
   const starts = (sig: number[]) => sig.every((b, i) => bytes[i] === b)
   if (starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png'
   if (starts([0xff, 0xd8, 0xff])) return 'image/jpeg'

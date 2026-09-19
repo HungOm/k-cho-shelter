@@ -61,6 +61,18 @@ export function configPayload(cfg: Record<string, string>) {
     // rather than half a theme being applied over it.
     brandColor: cfg.BRAND_COLOR ?? '',
     projectCode: cfg.PROJECT_CODE ?? '',
+    /*
+     * Whether this raffle has artwork to print tickets from — a yes or no, not
+     * the artwork itself. The design and the picture travel with the actions
+     * that need them; putting them here would send a few kilobytes of
+     * coordinates to every screen on every sign-in to answer a question that
+     * only two buttons ask.
+     *
+     * It is here at all so that "Print this book" can be shown DISABLED with
+     * the reason, rather than enabled and then refused — which is the rule the
+     * rest of this app is held to, and the reason is the useful half.
+     */
+    ticketArtwork: String(cfg.TICKET_ARTWORK_ID ?? '') !== '',
     // Through dayStart, never raw. A value that arrived from a date-shaped
     // spreadsheet cell is a full timestamp string, and the client compares
     // these against today as plain text — where that string sorts ABOVE a

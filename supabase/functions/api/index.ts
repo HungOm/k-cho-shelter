@@ -42,6 +42,8 @@ import {
 } from './gate.ts'
 import { configPayload } from './config.ts'
 import * as branding from './branding.ts'
+import * as templates from './templates.ts'
+import * as printing from './printing.ts'
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
 import * as deadlines from './deadlines.ts'
@@ -174,6 +176,13 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   set_sales_close: { group: 'Books', label: 'Set the day ticket sales close', danger: true },
   upload_logo: { group: 'Access', label: 'Change the raffle\'s logo' },
   set_brand_color: { group: 'Access', label: 'Change the raffle\'s colour' },
+  upload_template: { group: 'Access', label: 'Change the ticket artwork', danger: true },
+  list_templates: { group: 'Access', label: 'See the ticket artwork' },
+  set_template_design: { group: 'Access', label: 'Move the number on the ticket' },
+  set_active_template: { group: 'Access', label: 'Choose which ticket artwork to print', danger: true },
+  remove_template: { group: 'Access', label: 'Remove a ticket artwork', danger: true },
+  set_ticket_sizes: { group: 'Access', label: 'Change the accepted ticket sizes', danger: true },
+  generate_tickets: { group: 'Books', label: 'Generate ticket codes for printing', danger: true },
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
   record_payment: { group: 'Money', label: 'Record money handed in' },
   reverse_payment: { group: 'Money', label: 'Undo a recorded payment', danger: true },
@@ -367,6 +376,32 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // what a buyer sees on a receipt; it is not a thing a desk volunteer changes.
   upload_logo: { roles: ADMIN_ONLY, kind: 'write', fn: branding.uploadLogo },
   set_brand_color: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setBrandColor },
+
+  /*
+   * THE TICKET ARTWORK — organisers and the System Admin, and not grantable.
+   *
+   * Every one of these is `kind: 'write'`, INCLUDING list_templates, which only
+   * reads. That is deliberate and it is the only way to say what the owner
+   * asked for. isActionAllowed lets a permissions row hand any 'read' or
+   * 'report' action to another role — that is what the Access screen is for —
+   * and refuses to widen a 'write'. A ticket's artwork and the code on it are
+   * not a desk volunteer's to see or change, so none of these may be given
+   * away by a toggle.
+   *
+   * tests/strictactions.test.mjs pins all six lines. If one of them is ever
+   * "tidied" to `kind: 'read'` on the grounds that it does not write anything,
+   * that test fails and says why.
+   */
+  upload_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.uploadTemplate },
+  list_templates: { roles: ADMIN_ONLY, kind: 'write', fn: templates.listTemplates },
+  set_template_design: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setTemplateDesign },
+  set_active_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setActiveTemplate },
+  remove_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.removeTemplate },
+  set_ticket_sizes: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setTicketSizes },
+  // Minting the codes that make a ticket provable. Same bar as the artwork
+  // above, and for a sharper reason: whoever can generate a code can make a
+  // forgery verify.
+  generate_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.generateTickets },
 
   // --- reports ---
   report_outstanding: { roles: ['viewer', 'recorder', 'agent'], kind: 'report', fn: reports.reportOutstanding },

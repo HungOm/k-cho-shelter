@@ -10,3 +10,24 @@ project_id = "kcho-shelter"
 # none of which this API uses — a request without a signed-in person has no
 # business reaching a raffle that holds several thousand people's phone numbers.
 verify_jwt = true
+
+[functions.verify]
+# OFF, and this is the ONE function in the project that has it off.
+#
+# It exists to answer a stranger with a phone: they have scanned the QR on a
+# raffle ticket and want to know whether it is real. There is no session and
+# there cannot be one — the whole point is that anybody in the hall can check a
+# ticket without an account.
+#
+# That is only safe because of what this function can reach, which is two
+# columns of `tickets` and one of `ticket_codes`: is this code the code we
+# printed, and is the ticket recorded as sold. No buyer, no phone number, no
+# seller, no list. An unknown number and a wrong code give the same answer, so
+# it cannot be used to map the raffle either.
+#
+# The reasoning above for [functions.api] is unchanged and still correct, which
+# is why this is a separate function rather than a route inside it. Splitting
+# them means the public thing has a blast radius small enough to read in one
+# sitting — and tests/verify.test.mjs reads the file and fails if it ever
+# mentions a buyer, a phone, a seller or a user.
+verify_jwt = false

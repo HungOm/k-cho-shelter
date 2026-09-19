@@ -57,7 +57,19 @@ const seed = (() => {
 })()
 
 ok(!!seed, 'the config seed block was found in schema.sql')
-ok(Object.keys(seed ?? {}).length === 26, `26 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
+ok(Object.keys(seed ?? {}).length === 29, `29 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
+
+/*
+ * The three the ticket artwork added. Blank is the right starting value for all
+ * of them and each blank means something specific: no artwork has been uploaded
+ * yet, use the built-in list of paper sizes, and point printed QR codes at this
+ * site. A raffle is printable the moment somebody uploads a ticket, with
+ * nothing else to set.
+ */
+for (const k of ['TICKET_ARTWORK_ID', 'TICKET_SIZES', 'VERIFY_URL']) {
+  ok(k in seed, `${k} is seeded — the ticket artwork reads it and treats absent as a guess`)
+  ok(seed[k] === '', `${k} starts blank`)
+}
 
 /*
  * The five the generator cannot do without. Absent, each one has a silent

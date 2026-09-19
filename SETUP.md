@@ -34,13 +34,22 @@ static page on GitHub Pages. Two of the steps below — **Creating the Google si
    browser's key can read every table directly.
 4. `supabase functions deploy api`, and set its secrets — including `SUPER_ADMIN_EMAIL`, which is
    the one thing that must live outside the database.
+
+   Then `supabase functions deploy verify`. **There are two functions and they are not alike.**
+   `api` is everything the app does and answers only a signed-in person. `verify` answers
+   anybody: it is what a phone reaches when somebody scans the QR on a printed ticket, and it
+   has no sign-in because a stranger in a hall has no account. It is safe to be public because
+   of what it can reach — whether a code matches, and whether the ticket is recorded as sold.
+   No buyer, no phone number, no list. `supabase/config.toml` turns the platform's JWT check off
+   for that function alone, with the reasoning written beside it; do not copy that setting to
+   `api`.
 5. Enable Google under Authentication → Providers and paste in the client ID from **Creating the Google sign-in ID** below.
 6. Set the repository variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, then
    push. The publishable key is meant to be public — row-level security is what stands between it
    and the data, which is why `rls.sql` is not optional.
 7. Turn on the weekly backup — **[Backups](#backups-supabase)** below. The free plan takes none,
    and the job deliberately fails every week until it is set up.
-8. **Set the numbering, then make the tickets.** A new project starts with the 26 settings in the
+8. **Set the numbering, then make the tickets.** A new project starts with the 29 settings in the
    `config` table already filled in and **no tickets at all** — `TOTAL_TICKETS` is `0`. Open
    Table Editor → `config` and set `TICKET_PREFIX`, `TICKET_DIGITS`, `TICKETS_PER_BOOK`,
    `BOOK_PREFIX` and `BOOK_DIGITS` to what you are printing, along with `EVENT_NAME`, `ORG_NAME`,
@@ -57,7 +66,20 @@ static page on GitHub Pages. Two of the steps below — **Creating the Google si
    simply stops matching.
 
    `TOTAL_TICKETS` can always be raised later from the same screen. It can never be lowered.
-9. Check it: `./tests/run.sh`, and `./supabase/test-rls.sh` against a throwaway database.
+9. **Upload the ticket artwork.** Sign in as an organiser and open **Ticket design**. Give it a
+   picture of one blank ticket, stub included — PNG, JPEG or WebP, about 2244 pixels wide for a
+   sharp press run at 190 mm. It is measured on the way in and refused if its shape is not one
+   the raffle prints; the accepted shapes are a list on the same screen, and
+   `TICKET_SIZES` in `config` holds it.
+
+   The number is then placed for you, on the printed label's own baseline, and every measurement
+   is a field on that screen if it is not right. Nothing is stored per ticket: a ticket is drawn
+   when somebody opens or prints it and thrown away again, which is what lets a raffle hold twenty
+   thousand of them without getting heavy.
+
+   This screen, and everything behind it, is **organisers and the System Admin only** — and
+   unlike most features it cannot be handed to another role from the Access screen.
+10. Check it: `./tests/run.sh`, and `./supabase/test-rls.sh` against a throwaway database.
 
 The numbered steps below expand on the two that need a Google account rather than a Supabase one.
 

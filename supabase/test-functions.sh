@@ -1133,7 +1133,7 @@ ok "$(P "select count(*) from information_schema.role_table_grants where grantee
 # numbered 1 to 10000 with no prefix and no padding.
 
 echo "a project built from nothing knows how to number a ticket"
-ok "$(P "select count(*) from config")" "26" "the defaults are seeded"
+ok "$(P "select count(*) from config")" "29" "the defaults are seeded"
 ok "$(P "select value from config where key='TICKET_PREFIX'")" "KS-" "there is a prefix to build a number from"
 ok "$(P "select value from config where key='TICKET_DIGITS'")" "5" "and a width to pad it to"
 # BLANK, and that is the guarantee, not an oversight: a raffle that has not set
@@ -1484,7 +1484,7 @@ ok "$(C "select count(*) from information_schema.columns where table_name='books
    "with a column for it to write to"
 ok "$(C "select count(*) from information_schema.views where table_schema='public' and table_name in ('agent_money','book_ledger_all','book_ledger')")" "3" \
    "the three money views survived the push that replaces them"
-ok "$(C "select count(*) from config")" "26" \
+ok "$(C "select count(*) from config")" "29" \
    "and the raffle knows how to number a ticket"
 
 echo
