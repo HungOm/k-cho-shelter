@@ -156,10 +156,22 @@ console.log('and the function is not even written to be able to')
   for (const forbidden of ['buyer_', 'phone', 'agents', 'app_users', 'sold_by', 'amount', 'notes', 'audit_log']) {
     ok(!code.includes(forbidden), `the verify function never mentions ${forbidden}`)
   }
-  // It may read exactly two tables.
+  /*
+   * THE TABLES IT MAY READ, AS A LIST THAT HAS TO BE EDITED ON PURPOSE.
+   *
+   * ticket_receipt_items joined it when a receipt — one code standing for the
+   * tickets one buyer took — became scannable. It carries a code and a ticket
+   * index and nothing else: no buyer, no telephone number, no seller, which is
+   * why it is admissible here at all. What it feeds into the reply is the same
+   * two facts a single ticket's answer carries, N times over.
+   *
+   * The point of the list is that adding to it is a decision somebody writes
+   * down rather than a line that slips in — so a table added here without a
+   * sentence saying what it exposes is the thing to refuse in review.
+   */
   const tables = [...code.matchAll(/\.from\('([a-z_]+)'\)/g)].map((m) => m[1])
-  eq([...new Set(tables)].sort().join(), 'config,ticket_codes,tickets',
-    'it reads the numbering, the tickets and the codes, and nothing else')
+  eq([...new Set(tables)].sort().join(), 'config,ticket_codes,ticket_receipt_items,tickets',
+    'it reads the numbering, the tickets, the codes and a receipt\'s ticket list — nothing else')
   // And it may not write.
   for (const write of ['.insert(', '.update(', '.upsert(', '.delete(']) {
     ok(!code.includes(write), `it never calls ${write} — a public endpoint that writes can be made to fill a table`)

@@ -168,6 +168,19 @@ console.log('5. no action is registered on the server that nothing can call')
     // frozen too. This line comes out when the picker is built.
     move_tickets: 'the ticket picker waits for the deploy freeze to lift',
     /*
+     * The receipt's server half is built and its client half is not, and the
+     * two are in different sessions' hands: the screen that would call this —
+     * ViewTicket.vue, where a digital ticket is sent — was being edited by
+     * somebody else while this landed, and reaching into it would have been the
+     * mistake this tree has made three times tonight.
+     *
+     * What exists without it is still worth having: the table, the action, and
+     * a public verify that answers for every ticket on a receipt at once. What
+     * is missing is the button. This line comes out with the same commit that
+     * adds it.
+     */
+    make_receipt: 'the picture that carries a receipt is in another session\'s files',
+    /*
      * NOT A SCREEN ACTION AND NEVER WILL BE. accept_offer is what runs when a
      * seller accepts, and it is reached only from inside decideApproval, which
      * has already established that this exact person is the one the books were

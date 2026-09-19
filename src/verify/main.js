@@ -134,7 +134,12 @@ function params() {
   const t = url.searchParams.get('t')
   const c = url.searchParams.get('c')
   if (t || c) return { query: `?t=${encodeURIComponent(t ?? '')}&c=${encodeURIComponent(c ?? '')}` }
-  // The compact form the QR uses: everything after the ? is <number>.<code>.
+  // A receipt: one code standing for the tickets one buyer took. Both spellings
+  // again — `?r=CODE` for a person typing it, `?r.CODE` for the QR.
+  const r = url.searchParams.get('r')
+  if (r) return { query: `?r=${encodeURIComponent(r)}` }
+  // The compact form the QR uses: everything after the ? is <number>.<code>,
+  // or `r.<code>` for a receipt.
   const raw = url.search.replace(/^\?/, '')
   if (raw && raw.includes('.')) return { query: `?${raw}` }
   return null
@@ -196,6 +201,37 @@ async function run() {
      * who sold it is usually standing there. */
     const todo = `<p class="todo">${say('showSeller')}</p>`
     render(panel('bad', 'notGenuine', 'notGenuineNote', todo) + whyOneAnswer())
+    return
+  }
+
+  /*
+   * A RECEIPT ANSWERS FOR EVERY TICKET ON IT, in one scan.
+   *
+   * A buyer who took ten tickets was given ten pictures and ten QR codes, and
+   * had to scan them one at a time — as did anybody standing beside them at the
+   * draw. The reply carries the same two facts per ticket that a single ticket's
+   * answer carries, so the panel is the same panel with a list in it: a number
+   * and one of the three sentences, per line. Nothing new is said about a
+   * ticket, because nothing about a ticket changed.
+   *
+   * THE TONE FOLLOWS THE WORST LINE. A receipt where one ticket is cancelled is
+   * not a clean receipt, and a green tick over a list containing a cancelled
+   * ticket is the page telling somebody the opposite of what it is showing them.
+   */
+  if (body.receipt) {
+    const list = (body.tickets || []).map((t) => {
+      const key = t.void ? 'void' : t.sold ? 'sold' : 'unsold'
+      return `<li><b>${escapeHtml(String(t.number))}</b><span>${say(key)}</span></li>`
+    }).join('')
+    const anyVoid = (body.tickets || []).some((t) => t.void)
+    const anyUnsold = (body.tickets || []).some((t) => !t.sold && !t.void)
+    const details = `
+      <p class="state">${say('receiptCount').replace(/\{n\}/g, String(body.count ?? 0))}</p>
+      <ul class="tickets">${list}</ul>
+      <p class="privacy">${say('privacyNote')}</p>`
+    render(panel(anyVoid ? 'warn' : 'good', 'receiptGenuine',
+                 anyUnsold ? 'unsoldNote' : 'photocopy', details) + `
+      <p class="stamp">${say('checkedAt')} ${escapeHtml(new Date(body.checkedAt).toLocaleString())}</p>`)
     return
   }
 

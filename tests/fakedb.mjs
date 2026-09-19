@@ -582,6 +582,11 @@ export function fakeDb(seed = {}) {
       permissions: [], book_ledger: [], book_ledger_all: [], check_in_reports: [],
       payments: [], ticket_history: [], round_snapshots: [],
       prizes: [], prize_types: [], ticket_templates: [], ticket_codes: [],
+      // A receipt is one code standing for the tickets one buyer took. Both
+      // tables default to empty for the same reason every other pair does: a
+      // handler that reads a table the fake does not carry gets `undefined`
+      // and fails in a way that reads as a broken handler.
+      ticket_receipts: [], ticket_receipt_items: [],
       ...seeded(copy(seed)),
     },
     writes: [],

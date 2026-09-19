@@ -448,3 +448,109 @@ function wireTemplate(t: Record<string, unknown>) {
     design: t.design ?? {},
   }
 }
+
+/* ============ A RECEIPT FOR THE TICKETS ONE BUYER TOOK ============ */
+
+/**
+ * Mints — or finds — the code that stands for a set of tickets.
+ *
+ * WHAT IT IS FOR. A buyer who takes ten tickets gets ten pictures and ten QR
+ * codes, and the thing they actually hold, "these ones are mine", is
+ * represented nowhere. They cannot check them in one go and neither can
+ * anybody standing beside them at the draw. One code covers the set: the
+ * picture lists every number, and the QR verifies all of them at once.
+ *
+ * WHY NOT PUT THE LIST IN THE QR, measured rather than argued. The encoder is
+ * byte mode, versions 1 to 10; at the level the ticket design ships, M, a
+ * version 10 code holds 213 bytes. The address is ~39 and each
+ * `KS-00123.ABCDEFGHJKMN` pair is 22, so the pairs outright fit SEVEN tickets.
+ * A book is ten. Level L would fit ten and would cost error correction on a
+ * thing whose job is to still scan after a month in a pocket.
+ *
+ * THE SAME SET GIVES THE SAME CODE. Sending a buyer their receipt twice must
+ * not mint a second one: a receipt is a thing they hold, and two codes for one
+ * set is two artefacts where the buyer believes there is one. So an existing
+ * receipt covering exactly these tickets — no more, no fewer — is returned as
+ * it stands. "Exactly" is the whole of it: a receipt for nine of the ten is a
+ * different receipt and must not be handed back for ten.
+ *
+ * ONLY TICKETS THAT ARE SOLD, and this is the rule the plan states for sending
+ * a digital ticket at all. A receipt for a ticket nobody has bought is a
+ * document asserting a sale that did not happen, and it would verify.
+ */
+export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const asked = Array.isArray(p.ticketNumbers) ? p.ticketNumbers.map((n) => String(n).trim()) : []
+  const wanted = [...new Set(asked.filter(Boolean))]
+  if (!wanted.length) throw new ApiError('MISSING_FIELD', 'Which tickets?')
+  if (wanted.length > 200) {
+    throw new ApiError('RANGE_TOO_LARGE',
+      'A receipt covers at most 200 tickets. Split it into more than one.')
+  }
+
+  const { data: rows, error } = await ctx.supabaseAdmin
+    .from('tickets').select('idx,number,status').in('number', wanted)
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  const found = new Map((rows ?? []).map((t: Record<string, unknown>) => [String(t.number), t]))
+  const missing = wanted.filter((n) => !found.has(n))
+  if (missing.length) {
+    throw new ApiError('TICKET_NOT_FOUND',
+      `${missing[0]} is not a ticket in this raffle.`, { missing }, 404)
+  }
+
+  const SOLD = ['Sold', 'Donated']
+  const unsold = wanted.filter((n) => !SOLD.includes(String(found.get(n)!.status)))
+  if (unsold.length) {
+    throw new ApiError('NOT_SOLD',
+      `A receipt is what a buyer is given after they have paid, and ${unsold[0]} is not ` +
+      `recorded as sold. ${unsold.length === 1 ? 'Write the sale down first.' : ''}`,
+      { tickets: unsold })
+  }
+
+  const idxs = wanted.map((n) => Number(found.get(n)!.idx)).sort((a, b) => a - b)
+
+  /*
+   * An existing receipt for exactly this set, found by asking which receipts
+   * touch any of these tickets and then keeping the one whose size matches and
+   * whose every item is in the set. Two small queries rather than a hash column:
+   * a stored fingerprint is a second truth about the set, and it goes stale the
+   * first time somebody edits the items by hand.
+   */
+  const { data: touching } = await ctx.supabaseAdmin
+    .from('ticket_receipt_items').select('code,ticket_idx').in('ticket_idx', idxs)
+  const byCode = new Map<string, number[]>()
+  for (const r of (touching ?? []) as Array<Record<string, unknown>>) {
+    const c = String(r.code)
+    if (!byCode.has(c)) byCode.set(c, [])
+    byCode.get(c)!.push(Number(r.ticket_idx))
+  }
+  for (const [code, its] of byCode) {
+    if (its.length !== idxs.length) continue
+    const { count } = await ctx.supabaseAdmin
+      .from('ticket_receipt_items').select('ticket_idx', { count: 'exact', head: true }).eq('code', code)
+    if (Number(count ?? 0) !== idxs.length) continue
+    return { code, tickets: wanted, count: wanted.length, created: false }
+  }
+
+  const { data: cfgRows } = await ctx.supabaseAdmin
+    .from('config').select('key,value').eq('key', 'TICKET_CODE_LENGTH')
+  const length = Math.max(8, Math.min(32,
+    Number((cfgRows ?? [])[0]?.value ?? DEFAULT_LENGTH) || DEFAULT_LENGTH))
+
+  const code = newCode(length)
+  const { error: headErr } = await ctx.supabaseAdmin
+    .from('ticket_receipts').insert({ code, created_by: user.email })
+  if (headErr) throw new ApiError('QUERY_FAILED', headErr.message)
+
+  const { error: itemErr } = await ctx.supabaseAdmin
+    .from('ticket_receipt_items').insert(idxs.map((ticket_idx) => ({ code, ticket_idx })))
+  if (itemErr) throw new ApiError('QUERY_FAILED', itemErr.message)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'MAKE_RECEIPT',
+    details: { code, tickets: wanted.length },
+    email: user.email,
+  })
+
+  return { code, tickets: wanted, count: wanted.length, created: true }
+}

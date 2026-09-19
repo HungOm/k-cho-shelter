@@ -568,6 +568,56 @@ create table if not exists ticket_codes (
 alter table ticket_codes enable row level security;
 revoke all on ticket_codes from anon, authenticated;
 create index if not exists ticket_codes_batch_idx on ticket_codes (batch_id);
+
+/*
+ * A RECEIPT: THE TICKETS ONE BUYER WAS GIVEN, IN ONE ACT.
+ *
+ * A buyer who takes ten tickets gets ten pictures and ten QR codes, and the
+ * thing they actually hold — "these are mine" — is not represented anywhere.
+ * They cannot check them in one go, and neither can anybody standing next to
+ * them at the draw.
+ *
+ * WHY A CODE AND NOT A LIST IN THE QR. The encoder here is byte mode, versions
+ * 1 to 10, and at the error-correction level the ticket design ships (M) a
+ * version 10 code holds 213 bytes. A verify address is about 39 of those and
+ * each `KS-00123.ABCDEFGHJKMN` pair is 22, so a QR carrying the pairs outright
+ * holds SEVEN tickets — fewer than the ten in a single book, which is the
+ * commonest multiple sale there is. Dropping to level L would buy three more
+ * and cost error correction on an artefact whose whole job is to still scan
+ * after a month in a pocket. One code of fixed size holds any number.
+ *
+ * WHAT A RECEIPT IS, AND IS NOT. It is a set of tickets somebody CHOSE to issue
+ * together — what was sold in one act, or what an organiser picked by hand. It
+ * is deliberately NOT an inference from the buyer's name and telephone number:
+ * the same person buying twice in a fortnight is two receipts, and guessing
+ * otherwise would join two purchases nobody joined.
+ *
+ * THE TICKETS SURVIVE THE RECEIPT, never the other way about: on delete cascade
+ * from the header, on delete restrict from the ticket. Deleting a ticket that a
+ * buyer is holding a receipt for is refused, which is the correct direction —
+ * and nothing in this system deletes tickets anyway.
+ */
+create table if not exists ticket_receipts (
+  code       text primary key,
+  created_at timestamptz not null default now(),
+  created_by text not null default ''
+);
+
+create table if not exists ticket_receipt_items (
+  code       text not null references ticket_receipts(code) on delete cascade,
+  ticket_idx integer not null references tickets(idx) on delete restrict,
+  primary key (code, ticket_idx)
+);
+
+alter table ticket_receipts enable row level security;
+alter table ticket_receipt_items enable row level security;
+-- The public verify function reads these as the service role, the same way it
+-- reads ticket_codes. No browser reaches them directly, signed in or not.
+revoke all on ticket_receipts from anon, authenticated;
+revoke all on ticket_receipt_items from anon, authenticated;
+-- "Which receipts is this ticket on" — asked when a ticket is re-sent, and the
+-- only query here that is not by code.
+create index if not exists ticket_receipt_items_ticket on ticket_receipt_items (ticket_idx);
 create index if not exists ticket_history_book_idx on ticket_history (book_idx, at);
 
 create or replace function record_ticket_history() returns trigger as $$

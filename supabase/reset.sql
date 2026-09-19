@@ -65,6 +65,7 @@ select 'DESTROYING: '
   || (select count(*) from ticket_movements)|| ' custody movements, '
   || (select count(*) from ticket_templates)|| ' ticket artworks, '
   || (select count(*) from ticket_codes)   || ' ticket codes, '
+  || (select count(*) from ticket_receipts) || ' receipts, '
   || (select count(*) from agents)         || ' sellers, '
   || (select count(*) from winners)        || ' winners' as about_to_go;
 
@@ -118,6 +119,14 @@ delete from audit_log;
 --
 -- Deleting it is also what makes last raffle's printed tickets stop verifying:
 -- their codes match nothing, and there is no key to rotate.
+-- BEFORE ticket_codes and before tickets, and the order inside this pair is
+-- its own trap: the items reference the header with ON DELETE CASCADE and the
+-- ticket with ON DELETE RESTRICT, so deleting the items first is what lets
+-- `delete from tickets` run at all. Deleting the header alone would cascade the
+-- items and work too, which is exactly why this is written down: it works by
+-- accident in one order and by design in the other.
+delete from ticket_receipt_items;
+delete from ticket_receipts;
 delete from ticket_codes;
 -- The ticket artwork goes the way the logo goes: a reset is factory defaults,
 -- and the next raffle uploads its own. No foreign key, so the position here is

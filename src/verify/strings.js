@@ -34,6 +34,24 @@ export const S = {
   ticketNo: { en: 'Ticket number', my: 'လက်မှတ်အမှတ်' },
 
   /*
+   * A RECEIPT — one code standing for the tickets one buyer took, so a buyer
+   * who bought ten checks them in one scan instead of ten.
+   *
+   * The heading is plural and the rest is reused: every line below it is a
+   * ticket number and one of `sold`, `unsold` or `void`, which are the same
+   * three sentences a single ticket gets. Nothing new had to be said about a
+   * ticket because nothing about a ticket changed.
+   *
+   * THE BURMESE HERE IS COMPOSED, not translated by a reader of it: ဤလက်မှတ်များ
+   * မှန်ကန်ပါသည် is the singular line above with the plural marker, and
+   * လက်မှတ် {n} စောင် uses the classifier for sheets. Both want checking by
+   * somebody who reads Burmese before this is shown to buyers — the same
+   * treatment the rest of this file has already had.
+   */
+  receiptGenuine: { en: 'These are real tickets', my: 'ဤလက်မှတ်များ မှန်ကန်ပါသည်' },
+  receiptCount: { en: '{n} tickets on this receipt', my: 'ဤပြေစာတွင် လက်မှတ် {n} စောင်' },
+
+  /*
    * The unsold line is the one that matters most and is the easiest to get
    * wrong. It must not accuse the seller: a ticket sold ten minutes ago at a
    * desk with no signal is genuinely not recorded yet, and that is ordinary.

@@ -188,6 +188,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   reset_apply: { group: 'Access', label: 'Reset a raffle', danger: true },
   generate_tickets: { group: 'Books', label: 'Generate ticket codes for printing', danger: true },
   render_tickets: { group: 'Books', label: 'Draw tickets for printing' },
+  make_receipt: { group: 'Books', label: 'Make a buyer\'s receipt for several tickets' },
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
   record_payment: { group: 'Money', label: 'Record money handed in' },
   reverse_payment: { group: 'Money', label: 'Undo a recorded payment', danger: true },
@@ -421,6 +422,11 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // forgery verify.
   generate_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.generateTickets },
   render_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.renderTickets },
+  // One code for a set of tickets, so a buyer who took ten gets one picture and
+  // one QR rather than ten of each. Same bar as the codes it stands on: it
+  // makes a verifiable document, and the plan puts sending a digital ticket
+  // with the organiser and nowhere else.
+  make_receipt: { roles: ADMIN_ONLY, kind: 'write', fn: printing.makeReceipt },
 
   // --- reports ---
   report_outstanding: { roles: ['viewer', 'recorder', 'agent'], kind: 'report', fn: reports.reportOutstanding },

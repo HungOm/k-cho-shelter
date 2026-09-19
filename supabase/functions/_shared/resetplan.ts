@@ -81,7 +81,16 @@ export const FEATURES: Feature[] = [
     id: 'tickets',
     name: 'Tickets, books and codes',
     why: 'Every ticket, every book, their history, their movements and the codes behind their QRs.',
-    tables: ['tickets', 'books', 'ticket_codes', 'ticket_history', 'ticket_movements', 'book_history'],
+    /*
+     * The receipts belong HERE rather than in a feature of their own, and the
+     * reason is what a reset means: a receipt is one code standing for a set of
+     * tickets, so it is worth exactly as much as the tickets it names. Wiping
+     * the tickets and keeping the receipts would leave codes that verify to
+     * nothing — and a receipt that answers "genuine" for a ticket that no
+     * longer exists is worse than one that has gone with it.
+     */
+    tables: ['tickets', 'books', 'ticket_codes', 'ticket_receipts', 'ticket_receipt_items',
+             'ticket_history', 'ticket_movements', 'book_history'],
     /*
      * Codes that have been PRINTED exist on paper in somebody's hand. Deleting
      * them is not a data reset — it stops physical tickets verifying, and the
@@ -189,6 +198,13 @@ export const LINKS: Link[] = [
   ['book_history', 'books', 'restrict'],
   ['ticket_history', 'tickets', 'restrict'],
   ['ticket_movements', 'tickets', 'restrict'],
+  // A receipt's items hang off the receipt and hold the ticket in place: the
+  // set can go without the tickets, and the tickets cannot go while a receipt
+  // still names them. That is the right way round — a buyer's receipt is worth
+  // nothing without the tickets, and a ticket that vanishes from under one
+  // would leave a code answering "genuine" for something that no longer exists.
+  ['ticket_receipt_items', 'ticket_receipts', 'cascade'],
+  ['ticket_receipt_items', 'tickets', 'restrict'],
   ['ticket_codes', 'tickets', 'restrict'],
   ['prizes', 'prize_types', 'restrict'],
   ['winners', 'tickets', 'restrict'],

@@ -117,6 +117,66 @@ export default {
     }
 
     /*
+     * A RECEIPT: ONE CODE STANDING FOR THE TICKETS ONE BUYER TOOK.
+     *
+     *   ?r=ABCD...   or   ?r.ABCD...
+     *
+     * A buyer who took ten tickets was given ten pictures and ten QR codes, and
+     * had no way to check them in one go — nor had anybody standing beside them
+     * at the draw. The list cannot go in the QR: at the level the ticket design
+     * ships, a version 10 code holds 213 bytes, which is seven number-and-code
+     * pairs against the ten in a single book.
+     *
+     * IT ANSWERS THE SAME QUESTION AND REVEALS NOTHING MORE. Every ticket on
+     * the receipt, its number, and whether the raffle records it as sold —
+     * which is exactly what one ticket's answer carries, N times. No buyer, no
+     * telephone number, no seller; a receipt is a set of tickets and nothing
+     * about the person holding it is stored on it.
+     *
+     * AN UNKNOWN RECEIPT ANSWERS LIKE A WRONG ONE, for the same reason a made-up
+     * ticket code does: telling them apart is help for somebody guessing.
+     */
+    const receiptCode = (url.searchParams.get('r') ?? '').trim() ||
+      (() => {
+        const compact = decodeURIComponent(url.search.replace(/^\?/, ''))
+        return compact.startsWith('r.') ? compact.slice(2) : ''
+      })()
+
+    if (receiptCode) {
+      if (!looksLikeCode(receiptCode)) return reply({ ok: false, reason: 'malformed' }, 400)
+
+      const { data: items, error: itemErr } = await ctx.supabaseAdmin
+        .from('ticket_receipt_items').select('ticket_idx').eq('code', receiptCode).limit(300)
+      if (itemErr) return reply({ ok: false, reason: 'unavailable' }, 503)
+
+      const idxs = (items ?? []).map((r: Record<string, unknown>) => Number(r.ticket_idx))
+      if (!idxs.length) {
+        return reply({ ok: true, genuine: false, checkedAt: new Date().toISOString() })
+      }
+
+      const { data: on, error: tErr } = await ctx.supabaseAdmin
+        .from('tickets').select('number,status').in('idx', idxs).order('idx')
+      if (tErr) return reply({ ok: false, reason: 'unavailable' }, 503)
+
+      const SOLD = ['Sold', 'Donated']
+      const tickets = (on ?? []).map((t: Record<string, unknown>) => ({
+        number: String(t.number),
+        sold: SOLD.includes(String(t.status)),
+        // A cancelled ticket on a receipt is the one line somebody must not
+        // miss, and "not sold" would be the wrong sentence for it.
+        void: String(t.status) === 'Void',
+      }))
+      return reply({
+        ok: true,
+        genuine: true,
+        receipt: true,
+        count: tickets.length,
+        tickets,
+        checkedAt: new Date().toISOString(),
+      })
+    }
+
+    /*
      * Both are validated for SHAPE before anything is asked of the database.
      * Not because the query builder would be fooled — it parameterises — but
      * because an endpoint anybody can reach should do the cheapest possible
