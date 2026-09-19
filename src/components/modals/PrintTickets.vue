@@ -1,6 +1,6 @@
 <script setup>
 /**
- * Printing tickets — a book, a run of books, or the whole raffle.
+ * PRINTING TICKETS — the sheet is the subject, not the form that describes it.
  *
  * TWO STEPS, VISIBLY. Tickets are generated (given a code that can be checked)
  * and then drawn. Keeping them apart is what makes a reprint safe: generating
@@ -8,6 +8,13 @@
  * the printer carry the same code. This screen shows how many of the chosen
  * tickets have never been generated and offers to do it, rather than doing it
  * silently as a side effect of pressing Print.
+ *
+ * WHAT CHANGED. This was a form that ended in a picture of one ticket. But
+ * nobody prints a ticket — they print a SHEET, and every question that actually
+ * goes wrong is a question about the sheet: how many are on it, where it breaks,
+ * whether the last one is half off the bottom, how many blanks are on the end of
+ * the run. So the sheet is now drawn, at its real proportions, page by page,
+ * with the arithmetic that decides it written underneath.
  *
  * NOTHING IS STORED. The tickets are drawn here, in the browser, from the
  * artwork and a few dozen bytes per ticket, and thrown away when this closes.
@@ -18,13 +25,13 @@
  * see tests/strictactions. This screen is only reachable from controls that
  * organisers see.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { state, api, toast } from '../../lib/store.js'
 import { designFor } from '../../lib/ticketdesign.js'
 import { numberLayerSVG, ticketVerifyUrl } from '../../lib/ticketart.js'
-import { sheetHTML } from '../../lib/ticketsheet.js'
+import { sheetHTML, pageFit, PAGE } from '../../lib/ticketsheet.js'
 import { encode } from '../../lib/qrcodegen.js'
-import { expandTicketRange } from '../../lib/books.js'
+import { expandTicketRange, bookNumber, storedBook } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ payload: { type: Object, default: () => ({}) } })
@@ -47,12 +54,9 @@ const progress = ref('')
  *
  * A drawn ticket is a page of artwork with a QR on it. Ten thousand of them is
  * not something a browser will lay out, however patient anybody is — so the
- * server hands back a printer's worth at a time and this walks them. `cursor`
- * is the ticket index the next batch starts after; `batch` is only for saying
- * "3 of 50" to somebody watching.
+ * server hands back a printer's worth at a time and this walks them.
  */
 const cursor = ref(0)
-/* Where the batch on screen STARTED, which is what "print this batch" needs. */
 const batchStart = ref(0)
 const batch = ref(1)
 const doneAll = ref(true)
@@ -61,9 +65,7 @@ const doneAll = ref(true)
  * Fill the stub's ruled lines in for tickets that are already sold.
  *
  * Off by default, and deliberately: a blank book going out to a seller must
- * print blank lines. It is worth having because the stub exists to be filled
- * in, the raffle already knows all four fields, and the alternative is somebody
- * copying them out of the app by hand.
+ * print blank lines.
  */
 const withBuyer = ref(false)
 
@@ -82,25 +84,202 @@ const verifyBase = computed(() => {
 const tickets = computed(() => result.value?.tickets ?? [])
 const missing = computed(() => result.value?.notGenerated ?? [])
 
+/* ---------- how it lands on paper ---------- */
+
+/*
+ * The page setup for THIS run.
+ *
+ * Held here rather than written back to the template, because a margin is a
+ * fact about the printer somebody is standing at, not about the ticket. The
+ * template's own numbers are the starting point and the Ticket design screen is
+ * where a lasting change belongs; this is the knob you turn when the office
+ * printer eats 12 mm instead of 10.
+ */
+const runSheet = ref(null)
+watch(design, (d) => {
+  if (d && !runSheet.value) runSheet.value = { ...d.sheet }
+}, { immediate: true })
+
+const sheetOpts = computed(() => (runSheet.value ? { ...runSheet.value } : {}))
+
+const fit = computed(() => (design.value ? pageFit(design.value, sheetOpts.value) : null))
+
+/* The tickets on screen, cut into pages exactly where the printer will cut. */
+const pages = computed(() => {
+  const per = fit.value?.per ?? 1
+  const out = []
+  for (let i = 0; i < tickets.value.length; i += per) out.push(tickets.value.slice(i, i + per))
+  return out
+})
+
+const pageNo = ref(0)
+watch(pages, () => { if (pageNo.value >= pages.value.length) pageNo.value = 0 })
+const page = computed(() => pages.value[pageNo.value] ?? [])
+
+/* How many slots on the last sheet have nothing in them. A run that ends three
+ * up the page is a sheet somebody has to guillotine differently. */
+const blanks = computed(() => {
+  const per = fit.value?.per ?? 0
+  if (!per || !tickets.value.length) return 0
+  const rem = tickets.value.length % per
+  return rem === 0 ? 0 : per - rem
+})
+
+/* The sum, in the form somebody can check against a ruler. */
+const pageSum = computed(() => {
+  const f = fit.value
+  if (!f) return ''
+  return `${f.per} × ${f.heightMM.toFixed(1)} + ${f.per - 1} × ${f.gapMM.toFixed(1)}`
+    + ` + 2 × ${f.marginMM.toFixed(1)} = ${f.used.toFixed(1)} of ${f.pageHeightMM.toFixed(1)} mm`
+})
+
+/*
+ * WHAT THE QR ACTUALLY CARRIES.
+ *
+ * Every character in the address is a module in the printed code, and the
+ * module size is what decides whether a phone reads it off paper across a
+ * table. These are the four numbers that settle it, taken from a real encode of
+ * a real ticket's address rather than estimated.
+ */
+const qrFacts = computed(() => {
+  const d = design.value
+  const t = tickets.value[0]
+  if (!d || !t) return null
+  const code = d.elements?.find((e) => e.kind === 'code' && e.enabled !== false)
+  if (!code) return null
+  try {
+    const url = ticketVerifyUrl(verifyBase.value, t.number, t.code)
+    const enc = encode(url, { ecc: code.ecc || 'M' })
+    const bytes = new TextEncoder().encode(url).length
+    const version = (enc.size - 17) / 4
+    const widthMM = Number(sheetOpts.value.widthMM ?? d.sheet.widthMM ?? 190)
+    const sizePx = Math.min(code.box.width * d.artwork.width, code.box.height * d.artwork.height)
+    const perModuleMM = ((sizePx / (enc.size + 8)) * widthMM) / d.artwork.width
+    return { url, bytes, version, modules: enc.size, mm: perModuleMM, widthMM }
+  } catch {
+    return null
+  }
+})
+
+/* ---------- what is being printed ---------- */
+
+/*
+ * WHAT THE RAFFLE CALLS THE BOOK SOMEBODY TYPED.
+ *
+ * The server matches `books.number` exactly (functions/api/printing.ts), so a
+ * raffle numbered Book-001 refuses "Book-0001" as a book that does not exist
+ * — which is what it said, and is close to useless to read while holding a
+ * book with 0001 printed on it. Every other screen that takes a book number
+ * canonicalises before sending: IssueBooks sends bookNumber(), so 1, 01 and
+ * Book-1 all arrive as the same label. This modal sent the box's own text,
+ * which is why it alone was strict about padding.
+ *
+ * RESOLVED AGAINST THE LOADED BOOKS rather than by padding — storedBook() in
+ * lib/books.js, which is where the reasoning is written down and where the
+ * payment screen reads it from too.
+ */
+const numOf = (v) => parseInt(String(v ?? '').replace(/\D/g, ''), 10)
+
+/** The first and last book this raffle actually has, for when somebody misses. */
+const bookSpan = computed(() => {
+  if (!state.booksAllLoaded || !state.books.length) return ''
+  let lo = state.books[0], hi = state.books[0]
+  for (const b of state.books) {
+    if (numOf(b.book) < numOf(lo.book)) lo = b
+    if (numOf(b.book) > numOf(hi.book)) hi = b
+  }
+  return `${lo.book} to ${hi.book}`
+})
+
+/*
+ * Said HERE rather than after a round trip, and saying what would work.
+ * "Book-0001 is not a book in this raffle" is true and leaves somebody
+ * guessing at the padding; the book list is already on the device, so the
+ * range it would accept costs nothing to include.
+ */
+function noSuchBook(typed) {
+  const span = bookSpan.value
+  return `There is no book ${String(typed).trim()} in this raffle.` +
+    (span ? ` The books run ${span}.` : '')
+}
+
+const scopeProblem = computed(() => {
+  if (mode.value === 'book') {
+    return book.value && storedBook(book.value) === null ? noSuchBook(book.value) : ''
+  }
+  if (mode.value === 'range') {
+    for (const typed of [fromBook.value, toBook.value]) {
+      if (typed && storedBook(typed) === null) return noSuchBook(typed)
+    }
+  }
+  return ''
+})
+
+/** The placeholder follows the raffle's own numbering rather than guessing at it. */
+const bookHint = computed(() => bookNumber('1') || 'Book-001')
+const bookHintLast = computed(() => bookNumber('10') || 'Book-010')
+
 const scope = computed(() => {
-  if (mode.value === 'book') return book.value ? { book: book.value } : null
+  if (mode.value === 'book') {
+    const one = storedBook(book.value)
+    return one ? { book: one } : null
+  }
   if (mode.value === 'all') return { all: true }
   if (mode.value === 'numbers') {
     const raw = numbers.value.trim()
     if (!raw) return null
-    // A typed run — "KS-00001–KS-00010" — expanded the way every other screen
-    // expands one, so the same thing typed here and there means the same.
     const run = expandTicketRange(raw)
     if (run) return { numbers: run }
     return { numbers: raw.split(/[\s,]+/).filter(Boolean) }
   }
   if (!fromBook.value) return null
-  return { fromBook: fromBook.value, toBook: toBook.value || fromBook.value }
+  /*
+   * An unknown LAST book is not quietly dropped back to the first. Printing
+   * one book when somebody asked for a run of forty is a stack of paper that
+   * looks right until it is counted.
+   */
+  const from = storedBook(fromBook.value)
+  const to = toBook.value ? storedBook(toBook.value) : from
+  if (!from || !to) return null
+  return { fromBook: from, toBook: to }
 })
+
+/*
+ * THE BOOKS IN THIS BATCH, AND WHETHER THEY HAVE CODES.
+ *
+ * Assembled from the tickets that came back rather than asked for separately,
+ * because the server already said which of them have never been generated and a
+ * second request for the same fact is a second thing that can disagree.
+ *
+ * It describes THE BATCH ON SCREEN and says so. A books table that looked like
+ * the whole raffle while showing one book's worth would be worse than no table:
+ * "not yet" against a book nobody asked about reads as a finding.
+ */
+const bookRows = computed(() => {
+  const never = new Set(missing.value)
+  const by = new Map()
+  for (const t of tickets.value) {
+    const key = t.book || '—'
+    const row = by.get(key) || { book: key, first: t.number, last: t.number, n: 0, without: 0 }
+    row.last = t.number
+    row.n += 1
+    if (never.has(t.number)) row.without += 1
+    by.set(key, row)
+  }
+  return [...by.values()]
+})
+
+/*
+ * `tickets` and `notGenerated` are disjoint: the server returns the drawable
+ * ones in the first and names the rest in the second, so the batch is their sum
+ * and the ones with codes are simply the first.
+ */
+const withCodes = computed(() => tickets.value.length)
+const inBatch = computed(() => tickets.value.length + missing.value.length)
 
 /** One window of tickets, starting after `from`. */
 async function load(from) {
-  if (!scope.value) { err.value = 'Say which tickets to print.'; return }
+  if (!scope.value) { err.value = scopeProblem.value || 'Say which tickets to print.'; return }
   busy.value = true
   err.value = ''
   try {
@@ -109,6 +288,7 @@ async function load(from) {
     batchStart.value = from
     cursor.value = r.after ?? from
     doneAll.value = !!r.done
+    pageNo.value = 0
   } catch (e) {
     err.value = e.message
     result.value = null
@@ -123,10 +303,7 @@ function nextBatch() { batch.value += 1; load(cursor.value) }
 
 /*
  * Generate every ticket in the scope that has no code, walking the whole thing.
- *
- * The server does a window per call and says where it got to. A raffle of
- * twenty thousand is a handful of calls; each is small enough that a dropped
- * connection costs a retry rather than a mystery about how far it got.
+ * The server does a window per call and says where it got to.
  */
 async function generateMissing() {
   if (!scope.value) return
@@ -165,8 +342,6 @@ function layerFor(t) {
   })
 }
 
-const preview = computed(() => (design.value && tickets.value.length ? layerFor(tickets.value[0]) : ''))
-
 /*
  * Printing goes through the browser's own dialog and the app's print
  * stylesheet, exactly as the handover receipt has always printed. No library,
@@ -177,6 +352,7 @@ function openSheet(download) {
   const html = sheetHTML(design.value, tickets.value.map((t) => t.number), result.value.template.url, {
     title: `Tickets ${tickets.value[0].number} to ${tickets.value[tickets.value.length - 1].number}`,
     layers: Object.fromEntries(tickets.value.map((t) => [t.number, layerFor(t)])),
+    ...sheetOpts.value,
   })
   const w = window.open('', '_blank')
   if (!w) { toast('Allow pop-ups to print', 'bad'); return }
@@ -199,128 +375,322 @@ async function printThem() {
     busy.value = false
   }
 }
+
+/* A ticket's height as a share of the page, so the preview is the real
+ * proportion rather than a drawing of one. */
+const pcOfPage = (mm) => `${(mm / PAGE.heightMM) * 100}%`
+const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
 </script>
 
 <template>
-  <Sheet title="Print tickets" @close="emit('close')">
+  <Sheet title="Printing tickets"
+         :subtitle="tickets.length ? `${tickets[0].number} — ${tickets[tickets.length - 1].number}` : 'a book, a run of books, or the whole raffle'"
+         wide @close="emit('close')">
     <p v-if="!hasArtwork" class="note bad">
       There is no ticket artwork yet, so nothing can be printed. Upload it on the
       Ticket design screen first.
     </p>
 
     <template v-else>
-      <div class="field">
-        <label for="pt-scope">Which tickets</label>
-        <select id="pt-scope" v-model="mode">
-          <option value="book">One book</option>
-          <option value="range">A run of books</option>
-          <option value="numbers">Tickets I type</option>
-          <option value="all">Every ticket in the raffle</option>
-        </select>
-      </div>
-
-      <div v-if="mode === 'book'" class="field">
-        <label for="pt-book">Book</label>
-        <input id="pt-book" v-model="book" spellcheck="false" placeholder="Book-0001">
-      </div>
-
-      <div v-else-if="mode === 'range'" class="row wrap gap">
-        <div class="field"><label for="pt-from">First book</label>
-          <input id="pt-from" v-model="fromBook" spellcheck="false" placeholder="Book-0001"></div>
-        <div class="field"><label for="pt-to">Last book</label>
-          <input id="pt-to" v-model="toBook" spellcheck="false" placeholder="Book-0010"></div>
-      </div>
-
-      <div v-else-if="mode === 'numbers'" class="field">
-        <label for="pt-nums">Ticket numbers</label>
-        <input id="pt-nums" v-model="numbers" spellcheck="false" placeholder="KS-00001–KS-00010">
-        <p class="tiny muted">A run, or numbers separated by spaces or commas.</p>
-      </div>
-
-      <p v-else class="muted small">
-        Every ticket in the raffle, a printer's worth at a time.
+      <p class="whoonly">
+        <span class="pill bad">Organisers only</span>
+        <span class="tiny muted">Cannot be handed to sellers from the Access screen.</span>
       </p>
 
-      <label class="check" style="margin-top:12px">
-        <input v-model="withBuyer" type="checkbox">
-        Fill in the buyer&rsquo;s details on the stub, for tickets already sold
-      </label>
-      <p class="tiny muted" style="margin:4px 0 0">
-        Name, phone, address and who sold it, written onto the stub&rsquo;s own lines.
-        Blank tickets going out to a seller should leave this off.
-      </p>
+      <div class="printroom">
+        <!-- ---------- the sheet ---------- -->
+        <div class="paperside">
+          <template v-if="tickets.length && fit">
+            <div class="pager">
+              <button class="btn sm ghost" :disabled="pageNo === 0"
+                      title="The sheet before this one" @click="pageNo -= 1">&lsaquo;</button>
+              <b class="tiny">Sheet {{ pageNo + 1 }} of {{ pages.length }}</b>
+              <button class="btn sm ghost" :disabled="pageNo >= pages.length - 1"
+                      title="The next sheet" @click="pageNo += 1">&rsaquo;</button>
+              <span class="grow"></span>
+              <span class="tiny muted mono">A4 210 × 297 mm · portrait</span>
+            </div>
+            <p class="tiny muted mono runline">
+              {{ page[0]?.number }} — {{ page[page.length - 1]?.number }}
+              <template v-if="page[0]?.book"> · {{ page[0].book }}</template>
+              <template v-if="blanks">
+                · last sheet has {{ blanks }} blank{{ blanks === 1 ? '' : 's' }}
+              </template>
+            </p>
 
-      <div class="sub">
-        <span class="muted small grow">{{ progress }}</span>
-        <button class="btn sm" :disabled="busy" @click="look">
-          {{ busy ? 'Working…' : 'See what is there' }}
-        </button>
-      </div>
+            <!--
+              THE PAGE AT ITS REAL PROPORTIONS. Everything here is a percentage
+              of 210 × 297 mm, so what is on screen is the shape that comes out
+              of the printer — a preview drawn to a convenient size would hide
+              exactly the thing somebody is looking for, which is whether the
+              last ticket falls off the bottom.
+            -->
+            <div class="a4">
+              <div class="pagemargin"
+                   :style="{ inset: pcOfPage(fit.marginMM) + ' ' + pcOfWidth(fit.marginMM) }">
+                <div v-for="(t, i) in page" :key="t.number" class="slot"
+                     :style="{ width: pcOfWidth(fit.widthMM), height: pcOfPage(fit.heightMM),
+                               marginBottom: i < page.length - 1 ? pcOfPage(fit.gapMM) : '0',
+                               outline: runSheet?.cutlines ? '1px dashed rgba(0,0,0,.35)' : 'none' }">
+                  <img :src="result.template.url" alt="">
+                  <div class="overlay" v-html="layerFor(t)"></div>
+                </div>
+              </div>
+            </div>
 
-      <p v-if="err" class="note bad tiny">{{ err }}</p>
+            <!--
+              THE PAGE SETUP, and the sum it produces. "Tickets to a page" used
+              to be a slider that nothing read: a ticket is as tall as its width
+              and the artwork's shape make it, so how many fit is arithmetic with
+              no free variable in it. It is shown, not asked for.
+            -->
+            <div class="setup">
+              <p class="rubric">On the page</p>
+              <div class="setupgrid">
+                <label class="formrow"><span class="cap">Ticket width</span>
+                  <span class="wrap">
+                    <input v-model.number="runSheet.widthMM" type="number" step="1" min="40" max="210">
+                    <span class="unit">mm</span>
+                  </span>
+                </label>
+                <label class="formrow"><span class="cap">Gap</span>
+                  <span class="wrap">
+                    <input v-model.number="runSheet.gapMM" type="number" step="1" min="0" max="30">
+                    <span class="unit">mm</span>
+                  </span>
+                </label>
+                <label class="formrow"><span class="cap">Margin</span>
+                  <span class="wrap">
+                    <input v-model.number="runSheet.marginMM" type="number" step="1" min="0" max="30">
+                    <span class="unit">mm</span>
+                  </span>
+                </label>
+                <label class="choice"><input v-model="runSheet.cutlines" type="checkbox"> Cut lines</label>
+              </div>
+              <p class="tiny mono" :class="fit.fits ? 'muted' : 'bad'">{{ pageSum }}</p>
+              <p class="tiny muted">
+                Changes here apply to this run. The template's own setup lives on the
+                Ticket design screen.
+              </p>
+            </div>
+          </template>
 
-      <template v-if="result">
-        <div class="card" style="margin-top:14px">
-          <p v-if="!doneAll || batch > 1" class="tiny muted" style="margin:0 0 6px">
-            Batch {{ batch }}<template v-if="!doneAll">, and there are more after it</template>.
-            A printer&rsquo;s worth at a time &mdash; ten thousand tickets is not something a
-            browser will lay out in one go.
+          <p v-else-if="result" class="note tiny">
+            Nothing in this batch can be drawn yet.
           </p>
-          <p>
-            <b>{{ tickets.length }}</b> ticket{{ tickets.length === 1 ? '' : 's' }} in this batch, ready to print.
-            <template v-if="missing.length">
-              <br><b>{{ missing.length }}</b> ha{{ missing.length === 1 ? 's' : 've' }} never been
-              generated, so {{ missing.length === 1 ? 'it has' : 'they have' }} no code yet and
-              cannot be printed.
-            </template>
+          <p v-else class="note tiny">
+            Choose what to print, then <b>See what is there</b>. The sheet is drawn here
+            before anything reaches a printer.
           </p>
-          <p v-if="missing.length" class="tiny muted">
-            {{ missing.slice(0, 8).join(', ') }}<template v-if="missing.length > 8">, and
-            {{ missing.length - 8 }} more</template>.
-          </p>
-          <div class="sub">
-            <span class="grow"></span>
-            <button v-if="missing.length" class="btn sm primary" :disabled="busy"
-                    @click="generateMissing">
-              Generate {{ missing.length }} and try again
-            </button>
-          </div>
         </div>
 
-        <template v-if="tickets.length">
-          <p class="tiny muted" style="margin:14px 0 6px">
-            This is the first of them, drawn exactly as it will print:
-          </p>
-          <div class="ticketpreview">
-            <img :src="result.template.url" alt="">
-            <div class="overlay" v-html="preview"></div>
+        <!-- ---------- what to print ---------- -->
+        <aside class="controlside">
+          <div class="cgroup">
+            <p class="rubric">What to print</p>
+            <label class="choice"><input v-model="mode" type="radio" value="book"> This book</label>
+            <input v-if="mode === 'book'" v-model="book" class="sub-in" spellcheck="false"
+                   :placeholder="bookHint" aria-label="Which book">
+
+            <label class="choice"><input v-model="mode" type="radio" value="range"> A run of books</label>
+            <div v-if="mode === 'range'" class="tworow">
+              <input v-model="fromBook" class="sub-in" spellcheck="false" :placeholder="bookHint"
+                     aria-label="First book">
+              <input v-model="toBook" class="sub-in" spellcheck="false" :placeholder="bookHintLast"
+                     aria-label="Last book">
+            </div>
+
+            <label class="choice"><input v-model="mode" type="radio" value="numbers"> Numbers you type</label>
+            <input v-if="mode === 'numbers'" v-model="numbers" class="sub-in" spellcheck="false"
+                   placeholder="KS-00001–KS-00010" aria-label="Ticket numbers">
+
+            <label class="choice"><input v-model="mode" type="radio" value="all"> The whole raffle</label>
+
+            <!-- The hint is nested inside the label's own text rather than beside
+                 the checkbox: .choice is a flex row, so a sibling span becomes a
+                 second column and the label wraps to three words a line. -->
+            <label class="choice">
+              <input v-model="withBuyer" type="checkbox">
+              <span>Fill in the buyer's details
+                <span class="why">
+                  Only for tickets already sold. A blank book going out to a seller
+                  must print blank lines.
+                </span>
+              </span>
+            </label>
+
+            <button class="btn sm wide" :disabled="busy" @click="look">
+              {{ busy ? 'Working…' : 'See what is there' }}
+            </button>
+            <p v-if="progress" class="tiny muted">{{ progress }}</p>
+            <p v-if="err" class="note bad tiny">{{ err }}</p>
           </div>
-          <p class="tiny muted" style="margin-top:8px">
-            The code on each ticket points at {{ verifyBase }} — scanning it says whether
-            that ticket is genuine.
-          </p>
+
+          <template v-if="result">
+            <!--
+              THE TWO STEPS, NUMBERED, because they happen in an order and the
+              second one is refused until the first has been done. Generating is
+              once-only; a reprint must carry the code the ticket already has.
+            -->
+            <div class="cgroup">
+              <p class="rubric"><span class="step">1</span> Give them codes</p>
+              <p class="tiny muted">
+                <template v-if="missing.length">
+                  {{ missing.length }} of these {{ inBatch }} have never
+                  been generated, so they have no code and cannot be printed.
+                </template>
+                <template v-else>
+                  All {{ tickets.length }} already have one. Running this again generates
+                  nothing and says so.
+                </template>
+              </p>
+              <button class="btn sm wide" :class="{ primary: missing.length }"
+                      :disabled="busy || !missing.length"
+                      :title="missing.length ? `Generate ${missing.length} codes` : 'Every ticket in this batch already has a code'"
+                      @click="generateMissing">
+                {{ missing.length ? `Generate ${missing.length}` : 'Nothing to generate' }}
+              </button>
+              <p v-if="missing.length" class="note bad tiny">
+                {{ missing.slice(0, 6).join(', ') }}<template v-if="missing.length > 6">, and
+                {{ missing.length - 6 }} more</template> have no codes. They are listed and
+                skipped, never invented.
+              </p>
+            </div>
+
+            <div class="cgroup">
+              <p class="rubric"><span class="step">2</span> Put them on paper</p>
+              <button class="btn sm primary wide" :disabled="busy || !tickets.length"
+                      :title="tickets.length ? 'Marks this batch printed, then opens the print dialog' : 'Nothing to print'"
+                      @click="printThem">
+                Print {{ pages.length }} sheet{{ pages.length === 1 ? '' : 's' }} now
+              </button>
+              <button class="btn sm wide" :disabled="busy || !tickets.length"
+                      :title="tickets.length ? 'Opens the same sheets without stamping the book as printed' : 'Nothing to open'"
+                      @click="openSheet(true)">
+                Open without marking printed
+              </button>
+              <button v-if="!doneAll" class="btn sm wide" :disabled="busy" @click="nextBatch">
+                Next batch &rarr;
+              </button>
+              <p class="tiny muted">
+                Artwork is carried inside the file once. Opens anywhere; print at 100%.
+              </p>
+            </div>
+
+            <div v-if="bookRows.length" class="cgroup">
+              <p class="rubric">Books in this batch</p>
+              <table class="brows">
+                <thead><tr><th>Book</th><th>Numbers</th><th class="r">Codes</th></tr></thead>
+                <tbody>
+                  <tr v-for="b in bookRows" :key="b.book">
+                    <td>{{ b.book }}</td>
+                    <td class="mono">{{ b.first }}–{{ b.last }}</td>
+                    <td class="r" :class="b.without ? 'badt' : 'okt'">
+                      {{ b.without ? 'not yet' : 'generated' }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="tiny muted">
+                The batch on screen, not the whole raffle.
+                <template v-if="!doneAll">There are more books after it.</template>
+              </p>
+            </div>
+
+            <div v-if="qrFacts" class="cgroup">
+              <p class="rubric">What the QR carries</p>
+              <p class="mono tiny brk">{{ qrFacts.url }}</p>
+              <p class="tiny muted mono">
+                {{ qrFacts.bytes }} bytes · version {{ qrFacts.version }} ·
+                {{ qrFacts.modules }} modules · {{ qrFacts.mm.toFixed(2) }} mm each
+                at {{ qrFacts.widthMM }} mm wide
+              </p>
+              <p class="tiny muted">
+                Printed codes outlive the raffle, so the address stays a setting you
+                control.
+              </p>
+            </div>
+          </template>
+        </aside>
+      </div>
+
+      <p class="tiny muted foot">
+        Generating is written to the audit. Printing stamps the book as printed.
+        <template v-if="result">
+          <span class="grow"></span>
+          <b>{{ withCodes }}</b> of {{ inBatch }} in this batch have codes.
         </template>
-      </template>
+      </p>
     </template>
 
     <template #actions>
-      <button v-if="tickets.length" class="btn" :disabled="busy" @click="openSheet(true)">
-        Open without marking printed
-      </button>
-      <button v-if="tickets.length" class="btn primary" :disabled="busy" @click="printThem">
-        Print {{ tickets.length }}
-      </button>
-      <button v-if="tickets.length && !doneAll" class="btn" :disabled="busy" @click="nextBatch">
-        Next batch &rarr;
-      </button>
       <button class="btn ghost" @click="emit('close')">Close</button>
     </template>
   </Sheet>
 </template>
 
 <style scoped>
-.ticketpreview { position: relative; width: 100%; border: 1px solid var(--border); border-radius: 6px; overflow: hidden }
-.ticketpreview img { display: block; width: 100%; height: auto }
-.ticketpreview .overlay { position: absolute; inset: 0 }
-.ticketpreview .overlay :deep(svg) { width: 100%; height: 100%; display: block }
+.whoonly { display: flex; align-items: center; gap: 8px; margin: 0 0 12px }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
+.grow { flex: 1; min-width: 0 }
+.rubric {
+  margin: 0; font-size: .68rem; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted);
+}
+/* A step is a number in the order it happens, not a decorative badge. */
+.step {
+  display: inline-block; width: 15px; height: 15px; line-height: 15px; text-align: center;
+  background: var(--brand); color: var(--brand-ink); border-radius: 3px;
+  font-size: .62rem; margin-right: 5px; letter-spacing: 0;
+}
+
+.printroom { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 16px; align-items: start }
+.paperside { min-width: 0; display: flex; flex-direction: column; gap: 8px }
+.controlside { display: flex; flex-direction: column; gap: 12px; min-width: 0 }
+.cgroup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border) }
+.cgroup:first-child { border-top: 0; padding-top: 0 }
+.wide { width: 100% }
+.sub-in { margin: 0 0 2px 24px; width: calc(100% - 24px); min-height: 34px; padding: 4px 8px; font-size: .84rem }
+.tworow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: 24px }
+.tworow .sub-in { margin: 0; width: 100% }
+
+.pager { display: flex; align-items: center; gap: 6px }
+.runline { margin: 0 }
+
+/*
+ * A4 AT ITS REAL SHAPE. The aspect ratio is the paper's own, and every ticket
+ * inside is a percentage of it — so a ticket that would fall off the bottom
+ * falls off the bottom here too, which is the entire reason to draw this.
+ */
+.a4 {
+  position: relative; width: 100%; aspect-ratio: 210 / 297;
+  background: #fff; border: 1px solid var(--border); border-radius: 2px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.pagemargin { position: absolute; display: flex; flex-direction: column; align-items: center }
+.slot { position: relative; flex: none; background: #fff }
+.slot img { display: block; width: 100%; height: 100%; object-fit: fill }
+.slot .overlay { position: absolute; inset: 0; pointer-events: none }
+.slot .overlay :deep(svg) { width: 100%; height: 100%; display: block }
+
+.setup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border) }
+.setupgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 10px; align-items: end }
+.setupgrid input[type=number] {
+  min-height: 32px; padding: 3px 6px; text-align: right; font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
+}
+
+.brows { width: 100%; border-collapse: collapse; font-size: 11px }
+.brows th, .brows td { text-align: left; padding: 3px 4px 3px 0; border-bottom: 1px solid var(--border) }
+.brows th { color: var(--muted); font-weight: 500; font-size: .62rem; text-transform: uppercase; letter-spacing: .05em }
+.brows .r { text-align: right }
+.okt { color: var(--ok) }
+.badt { color: var(--bad) }
+.brk { word-break: break-all; color: var(--text) }
+
+.foot { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--border) }
+
+@media (max-width: 720px) {
+  .printroom { grid-template-columns: 1fr }
+}
 </style>

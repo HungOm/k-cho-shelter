@@ -33,6 +33,36 @@ const num = b => parseInt(String(b).replace(/\D/g, ''), 10)
  * The server canonicalises now too, so this is belt and braces. It costs
  * nothing and it keeps the screen honest about what it is about to send.
  */
+/**
+ * The label THIS RAFFLE STORES for whatever somebody typed into a book box.
+ *
+ * bookNumber() above pads, and padding cannot answer this on its own:
+ * padStart is a minimum, so bookNumber('0001') is 'Book-0001' whatever width
+ * the raffle uses, and a raffle numbered Book-001 refuses it. The server
+ * matches books.number exactly — printing.ts and money.ts both do an eq() on
+ * the string — so "Book-0001 is not a book in this raffle" was the answer
+ * somebody got while holding a book with 0001 printed on it.
+ *
+ * Matching on the NUMBER instead makes every spelling reach the one book that
+ * exists: 1, 01, 0001, Book-1, Book-0001.
+ *
+ * THREE ANSWERS, because they are three different situations:
+ *   ''    nothing usable was typed
+ *   null  the book list is loaded and has no such book — say so, locally
+ *   label the spelling to send
+ *
+ * An unloaded list falls back to the padded form and lets the server decide.
+ * A device that has not been told which books exist must not conclude there
+ * are none: that is the same wrong refusal, arriving sooner.
+ */
+export function storedBook(raw) {
+  const n = num(raw)
+  if (isNaN(n)) return ''
+  if (!state.booksAllLoaded) return bookNumber(raw) || ''
+  const hit = state.books.find((b) => num(b.book) === n)
+  return hit ? String(hit.book) : null
+}
+
 export function resolveTicketNumber(raw) {
   const cfg = state.cfg
   if (!cfg) return null

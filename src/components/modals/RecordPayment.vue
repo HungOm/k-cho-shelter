@@ -16,6 +16,8 @@
 import { ref, computed } from 'vue'
 import { api, state, toast, refresh, isAdmin } from '../../lib/store.js'
 import { money } from '../../lib/format.js'
+// Aliased: the ref below is also called bookNumber.
+import { storedBook, bookNumber as padBook } from '../../lib/books.js'
 import Sheet from '../ui/Sheet.vue'
 
 const props = defineProps({ seller: Object })
@@ -24,6 +26,8 @@ const emit = defineEmits(['close', 'saved'])
 const amount = ref('')
 const note = ref('')
 const bookNumber = ref('')
+/** The example follows this raffle's numbering instead of guessing at it. */
+const bookHint = computed(() => padBook('42') || 'Book-0042')
 const busy = ref(false)
 
 /*
@@ -80,7 +84,10 @@ async function save() {
       agentId: props.seller.agentId,
       amount: n,
       note: note.value.trim(),
-      bookNumber: bookNumber.value.trim(),
+      // The spelling the raffle stores, not the one that was typed: the
+      // server matches books.number exactly (money.ts), so "42" and
+      // "Book-42" were refused as books that do not exist.
+      bookNumber: storedBook(bookNumber.value) || bookNumber.value.trim(),
       clientKey: attempt(),
     })
     // "Already recorded" and "recorded" have to read differently, or somebody
@@ -123,7 +130,7 @@ async function save() {
 
     <div class="field">
       <label for="pb">Against a book <span class="opt">— not required</span></label>
-      <input id="pb" v-model="bookNumber" autocomplete="off" placeholder="Book-0042">
+      <input id="pb" v-model="bookNumber" autocomplete="off" :placeholder="bookHint">
       <p class="hint">
         Leave empty if it is just cash handed over. Money that arrives before
         anybody counts a book belongs to the seller, not yet to a book.
