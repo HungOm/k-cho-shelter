@@ -132,6 +132,46 @@ console.log('the watermark is drawn, and drawn where it does no harm')
   eq(watermarkSVG(DEFAULT_DESIGN, ''), '', 'and nothing at all when not asked for')
 }
 
+console.log('the stub boundary comes from the design, never from a copy of it')
+{
+  /*
+   * stubAt was 0.6875 for a day, taken from a mockup rather than measured off
+   * the artwork, and the real perforation is at 0.7394 — 83px further right.
+   * Six files had the old number written into them as a fallback and none of
+   * them moved when it was corrected. Here the cost was quiet: the strip
+   * between the two values got the stub's near-black ink on the buyer's DARK
+   * half, so five per cent of the ticket width carried a watermark nobody
+   * could see and nobody would report.
+   *
+   * So this asserts the property rather than the number — a design that does
+   * not carry stubAt must land wherever the real default landed, whatever
+   * that becomes next time somebody measures it.
+   */
+  const bare = { artwork: { width: 1600, height: 517 } }
+  const splitOf = (d) => [...watermarkSVG(d, 'SAMPLE').matchAll(/<svg x="([\d.]+)"/g)].map((m) => Number(m[1]))[1]
+  eq(splitOf(bare).toFixed(1), splitOf(DEFAULT_DESIGN).toFixed(1),
+    'a design with no stubAt splits where the real default splits')
+  /*
+   * Read the CODE, not the prose. The first version of this check matched the
+   * comment above the fix — which explains the old value by name — and failed
+   * on a file that was correct. A guard that cannot tell an explanation from
+   * an instruction is one somebody switches off.
+   */
+  const renderer = readFileSync(join(ROOT, 'src/lib/ticketart.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  ok(!/stubAt\s*\?\?\s*0\.6875/.test(renderer),
+    'and the old value is not written into the renderer as a fallback')
+  ok(/stubShare\(design\)/.test(renderer),
+    'the boundary is asked for through stubShare, which owns the default AND the clamp')
+  ok(!/Math\.min\(width, width \*/.test(renderer),
+    'and the renderer no longer keeps a clamp of its own to disagree with it')
+  // The QR must clear the cut, or the buyer's half arrives with half a code on
+  // it — which is how the boundary was found to be wrong in the first place.
+  const qr = DEFAULT_DESIGN.qrMain
+  ok(qr.x + qr.size < DEFAULT_DESIGN.stubAt * 1600,
+    `the QR (${qr.x}..${qr.x + qr.size}) clears the cut at ${Math.round(DEFAULT_DESIGN.stubAt * 1600)}`)
+}
+
 console.log('the layer is well-formed XML, and says so where node can check it')
 {
   /*

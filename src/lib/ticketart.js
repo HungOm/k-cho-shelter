@@ -21,6 +21,9 @@
  */
 
 import { valueFor } from './ticketelements.js'
+// For the boundary between the ticket and its stub. Imported rather than
+// copied — see watermarkSVG, where the copy is what went wrong.
+import { stubShare } from './ticketdesign.js'
 
 /*
  * THE FONT, AND WHY ITS NUMBERS ARE IN HERE.
@@ -907,8 +910,23 @@ export function watermarkSVG(design, text, opts = {}) {
   if (!label) return ''
   const width = Number(design?.artwork?.width ?? 1600)
   const height = Number(design?.artwork?.height ?? 517)
-  const stubAt = Number(design?.stubAt ?? 0.6875)
-  const split = Math.max(0, Math.min(width, width * stubAt))
+  /*
+   * THE BOUNDARY IS ASKED FOR, NOT ASSUMED, AND NOT CLAMPED HERE EITHER.
+   *
+   * This read `?? 0.6875` until the perforation was measured off the artwork
+   * and turned out to be at 0.7394 — 83px further right. Five files had the
+   * old number written into them and not one moved with it, which is how a
+   * constant kept in five places behaves the first time it is wrong. The cost
+   * here was quiet: the strip between the two values is the buyer's DARK half
+   * and it was being painted with the stub's near-black ink, so five per cent
+   * of the ticket width carried a watermark nobody could see.
+   *
+   * stubShare answers the whole question — missing, not a number, or out of
+   * range — because each of those five sites had also grown its own clamp and
+   * the clamps disagreed. Deduplicating the default alone would have left four
+   * opinions about the range.
+   */
+  const split = width * stubShare(design)
 
   const angle = -(Math.atan2(height, width) * 180) / Math.PI
   const size = Number(opts.watermarkSize ?? height * 0.2)
