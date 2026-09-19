@@ -20,6 +20,7 @@
 import { DEFAULT_DESIGN, REFERENCE, designFor, validateDesign } from '../src/lib/ticketdesign.js'
 import {
   FONT, SPACING, advanceOf, checkSerial, place, placeFitted, placeBoth, numberLayerSVG, qrModuleMM,
+  placeBook, placeBuyer, measurable, TEXT_FAMILY,
 } from '../src/lib/ticketart.js'
 import { sheetHTML } from '../src/lib/ticketsheet.js'
 
@@ -289,6 +290,104 @@ console.log('the font is the one whose widths are written down')
   const d = FONT.advance.bold
   ok('0123456789'.split('').every((c) => d[c] === 0.5), 'every digit is exactly 0.5 em, in bold')
   ok('0123456789'.split('').every((c) => FONT.advance.regular[c] === 0.5), 'and in regular')
+}
+
+console.log('the book a ticket came out of is printed on it')
+{
+  /*
+   * The number identifies the ticket; the book is what a person is holding.
+   * Stubs come back as a book, a seller is handed books, and a counted-in book
+   * is reconciled as a book — so a ticket that does not say which one it
+   * belongs to has to be looked up before it can be filed.
+   */
+  const p = placeBoth(D, 'KS-03291')
+  const main = placeBook(D, 'main', 'Book-0007', p.main)
+  ok(!!main, 'the buyer\'s half carries it')
+  ok(main.x > p.main.right, 'after the number, not over it')
+  eq(main.baseline, p.main.baseline, 'on the same line')
+  ok(main.right <= main.limit, 'and still clear of the roundel')
+  ok(main.fontSize < p.main.fontSize, 'smaller than the number — it is the secondary fact')
+
+  /*
+   * A LONGER NUMBER PUSHES IT ALONG. The gap is measured from where the number
+   * actually ended, not from a fixed point, so the two can never overprint.
+   */
+  const long = placeBoth(D, 'KS-9999999999')
+  const after = placeBook(D, 'main', 'Book-0007', long.main)
+  ok(after.x > main.x, 'a longer ticket number moves the book label right')
+  ok(after.x > long.main.right, 'and it still starts after the number')
+
+  /*
+   * THE STUB GOES UNDERNEATH, and that is not a fallback. Its number ends about
+   * 45 px before the small roundel and a book label needs nearer 70, so beside
+   * the number there is nowhere to put it. Below it there are 27 px of clear
+   * white before the stub's own printing starts.
+   */
+  const stub = placeBook(D, 'stub', 'Book-0007', p.stub)
+  ok(!!stub, 'the stub carries it too')
+  ok(stub.baseline > p.stub.baseline, 'on its own line, under the number')
+  ok(stub.baseline < D.stub.clearBelow, 'and above the stub\'s own printing')
+  eq(Math.round(stub.x), Math.round(p.stub.x), 'lined up with the number above it')
+
+  // No room is no label. Overprinting a logo is worse than leaving it off.
+  const cramped = designFor({ width: 1600, height: 517, design: { book: { main: { gap: 60 } } } })
+  eq(placeBook(cramped, 'main', 'Book-0007', place(cramped, 'main', 'KS-03291')), null,
+    'a label with nowhere to go is dropped rather than printed over the logo')
+  const off = designFor({ width: 1600, height: 517, design: { book: { main: { enabled: false } } } })
+  eq(placeBook(off, 'main', 'Book-0007', p.main), null, 'and it can simply be switched off')
+}
+
+console.log('a sold ticket\'s stub is filled in on its own ruled lines')
+{
+  const values = { name: 'Daw Hla', phone: '012-555 0001', address: 'Klang', seller: 'Pa Thang' }
+  const fields = placeBuyer(D, values)
+  eq(fields.length, 4, 'all four lines the stub is printed with')
+  eq(fields.map((f) => f.field).sort().join(), 'address,name,phone,seller', 'by name')
+  for (const f of fields) {
+    ok(f.baseline < D.stub.clearBelow || f.baseline > D.stub.label.baseline,
+      `${f.field} sits on the stub, not over the heading`)
+    ok(f.family === TEXT_FAMILY, `${f.field} is drawn in a font that has Myanmar glyphs`)
+  }
+
+  /*
+   * THE WIDTH IS NEVER PINNED, and that is a fix rather than an omission. The
+   * only advance widths this app has written down are Times', and these lines
+   * are drawn in the Myanmar stack — so pinning the Times estimate made the
+   * browser spread the glyphs to reach it, and "Klang" printed as "K l a n g".
+   */
+  ok(fields.every((f) => f.width === null), 'no width is pinned for buyer text')
+  const svg = numberLayerSVG(D, 'KS-1', { buyer: { name: 'Klang' } })
+  const at = svg.indexOf('>Klang<')
+  ok(at > 0, 'the name is drawn')
+  ok(!svg.slice(svg.lastIndexOf('<text', at), at).includes('textLength'),
+    'and without a textLength that would stretch it')
+
+  /* An empty field prints the blank line the stub came with. */
+  eq(placeBuyer(D, { name: 'Daw Hla' }).length, 1, 'only the fields that have something in them')
+  eq(placeBuyer(D, {}).length, 0, 'and none at all for a ticket with nothing recorded')
+  eq(placeBuyer(D, null).length, 0, 'nor for no buyer at all')
+
+  /* A name too long for its line stops visibly rather than running off the edge. */
+  const long = placeBuyer(D, { seller: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' })[0]
+  ok(long.truncated, 'an overlong value is cut')
+  ok(long.text.endsWith('.'), 'and says so')
+  ok(long.text.length < 26, 'and is shorter than what it was given')
+
+  /* Burmese cannot be measured from the Times table, and must not be refused. */
+  ok(!measurable('\u1012\u1031\u102b\u103a'), 'Burmese is not measurable from the advance table')
+  const my = placeBuyer(D, { name: '\u1012\u1031\u102b\u103a\u101c\u103e\u1019\u103c\u1004\u1037\u103a' })
+  eq(my.length, 1, 'but it is still placed')
+  ok(!my[0].truncated, 'and not truncated on a width nobody could compute')
+}
+
+console.log('the buyer is drawn only when the caller passes one')
+{
+  const blank = numberLayerSVG(D, 'KS-03291')
+  ok(!blank.includes('Daw Hla'), 'a blank ticket carries no buyer')
+  const filled = numberLayerSVG(D, 'KS-03291', { buyer: { name: 'Daw Hla' }, book: 'Book-0007' })
+  ok(filled.includes('Daw Hla'), 'and a sold one does')
+  ok(filled.includes('Book-0007'), 'along with its book')
+  eq((filled.match(/<text/g) || []).length, 5, 'two numbers, two book labels and one name')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

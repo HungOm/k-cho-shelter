@@ -48,6 +48,7 @@ function world(opts = {}) {
   return fakeDb({
     config: baseConfig({ TICKET_ARTWORK_ID: opts.noArtwork ? '' : 'tpl-1', TOTAL_TICKETS: '20', ...(opts.cfg ?? {}) }),
     tickets, books, audit_log: [],
+    agents: [{ agent_id: 'A001', name: 'Daw Hla Seller', phone: '0125559999', active: true }],
     ticket_templates: opts.noTemplateRow ? [] : [TEMPLATE],
     ticket_codes: opts.codes ?? [],
   })
@@ -82,6 +83,13 @@ console.log('only tickets that have been generated can be drawn')
   eq(full.tickets.length, 10, 'once generated, all ten draw')
   eq(full.notGenerated.length, 0, 'and none is missing')
   ok(full.tickets.every((t) => /^[0-9A-HJKMNP-TV-Z]{8,32}$/.test(t.code)), 'each carries its code')
+  /*
+   * AND WHICH BOOK IT CAME OUT OF, printed on the ticket. The number identifies
+   * the ticket; the book is what a person is holding — stubs come back as a
+   * book and a seller is handed books, so a ticket that does not say which one
+   * has to be looked up before it can be filed.
+   */
+  ok(full.tickets.every((t) => t.book === 'Book-0001'), 'and the book it belongs to')
   eq(full.tickets[0].number, 'KS-00001', 'in ticket order, which is print order')
   eq(full.tickets[9].number, 'KS-00010', 'to the end of the book')
 }
@@ -101,7 +109,7 @@ console.log('half a book generated is half a book drawn, and the rest named')
   eq(w.table('ticket_codes').length, 3, 'and drawing generated nothing')
 }
 
-console.log('the reply carries no buyer')
+console.log('by default the reply carries no buyer at all')
 {
   const w = world()
   await generate(w, { book: 'Book-0001' })
@@ -110,11 +118,49 @@ console.log('the reply carries no buyer')
   for (const secret of ['Daw Hla', '0125550001', 'Klang', 'paid cash', 'A001']) {
     ok(!raw.includes(secret), `nothing about the buyer: ${JSON.stringify(secret)} is absent`)
   }
-  // The status does travel, and should: it is what a "view this ticket" screen
-  // shows beside the picture, and it names no one.
-  eq(r.tickets.find((t) => t.number === 'KS-00001').status, 'Sold', 'the status travels')
   eq(Object.keys(r.tickets[0]).sort().join(),
-    'code,generatedAt,number,printedAt,status', 'and a ticket carries exactly five facts')
+    'book,code,generatedAt,number,printedAt,status',
+    'a ticket carries six facts and none of them is a person')
+
+  /*
+   * A blank book going out to a seller must print blank lines, and whoever is
+   * running off a hundred of them has no reason to be handed a hundred phone
+   * numbers. So the buyer is opt-in, and this is the assertion that keeps it so.
+   */
+  ok(r.tickets.every((t) => t.buyer === undefined), 'and no buyer object at all')
+}
+
+console.log('and carries it when asked, for sold tickets only')
+{
+  /*
+   * The stub is printed with four ruled lines and a Burmese caption beside
+   * each — name, phone, address, who sold it — meant to be filled in by hand.
+   * For a ticket already recorded as sold the raffle knows all four, and
+   * printing them saves somebody copying them out of the app onto paper they
+   * will then have to read back off it.
+   */
+  const w = world()
+  await generate(w, { book: 'Book-0001' })
+  const r = await render(w, { book: 'Book-0001', withBuyer: true })
+
+  const sold = r.tickets.find((t) => t.number === 'KS-00001')
+  eq(sold.status, 'Sold', 'KS-00001 is the sold one in the fixture')
+  eq(sold.buyer?.name, 'Daw Hla', 'the buyer\'s name comes through')
+  eq(sold.buyer?.phone, '0125550001', 'and their phone')
+  eq(sold.buyer?.address, 'Klang', 'and their area, which the stub calls an address')
+  eq(sold.buyer?.seller, 'Daw Hla Seller', 'and who sold it, by name rather than by id')
+
+  /*
+   * THE HALF THAT MATTERS MORE. An unsold ticket has no buyer to print, and a
+   * stub that carried the previous occupant of that row would be worse than a
+   * blank one. Nine of the ten in this book are unsold.
+   */
+  const unsold = r.tickets.filter((t) => t.status !== 'Sold')
+  eq(unsold.length, 9, 'nine of the ten are unsold')
+  ok(unsold.every((t) => t.buyer === undefined), 'and not one of them carries a buyer')
+
+  // The seller id never travels — the name is what a stub is filled in with.
+  ok(!JSON.stringify(r).includes('"A001"'), 'the seller id stays on the server')
 }
 
 console.log('it hands over the artwork and where a scan should point')

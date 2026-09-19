@@ -30,6 +30,9 @@ type Ctx = {
   supabaseAdmin: { from: (t: string) => any }
 }
 
+/** A ticket, as every function here needs it: its index, its label, its book. */
+type Ticket = { idx: number; number: string; bookIdx: number }
+
 /*
  * How many tickets one call will generate for.
  *
@@ -61,54 +64,73 @@ async function currentConfig(ctx: Ctx): Promise<Record<string, string>> {
 }
 
 /*
- * Which tickets the caller means.
+ * Which tickets the caller means — A WINDOW OF THEM, not all of them.
  *
  * Exactly one of the four forms. Accepting a mixture is how a caller ends up
  * generating for a different set than it asked for, and on a job that writes
  * twenty thousand rows that is not a mistake anybody spots.
  *
- * Returns ticket rows — idx and number — in index order, which is the order
- * they will be printed in.
+ * `after` IS THE WHOLE POINT OF THIS FUNCTION'S SHAPE. An earlier version
+ * materialised every ticket in the scope and refused if there were more than
+ * five thousand of them — which meant "every ticket in the raffle" was an
+ * option the screen offered and the server always refused, on any raffle big
+ * enough to want it. It refused with a message saying the screen would do it a
+ * chunk at a time, which the screen did not do. A raffle of ten thousand could
+ * not generate or print its own tickets at all.
+ *
+ * So it returns a window ordered by index, starting after the index the caller
+ * last saw, and says whether there may be more. The caller walks it.
  */
-async function resolveScope(p: Record<string, unknown>, ctx: Ctx): Promise<{ idx: number; number: string }[]> {
+async function resolveScope(
+  p: Record<string, unknown>,
+  ctx: Ctx,
+  limit: number,
+): Promise<{ rows: Ticket[]; more: boolean }> {
   const forms = ['book', 'fromBook', 'numbers', 'all'].filter((k) => p[k] !== undefined)
   if (forms.length === 0) {
     throw new ApiError('MISSING_FIELD',
-      'Nothing to generate — say which book, which books, which tickets, or all of them.')
+      'Nothing to do — say which book, which books, which tickets, or all of them.')
   }
   if (p.book !== undefined && p.fromBook !== undefined) {
     throw new ApiError('BAD_REQUEST', 'Give one book or a range of books, not both.')
   }
+  const after = Number(p.after ?? 0) || 0
 
-  const sel = () => ctx.supabaseAdmin.from('tickets').select('idx,number')
+  const sel = () => ctx.supabaseAdmin.from('tickets').select('idx,number,book_idx')
 
   if (p.numbers !== undefined) {
     const list = Array.isArray(p.numbers) ? p.numbers.map((n) => String(n).trim()).filter(Boolean) : []
     if (!list.length) throw new ApiError('MISSING_FIELD', 'No ticket numbers were given.')
     if (list.length > MAX_PER_CALL) {
       throw new ApiError('RANGE_TOO_LARGE',
-        `That is ${list.length} tickets. ${MAX_PER_CALL} is the most in one go.`)
+        `That is ${list.length} tickets named one by one. ${MAX_PER_CALL} is the most in one go — ` +
+        'name a book or a run of books instead.')
     }
     const { data, error } = await sel().in('number', list)
     if (error) throw new ApiError('QUERY_FAILED', error.message)
     const found = new Set((data ?? []).map((r: any) => String(r.number)))
     const missing = list.filter((n) => !found.has(n))
     /*
-     * Refuse the whole run rather than generating for the ones that exist. A
-     * caller who asked for ten tickets and silently got eight has a gap in a
-     * printed book and no way to know which one.
+     * Refuse the whole run rather than working on the ones that exist. A caller
+     * who asked for ten tickets and silently got eight has a gap in a printed
+     * book and no way to know which one.
      */
     if (missing.length) {
       throw new ApiError('TICKET_NOT_FOUND',
         `${missing.length === 1 ? 'This is not a ticket in this raffle' : 'These are not tickets in this raffle'}: ` +
         missing.slice(0, 5).join(', ') + (missing.length > 5 ? `, and ${missing.length - 5} more` : '') + '.')
     }
-    return (data ?? []).map((r: any) => ({ idx: Number(r.idx), number: String(r.number) })).sort((a, b) => a.idx - b.idx)
+    const rows = (data ?? [])
+      .map((r: any) => ({ idx: Number(r.idx), number: String(r.number), bookIdx: Number(r.book_idx) }))
+      .filter((r) => r.idx > after)
+      .sort((a, b) => a.idx - b.idx)
+    return { rows: rows.slice(0, limit), more: rows.length > limit }
   }
 
-  // By book, or a run of books. Books are resolved to their index first, so a
-  // range is a numeric range rather than a string comparison on labels.
-  let bookIdx: number[] | null = null
+  // By book, or a run of books, resolved to indexes so a range is arithmetic
+  // rather than a string comparison on labels.
+  let lo: number | null = null
+  let hi: number | null = null
   if (p.book !== undefined || p.fromBook !== undefined) {
     const wanted = p.book !== undefined
       ? [String(p.book).trim()]
@@ -119,38 +141,41 @@ async function resolveScope(p: Record<string, unknown>, ctx: Ctx): Promise<{ idx
     for (const w of wanted) {
       if (!byNumber.has(w)) throw new ApiError('BOOK_NOT_FOUND', `${w} is not a book in this raffle.`)
     }
-    if (p.book !== undefined) {
-      bookIdx = [byNumber.get(wanted[0])!]
-    } else {
-      const lo = byNumber.get(wanted[0])!
-      const hi = byNumber.get(wanted[1])!
-      if (hi < lo) throw new ApiError('BAD_REQUEST', `${wanted[1]} comes before ${wanted[0]}.`)
-      bookIdx = []
-      for (let i = lo; i <= hi; i++) bookIdx.push(i)
-    }
+    lo = byNumber.get(wanted[0])!
+    hi = p.book !== undefined ? lo : byNumber.get(wanted[1])!
+    if (hi < lo) throw new ApiError('BAD_REQUEST', `${wanted[1]} comes before ${wanted[0]}.`)
   }
 
   let q = sel()
-  if (bookIdx) q = q.in('book_idx', bookIdx)
-  const { data, error } = await q.order('idx').limit(MAX_PER_CALL + 1)
+  if (lo !== null) q = q.gte('book_idx', lo).lte('book_idx', hi as number)
+  const { data, error } = await q.gt('idx', after).order('idx').limit(limit + 1)
   if (error) throw new ApiError('QUERY_FAILED', error.message)
-  const rows = (data ?? []).map((r: any) => ({ idx: Number(r.idx), number: String(r.number) }))
-  if (rows.length > MAX_PER_CALL) {
-    throw new ApiError('RANGE_TOO_LARGE',
-      `That is more than ${MAX_PER_CALL} tickets. Generate them a few books at a time — ` +
-      'the screen does this for you.')
-  }
-  return rows
+  const rows = (data ?? [])
+    .map((r: any) => ({ idx: Number(r.idx), number: String(r.number), bookIdx: Number(r.book_idx) }))
+  return { rows: rows.slice(0, limit), more: rows.length > limit }
+}
+
+/** The book each of these tickets belongs to, by its printed label. */
+async function bookLabels(rows: Ticket[], ctx: Ctx): Promise<Map<number, string>> {
+  const idxs = [...new Set(rows.map((r) => r.bookIdx))]
+  if (!idxs.length) return new Map()
+  const { data, error } = await ctx.supabaseAdmin.from('books').select('idx,number').in('idx', idxs)
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+  return new Map((data ?? []).map((r: any) => [Number(r.idx), String(r.number)]))
 }
 
 /**
  * Give these tickets a code, if they do not have one.
  *
+ * ONE WINDOW PER CALL, and the reply says whether to come back. `after` is the
+ * last index this call reached; passing it to the next call continues from
+ * there. A raffle of twenty thousand is four calls, and each one is small
+ * enough that a dropped connection costs a retry rather than a mystery.
+ *
  * Answers with what it did rather than only that it worked: how many were
- * generated, how many already had a code, and the batch the new ones belong to.
- * "Nothing to do" is a normal and useful answer here — it is what a second run
- * over the same book says, and it is the difference between a reprint and a
- * re-mint.
+ * generated, how many already had a code, and whether there is more to do.
+ * "Nothing to do" is a normal and useful answer — it is what a second run over
+ * the same book says, and it is the difference between a reprint and a re-mint.
  */
 export async function generateTickets(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const cfg = await currentConfig(ctx)
@@ -167,9 +192,9 @@ export async function generateTickets(p: Record<string, unknown>, user: AppUser,
       'Upload it on the Ticket design screen first.')
   }
 
-  const scope = await resolveScope(p, ctx)
+  const { rows: scope, more } = await resolveScope(p, ctx, MAX_PER_CALL)
   if (!scope.length) {
-    return { generated: 0, alreadyGenerated: 0, batchId: null, total: 0 }
+    return { generated: 0, alreadyGenerated: 0, batchId: null, total: 0, after: null, done: true }
   }
 
   // Which of them already have one. Asked in one query rather than per ticket.
@@ -178,9 +203,13 @@ export async function generateTickets(p: Record<string, unknown>, user: AppUser,
   if (haveErr) throw new ApiError('QUERY_FAILED', haveErr.message)
   const already = new Set((have ?? []).map((r: any) => Number(r.ticket_idx)))
   const todo = scope.filter((t) => !already.has(t.idx))
+  const lastIdx = scope[scope.length - 1].idx
 
   if (!todo.length) {
-    return { generated: 0, alreadyGenerated: already.size, batchId: null, total: scope.length }
+    return {
+      generated: 0, alreadyGenerated: already.size, batchId: null,
+      total: scope.length, after: lastIdx, done: !more,
+    }
   }
 
   const batchId = crypto.randomUUID()
@@ -191,7 +220,7 @@ export async function generateTickets(p: Record<string, unknown>, user: AppUser,
    *
    * The unique index on `code` is the real guarantee; this is so that a
    * collision inside one insert — which would fail the whole chunk and leave a
-   * confusing partial run — cannot happen in the first place. At eighty bits a
+   * confusing partial run — cannot happen in the first place. At sixty bits a
    * collision is not a practical worry, and checking is three lines.
    */
   const seen = new Set<string>()
@@ -233,11 +262,19 @@ export async function generateTickets(p: Record<string, unknown>, user: AppUser,
     total: scope.length,
     first: todo[0]?.number ?? null,
     last: todo[todo.length - 1]?.number ?? null,
+    /* Where to carry on from, and whether there is anything to carry on to. */
+    after: lastIdx,
+    done: !more,
   }
 }
 
 /*
  * Everything needed to draw a set of tickets, and nothing more.
+ *
+ * ONE WINDOW PER CALL, like generating, and for a harder reason: a drawn ticket
+ * is a page of artwork with a QR on it, and a browser asked to lay out ten
+ * thousand at once will not. The caller walks the raffle with `after` and
+ * assembles the result a printer's worth at a time.
  *
  * ONLY TICKETS THAT HAVE A CODE. A ticket without one has never been generated
  * and cannot be proved genuine, so printing it would put a ticket into the
@@ -272,14 +309,17 @@ export async function renderTickets(p: Record<string, unknown>, user: AppUser, c
       'Choose one on the Ticket design screen.')
   }
 
-  const scope = await resolveScope(p, ctx)
-  if (scope.length > MAX_PER_PRINT) {
-    throw new ApiError('RANGE_TOO_LARGE',
-      `That is ${scope.length} tickets. ${MAX_PER_PRINT} is the most that can be drawn at once — ` +
-      'the screen does this a chunk at a time.')
+  const { rows: scope, more } = await resolveScope(p, ctx, MAX_PER_PRINT)
+  if (!scope.length) {
+    return {
+      template: wireTemplate(template), verifyBase: String(cfg.VERIFY_URL ?? ''),
+      tickets: [], notGenerated: [], after: null, done: true,
+    }
   }
 
   const byIdx = new Map(scope.map((t) => [t.idx, t]))
+  const books = await bookLabels(scope, ctx)
+
   const { data: codes, error: codeErr } = await ctx.supabaseAdmin
     .from('ticket_codes').select('ticket_idx,code,generated_at,printed_at')
     .in('ticket_idx', scope.map((t) => t.idx))
@@ -290,26 +330,78 @@ export async function renderTickets(p: Record<string, unknown>, user: AppUser, c
    * sale that travels: no buyer, no phone, no seller. A printed blank ticket
    * has nobody's name on it, and the person printing a book does not need one.
    */
+  /*
+   * WHAT TRAVELS ABOUT THE SALE, and it is a decision rather than a default.
+   *
+   * Without `withBuyer` the answer carries the status and nothing else: a blank
+   * book going out to a seller must print blank lines, and the person running
+   * off a hundred of them has no reason to be handed a hundred phone numbers.
+   *
+   * With it, and only for a ticket the raffle has a sale recorded against, the
+   * four things the stub is printed to hold come too — because the stub exists
+   * to be filled in, the raffle already knows them, and the alternative is
+   * somebody copying them out of the app by hand onto paper they will then have
+   * to read back.
+   *
+   * This action is organisers-only and ungrantable, which is what makes that
+   * safe; a seller cannot reach it to ask for anybody's details.
+   */
+  const withBuyer = p.withBuyer === true
+  const cols = withBuyer
+    ? 'idx,number,status,buyer_name,buyer_phone,buyer_zone,sold_by_agent'
+    : 'idx,number,status'
   const { data: rows, error: rowErr } = await ctx.supabaseAdmin
-    .from('tickets').select('idx,number,status').in('idx', scope.map((t) => t.idx))
+    .from('tickets').select(cols).in('idx', scope.map((t) => t.idx))
   if (rowErr) throw new ApiError('QUERY_FAILED', rowErr.message)
   const statusOf = new Map((rows ?? []).map((r: any) => [Number(r.idx), String(r.status ?? '')]))
+  const saleOf = new Map((rows ?? []).map((r: any) => [Number(r.idx), r]))
+
+  /* The seller's name, looked up once for the whole window rather than per row. */
+  const sellerName = new Map<string, string>()
+  if (withBuyer) {
+    const ids = [...new Set((rows ?? [])
+      .map((r: any) => String(r.sold_by_agent ?? '')).filter(Boolean))]
+    if (ids.length) {
+      const { data: ags } = await ctx.supabaseAdmin.from('agents').select('agent_id,name').in('agent_id', ids)
+      for (const a of ags ?? []) sellerName.set(String(a.agent_id), String(a.name ?? ''))
+    }
+  }
+  /* Sold and Donated are both "spoken for"; anything else has no buyer yet. */
+  const SOLD = ['Sold', 'Donated']
 
   const tickets: Record<string, unknown>[] = []
-  const notGenerated: string[] = []
   for (const c of codes ?? []) {
     const t = byIdx.get(Number(c.ticket_idx))
     if (!t) continue
     tickets.push({
       number: t.number,
+      /*
+       * WHICH BOOK IT CAME OUT OF, printed on the ticket itself.
+       *
+       * The ticket number alone identifies the ticket, but the book is what
+       * somebody is holding: stubs come back as a book, a seller is given
+       * books, and a counted-in book is reconciled as a book. A ticket that
+       * does not say which one it belongs to has to be looked up to be filed.
+       */
+      book: books.get(t.bookIdx) ?? '',
       status: statusOf.get(t.idx) ?? '',
       code: String(c.code ?? ''),
       generatedAt: c.generated_at ?? null,
       printedAt: c.printed_at ?? null,
+      ...(withBuyer && SOLD.includes(statusOf.get(t.idx) ?? '')
+        ? {
+            buyer: {
+              name: String(saleOf.get(t.idx)?.buyer_name ?? ''),
+              phone: String(saleOf.get(t.idx)?.buyer_phone ?? ''),
+              address: String(saleOf.get(t.idx)?.buyer_zone ?? ''),
+              seller: sellerName.get(String(saleOf.get(t.idx)?.sold_by_agent ?? '')) ?? '',
+            },
+          }
+        : {}),
     })
   }
   const have = new Set((codes ?? []).map((c: any) => Number(c.ticket_idx)))
-  for (const t of scope) if (!have.has(t.idx)) notGenerated.push(t.number)
+  const notGenerated = scope.filter((t) => !have.has(t.idx)).map((t) => t.number)
   tickets.sort((a, b) => String(a.number).localeCompare(String(b.number)))
 
   /*
@@ -331,14 +423,7 @@ export async function renderTickets(p: Record<string, unknown>, user: AppUser, c
   }
 
   return {
-    template: {
-      id: String(template.id),
-      name: String(template.name ?? ''),
-      url: String(template.url ?? ''),
-      width: Number(template.width_px ?? 0),
-      height: Number(template.height_px ?? 0),
-      design: template.design ?? {},
-    },
+    template: wireTemplate(template),
     /*
      * Where a scanned code should point. The server decides, not the browser:
      * printed codes outlive the raffle and an organiser has to be able to aim
@@ -348,5 +433,18 @@ export async function renderTickets(p: Record<string, unknown>, user: AppUser, c
     verifyBase: String(cfg.VERIFY_URL ?? ''),
     tickets,
     notGenerated,
+    after: scope[scope.length - 1].idx,
+    done: !more,
+  }
+}
+
+function wireTemplate(t: Record<string, unknown>) {
+  return {
+    id: String(t.id),
+    name: String(t.name ?? ''),
+    url: String(t.url ?? ''),
+    width: Number(t.width_px ?? 0),
+    height: Number(t.height_px ?? 0),
+    design: t.design ?? {},
   }
 }

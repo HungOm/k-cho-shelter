@@ -81,6 +81,22 @@ export const FONT = {
  */
 export const SPACING = { gap: 0.45, clear: 0.4 }
 
+/*
+ * A SECOND FONT STACK, FOR TEXT THAT IS NOT A TICKET NUMBER.
+ *
+ * The buyer's name on a stub may be in Burmese, and Times has no Myanmar
+ * glyphs — it would print as empty boxes on a ticket somebody is meant to file
+ * by. Padauk and Noto Sans Myanmar are the two the rest of this app already
+ * loads, so a machine that can render the app can render this.
+ *
+ * It is a SEPARATE constant because the numbering stack must not gain a
+ * fallback: the ticket number's width is computed from Times' advance widths,
+ * and a fallback that reflowed it would put the number somewhere the
+ * measurements did not allow for.
+ */
+export const TEXT_FAMILY =
+  'Padauk, "Noto Sans Myanmar", "Myanmar Text", system-ui, -apple-system, "Segoe UI", sans-serif'
+
 /** Total advance of `text` at 1 em. Throws on a glyph we have no width for. */
 export function advanceOf(text, weight = 'bold') {
   const table = FONT.advance[weight]
@@ -197,6 +213,144 @@ export function placeFitted(design, slotName, text, opts = {}) {
   return { ...out, shrunk: true, requestedScale: requested, appliedScale: fitted }
 }
 
+/*
+ * The book label, placed after the ticket number rather than at a fixed point.
+ *
+ * `gap` is in ems of the book label's own size and is measured from wherever
+ * the NUMBER actually ended, so a longer ticket number pushes this along
+ * instead of being overprinted by it. Returns null when it is switched off or
+ * when there is no room left before whatever the number had to stop short of —
+ * a book label overlapping the logo is worse than no book label.
+ */
+export function placeBook(design, slotName, bookText, numberPlacement) {
+  const slot = design?.[slotName]
+  const box = design?.book?.[slotName]
+  if (!slot || !box?.enabled || !bookText) return null
+
+  const weight = box.weight ?? 'regular'
+  const capHeight = Number(box.capHeight ?? 12)
+  const fontSize = capHeight / FONT.digitHeight
+  const width = advanceOf(bookText, weight) * fontSize
+
+  /*
+   * Beside the number, or under it.
+   *
+   * Under it is not a fallback — it is what the stub needs. The stub's number
+   * ends about 45 px before its roundel and a book label wants nearer 70, so
+   * beside the number there is nowhere to put it; below it there are 27 px of
+   * clear white before the stub's own printing starts.
+   */
+  const below = box.below === true
+  const x = below ? numberPlacement.x : numberPlacement.right + Number(box.gap ?? 1) * fontSize
+  const baseline = below
+    ? numberPlacement.baseline + Number(box.drop ?? 1.25) * fontSize
+    : slot.label.baseline
+  const right = x + width
+  const limit = below ? slot.clearRight : numberPlacement.limit
+
+  /* No room is no label. Overprinting the logo is worse than leaving it off. */
+  if (right > limit + 1e-9) return null
+  if (below && baseline > slot.clearBelow) return null
+
+  return {
+    slot: slotName,
+    text: String(bookText),
+    x,
+    baseline,
+    fontSize,
+    weight,
+    width,
+    right,
+    top: baseline - capHeight,
+    digitHeight: capHeight,
+    fill: box.ink ?? slot.ink,
+    limit,
+    fits: true,
+  }
+}
+
+/*
+ * Can this string's width be computed from the advance table?
+ *
+ * A ticket number always can — digits and capitals from a font whose widths are
+ * written down. A buyer's name often cannot: it may be Burmese, or carry an
+ * apostrophe, or a letter nobody measured. That is not an error, only a fact
+ * that changes how it is drawn — see textEl, which pins a width it knows and
+ * lets the browser lay out one it does not.
+ */
+export function measurable(text, weight = 'regular') {
+  const table = FONT.advance[weight] ?? FONT.advance.regular
+  return [...String(text ?? '').toUpperCase()].every((c) => table[c] !== undefined)
+}
+
+/*
+ * THE BUYER'S DETAILS, on the stub's own ruled lines.
+ *
+ * The stub is printed with four ruled lines and a Burmese caption beside each —
+ * name, phone, address, and who sold it — meant to be filled in by hand. For a
+ * ticket already recorded as sold the raffle knows all four, and printing them
+ * saves somebody copying them out of the app onto paper.
+ *
+ * Nothing is placed for a field the design has switched off, and nothing for an
+ * empty value: a stub for a ticket with no address recorded prints the blank
+ * line it came with, rather than the word "undefined".
+ *
+ * Long values are TRUNCATED to what the line holds, and only when the width can
+ * be measured at all. A name running off the edge of the ticket is worse than
+ * one that visibly stops.
+ */
+export function placeBuyer(design, values) {
+  const cfg = design?.buyer
+  if (!cfg?.enabled || !values) return []
+  const out = []
+  for (const [key, f] of Object.entries(cfg.fields ?? {})) {
+    if (!f?.enabled) continue
+    const raw = String(values[key] ?? '').trim()
+    if (!raw) continue
+
+    const weight = f.weight ?? 'regular'
+    const capHeight = Number(f.capHeight ?? 15)
+    const fontSize = capHeight / FONT.digitHeight
+    const room = Number(f.maxRight ?? 0) - Number(f.x ?? 0)
+
+    /*
+     * The width is ESTIMATED for trimming and never pinned when drawing.
+     *
+     * The estimate uses Times' advance widths because those are the ones
+     * written down, but this text is drawn in the Myanmar stack — so the two
+     * numbers do not agree, and emitting the estimate as textLength made the
+     * browser spread the glyphs to reach it. "Klang" came out as "K l a n g".
+     * The estimate is close enough to decide whether a name will overrun a
+     * ruled line; it is not close enough to lay that name out, so it is only
+     * ever used for the first job.
+     */
+    let text = raw
+    if (measurable(raw, weight) && room > 0) {
+      const est = (t) => advanceOf(t, weight) * fontSize
+      if (est(raw) > room) {
+        let cut = raw
+        while (cut.length > 1 && est(cut + '.') > room) cut = cut.slice(0, -1)
+        text = cut + '.'
+      }
+    }
+
+    out.push({
+      field: key,
+      text,
+      truncated: text !== raw,
+      x: Number(f.x),
+      baseline: Number(f.baseline),
+      fontSize,
+      weight,
+      /* Always null: see above. The browser lays this out, not the arithmetic. */
+      width: null,
+      fill: f.ink ?? '#0F490E',
+      family: TEXT_FAMILY,
+    })
+  }
+  return out
+}
+
 /** Both halves at once, from one source number. */
 export function placeBoth(design, text, opts = {}) {
   return {
@@ -215,7 +369,7 @@ function textEl(p, pinWidth) {
   const attrs = [
     `x="${round(p.x)}"`,
     `y="${round(p.baseline)}"`,
-    `font-family='${FONT.family}'`,
+    `font-family='${p.family ?? FONT.family}'`,
     `font-size="${round(p.fontSize)}"`,
     `font-weight="${p.weight === 'bold' ? 700 : 400}"`,
     `fill="${p.fill}"`,
@@ -227,7 +381,12 @@ function textEl(p, pinWidth) {
      * long. lengthAdjust="spacing" moves the glyphs apart or together and never
      * distorts their shapes.
      */
-    ...(pinWidth ? [`textLength="${round(p.width)}"`, 'lengthAdjust="spacing"'] : []),
+    /*
+     * A width is pinned only when it is known. It always is for a ticket
+     * number; for a buyer's name in Burmese it is not, and inventing one would
+     * squeeze or stretch the glyphs of somebody's name to fit a guess.
+     */
+    ...(pinWidth && typeof p.width === 'number' ? [`textLength="${round(p.width)}"`, 'lengthAdjust="spacing"'] : []),
     'xml:space="preserve"',
   ]
   return `<text ${attrs.join(' ')}>${esc(p.text)}</text>`
@@ -345,8 +504,15 @@ function qrPlaceholder(box, label) {
  * paper that is going to a buyer.
  */
 export function numberLayerSVG(design, text, opts = {}) {
-  const { guides = false, pinWidth = true, qrBoxes = false, qrUrl = '', encode, ...placeOpts } = opts
+  const { guides = false, pinWidth = true, qrBoxes = false, qrUrl = '', encode, book = '', ...placeOpts } = opts
   const p = placeBoth(design, text, placeOpts)
+  /*
+   * The book this ticket came out of, if the caller knows it. A design-screen
+   * preview has no real ticket, so it shows a sample; a printed ticket always
+   * has the real one.
+   */
+  const bookMain = book ? placeBook(design, 'main', book, p.main) : null
+  const bookStub = book ? placeBook(design, 'stub', book, p.stub) : null
   const width = Number(design?.artwork?.width ?? 1600)
   const height = Number(design?.artwork?.height ?? 517)
   /*
@@ -360,6 +526,9 @@ export function numberLayerSVG(design, text, opts = {}) {
     real ? qrLayer(design.qrStub, qrUrl, { encode }) : (qrBoxes ? qrPlaceholder(design.qrStub, 'QR') : ''),
     textEl(p.main, pinWidth),
     textEl(p.stub, pinWidth),
+    bookMain ? textEl(bookMain, pinWidth) : '',
+    bookStub ? textEl(bookStub, pinWidth) : '',
+    ...placeBuyer(design, opts.buyer).map((f) => textEl(f, pinWidth)),
     ...(guides ? [guidesFor(design, 'main', p.main), guidesFor(design, 'stub', p.stub)] : []),
   ].join('')
   return `<svg class="numbers" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${body}</svg>`

@@ -67,6 +67,63 @@ export const DEFAULT_DESIGN = {
   },
 
   /*
+   * WHICH BOOK THE TICKET CAME OUT OF, printed beside its number.
+   *
+   * The ticket number identifies the ticket; the book is what a person is
+   * holding. Stubs come back as a book, a seller is handed books, and a
+   * counted-in book is reconciled as a book — so a ticket that does not say
+   * which one it belongs to has to be looked up before it can be filed.
+   *
+   * PLACED AFTER THE NUMBER, not at a fixed point. `gap` is in ems of its own
+   * size, measured from wherever the ticket number actually ended, so a longer
+   * number pushes it along instead of being overprinted by it. It is smaller
+   * than the number and in the lighter weight, because it is the secondary
+   * fact: somebody reads the ticket number aloud and files by the book.
+   */
+  book: {
+    // The buyer's half has room to the right of the number, so it goes there.
+    main: { enabled: true, below: false, gap: 1.1, capHeight: 12, ink: '#FDEFB0', weight: 'regular' },
+    /*
+     * The stub does not. Its number ends about 45 px before the small roundel,
+     * and "Book-0007" needs nearer 70 — so beside the number it would either
+     * overprint the logo or be dropped. It goes on its own line underneath
+     * instead, where there are 27 px of clear white before the stub's own text
+     * begins. `drop` is in ems of its own size, measured down from the ticket
+     * number's baseline.
+     */
+    stub: { enabled: true, below: true, drop: 1.25, capHeight: 9, ink: '#0F490E', weight: 'regular' },
+  },
+
+  /*
+   * THE BUYER'S DETAILS, WRITTEN ONTO THE STUB'S OWN LINES.
+   *
+   * The stub is printed with four ruled lines and a Burmese caption beside each
+   * — name, phone, address, and who sold it. They exist to be filled in by
+   * hand at the desk. For a ticket that is ALREADY recorded as sold, the raffle
+   * already knows all four, and printing them saves somebody copying them back
+   * out of the app onto paper they will then have to read again.
+   *
+   * ONLY FOR SOLD TICKETS, AND ONLY WHEN ASKED. A blank book going out to a
+   * seller must print blank lines; the server sends no buyer at all unless the
+   * caller says `withBuyer`, and then only for tickets it has a sale recorded
+   * against. See supabase/functions/api/printing.ts.
+   *
+   * The rules were measured off the artwork at y 211, 297, 390 and 484, and
+   * each caption's right edge decides where its field can start. `baseline`
+   * sits a few pixels above the rule, the way handwriting sits on a line
+   * rather than through it.
+   */
+  buyer: {
+    enabled: true,
+    fields: {
+      name:    { enabled: true, x: 1270, baseline: 207, capHeight: 15, maxRight: 1552, ink: '#0F490E' },
+      phone:   { enabled: true, x: 1265, baseline: 293, capHeight: 15, maxRight: 1552, ink: '#0F490E' },
+      address: { enabled: true, x: 1285, baseline: 386, capHeight: 15, maxRight: 1552, ink: '#0F490E' },
+      seller:  { enabled: true, x: 1380, baseline: 480, capHeight: 12, maxRight: 1552, ink: '#0F490E' },
+    },
+  },
+
+  /*
    * The QR box, which is where the artwork already prints a placeholder QR —
    * measured at x 1025..1147, y 368..489, of which 1032..1139 is dark modules.
    * Taking that exact spot means the ticket does not get busier: one QR goes
@@ -128,6 +185,12 @@ const SCALED = {
   qrStub: { own: ['x', 'y', 'size'] },
 }
 
+/* The buyer fields are positions on the stub, so all four numbers scale. */
+const SCALED_BUYER = ['x', 'baseline', 'capHeight', 'maxRight']
+
+/* The book label's height scales too; its gap is already in ems and does not. */
+const SCALED_BOOK = ['capHeight']
+
 /*
  * Scale the measured defaults to the artwork that was actually uploaded.
  *
@@ -147,6 +210,19 @@ function scaleDefaults(factor) {
       for (const k of spec.label) next.label[k] = Math.round(src.label[k] * factor)
     }
     out[section] = next
+  }
+  out.book = {
+    main: { ...DEFAULT_DESIGN.book.main },
+    stub: { ...DEFAULT_DESIGN.book.stub },
+  }
+  for (const half of ['main', 'stub']) {
+    for (const k of SCALED_BOOK) out.book[half][k] = Math.round(DEFAULT_DESIGN.book[half][k] * factor)
+  }
+  out.buyer = { ...DEFAULT_DESIGN.buyer, fields: {} }
+  for (const [name, f] of Object.entries(DEFAULT_DESIGN.buyer.fields)) {
+    const next = { ...f }
+    for (const k of SCALED_BUYER) next[k] = Math.round(f[k] * factor)
+    out.buyer.fields[name] = next
   }
   return out
 }

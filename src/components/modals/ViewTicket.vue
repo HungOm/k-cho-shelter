@@ -42,6 +42,8 @@ const title = computed(() => (props.payload?.book
 
 function layerFor(t) {
   return numberLayerSVG(design.value, t.number, {
+    book: t.book,
+    buyer: t.buyer,
     qrUrl: ticketVerifyUrl(verifyBase.value, t.number, t.code),
     encode,
   })
@@ -52,7 +54,12 @@ onMounted(async () => {
     ? { book: props.payload.book }
     : { numbers: [props.payload?.number] }
   try {
-    result.value = await api('render_tickets', scope)
+    /*
+     * withBuyer here because this screen is for LOOKING at one ticket — an
+     * organiser checking what a sold ticket's stub actually says. Printing a
+     * blank book is the other screen, and it asks separately.
+     */
+    result.value = await api('render_tickets', { ...scope, withBuyer: true })
   } catch (e) {
     err.value = e.message
     if (e.code) toast(e.message, 'bad', e.code)
@@ -85,7 +92,7 @@ onMounted(async () => {
           <div class="overlay" v-html="layerFor(t)"></div>
         </div>
         <p class="tiny muted">
-          <b>{{ t.number }}</b> · {{ t.status || 'Available' }}
+          <b>{{ t.number }}</b> · {{ t.book }} · {{ t.status || 'Available' }}
           · generated {{ t.generatedAt ? date(t.generatedAt) : '—' }}
           · <template v-if="t.printedAt">printed {{ date(t.printedAt) }}</template>
             <template v-else>not printed yet</template>

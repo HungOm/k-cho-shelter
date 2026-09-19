@@ -42,6 +42,31 @@ const err = ref('')
 const result = ref(null)
 const progress = ref('')
 
+/*
+ * WHERE THIS BATCH STARTS, and why there are batches at all.
+ *
+ * A drawn ticket is a page of artwork with a QR on it. Ten thousand of them is
+ * not something a browser will lay out, however patient anybody is — so the
+ * server hands back a printer's worth at a time and this walks them. `cursor`
+ * is the ticket index the next batch starts after; `batch` is only for saying
+ * "3 of 50" to somebody watching.
+ */
+const cursor = ref(0)
+/* Where the batch on screen STARTED, which is what "print this batch" needs. */
+const batchStart = ref(0)
+const batch = ref(1)
+const doneAll = ref(true)
+
+/*
+ * Fill the stub's ruled lines in for tickets that are already sold.
+ *
+ * Off by default, and deliberately: a blank book going out to a seller must
+ * print blank lines. It is worth having because the stub exists to be filled
+ * in, the raffle already knows all four fields, and the alternative is somebody
+ * copying them out of the app by hand.
+ */
+const withBuyer = ref(false)
+
 const c = computed(() => state.cfg || {})
 const hasArtwork = computed(() => !!c.value.ticketArtwork)
 
@@ -73,29 +98,35 @@ const scope = computed(() => {
   return { fromBook: fromBook.value, toBook: toBook.value || fromBook.value }
 })
 
-async function look() {
+/** One window of tickets, starting after `from`. */
+async function load(from) {
   if (!scope.value) { err.value = 'Say which tickets to print.'; return }
   busy.value = true
   err.value = ''
-  result.value = null
   try {
-    result.value = await api('render_tickets', scope.value)
+    const r = await api('render_tickets', { ...scope.value, after: from, withBuyer: withBuyer.value })
+    result.value = r
+    batchStart.value = from
+    cursor.value = r.after ?? from
+    doneAll.value = !!r.done
   } catch (e) {
     err.value = e.message
+    result.value = null
     if (e.code) toast(e.message, 'bad', e.code)
   } finally {
     busy.value = false
   }
 }
 
+function look() { batch.value = 1; load(0) }
+function nextBatch() { batch.value += 1; load(cursor.value) }
+
 /*
- * Generate what is missing, then look again.
+ * Generate every ticket in the scope that has no code, walking the whole thing.
  *
- * Looped, because generating is capped per request — a whole raffle is twenty
- * thousand rows and one request that tried to do all of it would sit behind a
- * timeout with nobody able to say how far it got. The loop reports progress and
- * stops the moment a pass generates nothing, which is what "already done" looks
- * like from here.
+ * The server does a window per call and says where it got to. A raffle of
+ * twenty thousand is a handful of calls; each is small enough that a dropped
+ * connection costs a retry rather than a mystery about how far it got.
  */
 async function generateMissing() {
   if (!scope.value) return
@@ -103,15 +134,18 @@ async function generateMissing() {
   err.value = ''
   try {
     let total = 0
-    for (let pass = 0; pass < 20; pass++) {
-      const r = await api('generate_tickets', scope.value)
+    let from = 0
+    for (let pass = 0; pass < 200; pass++) {
+      const r = await api('generate_tickets', { ...scope.value, after: from })
       total += r.generated
       progress.value = `${total} generated…`
-      if (!r.generated) break
+      if (r.done || r.after == null) break
+      from = r.after
     }
     progress.value = ''
     if (total) toast(`${total} ticket${total === 1 ? '' : 's'} generated`, 'ok')
-    await look()
+    await load(0)
+    batch.value = 1
   } catch (e) {
     err.value = e.message
     if (e.code) toast(e.message, 'bad', e.code)
@@ -121,9 +155,11 @@ async function generateMissing() {
   }
 }
 
-/** One ticket's overlay, drawn from the artwork's design and its own code. */
+/** One ticket's overlay: its number, its book, its code, and the buyer if asked. */
 function layerFor(t) {
   return numberLayerSVG(design.value, t.number, {
+    book: t.book,
+    buyer: t.buyer,
     qrUrl: ticketVerifyUrl(verifyBase.value, t.number, t.code),
     encode,
   })
@@ -149,11 +185,13 @@ function openSheet(download) {
   if (!download) setTimeout(() => { try { w.print() } catch { /* the person can print it themselves */ } }, 600)
 }
 
-/** Mark them printed, then open the sheet. */
+/** Mark this batch printed, then open it. */
 async function printThem() {
   busy.value = true
   try {
-    await api('render_tickets', { ...scope.value, print: true })
+    // The SAME window that is on screen, marked printed. Not `cursor`, which
+    // is where the next batch begins — using that would stamp the wrong tickets.
+    await api('render_tickets', { ...scope.value, after: batchStart.value, print: true, withBuyer: withBuyer.value })
     openSheet(false)
   } catch (e) {
     err.value = e.message
@@ -203,6 +241,15 @@ async function printThem() {
         Every ticket in the raffle, a printer's worth at a time.
       </p>
 
+      <label class="check" style="margin-top:12px">
+        <input v-model="withBuyer" type="checkbox">
+        Fill in the buyer&rsquo;s details on the stub, for tickets already sold
+      </label>
+      <p class="tiny muted" style="margin:4px 0 0">
+        Name, phone, address and who sold it, written onto the stub&rsquo;s own lines.
+        Blank tickets going out to a seller should leave this off.
+      </p>
+
       <div class="sub">
         <span class="muted small grow">{{ progress }}</span>
         <button class="btn sm" :disabled="busy" @click="look">
@@ -214,8 +261,13 @@ async function printThem() {
 
       <template v-if="result">
         <div class="card" style="margin-top:14px">
+          <p v-if="!doneAll || batch > 1" class="tiny muted" style="margin:0 0 6px">
+            Batch {{ batch }}<template v-if="!doneAll">, and there are more after it</template>.
+            A printer&rsquo;s worth at a time &mdash; ten thousand tickets is not something a
+            browser will lay out in one go.
+          </p>
           <p>
-            <b>{{ tickets.length }}</b> ticket{{ tickets.length === 1 ? '' : 's' }} ready to print.
+            <b>{{ tickets.length }}</b> ticket{{ tickets.length === 1 ? '' : 's' }} in this batch, ready to print.
             <template v-if="missing.length">
               <br><b>{{ missing.length }}</b> ha{{ missing.length === 1 ? 's' : 've' }} never been
               generated, so {{ missing.length === 1 ? 'it has' : 'they have' }} no code yet and
@@ -257,6 +309,9 @@ async function printThem() {
       </button>
       <button v-if="tickets.length" class="btn primary" :disabled="busy" @click="printThem">
         Print {{ tickets.length }}
+      </button>
+      <button v-if="tickets.length && !doneAll" class="btn" :disabled="busy" @click="nextBatch">
+        Next batch &rarr;
       </button>
       <button class="btn ghost" @click="emit('close')">Close</button>
     </template>

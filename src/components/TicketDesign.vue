@@ -48,10 +48,31 @@ const sample = computed(() => {
   return String(c.ticketPrefix ?? '') + '8'.repeat(Math.max(1, digits))
 })
 
+/*
+ * Stand-ins, so the fields can be positioned before any ticket is sold.
+ * Deliberately the longest plausible values rather than flattering short ones:
+ * a layout that only works for "Ma Nu" is a layout that breaks in the hall.
+ */
+const SAMPLE_BUYER = {
+  name: 'Daw Hla Myint Aung', phone: '012-555 0001',
+  address: 'Klang, Selangor', seller: 'Pa Thang',
+}
+const showBuyer = ref(true)
+
+const sampleBook = computed(() => {
+  const c2 = state.cfg || {}
+  return String(c2.bookPrefix ?? 'Book-') + '8'.repeat(Math.max(1, Number(c2.bookDigits ?? 4)))
+})
+
 const preview = computed(() => {
   if (!design.value || !active.value) return ''
   try {
-    return numberLayerSVG(design.value, sample.value, { guides: showGuides.value, qrBoxes: true })
+    return numberLayerSVG(design.value, sample.value, {
+      guides: showGuides.value,
+      qrBoxes: true,
+      book: sampleBook.value,
+      buyer: showBuyer.value ? SAMPLE_BUYER : null,
+    })
   } catch (err) {
     return `<!-- ${String(err.message)} -->`
   }
@@ -401,6 +422,67 @@ const kb = (n) => (n >= 1024 * 1024
               </template>
             </p>
           </div>
+        </div>
+
+        <!-- ---------- the book number ---------- -->
+        <div class="card">
+          <h3>The book number</h3>
+          <p class="muted small">
+            Which book a ticket came out of, printed beside its number. The ticket number
+            identifies the ticket; the book is what somebody is holding when stubs come
+            back. It is placed after the number, so a longer number pushes it along
+            rather than being printed over.
+          </p>
+          <div v-for="half in ['main', 'stub']" :key="'bk' + half" class="halfblock">
+            <h4>{{ half === 'main' ? "The buyer's half" : 'The stub' }}</h4>
+            <label class="check">
+              <input v-model="design.book[half].enabled" type="checkbox"> Print the book number here
+            </label>
+            <div v-if="design.book[half].enabled" class="grid">
+              <label>Height<input v-model.number="design.book[half].capHeight" type="number" step="1"></label>
+              <label v-if="!design.book[half].below">Gap after the number
+                <input v-model.number="design.book[half].gap" type="number" step="0.1"></label>
+              <label v-else>Drop below the number
+                <input v-model.number="design.book[half].drop" type="number" step="0.05"></label>
+              <label>Colour<input v-model="design.book[half].ink" type="text" spellcheck="false"></label>
+              <label class="check" style="align-self:end">
+                <input v-model="design.book[half].below" type="checkbox"> On its own line underneath
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---------- the buyer's details ---------- -->
+        <div class="card">
+          <h3>The buyer&rsquo;s details</h3>
+          <p class="muted small">
+            The stub is printed with four ruled lines and a caption beside each. For a
+            ticket already recorded as sold, these can be filled in when it is printed
+            instead of copied out by hand. <b>Blank tickets going out to a seller always
+            print blank lines</b> &mdash; the printing screen asks separately, each time.
+          </p>
+          <label class="check" style="margin-top:8px">
+            <input v-model="design.buyer.enabled" type="checkbox"> Allow the stub to be filled in
+          </label>
+          <label class="check">
+            <input v-model="showBuyer" type="checkbox"> Show a sample in the preview above
+          </label>
+
+          <template v-if="design.buyer.enabled">
+            <div v-for="(f, key) in design.buyer.fields" :key="key" class="halfblock">
+              <h4>{{ key }}</h4>
+              <label class="check">
+                <input v-model="f.enabled" type="checkbox"> Print this one
+              </label>
+              <div v-if="f.enabled" class="grid">
+                <label>Starts at<input v-model.number="f.x" type="number" step="1"></label>
+                <label>Sits on<input v-model.number="f.baseline" type="number" step="1"></label>
+                <label>Height<input v-model.number="f.capHeight" type="number" step="1"></label>
+                <label>Stops before<input v-model.number="f.maxRight" type="number" step="1"></label>
+                <label>Colour<input v-model="f.ink" type="text" spellcheck="false"></label>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- ---------- the QR ---------- -->

@@ -22,9 +22,9 @@
  * acknowledgement, that the method is never taken from the request, and that
  * one seller cannot acknowledge for another.
  */
-import { readFileSync } from 'node:fs'
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
 import { fakeDb, baseConfig, users, codeOf } from './fakedb.mjs'
+import { readFileSync } from 'node:fs'
 import { renderScreen, visibleText } from './screen.mjs'
 
 let pass = 0, fail = 0
