@@ -234,5 +234,44 @@ console.log('a dimension is a slider that still shows its number')
   ok(!/aria-hidden/.test(html), 'and is not hidden from a screen reader')
 }
 
+
+/*
+ * A PRINTING COLOUR HAS THREE WAYS IN, and needs all three.
+ *
+ * Detection measures area, and the colour somebody actually wants is often the
+ * one with least of it: the gold this raffle's number is printed in covers
+ * about a tenth of one per cent of the ticket, so no amount of counting will
+ * surface it. Hence the swatches for what WAS found, and a dropper for what
+ * cannot be.
+ */
+console.log('a colour can be taken from the artwork, pointed at, or typed')
+{
+  const html = await renderScreen('src/components/ui/Ink.vue', 'export const state = {}', {
+    props: {
+      label: 'Ink', modelValue: '#0F490E',
+      swatches: ['#36C08F', '#FEFEFF', '#164A2D'], canDrop: true,
+    },
+  })
+
+  ok(/type="color"/.test(html), 'a swatch to open a picker')
+  ok(/type="text"/.test(html) && /#0F490E/.test(html), 'the hex, visible and editable')
+  ok(/Pick Ink off the ticket/.test(html), 'and a dropper, named for what it does')
+
+  // The colours found in the picture are offered AS colours. A list of hex
+  // strings is not something anybody can choose between.
+  ok((html.match(/class="chip"/g) ?? []).length === 3, 'each detected colour is a swatch')
+  ok(/background:\s*#36C08F/i.test(html), 'shown as itself, not as its name')
+  ok(/aria-label="Use #36C08F, from the artwork"/.test(html), 'and reachable without sight of it')
+}
+
+console.log('where the browser has no dropper, nothing is lost')
+{
+  const html = await renderScreen('src/components/ui/Ink.vue', 'export const state = {}', {
+    props: { label: 'Ink', modelValue: '#0F490E', swatches: [], canDrop: false },
+  })
+  ok(!/Pick Ink off the ticket/.test(html), 'the dropper is absent rather than broken')
+  ok(/type="color"/.test(html) && /type="text"/.test(html), 'the picker and the hex remain')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

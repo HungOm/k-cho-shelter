@@ -21,6 +21,8 @@ import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
 import Dim from './ui/Dim.vue'
+import Ink from './ui/Ink.vue'
+import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 
 const templates = ref([])
 const activeId = ref('')
@@ -60,6 +62,59 @@ const SAMPLE_BUYER = {
   address: 'Klang, Selangor', seller: 'Pa Thang',
 }
 const showBuyer = ref(true)
+
+/* What was read off the artwork, kept so its colours can be offered as
+ * swatches rather than described. */
+const detected = ref(null)
+
+/*
+ * Decode the chosen file far enough to read its colours. An object URL rather
+ * than a data: URI because the file may be several megabytes and this is only
+ * ever going to be drawn at 200px wide; the URL is revoked either way.
+ */
+function paletteFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      try { resolve(paletteOf(img)) } catch (e) { reject(e) } finally { URL.revokeObjectURL(url) }
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('could not read the picture')) }
+    img.src = url
+  })
+}
+
+/*
+ * THE EYEDROPPER, for the colour detection cannot reach.
+ *
+ * The gold this ticket's number is printed in covers about a tenth of one per
+ * cent of it — thin lettering on a large green field — so no measurement of
+ * area will ever find it. It is exactly the colour somebody wants, and the only
+ * way to get it is to point at it.
+ *
+ * The browser's own EyeDropper is used rather than reading pixels off the
+ * displayed artwork, because that image comes from Storage and sampling it
+ * would taint the canvas. This samples the screen instead and never touches
+ * the image. Chrome and Edge have it; where it is missing the swatch and the
+ * colour field remain, so nothing is lost, only quicker.
+ */
+/* The palette as swatches: paper last, because printing on the paper colour is
+ * how you make something invisible. */
+const swatches = computed(() => {
+  const p = detected.value
+  if (!p) return []
+  return [...new Set([p.accent, p.ink, p.paper].filter(usable))]
+})
+
+const canDrop = typeof window !== 'undefined' && 'EyeDropper' in window
+
+async function dropper(apply) {
+  if (!canDrop) return
+  try {
+    const { sRGBHex } = await new window.EyeDropper().open()
+    if (usable(sRGBHex)) apply(String(sRGBHex).toUpperCase())
+  } catch { /* dismissed with Escape, which is not a failure */ }
+}
 const realQr = ref(true)
 
 /* Whatever the verify address will be, so the sample encodes to the same length
@@ -341,12 +396,38 @@ async function pickFile(ev) {
   try {
     const payload = await toPayload(file, sizes.value)
     uploadNote.value = payload.note || ''
+
+    /*
+     * READ THE COLOURS WHILE THE FILE IS STILL HERE.
+     *
+     * Every ink in the standard design was sampled by hand off the CEAM ticket,
+     * and the defaults scale the geometry while leaving the colours literal —
+     * so without this a raffle uploading its own artwork gets CEAM's gold
+     * printed on it and has to find four colour fields to learn why.
+     *
+     * It happens now, on the organiser's own file, rather than later from the
+     * stored copy: reading it back from Storage would put a cross-origin image
+     * on a canvas and getImageData would throw. A palette that cannot be read
+     * is not an error — the defaults still draw a working ticket — so this
+     * never interrupts an upload.
+     */
+    let pal = null
+    try { pal = await paletteFromFile(file) } catch { pal = null }
+
     adopt(await api('upload_template', {
       data: payload.data,
       contentType: payload.contentType,
       name: file.name.replace(/\.[^.]+$/, ''),
     }))
-    toast('Ticket artwork saved', 'ok')
+
+    if (pal && usable(pal.ink) && design.value && active.value) {
+      design.value = { ...inkDesign(design.value, pal), artwork: design.value.artwork }
+      detected.value = pal
+      await saveDesign()
+      toast('Artwork saved, colours taken from the picture', 'ok')
+    } else {
+      toast('Ticket artwork saved', 'ok')
+    }
   } catch (err) {
     uploadErr.value = err.message
     if (err.code) toast(err.message, 'bad', err.code)
@@ -682,11 +763,8 @@ const kb = (n) => (n >= 1024 * 1024
               <Dim v-model="design[half].scale" label="Size against the label"
                    :min="0.2" :max="2" :step="0.05" unit="&times;"
                    hint="1 matches the printed label" />
-              <label class="formrow"><span class="cap">Colour</span>
-                <span class="wrap ink">
-                  <input v-model="design[half].ink" type="color" :aria-label="`${half} colour`">
-                  <input v-model="design[half].ink" type="text" spellcheck="false">
-                </span></label>
+              <Ink v-model="design[half].ink" label="Colour" :swatches="swatches"
+                   :can-drop="canDrop" @pick="dropper((c) => { design[half].ink = c })" />
             </div>
             <p v-if="placed" class="tiny muted">
               {{ sample }} measures {{ Math.round(placed[half].width) }} px and ends at
@@ -724,11 +802,8 @@ const kb = (n) => (n >= 1024 * 1024
               <Dim v-else v-model="design.book[half].drop" label="Drop below the number"
                    :min="0.2" :max="6" :step="0.05" unit="em"
                    hint="measured in letter heights" />
-              <label class="formrow"><span class="cap">Colour</span>
-                <span class="wrap ink">
-                  <input v-model="design.book[half].ink" type="color" :aria-label="`book ${half} colour`">
-                  <input v-model="design.book[half].ink" type="text" spellcheck="false">
-                </span></label>
+              <Ink v-model="design.book[half].ink" label="Colour" :swatches="swatches"
+                   :can-drop="canDrop" @pick="dropper((c) => { design.book[half].ink = c })" />
               <label class="choice">
                 <input v-model="design.book[half].below" type="checkbox"> On its own line underneath
               </label>
@@ -767,11 +842,8 @@ const kb = (n) => (n >= 1024 * 1024
                 <Dim v-model="f.capHeight" label="Letter height" :min="4" :max="60" :mm="mmPer" />
                 <Dim v-model="f.maxRight" label="Must stop before"
                      :min="0" :max="design.artwork?.width ?? 1600" :mm="mmPer" />
-                <label class="formrow"><span class="cap">Ink</span>
-                  <span class="wrap ink">
-                    <input v-model="f.ink" type="color" :aria-label="`${FIELD[key]?.name ?? key} colour`">
-                    <input v-model="f.ink" type="text" spellcheck="false">
-                  </span></label>
+                <Ink v-model="f.ink" label="Ink" :swatches="swatches"
+                     :can-drop="canDrop" @pick="dropper((c) => { f.ink = c })" />
               </div>
             </div>
           </template>
