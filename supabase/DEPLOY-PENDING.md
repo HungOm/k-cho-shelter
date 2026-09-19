@@ -52,6 +52,23 @@ one command. Download into a scratch directory: it writes into
 `supabase/functions/` of whatever project it is run from, and will overwrite
 the working tree.
 
+**THE ASSET PATH IS RELATIVE, SO DO NOT HARDCODE THE ENTRY NAME.**
+`vite.config.js` sets `base: './'`, so each page emits its own depth: the root
+page references `./assets/main-*.js` and `/v/` references `../assets/verify-*.js`.
+An extractor written against `/assets/index-*.js` — which is what everybody was
+using — now matches nothing, `$A` comes back empty, curl fetches the site root
+and every marker reads 0. That is indistinguishable from a wiped deploy, and
+one session believed it for a minute tonight. Take whatever the page actually
+references and loop over every chunk:
+
+    for a in $(curl -s https://shtrtickets.ceamalaysia.org/ \
+                 | grep -oE '(\./|\.\./)?assets/[^"]+\.js' | sed 's|^\.\{1,2\}/||'); do
+      curl -s "https://shtrtickets.ceamalaysia.org/$a" | grep -c 'a literal only the new commit has'
+    done
+
+The entry name will change again — it is `main-` today and was `index-`
+yesterday — so the check must never name it.
+
 Two traps in that grep, both paid for: the downloaded bundle is transpiled, so
 search for the bare action name and not `'quoted'` — a quoted search reported
 all 62 actions missing from a function that had every one of them. And for the
