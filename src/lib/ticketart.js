@@ -428,6 +428,66 @@ function guidesFor(design, name, p) {
  *
  * When the encoder lands, this is the seam: the same box, filled with modules.
  */
+/*
+ * WHY THERE IS NO LOGO IN THE MIDDLE OF THE QR. Asked for on 2026-09-20,
+ * measured, and declined — written here because the next person to ask will
+ * be standing exactly where this function is.
+ *
+ * A logo in the centre destroys modules, so it is paid for out of the error
+ * correction budget. The usual way to afford one is level H. Both cost module
+ * size, and this code has very little to spend:
+ *
+ * IT DEPENDS ON THE ADDRESS, so the boundaries are here rather than one
+ * number. Measured across the span, at a 190mm ticket:
+ *
+ *   address length    M          Q          H
+ *   54 – 58        0.353 mm   0.322 mm   0.296 mm
+ *   59 – 60        0.353 mm   0.322 mm   0.273 mm   <- this deployment, at 60
+ *   61 – 62        0.353 mm   0.296 mm   0.273 mm
+ *   63 +           0.322 mm   0.296 mm   0.273 mm
+ *
+ * H steps at 59 characters, Q at 61, M not until 63 — so the level being
+ * proposed for a logo is also the only one sensitive to an address somebody
+ * might lengthen without thinking about it.
+ *
+ * WHAT THIS DEPLOYMENT PRINTS IS 60: the base falls back to
+ * `location.origin + '/v'`, so it is the host, plus /v/?, plus the number,
+ * plus a twelve-character code. Sixty is what ticketcode.ts predicted when it
+ * chose that length. Anyone re-deriving this should print the URL rather than
+ * assume it — an earlier pass of this note said 58 because it dropped the /v,
+ * and the two answers sit on opposite sides of the H boundary.
+ *
+ * Against that, _shared/ticketcode.ts — written by whoever chose the code
+ * length, about this same millimetre — says two things. That "below roughly a
+ * third of a millimetre a square, ordinary phone cameras start failing on
+ * paper". And that dropping from 0.35 to "about 0.32 mm" is "still probably
+ * fine, and not worth the risk for strength nobody needs". Q lands exactly on
+ * the value that argument already declined, and H lands below anything it
+ * contemplates.
+ *
+ * Staying at M and spending the correction budget on the logo instead is the
+ * same decision wearing a different hat: that budget is what survives a fold
+ * down the middle of a pocket, a thumb, cheap paper, and a phone held at an
+ * angle in a hall. It is not spare.
+ *
+ * AND THE TICKET IS ALREADY BRANDED. The artwork behind all of this is the
+ * organisation's own upload — the whole face of the ticket. The QR is the one
+ * place on it where identity costs legibility.
+ *
+ * WHERE IT WOULD BE AFFORDABLE, if it is ever wanted: the digital ticket,
+ * which is canvas pixels rather than millimetres and has no floor of this
+ * kind.
+ *
+ * ONE TRAP THERE, AND IT HAS NOW CAUGHT TWO PEOPLE IN ONE EVENING, which is
+ * why it is written as a rule and not as advice. Everything drawn into that
+ * canvas goes through an Image, and an Image loading an SVG parses it as
+ * STRICT XML with no access to the page's own resources. A backslash-escaped
+ * quote in a font-family attribute killed it once; an externally referenced
+ * asset would kill it the same way. Anything a canvas-bound layer needs must
+ * be inlined — a data URI, or nothing. The failure is silent: the export
+ * falls through to its own fallback, which looks exactly like ordinary
+ * behaviour.
+ */
 export function qrModuleMM(design, box, modules = 33) {
   const widthMM = Number(design?.sheet?.widthMM ?? 190)
   const artworkWidth = Number(design?.artwork?.width ?? 1600)
