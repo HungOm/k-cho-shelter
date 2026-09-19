@@ -25,6 +25,8 @@
  * edge, the right edge of the colon, the top of the capitals and the baseline.
  */
 
+import { elementsOf, validateElements } from './ticketelements.js'
+
 /** The frame DEFAULT_DESIGN's numbers are expressed in. */
 export const REFERENCE = { width: 1600, height: 517 }
 
@@ -154,6 +156,17 @@ export const DEFAULT_DESIGN = {
     showText: false,
   },
 
+  /*
+   * WHERE THE STUB BEGINS, as a share of the ticket's width.
+   *
+   * Measured at 1100 px on the 1600 px reference artwork — the perforation the
+   * CEAM ticket is printed with. It is not used to cut anything: the artwork
+   * already carries the line. It is here because every element belongs to one
+   * side of it or the other, and "which half is this on" is the question the
+   * design screen groups by and the print sheet folds on.
+   */
+  stubAt: 0.6875,
+
   /* How it is printed. 190 mm across, four to a sheet of A4. */
   sheet: {
     widthMM: 190,
@@ -240,7 +253,16 @@ export function designFor(template) {
   const height = Number(template?.height ?? 0) || REFERENCE.height
   const base = scaleDefaults(width / REFERENCE.width)
   const saved = isObj(template?.design) ? template.design : {}
-  return { ...merge(base, saved), artwork: { width, height } }
+  const merged = { ...merge(base, saved), artwork: { width, height } }
+  /*
+   * THE ELEMENT LIST IS ALWAYS PRESENT, even for a design stored before it
+   * existed — `elementsOf` derives one from the old fixed slots by the same
+   * arithmetic the renderer used, so a template that has never been opened on
+   * the new screen draws the identical ticket. The old slots are left in place
+   * underneath: they are what the derivation reads, and deleting them would
+   * make every stored design unmigratable rather than merely old.
+   */
+  return { ...merged, elements: elementsOf(merged, merged.artwork) }
 }
 
 /*
@@ -290,6 +312,10 @@ export function validateDesign(design, artwork) {
   const sheet = design?.sheet ?? {}
   if (!(Number(sheet.widthMM) > 0)) problems.push('The printed width must be a number of millimetres above nought.')
   if (!(Number(sheet.perPage) >= 1)) problems.push('There must be at least one ticket to a page.')
+
+  /* Whatever the organiser has actually placed. The checks above are about the
+   * slots the defaults ship with; this is about the list that replaced them. */
+  if (Array.isArray(design?.elements)) problems.push(...validateElements(design.elements))
 
   return problems
 }

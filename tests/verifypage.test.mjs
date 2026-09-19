@@ -127,5 +127,93 @@ console.log('both languages, always')
   ok(/class="my"/.test(main) && /lang="my"/.test(main), 'and both are rendered, not chosen between')
 }
 
+/*
+ * BURMESE FIRST, AND ONLY ONE PLACE DECIDES IT.
+ *
+ * The page leads with Burmese because nearly everybody who scans one of these
+ * tickets reads it, and making them skip a line to reach their own language on
+ * a verdict about their money is the wrong way round.
+ *
+ * The failure this guards is not the order itself — it is a page HALF inverted,
+ * carrying two conventions at once, shipped because nothing noticed. The
+ * existing checks assert that both languages render and that neither is chosen
+ * between; none of them would see it. So this pins two things: that the order
+ * is Burmese then English, and that exactly one function in the file emits a
+ * language pair at all, which is what makes the order impossible to half-change.
+ */
+console.log('Burmese comes first, and one function decides it')
+{
+  const main = readFileSync(join(ROOT, 'src/verify/main.js'), 'utf8')
+  const langs = [...main.matchAll(/class="(my|en)"/g)].map((m) => m[1])
+  eq(langs.length, 2, 'a language pair is emitted in exactly one place')
+  eq(langs[0], 'my', 'Burmese is written first')
+  eq(langs[1], 'en', 'and English second')
+  ok(/lang="my"/.test(main), 'the Burmese is marked as Burmese, for a screen reader')
+}
+
+/*
+ * WHAT THE PAGE SAYS ABOUT ITSELF.
+ *
+ * Three things a stranger cannot work out from a verdict card, each of which
+ * was missing until the page was redesigned around the question "what does
+ * somebody standing in a hall actually need to be told".
+ */
+console.log('it says who is answering, what it will not show, and why it says so little')
+{
+  const main = readFileSync(join(ROOT, 'src/verify/main.js'), 'utf8')
+  const strings = readFileSync(join(ROOT, 'src/verify/strings.js'), 'utf8')
+
+  ok(/function topbar\(/.test(main), 'the page names what has been reached')
+  ok(/render\(html\)\s*\{[\s\S]{0,140}topbar\(\)/.test(main),
+    'and does it for every answer, not only the good one')
+
+  /*
+   * The privacy line is the page stating a promise the architecture already
+   * keeps: verify/index.ts may touch two columns of tickets and one of
+   * ticket_codes, and tests/verify.test.mjs fails if it ever mentions a buyer.
+   * A stranger has no way to know that, and is entitled to be told.
+   */
+  ok(/privacyNote/.test(main) && /privacyNote/.test(strings), 'it says the buyer is never shown')
+
+  /*
+   * Every refusal carries the explanation. A number never issued, a ticket
+   * never printed and a code out by one character all answer identically so
+   * that the page cannot be used to map the raffle — which reads as ignorance
+   * unless the page says it is a refusal.
+   */
+  const refusals = [...main.matchAll(/panel\('bad'/g)].length
+  const explained = [...main.matchAll(/panel\('bad'[\s\S]{0,160}?\)\s*\+\s*whyOneAnswer\(\)/g)].length
+  ok(refusals >= 3, `every way of failing is covered (${refusals} refusal paths)`)
+  eq(explained, refusals, 'and every one of them explains why it says nothing more')
+
+  /*
+   * "Could not check" must NOT carry it. The explanation is about refusing to
+   * leak which numbers exist; on a page that simply could not reach the server
+   * it would be answering a question nobody asked, about a verdict that was
+   * never given.
+   */
+  ok(!/cannotCheck'\)\s*\+\s*whyOneAnswer/.test(main),
+    'but a failed check is not dressed up as a refusal')
+}
+
+/*
+ * THE LINE THAT IS NOT THIS SESSION'S TO REWORD.
+ *
+ * `whatThisIs` was written for the charity whose tickets these are, and its
+ * Burmese is reviewed by somebody who reads it. It is pinned here because the
+ * risk is not deletion — that would be obvious — but a later redesign quietly
+ * moving it inside panel(), where the states that most need it (a link that
+ * could not be parsed, a check that could not be made) would silently lose it.
+ */
+console.log('what the raffle is for survives every answer')
+{
+  const main = readFileSync(join(ROOT, 'src/verify/main.js'), 'utf8')
+  ok(/function about\(/.test(main), 'it has its own function')
+  ok(/render\(html\)\s*\{[\s\S]{0,140}about\(\)/.test(main),
+    'called from render, so no branch can forget it')
+  ok(!/function panel\([\s\S]{0,400}whatThisIs/.test(main),
+    'and never from panel, which only the answered states reach')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

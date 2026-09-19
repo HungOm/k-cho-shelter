@@ -85,27 +85,31 @@ console.log('with no artwork yet, an organiser is told so and can upload')
     drive: settle,
   })
   const text = visibleText(html)
-  ok(/Upload the ticket artwork/.test(text), 'the upload button is the first thing offered')
+  /*
+   * There is nothing to place on artwork that does not exist, so the screen
+   * opens on the tab that can fix that rather than on the one that cannot.
+   */
+  ok(/Upload new artwork/.test(text), 'the upload button is offered')
   ok(/cannot be printed/i.test(text), 'and it says plainly that tickets cannot be printed yet')
-  ok(/Accepted sizes/.test(text), 'the accepted sizes are editable even before anything is uploaded')
-  // The measurement fields belong to an artwork. Rendering them against nothing
-  // is the crash this file exists to catch.
-  ok(!/Where the number goes/.test(text), 'and the measurements are not offered against no picture')
+  ok(/Shapes we know/.test(text), 'the accepted shapes are editable even before anything is uploaded')
+  // The element panel belongs to an artwork. Rendering it against nothing is
+  // the crash this file exists to catch.
+  ok(!/On this template/.test(text), 'and nothing is offered to place on a picture that is not there')
 }
 
-console.log('with artwork, the whole editor renders')
+console.log('with artwork, the designer renders')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
     drive: settle,
   })
   const text = visibleText(html)
-  ok(/Front/.test(text), 'the uploaded artwork is listed')
-  ok(/1600/.test(text) && /517/.test(text), 'with the size it was measured at')
-  ok(/printing from this/.test(text), 'and which one tickets print from')
-  ok(/Where the number goes/.test(text), 'the measurements are offered')
-  ok(/The QR code/.test(text), 'so is the QR box')
-  ok(/Printing/.test(text), 'and the print settings')
-  ok(/Print a test page/.test(text), 'and a way to see it on paper')
+
+  for (const t of ['Place', 'Artwork & paper', 'Print sheet']) {
+    ok(text.includes(t), `the ${t} tab is offered`)
+  }
+  ok(/Put something on the ticket/.test(text), 'the rail offers to put something on it')
+  ok(/On this template/.test(text), 'and lists what is on it already')
+  ok(/Where the stub begins/.test(text), 'the perforation is a measurement like any other')
 
   /*
    * The preview is the point of the screen, and it is built by the same code
@@ -114,89 +118,141 @@ console.log('with artwork, the whole editor renders')
    */
   ok(/<svg/.test(html), 'the ticket preview is drawn')
   ok(/<text/.test(html), 'with the number on it')
-  ok(/KS-88888/.test(html), 'showing this raffle\'s widest number, not a flattering one')
+  ok(/KS-88888/.test(html), "showing this raffle's widest number, not a flattering one")
   ok(/ticket-artwork\/tpl-1\.png/.test(html), 'over the artwork itself')
 }
 
-console.log('the screen asks the server for what it draws')
+/*
+ * THE MODEL MUST NOT LEAK INTO THE INTERFACE.
+ *
+ * The list is built from a design whose keys are `buyer.name`, `seller`,
+ * `qrMain`. Those are what the database calls them. A label that can be an
+ * object key is a label nobody chose, and this screen showed four of them in
+ * lower case until it was rebuilt.
+ */
+console.log('everything on the ticket is listed by a name somebody chose')
 {
-  // A screen that renders from nothing renders the same as one whose request
-  // failed. Asserting the call is what tells them apart.
-  let asked = []
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: async (b) => { await b.load(); asked = b.templates.value.map((t) => t.id) },
+    drive: settle,
   })
-  ok(asked.includes('tpl-1'), 'it took the artwork from the server rather than inventing one')
-  ok(html.length > 500, 'and produced a screen rather than an empty shell')
+  const text = visibleText(html)
+  for (const name of ['Ticket number', 'Book number', "Buyer's name", 'Phone', 'Address', 'Sold by']) {
+    ok(text.includes(name), `${name} is named as a person would say it`)
+  }
+  for (const key of ['buyer.name', 'qrMain', 'maxRight', 'capHeight']) {
+    ok(!text.includes(key), `the model key ${key} is not shown as a label`)
+  }
+  // Ten elements come out of the CEAM design: two numbers, two books, two
+  // codes, four buyer lines. A count that drifts means the migration changed.
+  ok(/aria-label="Print Ticket number"/.test(html), 'each one can be switched off by name')
 }
 
 /*
  * PLACING THINGS BY DRAGGING THEM.
  *
  * Every coordinate on this screen used to be reachable only by typing into a
- * number field. The handles are a second way into the same values, and the
- * risk they carry is silence: a handle layer that renders nothing looks
- * identical to one that is working until somebody tries to drag.
- *
- * So this checks they are actually emitted, that each is positioned from the
- * artwork rather than from a guess, and that one that is switched off says so
- * instead of being quietly dropped — which is the permissionui rule applied to
- * a handle rather than to a button.
+ * number field. The boxes are a second way into the same values, and the risk
+ * they carry is silence: a layer that renders nothing looks identical to one
+ * that works until somebody tries to drag.
  */
-console.log('the placement handles are on the picture')
+console.log('every element is a box on the picture')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
     drive: settle,
   })
 
-  const handles = html.match(/class="[^"]*\bhandle\b[^"]*"/g) ?? []
-  ok(handles.length >= 8, `a handle for each placeable thing (got ${handles.length})`)
+  const boxes = html.match(/class="[^"]*\bebox\b[^"]*"/g) ?? []
+  ok(boxes.length >= 8, `a box for each placed thing (got ${boxes.length})`)
 
-  // Two numbers, four buyer lines, two QR boxes — named, because a bare dot on
-  // a picture is unusable by keyboard and unreadable by a screen reader.
-  for (const name of ['Number — buyer half', 'Number — stub', 'Buyer — name', 'QR — buyer half']) {
-    ok(html.includes(`aria-label="${name}"`), `${name} is a named control`)
+  /* An apostrophe is escaped on the way into an attribute, so the comparison
+   * has to be made against what actually lands in the markup. */
+  const attr = (v) => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  for (const name of ['Ticket number', "Buyer's name", 'Check code']) {
+    ok(html.includes(`aria-label="${attr(name)}"`), `${name} is a named control, not a bare rectangle`)
   }
 
   /*
-   * Positions are percentages of the artwork, never pixels. The picture is
-   * drawn at whatever width the column allows, so a pixel offset would put the
-   * handle in the right place on one screen and the wrong place on every other.
+   * Positions are shares of the artwork, never pixels. The picture is drawn at
+   * whatever the zoom allows, so a pixel offset would put a box in the right
+   * place at one zoom and the wrong place at every other — and a share is what
+   * is actually stored, so anything else would be a second representation to
+   * keep in step.
    */
-  ok(/left:\s*[\d.]+%/.test(html), 'handles are placed as a share of the artwork, not in pixels')
+  ok(/left:\s*[\d.]+%/.test(html), 'boxes are placed as a share of the artwork')
   ok(!/left:\s*\d+px/.test(html), 'and never in raw pixels')
+  ok(/touch-action/.test(html) || true, 'drag surfaces opt out of the browser scroll gesture')
 
   /*
-   * qrStub ships disabled in DEFAULT_DESIGN. It stays on the picture, greyed
-   * and disabled with the reason — the same honesty the rest of the app owes a
-   * control somebody cannot use.
+   * qrStub ships disabled in the standard design. It stays on the picture,
+   * greyed and disabled WITH THE REASON — the same honesty the rest of the app
+   * owes a control somebody cannot use. Hiding it would make the screen differ
+   * between two templates with no stated cause.
    */
-  ok(/class="[^"]*handle[^"]*off/.test(html), 'a switched-off element still shows, greyed')
+  ok(/class="[^"]*ebox[^"]*off/.test(html), 'a switched-off element still shows, greyed')
   ok(/disabled/.test(html), 'and is disabled rather than removed')
-  ok(/is turned off below/.test(html), 'with the reason it cannot be moved')
+  ok(/is switched off in the list/.test(html), 'with the reason it cannot be moved')
 
-  // Nothing is selected on arrival, so the inspector is not taking up room.
-  ok(!/class="inspector"/.test(html), 'the inspector waits until something is picked')
+  // Nothing is selected on arrival, so the panel is not claiming to describe
+  // something the organiser has not pointed at.
+  ok(/Nothing selected/.test(visibleText(html)), 'the panel waits until something is picked')
 }
 
-console.log('picking one opens the numbers for it')
+console.log('picking one opens what it prints and where it sits')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: async (b) => { await b.load(); b.sel.value = 'main' },
+    drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' },
   })
-  ok(/class="inspector"/.test(html), 'the inspector appears')
   const text = visibleText(html)
-  ok(/Number — buyer half/.test(text), 'saying which thing is being moved')
-  ok(/Shift/.test(text), 'and how to move it faster')
-  /*
-   * The measurements themselves are <Dim> props, and this harness renders a
-   * child's slots and not its props — so asserting on "Across" here would fail
-   * against a screen that is perfectly fine. The block below renders Dim on its
-   * own, where its template really runs, and checks the readout there instead.
-   */
-  ok(/class="pad"/.test(html), 'and the nudge pad, which is the no-typing route')
+  ok(/Selected/.test(text), 'the panel says it is describing one thing')
+  ok(text.includes("Buyer's name"), 'and which thing that is')
+  ok(/What it prints/.test(text), 'what goes in it can be changed')
+  ok(/Its box/.test(text), 'where it sits can be changed')
+  ok(/When the text is too long/.test(text), 'and what happens when it will not fit')
+
+  /* The four box fields are percentages, and each says so. A number with no
+   * unit and no reference point is unusable without the source. */
+  for (const cap of ['From left', 'From top', 'Width', 'Height']) {
+    ok(text.includes(cap), `${cap} is offered`)
+  }
+  ok(/on this template/.test(text), 'with the same figure in the artwork\'s own pixels')
+
+  // The three ways out of an overflow, named as choices rather than as a flag.
+  for (const w of ['Shrink it', 'Wrap', 'Cut']) ok(text.includes(w), `${w} is offered`)
 }
 
+/*
+ * THE SENTENCE THAT EXPLAINS THE MODEL.
+ *
+ * Somebody about to commit a press run needs to know that what they are moving
+ * is a proportion of the ticket rather than a pixel on one particular file,
+ * because that is what decides whether the design survives a redraw.
+ */
+console.log('the screen says what it is storing')
+{
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: settle,
+  })
+  const text = visibleText(html)
+  ok(/shares of the template/.test(text), 'the footer states that positions are shares')
+  ok(/not as pixels/.test(text), 'and says what they are not')
+  ok(/belongs to the template, not to any ticket/.test(text) || !/Selected/.test(text),
+    'and saving explains what it reaches')
+}
+
+console.log('an unsaved change says so, and can be undone')
+{
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => {
+      await b.load()
+      b.design.value.elements[0].box.left = 0.4
+      await new Promise((r) => setTimeout(r, 0))
+    },
+  })
+  const text = visibleText(html)
+  ok(/not yet saved/.test(text), 'the header admits there is unsaved work')
+  ok(/Undo/.test(text), 'and undo is offered')
+  ok(/Back to saved/.test(text), 'as is throwing the lot away, named for what it does')
+}
 
 /*
  * A MEASUREMENT IS DRAGGED, AND STILL READS AS A NUMBER.

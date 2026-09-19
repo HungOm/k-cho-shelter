@@ -24,11 +24,49 @@ function vueFiles(dir) {
       : e.name.endsWith('.vue') ? [join(dir, e.name)] : [])
 }
 
+/*
+ * WHAT COUNTS AS A CONTACT POINT: a link that CARRIES A RECIPIENT.
+ *
+ * This used to be "any file mentioning wa.me or tel:", which is the
+ * everything-except shape that has bitten this repository before — it names the
+ * set by what it looks like rather than by what it does. Two things it got
+ * wrong:
+ *
+ *   SellerMoney.vue matched on a PROP CALLED `tel`, and passed only because it
+ *   happens to import isDialable for another reason. It has never built a link.
+ *
+ *   A share-sheet link — wa.me/?text=... — has no recipient in it at all. It
+ *   opens WhatsApp and lets the person choose who to send to, so there is no
+ *   stored number to be wrong and nothing for isDialable to check. Requiring
+ *   the guard there would mean adding a call that guards nothing, which is how
+ *   a guard stops meaning anything.
+ *
+ * So the set is named by the construction that embeds a number: a wa.me path
+ * built from an expression, or a tel: href being assembled. The four links the
+ * leading-zero bug actually reached are all in it.
+ */
+const CARRIES_NUMBER = /wa\.me\/\$\{|['"`]tel:['"`]?\s*\+|`tel:\$\{/
+
 const contacts = vueFiles(ROOT)
   .map(f => [f, readFileSync(f, 'utf8')])
-  .filter(([, src]) => /wa\.me|tel:/.test(src))
+  .filter(([, src]) => CARRIES_NUMBER.test(src))
 
 ok(contacts.length >= 3, `found the contact points (${contacts.length})`)
+
+/*
+ * And the other kind, checked for the thing that would turn it into the first
+ * kind: a share sheet that someone later "improves" by pre-filling the buyer's
+ * number would become an unguarded contact point without moving files.
+ */
+const pickers = vueFiles(ROOT)
+  .map(f => [f, readFileSync(f, 'utf8')])
+  .filter(([, src]) => /wa\.me\/\?text=/.test(src))
+
+for (const [file, src] of pickers) {
+  const name = file.split('/components/')[1]
+  ok(!CARRIES_NUMBER.test(src),
+    `${name}: the share sheet picks the recipient, so no number is put in the link`)
+}
 
 for (const [file, src] of contacts) {
   const name = file.split('/components/')[1]

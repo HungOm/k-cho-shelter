@@ -20,6 +20,8 @@
  * established the geometry before any of it was wired to the app.
  */
 
+import { valueFor } from './ticketelements.js'
+
 /*
  * THE FONT, AND WHY ITS NUMBERS ARE IN HERE.
  *
@@ -387,6 +389,9 @@ function textEl(p, pinWidth) {
      * squeeze or stretch the glyphs of somebody's name to fit a guess.
      */
     ...(pinWidth && typeof p.width === 'number' ? [`textLength="${round(p.width)}"`, 'lengthAdjust="spacing"'] : []),
+    /* Alignment inside a box. Omitted when it is the default, so the markup a
+     * left-aligned number produces is unchanged from before elements existed. */
+    ...(p.anchor && p.anchor !== 'start' ? [`text-anchor="${p.anchor}"`] : []),
     'xml:space="preserve"',
   ]
   return `<text ${attrs.join(' ')}>${esc(p.text)}</text>`
@@ -504,6 +509,34 @@ function qrPlaceholder(box, label) {
  * paper that is going to a buyer.
  */
 export function numberLayerSVG(design, text, opts = {}) {
+  /*
+   * A DESIGN WITH AN ELEMENT LIST IS DRAWN BY THE ELEMENT RENDERER.
+   *
+   * Every design has one now — designFor derives it from the old slots when
+   * nothing was stored — so in practice this is the path everything takes. The
+   * body below still runs for a design assembled by hand without elements,
+   * which is what the geometry tests do when they are testing the old slots
+   * themselves. Keeping both was the only way to prove the migration draws the
+   * same ticket: one of them has to be the thing being compared against.
+   *
+   * The old options are the vocabulary callers already speak, so they are
+   * translated into sources here rather than at six call sites.
+   */
+  if (Array.isArray(design?.elements) && design.elements.length) {
+    const b = opts.buyer || null
+    return elementLayerSVG(design, {
+      'ticket.number': text,
+      'book.number': opts.book || '',
+      'buyer.name': b?.name ?? '',
+      'buyer.phone': b?.phone ?? '',
+      'buyer.address': b?.address ?? '',
+      seller: b?.seller ?? '',
+      price: opts.price ?? '',
+      'sold.on': opts.soldOn ?? '',
+      'draw.on': opts.drawOn ?? '',
+      code: opts.code ?? '',
+    }, opts)
+  }
   const { guides = false, pinWidth = true, qrBoxes = false, qrUrl = '', encode, book = '', ...placeOpts } = opts
   const p = placeBoth(design, text, placeOpts)
   /*
@@ -549,4 +582,243 @@ export function numberLayerSVG(design, text, opts = {}) {
 export function ticketVerifyUrl(base, number, code) {
   const root = String(base || '').replace(/\/+$/, '')
   return `${root}/?${encodeURIComponent(String(number))}.${encodeURIComponent(String(code))}`
+}
+
+/* ============ elements: a box, and something in it ============ */
+
+/*
+ * THE SECOND GEOMETRY, AND WHY IT REPLACED THE FIRST.
+ *
+ * Everything above places one of six things the system named. This places
+ * anything: a box drawn on the artwork as shares of it, with a value from the
+ * register in it. See src/lib/ticketelements.js for the model and for why the
+ * box's BOTTOM edge is the baseline.
+ *
+ * It is not a rewrite of the arithmetic — it is the same arithmetic with the
+ * inputs arriving as a box instead of as a label to measure from. A design
+ * migrated out of the old shape draws coordinates identical to within a
+ * ten-thousandth of a pixel, and tests/ticketart proves that rather than
+ * asserting it.
+ */
+
+
+/** Lines wrap at 1.45 of their own cap height — tight, because these are short. */
+const LINE = 1.45
+
+/*
+ * Can this be measured, and must it be?
+ *
+ * A number-stack element MUST be measurable: its whole purpose is to be checked
+ * against the thing it must not touch, and a width that cannot be computed
+ * cannot be checked. So an unknown glyph there is refused outright, exactly as
+ * the ticket number always was.
+ *
+ * A text-stack element must not be. A buyer's name in Burmese has no entry in
+ * an advance table built from Times, and refusing it would refuse the language
+ * the ticket is printed in. It draws, and the browser lays it out.
+ */
+function widthOf(text, el, fontSize) {
+  const weight = el.weight === 'bold' ? 'bold' : 'regular'
+  if (el.family === 'number') {
+    /* Throws by design on a glyph with no measured width. */
+    return advanceOf(text, weight) * fontSize
+  }
+  return measurable(text, weight) ? advanceOf(text, weight) * fontSize : null
+}
+
+/**
+ * Place one element's value inside its box.
+ *
+ * `prior` is the placements already made, so an element that flows after
+ * another can read where that one actually ended. Returns null when there is
+ * nothing to draw — switched off, or no value — because a stub for a ticket
+ * with no address recorded should print the blank line it came with.
+ */
+export function placeElement(design, el, values, prior = {}) {
+  if (!el || el.enabled === false) return null
+  const W = Number(design?.artwork?.width ?? 1600)
+  const H = Number(design?.artwork?.height ?? 517)
+
+  const bx = el.box.left * W
+  const by = el.box.top * H
+  const bw = el.box.width * W
+  const bh = el.box.height * H
+
+  if (el.kind === 'code') {
+    return { id: el.id, el, kind: 'code', x: bx, y: by, size: Math.min(bw, bh), right: bx + bw, box: { x: bx, y: by, w: bw, h: bh } }
+  }
+
+  const raw = String(valueFor(el, values) ?? '').trim()
+  if (!raw) return null
+
+  const weight = el.weight === 'bold' ? 'bold' : 'regular'
+  const family = el.family === 'text' ? TEXT_FAMILY : FONT.family
+  let fontSize = bh / FONT.digitHeight
+
+  /* Where the left edge actually is. Almost everything uses its own box; an
+   * element that flows starts from wherever the one before it ended, so a
+   * longer ticket number pushes the book along instead of being overprinted. */
+  const from = el.after ? prior[el.after] : null
+  const x0 = from ? from.right + Number(el.gap ?? 1.1) * fontSize : bx
+  const limit = bx + bw
+
+  let text = raw
+  let lines = [raw]
+  let width = widthOf(text, el, fontSize)
+  let shrunk = false
+  const room = Math.max(0, limit - x0)
+
+  if (width !== null && width > room && room > 0) {
+    if (el.overflow === 'shrink') {
+      /* Solve for the size at which it exactly fills the room. Linear, because
+       * every width in this arithmetic scales with the font. */
+      fontSize *= room / width
+      width = widthOf(text, el, fontSize)
+      shrunk = true
+    } else if (el.overflow === 'cut') {
+      let cut = text
+      while (cut.length > 1 && widthOf(cut + '.', el, fontSize) > room) cut = cut.slice(0, -1)
+      text = cut + '.'
+      width = widthOf(text, el, fontSize)
+      lines = [text]
+    } else {
+      /* Wrap. Broken on spaces only — a serial number has none and must never
+       * be split, and a Burmese name has no space to break at either. */
+      const words = text.split(/\s+/)
+      const out = []
+      let line = ''
+      for (const w of words) {
+        const next = line ? `${line} ${w}` : w
+        if (line && widthOf(next, el, fontSize) > room) { out.push(line); line = w } else line = next
+      }
+      if (line) out.push(line)
+      lines = out.length ? out : [text]
+      width = Math.max(...lines.map((l) => widthOf(l, el, fontSize) ?? 0))
+    }
+  }
+
+  /*
+   * Alignment is left to SVG's own text-anchor rather than computed here.
+   * Centring by arithmetic needs a width, and the whole point of the text stack
+   * is that its width is not knowable — so a centred Burmese name would be
+   * centred on a guess. text-anchor is applied by whatever is laying the glyphs
+   * out, which is the only thing that knows how wide they came out.
+   */
+  const anchor = el.align === 'centre' ? 'middle' : (el.align === 'right' ? 'end' : 'start')
+  const x = el.align === 'centre' ? bx + bw / 2 : (el.align === 'right' ? limit : x0)
+
+  const baseline = by + bh
+  const placed = lines.map((t, i) => ({
+    text: t,
+    x,
+    baseline: baseline + i * bh * LINE,
+    /* A width is pinned only for the number stack, where it is known and where
+     * holding it is what keeps a serial inside the space measured for it. */
+    width: el.family === 'number' ? widthOf(t, el, fontSize) : null,
+  }))
+
+  return {
+    id: el.id,
+    el,
+    kind: 'text',
+    text,
+    lines: placed,
+    x,
+    baseline,
+    fontSize,
+    weight,
+    family,
+    anchor,
+    fill: el.ink,
+    width,
+    /* Where this one ended, so anything flowing after it knows. Unmeasurable
+     * text cannot say, and reports its box's right edge instead of a guess. */
+    right: width === null ? limit : x0 + width,
+    limit,
+    room,
+    shrunk,
+    wrapped: placed.length > 1,
+    measured: width !== null,
+    fits: width === null ? true : x0 + width <= limit + 1e-9,
+    box: { x: bx, y: by, w: bw, h: bh },
+  }
+}
+
+/**
+ * Every element of a design, placed.
+ *
+ * Ordered so that anything flowing after something else is placed second —
+ * one pass in list order is enough because `after` may only point backwards,
+ * which `validateElements` is what keeps true.
+ */
+export function placeElements(design, values = {}) {
+  const out = []
+  const prior = {}
+  for (const el of design?.elements ?? []) {
+    const p = placeElement(design, el, values, prior)
+    if (!p) continue
+    prior[p.id] = p
+    out.push(p)
+  }
+  return out
+}
+
+/* An element's box, drawn as a guide. The baseline is solid because that is the
+ * line the lettering actually sits on; the box itself is dashed. */
+function elementGuide(p) {
+  const b = p.box
+  return [
+    `<rect x="${round(b.x)}" y="${round(b.y)}" width="${round(b.w)}" height="${round(b.h)}" fill="none" stroke="#00b0ff" stroke-width="0.7" stroke-dasharray="4 3"/>`,
+    p.kind === 'text'
+      ? `<line x1="${round(b.x)}" y1="${round(b.y + b.h)}" x2="${round(b.x + b.w)}" y2="${round(b.y + b.h)}" stroke="#ff2d55" stroke-width="0.7"/>`
+      : '',
+  ].join('')
+}
+
+/**
+ * The overlay, drawn from the element list.
+ *
+ * `values` is keyed by source id — see SOURCES in ticketelements.js. Anything
+ * absent is simply not drawn.
+ *
+ * CODES ARE DRAWN FIRST, and that is not a style choice. A QR carries a white
+ * backing that covers whatever is under it, so a code painted after a number
+ * would erase the number. Paint order here is the z-order on paper.
+ */
+export function elementLayerSVG(design, values = {}, opts = {}) {
+  const { guides = false, pinWidth = true, qrBoxes = false, qrUrl = '', encode } = opts
+  const width = Number(design?.artwork?.width ?? 1600)
+  const height = Number(design?.artwork?.height ?? 517)
+  const placed = placeElements(design, values)
+
+  const codes = []
+  const texts = []
+  for (const p of placed) {
+    if (p.kind === 'code') {
+      const box = { enabled: true, x: p.x, y: p.y, size: p.size, ecc: p.el.ecc, backing: p.el.backing }
+      if (qrUrl && encode) codes.push(qrLayer(box, qrUrl, { encode }))
+      else if (qrBoxes) codes.push(qrPlaceholder(box, 'QR'))
+      continue
+    }
+    for (const line of p.lines) {
+      texts.push(textEl({
+        text: line.text,
+        x: line.x,
+        baseline: line.baseline,
+        fontSize: p.fontSize,
+        weight: p.weight,
+        fill: p.fill,
+        family: p.family,
+        width: line.width,
+        anchor: p.anchor,
+      }, pinWidth))
+    }
+  }
+
+  const body = [
+    ...codes,
+    ...texts,
+    ...(guides ? placed.map(elementGuide) : []),
+  ].join('')
+  return `<svg class="numbers" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${body}</svg>`
 }

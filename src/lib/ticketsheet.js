@@ -24,6 +24,43 @@ import { numberLayerSVG } from './ticketart.js'
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
   .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+/** The paper this prints on. A4 portrait is the only sheet the app offers. */
+export const PAGE = { widthMM: 210, heightMM: 297 }
+
+/*
+ * HOW MANY TICKETS FIT DOWN ONE PAGE, AND THE SUM THAT SAYS SO.
+ *
+ * This existed as a stored setting — `sheet.perPage`, a slider on the design
+ * screen from one to twelve — and NOTHING EVER READ IT. The tickets were laid
+ * out in a column and the browser broke the page wherever it happened to run
+ * out of paper. So the control said four, the page took four, and the two facts
+ * were unrelated: set it to twelve and the printout did not change.
+ *
+ * It was never a setting. A ticket is as tall as its width and the artwork's
+ * shape make it, and the page is 297 mm; how many fit is then arithmetic with
+ * no free variable in it. Deriving it here means the screen and the printer
+ * cannot disagree, and returning the terms rather than just the answer means a
+ * screen can show the sum — which is the only form in which "4" is checkable by
+ * somebody holding a ruler and a sheet of A4.
+ */
+export function pageFit(design, opts = {}) {
+  const sheet = design?.sheet ?? {}
+  const widthMM = Number(opts.widthMM ?? sheet.widthMM ?? 190)
+  const gapMM = Number(opts.gapMM ?? sheet.gapMM ?? 4)
+  const marginMM = Number(opts.marginMM ?? sheet.marginMM ?? 10)
+  const pageHeightMM = Number(opts.pageHeightMM ?? PAGE.heightMM)
+
+  const artW = Number(design?.artwork?.width ?? 1600)
+  const artH = Number(design?.artwork?.height ?? 517)
+  const heightMM = widthMM * (artH / artW)
+
+  /* One ticket needs its own height; each one after it needs a gap as well. */
+  const usable = pageHeightMM - 2 * marginMM
+  const per = Math.max(1, Math.floor((usable + gapMM) / (heightMM + gapMM)))
+  const used = per * heightMM + (per - 1) * gapMM + 2 * marginMM
+  return { per, heightMM, widthMM, gapMM, marginMM, pageHeightMM, used, fits: used <= pageHeightMM + 1e-9 }
+}
+
 /**
  * @param {object}   design    from designFor(template)
  * @param {string[]} numbers   the ticket numbers, in order
@@ -52,8 +89,16 @@ export function sheetHTML(design, numbers, imageHref, opts = {}) {
    * design-screen test page wants.
    */
   const layers = opts.layers && typeof opts.layers === 'object' ? opts.layers : null
-  const tickets = list.map((n) => `
-    <div class="ticket" data-number="${esc(n)}">
+  /*
+   * The page is broken where the arithmetic says it breaks, rather than
+   * wherever the browser runs out of paper. Left to itself a browser will fit
+   * whatever it can, which is the same answer until a margin changes and then
+   * silently is not — and a sheet that took four tickets yesterday and takes
+   * three today is a book that comes off the guillotine in the wrong order.
+   */
+  const { per } = pageFit(design, opts)
+  const tickets = list.map((n, i) => `
+    <div class="ticket${(i + 1) % per === 0 && i + 1 < list.length ? ' lastonpage' : ''}" data-number="${esc(n)}">
       <div class="art"></div>
       ${(layers && layers[n]) || numberLayerSVG(design, n, { ...opts, guides: false, qrBoxes: false })}
     </div>`).join('')
@@ -79,6 +124,7 @@ export function sheetHTML(design, numbers, imageHref, opts = {}) {
     break-inside: avoid;
     page-break-inside: avoid;
   }
+  .ticket.lastonpage { break-after: page; page-break-after: always; }
   .ticket .art {
     position: absolute; inset: 0;
     background-image: url("${imageHref}");

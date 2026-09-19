@@ -10,6 +10,16 @@
  * ticket may read either, the page has no way to ask, and a wrong guess shows
  * somebody a verdict about their money in a language they do not read.
  */
+/*
+ * BURMESE AWAITING A NATIVE READER.
+ *
+ * `whatThisIs` was written for a user who is reviewing it and must not be
+ * reworded until they come back on it. The keys added with the page's redesign
+ * — brandCheck, privacyNote, whyOneAnswer, whyOneAnswerNote, showSeller,
+ * aboutMore — were written the same way and have had the same amount of native
+ * review, which is none. The English in each is the sentence that was meant; if
+ * the two ever disagree, the English is the one to correct the Burmese against.
+ */
 export const S = {
   checking: { en: 'Checking this ticket…', my: 'အသိအမှတ်ကို စစ်ဆေးနေသည်…' },
 
@@ -44,6 +54,73 @@ export const S = {
     en: 'This link is incomplete. Scan the code on the ticket again.',
     my: 'ဤလိပ်ခ် မပြည့်စုံပါ။ လက်မှတ်ပေါ်မှ ကုဒ်ကို ပြန်ဆကြန်ပါ။',
   },
+
+  /*
+   * WHAT THIS RAFFLE IS, said to somebody who has no way to know.
+   *
+   * A stranger scans a piece of paper and lands on a page that says a number
+   * is genuine. With nothing else on it, that reads like a commercial
+   * ticketing service — which is the wrong impression of tickets volunteers
+   * are selling by hand for a community cause, and the wrong impression to
+   * leave with whoever is standing there holding one.
+   *
+   * It says what the raffle is FOR. It does not say the raffle is permitted,
+   * approved or registered: this page cannot know that, and a line implying it
+   * would be a claim the software has no way to stand behind.
+   */
+  whatThisIs: {
+    en: 'A small community charity raffle. Volunteers sell these tickets by hand to raise money for the most vulnerable families in the community. It is not a commercial ticket sale.',
+    my: 'ဤသည်မှာ ရပ်ရွာလူမှုကူညီရေးအတွက် အသေးစား ကံစမ်းမဲဖြစ်ပါသည်။ လက်မှတ်များကို စေတနာ့ဝန်ထမ်းများက လက်ဖြင့် ရောင်းချပြီး၊ ရရှိငွေကို ရပ်ရွာအတွင်း အကူအညီ အလိုအပ်ဆုံး မိသားစုများအတွက် အသုံးပြုပါသည်။ စီးပွားရေးအတွက် ရောင်းချခြင်း မဟုတ်ပါ။',
+  },
+
+  /*
+   * WHO IS ANSWERING. The page used to open on a bare verdict card with no
+   * heading of any kind, so the first thing a stranger saw was a coloured tick
+   * and a sentence about a number. This names what they have reached.
+   *
+   * It does NOT name a charity. The raffle now supports more than one
+   * organisation's artwork, and a page hard-coded to one of them would be wrong
+   * on the others' tickets. `whatThisIs` below says what kind of thing this is
+   * without claiming to be a particular body, which is the same reasoning.
+   */
+  brandCheck: { en: 'Ticket check', my: 'လက်မှတ် စစ်ဆေးရန်' },
+
+  /*
+   * THE PROMISE THE ARCHITECTURE ALREADY KEEPS, said out loud.
+   *
+   * The verify function may touch two columns of `tickets` and one of
+   * `ticket_codes`, and tests/verify.test.mjs fails if it ever mentions a
+   * buyer. A stranger cannot know that. Somebody who has just scanned a
+   * stranger's ticket — or had theirs scanned by somebody else — is entitled to
+   * be told that pointing a phone at a QR code does not reveal who bought it.
+   */
+  privacyNote: {
+    en: 'The buyer’s name and phone number are never shown on this page.',
+    my: 'ဝယ်ယူသူ၏ အမည်နှင့် ဖုန်းနံပါတ်ကို ဤစာမျက်နှာတွင် ဘယ်သောအခါမျှ မပြသပါ။',
+  },
+
+  /*
+   * WHY ONE ANSWER FITS EVERY FAILURE.
+   *
+   * The endpoint answers identically for a number that was never issued, a
+   * ticket never printed, and a code out by one character — deliberately, so it
+   * cannot be used to map which numbers exist. Unexplained, that reads as a
+   * page that does not know very much. Explained, it reads as a page that is
+   * refusing to help somebody forging tickets, which is what it is.
+   */
+  whyOneAnswer: { en: 'Why it says nothing more', my: 'ဤထက်ပို၍ မဖော်ပြရခြင်း အကြောင်းရင်း' },
+  whyOneAnswerNote: {
+    en: 'A number that was never issued, a ticket that was never printed, and a code changed by one character all get this same answer. Any difference between them could be used to work out which ticket numbers exist.',
+    my: 'မထုတ်ဝေဖူးသော နံပါတ်၊ မပုံနှိပ်ရသေးသော လက်မှတ်နှင့် စာလုံးတစ်လုံး ပြောင်းလဲထားသော ကုဒ်တို့အားလုံးသည် တူညီသော အဖြေကိုသာ ရရှိပါသည်။ ကွာခြားမှုရှိပါက မည်သည့်လက်မှတ်နံပါတ်များ ရှိသည်ကို ရှာဖွေရန် အသုံးပြုနိုင်ပါသည်။',
+  },
+
+  /* What to actually do about it, which the refusal on its own does not say. */
+  showSeller: {
+    en: 'Show this ticket to the person who sold it to you.',
+    my: 'ဤလက်မှတ်ကို ရောင်းချသူထံ ပြသပါ။',
+  },
+
+  aboutMore: { en: 'More about this raffle', my: 'အသေးစိတ် ဖတ်ရှုရန်' },
 
   checkedAt: { en: 'Checked', my: 'စစ်ဆေးချိန်' },
   photocopy: {

@@ -27,14 +27,78 @@ import { S } from './strings.js'
 
 const root = document.getElementById('app')
 
-/** Both languages, always, because the page has no way to ask which is wanted. */
+/**
+ * Both languages, always, because the page has no way to ask which is wanted.
+ *
+ * BURMESE FIRST, AND THIS IS THE ONLY PLACE THAT DECIDES IT. The page used to
+ * lead with English. Nearly everybody who scans one of these tickets reads
+ * Burmese, and making them skip a line to reach their own language on a verdict
+ * about their money is the wrong way round.
+ *
+ * Every string on the page goes through here, which is the point: the failure
+ * this avoids is a page half-inverted, carrying two conventions at once,
+ * shipped because nothing noticed. tests/verifypage.test.mjs pins the order so
+ * that a future edit cannot quietly reintroduce it.
+ */
 function say(key) {
   const s = S[key]
   if (!s) return ''
-  return `<span class="en">${s.en}</span><span class="my" lang="my">${s.my}</span>`
+  return `<span class="my" lang="my">${s.my}</span><span class="en">${s.en}</span>`
 }
 
-function render(html) { root.innerHTML = html }
+function render(html) {
+  root.innerHTML = topbar() + html + about()
+}
+
+/*
+ * WHO IS ANSWERING, above everything.
+ *
+ * Without it the page opens on a coloured tick and a sentence about a number,
+ * with nothing saying what has been reached. It is deliberately quiet — a
+ * heading, not a banner — because the verdict underneath is the thing somebody
+ * came for.
+ */
+function topbar() {
+  return `<header class="topbar">
+    <span class="logo" aria-hidden="true"></span>
+    <span class="brand">${say('brandCheck')}</span>
+  </header>`
+}
+
+/*
+ * UNDER EVERY ANSWER, INCLUDING THE ONES THAT FAILED.
+ *
+ * Kept out of panel() so that it cannot be forgotten by a branch: "could not
+ * check" and a malformed link are exactly the moments a stranger is left
+ * looking at a bare page and forming an impression of what they have been sold.
+ * It sits OUTSIDE the card because the answer to "is this ticket real" is what
+ * the page is for, and this must not compete with it.
+ *
+ * The link is optional and prints nothing when no address is configured, rather
+ * than offering a stranger somewhere that does not exist.
+ */
+function about() {
+  const more = String(import.meta.env.VITE_ABOUT_URL || '').trim()
+  const link = more
+    ? `<p class="aboutlink"><a href="${escapeHtml(more)}" rel="noopener noreferrer">${say('aboutMore')}</a></p>`
+    : ''
+  return `<p class="about">${say('whatThisIs')}</p>` + link
+}
+
+/*
+ * WHY EVERY FAILURE LOOKS THE SAME, shown on every failure.
+ *
+ * The endpoint answers identically for a number never issued, a ticket never
+ * printed and a code out by one character, so that it cannot be used to map the
+ * raffle. Unexplained that reads as a page that does not know much; explained,
+ * it reads as a page refusing to help somebody forging tickets.
+ */
+function whyOneAnswer() {
+  return `<section class="why">
+    <h2>${say('whyOneAnswer')}</h2>
+    <p>${say('whyOneAnswerNote')}</p>
+  </section>`
+}
 
 function panel(tone, headKey, noteKey, extra = '') {
   return `
@@ -69,7 +133,7 @@ async function run() {
 
   const p = params()
   if (!p) {
-    render(panel('bad', 'notGenuine', 'malformedNote'))
+    render(panel('bad', 'notGenuine', 'malformedNote') + whyOneAnswer())
     return
   }
 
@@ -91,7 +155,7 @@ async function run() {
      * page. From where the person is standing those are the same thing, and the
      * distinction would only be useful to somebody probing the endpoint.
      */
-    if (res.status === 400) { render(panel('bad', 'notGenuine', 'malformedNote')); return }
+    if (res.status === 400) { render(panel('bad', 'notGenuine', 'malformedNote') + whyOneAnswer()); return }
     if (!res.ok || !body || body.ok !== true) { render(panel('warn', 'cannotCheck', 'cannotCheckNote')); return }
   } catch {
     // No signal, or the function is down. Not the same as a forged ticket, and
@@ -101,7 +165,10 @@ async function run() {
   }
 
   if (!body.genuine) {
-    render(panel('bad', 'notGenuine', 'notGenuineNote'))
+    /* What to do about it, which the refusal on its own does not say: the person
+     * who sold it is usually standing there. */
+    const todo = `<p class="todo">${say('showSeller')}</p>`
+    render(panel('bad', 'notGenuine', 'notGenuineNote', todo) + whyOneAnswer())
     return
   }
 
@@ -111,7 +178,8 @@ async function run() {
 
   const details = `
     <p class="number"><span class="label">${say('ticketNo')}</span><b>${escapeHtml(body.number)}</b></p>
-    <p class="state">${say(stateKey)}</p>`
+    <p class="state">${say(stateKey)}</p>
+    <p class="privacy">${say('privacyNote')}</p>`
 
   render(panel(tone, 'genuine', noteKey, details) + `
     <p class="stamp">${say('checkedAt')} ${escapeHtml(new Date(body.checkedAt).toLocaleString())}</p>`)

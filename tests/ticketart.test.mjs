@@ -18,11 +18,12 @@
  * the app reads them from.
  */
 import { DEFAULT_DESIGN, REFERENCE, designFor, validateDesign } from '../src/lib/ticketdesign.js'
+import { legacyFromElements } from '../src/lib/ticketelements.js'
 import {
   FONT, SPACING, advanceOf, checkSerial, place, placeFitted, placeBoth, numberLayerSVG, qrModuleMM,
   placeBook, placeBuyer, measurable, TEXT_FAMILY,
 } from '../src/lib/ticketart.js'
-import { sheetHTML } from '../src/lib/ticketsheet.js'
+import { sheetHTML, pageFit, PAGE } from '../src/lib/ticketsheet.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -388,6 +389,229 @@ console.log('the buyer is drawn only when the caller passes one')
   ok(filled.includes('Daw Hla'), 'and a sold one does')
   ok(filled.includes('Book-0007'), 'along with its book')
   eq((filled.match(/<text/g) || []).length, 5, 'two numbers, two book labels and one name')
+}
+
+
+/*
+ * THE MIGRATION DRAWS THE SAME TICKET.
+ *
+ * The design model grew an element list — a box of shares per printed thing —
+ * and every design already stored is in the older shape of named slots. The
+ * list is DERIVED from those slots rather than retyped, so this is the test
+ * that the derivation is arithmetic and not a second set of measurements: draw
+ * the same ticket both ways and compare the coordinates that reach the markup.
+ *
+ * If this fails, a raffle that has been printing happily gets a different
+ * ticket the first time somebody opens the design screen, and the two halves of
+ * a book stop matching. It is the most expensive failure in this file.
+ */
+console.log('a design migrated to elements draws what it drew before')
+{
+  const attrs = (svg) => [...svg.matchAll(/<text\b([^>]*)>([^<]*)<\/text>/g)].map((m) => {
+    const a = {}
+    for (const q of m[1].matchAll(/([\w:-]+)=(?:"([^"]*)"|'([^']*)')/g)) a[q[1]] = q[2] ?? q[3]
+    return { ...a, content: m[2] }
+  })
+
+  const BUYER = { name: 'Daw Hla', phone: '012-555 0001', address: 'Klang', seller: 'Pa Thang' }
+  const opts = { book: 'Book-007', buyer: BUYER }
+
+  // The same design with the element list taken off, which sends numberLayerSVG
+  // down the original path — the one every printed ticket so far came from.
+  const legacy = { ...D }
+  delete legacy.elements
+
+  ok(Array.isArray(D.elements) && D.elements.length > 0, 'the standard design has an element list')
+  ok(!legacy.elements, 'and it can be taken off to get the old path')
+
+  const before = attrs(numberLayerSVG(legacy, 'KS-03291', opts))
+  const after = attrs(numberLayerSVG(D, 'KS-03291', opts))
+
+  eq(after.length, before.length, 'the same number of things are drawn')
+
+  /*
+   * Matched by what they say, then by where they are — the element list draws
+   * in its own order and the order is not what is being tested. The ticket
+   * number and the book both appear TWICE, once per half, so comparing by
+   * content alone silently compares the main half against the stub and reports
+   * a migration failure that is really a test failure.
+   */
+  const byText = (list) => {
+    const m = new Map()
+    for (const t of list) {
+      if (!m.has(t.content)) m.set(t.content, [])
+      m.get(t.content).push(t)
+    }
+    for (const v of m.values()) v.sort((p, q) => Number(p.x) - Number(q.x))
+    return m
+  }
+  const wasDrawn = byText(before)
+  const isDrawn = byText(after)
+
+  for (const [text, olds] of wasDrawn) {
+    const news = isDrawn.get(text) ?? []
+    eq(news.length, olds.length, `"${text}" is still drawn ${olds.length} time(s)`)
+    for (let i = 0; i < olds.length && i < news.length; i++) {
+      const b = olds[i]
+      const a = news[i]
+      near(Number(a.x), Number(b.x), `"${text}" #${i + 1}: x is unchanged`, 0.01)
+      near(Number(a.y), Number(b.y), `"${text}" #${i + 1}: baseline is unchanged`, 0.01)
+      near(Number(a['font-size']), Number(b['font-size']), `"${text}" #${i + 1}: size is unchanged`, 0.01)
+      eq(a.fill, b.fill, `"${text}" #${i + 1}: ink is unchanged`)
+    }
+  }
+
+  /* A buyer's name is drawn in the Myanmar stack and must NOT carry a pinned
+   * width, in either path — pinning one spreads the glyphs to reach a number
+   * measured from a font the text is not drawn in. "Klang" came out "K l a n g". */
+  const name = after.find((x) => x.content === 'Daw Hla')
+  ok(name && name.textLength === undefined, 'a name in the text stack has no pinned width')
+}
+
+/*
+ * HOW MANY TICKETS FIT ON A PAGE IS ARITHMETIC, NOT A SETTING.
+ *
+ * `sheet.perPage` was a slider from one to twelve that nothing read: the
+ * tickets were laid out in a column and the browser broke the page wherever it
+ * ran out of paper. So the control said four, the page took four, and neither
+ * fact caused the other — setting it to twelve changed nothing on the printout.
+ *
+ * pageFit derives it instead, and returns the terms as well as the answer so a
+ * screen can show the sum. These numbers are checkable with a ruler and a sheet
+ * of A4, which is the point of showing them.
+ */
+console.log('what fits on a page is worked out, not guessed')
+{
+  const f = pageFit(D)
+  eq(PAGE.heightMM, 297, 'the page is A4')
+  eq(f.per, 4, 'four 61.4 mm tickets fit down 297 mm with 10 mm margins')
+  near(f.heightMM, 190 * (REFERENCE.height / REFERENCE.width), 'the height comes from the artwork\'s shape', 1e-6)
+  near(f.used, f.per * f.heightMM + (f.per - 1) * f.gapMM + 2 * f.marginMM, 'the sum is the terms', 1e-9)
+  ok(f.used <= f.pageHeightMM, 'and it is inside the page')
+  ok(f.fits, 'which it reports')
+
+  // A bigger margin takes one off the page. This is the case the old slider got
+  // wrong in silence: the number on screen stayed at four.
+  eq(pageFit(D, { marginMM: 30 }).per, 3, 'a 30 mm margin leaves room for three')
+  eq(pageFit(D, { widthMM: 100 }).per, 7, 'a smaller ticket fits more — 32.3 mm tall, so seven')
+  ok(pageFit(D, { widthMM: 210, marginMM: 0, gapMM: 0 }).per >= 4, 'a full-width ticket still fits several')
+
+  // Never nought, whatever it is asked. A page that holds no tickets is a loop
+  // that never advances.
+  eq(pageFit(D, { widthMM: 210, marginMM: 140 }).per, 1, 'a page too small for one still says one')
+}
+
+console.log('the printed sheet breaks where the arithmetic says it breaks')
+{
+  const numbers = Array.from({ length: 9 }, (_, i) => `KS-0000${i + 1}`)
+  const html = sheetHTML(D, numbers, 'x')
+  const breaks = (html.match(/class="ticket lastonpage"/g) ?? []).length
+  // Nine tickets at four to a page breaks after the 4th and the 8th — and never
+  // after the last one, which would emit a trailing blank page.
+  eq(breaks, 2, 'nine tickets at four a page break twice')
+  ok(html.includes('page-break-after: always'), 'the break is stated for older engines too')
+  const one = sheetHTML(D, ['KS-00001'], 'x')
+  // The class name is in the stylesheet either way, so this has to look for it
+  // on a ticket rather than in the document.
+  ok(!/class="ticket lastonpage"/.test(one), 'a single ticket needs no break at all')
+  eq((sheetHTML(D, numbers.slice(0, 4), 'x').match(/class="ticket lastonpage"/g) ?? []).length, 0,
+    'and neither does an exact pageful — a trailing break is a blank page')
+}
+
+
+/*
+ * A SAVED DESIGN IS READ BY MORE THAN THE BROWSER THAT WROTE IT.
+ *
+ * The design carries both shapes: the element list, and the named slots it was
+ * derived from. Nothing in this codebase reads the slots once a list exists —
+ * but a browser still running the PREVIOUS bundle does, and it knows nothing
+ * about elements. An organiser who had the app open across a deploy and has not
+ * reloaded is that browser.
+ *
+ * The failure is silent, which is what makes it worth a test. Nothing throws.
+ * The old bundle prints a whole run from where an element used to be, the new
+ * one shows it where it now is, and the two machines disagree with no error on
+ * either. So the slots are written back in step on save.
+ */
+console.log('the old slots are kept in step, for a reader that has not reloaded')
+{
+  const moved = designFor({ width: REFERENCE.width, height: REFERENCE.height, design: {} })
+  const el = moved.elements.find((e) => e.source === 'buyer.name')
+  ok(!!el, "the buyer's name is an element")
+  el.box.left = 0.6
+
+  const { artwork, ...rest } = moved
+  void artwork
+  const stored = { ...rest, ...legacyFromElements(moved) }
+
+  const reread = designFor({ width: REFERENCE.width, height: REFERENCE.height, design: stored })
+  const asElement = reread.elements.find((e) => e.source === 'buyer.name').box.left * REFERENCE.width
+
+  /* The old path: the same stored design with the list taken away. */
+  const asSlots = { ...reread }
+  delete asSlots.elements
+  const svg = numberLayerSVG(asSlots, 'KS-88888', { buyer: { name: 'Daw Hla' } })
+  const drawn = Number((svg.match(/<text[^>]*x="([\d.]+)"[^>]*>Daw Hla/) ?? [])[1] ?? NaN)
+
+  near(drawn, asElement, 'both readers put the name in the same place', 1)
+  near(drawn, 0.6 * REFERENCE.width, 'and it is where it was dragged to', 1)
+}
+
+/*
+ * AND SAVING WITHOUT CHANGING ANYTHING CHANGES NOTHING.
+ *
+ * The write-back goes through shares and back, so it rounds. If that rounding
+ * did not land on the number it started from, every save would nudge the design
+ * by a pixel — and an organiser who opened the screen and pressed Save out of
+ * habit would walk the ticket across the artwork over a few weeks.
+ */
+console.log('and a save that changed nothing stores the same numbers')
+{
+  const d = designFor({ width: REFERENCE.width, height: REFERENCE.height, design: {} })
+  const back = legacyFromElements(d)
+  for (const half of ['main', 'stub']) {
+    eq(back[half].capHeight, DEFAULT_DESIGN[half].capHeight, `${half}: the digit height is unmoved`)
+    eq(back[half].label.baseline, DEFAULT_DESIGN[half].label.baseline, `${half}: the baseline is unmoved`)
+    eq(back[half].label.right, DEFAULT_DESIGN[half].label.right, `${half}: the label's edge is unmoved`)
+    eq(back[half].clearRight, DEFAULT_DESIGN[half].clearRight, `${half}: the logo's edge is unmoved`)
+  }
+  for (const [k, f] of Object.entries(DEFAULT_DESIGN.buyer.fields)) {
+    eq(back.buyer.fields[k].x, f.x, `buyer.${k}: x is unmoved`)
+    eq(back.buyer.fields[k].baseline, f.baseline, `buyer.${k}: the rule is unmoved`)
+    eq(back.buyer.fields[k].maxRight, f.maxRight, `buyer.${k}: the stopping point is unmoved`)
+  }
+  eq(back.qrMain.x, DEFAULT_DESIGN.qrMain.x, 'the QR box is unmoved')
+  eq(back.qrMain.size, DEFAULT_DESIGN.qrMain.size, 'and unresized')
+
+  /* Twice, because "close enough once" and "stable" are different properties. */
+  const again = legacyFromElements(designFor({ width: REFERENCE.width, height: REFERENCE.height, design: { ...d, ...back } }))
+  eq(JSON.stringify(again.main), JSON.stringify(back.main), 'a second save is identical to the first')
+  eq(JSON.stringify(again.buyer), JSON.stringify(back.buyer), 'for the buyer lines too')
+}
+
+/*
+ * WHAT CANNOT BE CARRIED BACK, stated so it is a decision rather than a gap.
+ * An element with no slot to live in is not drawn by an older reader, which is
+ * safe: drawing less is not the same as drawing something in the wrong place.
+ */
+console.log('an element the old shape has no room for is left out, not faked')
+{
+  const d = designFor({ width: REFERENCE.width, height: REFERENCE.height, design: {} })
+  const before = JSON.stringify(legacyFromElements(d))
+  d.elements = [...d.elements, {
+    id: 'brand-new', kind: 'field', source: 'price', half: 'main', enabled: true,
+    box: { left: 0.4, top: 0.6, width: 0.1, height: 0.04 }, align: 'left',
+    overflow: 'shrink', family: 'number', weight: 'regular', ink: '#FFFFFF',
+    after: '', gap: 1.1, ecc: 'M', backing: true, text: '',
+  }]
+  eq(JSON.stringify(legacyFromElements(d)), before, 'a new element adds nothing to the old slots')
+
+  // And one that was deleted is switched off where the old shape has a switch.
+  const gone = designFor({ width: REFERENCE.width, height: REFERENCE.height, design: {} })
+  gone.elements = gone.elements.filter((e) => e.id !== 'qrMain' && e.id !== 'buyer-phone')
+  const out = legacyFromElements(gone)
+  eq(out.qrMain.enabled, false, 'a removed QR is switched off for the older reader')
+  eq(out.buyer.fields.phone.enabled, false, 'and so is a removed buyer line')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
