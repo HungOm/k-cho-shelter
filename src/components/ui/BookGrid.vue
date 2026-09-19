@@ -27,6 +27,7 @@
  */
 import { computed } from 'vue'
 import { bookShort, BOOK_WORDS } from '../../lib/format.js'
+import { custodyOf } from '../../lib/books.js'
 import Bi from './Bi.vue'
 
 const props = defineProps({
@@ -40,7 +41,21 @@ const remaining = computed(() => props.limit ? Math.max(0, props.books.length - 
 
 function label(b) {
   const bits = [b.book, BOOK_WORDS[b.status] || b.status]
-  if (b.agentName) bits.push(b.agentName)
+  /*
+   * Through custodyOf, so a tile and the sheet behind it answer this the same
+   * way. It read b.agentName, which the ledger view joins on held_by_agent —
+   * empty for an Offered book — so hovering an offered tile said "Book-009 ·
+   * Waiting to be accepted" and stopped, exactly as the sheet did.
+   *
+   * CALLED WITHOUT THE AGENTS MAP, deliberately. This is a ui/ component that
+   * takes its books as a prop and has no other business with global state;
+   * importing the store to resolve a name coupled it to one and broke every
+   * harness that renders it against a stub. So an offered tile names the seller
+   * by id where the sheet names them in full — a tooltip is a hint and the sheet
+   * is the answer, and tapping the tile is what opens it.
+   */
+  const who = custodyOf(b)
+  if (who.has) bits.push(who.name)
   if (b.sold) bits.push(b.sold + ' of ' + (b.sold + (b.available ?? 0)) + ' sold')
   if (b.daysOverdue > 0) bits.push(b.daysOverdue + ' days late')
   return bits.join(' · ')

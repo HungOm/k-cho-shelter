@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { state, isAdmin, go, bookBlock, isSold, api } from '../../lib/store.js'
+import { custodyOf } from '../../lib/books.js'
 import { money, date, BOOK_WORDS, COUNTED_IN_HELP } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import RoleTag from '../ui/RoleTag.vue'
@@ -74,12 +75,21 @@ const settleHelp = computed(() => soldByMe.value
  * know whose money it is — so the name is still there after the book is back.
  * Saying "who HAS it" then contradicts the status directly above.
  */
-const holderLabel = computed(() => ({
-  Out: 'Who has it',
-  Returned: 'Brought back by',
-  Settled: 'Was with',
-  Lost: 'Last with',
-}[props.book.status] || 'Who has it'))
+/*
+ * Moved into books.js so the grid answers it the same way. This row and the
+ * grid's tooltip were two copies of one fact, and both went silent on Offered.
+ */
+/*
+ * BUILT FROM state.agents RATHER THAN IMPORTING THE STORE'S agentMap, and the
+ * reason is the harnesses. Four suites render this sheet against a stubbed
+ * store, and a stub exports what the component needed on the day it was
+ * written — so reaching for one more export broke the bundle in every one of
+ * them before a single assertion ran. `state` is already imported here and
+ * every stub carries agents, so this asks for nothing new.
+ */
+const agents = computed(() =>
+  Object.fromEntries((state.agents || []).map((a) => [a.id, a])))
+const custody = computed(() => custodyOf(props.book, agents.value))
 
 /**
  * Reprinting a lost handover paper starts here. It used to be chained behind
@@ -253,8 +263,8 @@ const showHistory = ref(false)
            And the row is dropped entirely when nobody holds it. "In the office"
            followed by "Who has it: nobody" is the same fact twice, and the
            second one is phrased as if something were missing. -->
-      <div v-if="book.agentName" class="f">
-        <span>{{ holderLabel }}</span><b>{{ book.agentName }}<RoleTag seller /></b>
+      <div v-if="custody.has" class="f">
+        <span>{{ custody.label }}</span><b>{{ custody.name }}<RoleTag seller /></b>
       </div>
 
       <!-- Only while it is actually out. A due date on a book already back is an

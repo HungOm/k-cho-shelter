@@ -162,6 +162,61 @@ export function holderLabel(book) {
 }
 
 /**
+ * Who a book is with, and what to call that relationship — in one place,
+ * because the book sheet and the book grid were answering it separately and
+ * both went silent on the same state.
+ *
+ * OFFERED IS WHY THIS EXISTS. An offered book is not HELD by anybody yet, so
+ * held_by_agent is correctly empty and the seller it is waiting on lives in
+ * offered_to_agent instead. Both screens keyed on the held name, so an offered
+ * book showed "Waiting to be accepted" and stopped — no name, on the one state
+ * where the name is the entire point. An organiser could not tell whether to go
+ * and remind somebody or whether they had offered it to the wrong person, and
+ * the only way to find out was to withdraw the offer and look at who it came
+ * back from. Reported as "waiting to be accepted by who?".
+ *
+ * agent_name in the ledger view joins on held_by_agent, so it is null for an
+ * offered book however correct the row is. The name is resolved from the agents
+ * the browser already has rather than asking the server for a second one.
+ *
+ * Falls back to the bare ID rather than to nothing: "Waiting on A002" is worse
+ * than a name and far better than silence, and it still tells somebody which
+ * seller to ask.
+ */
+export function custodyOf(book, agents = {}) {
+  const offered = book?.status === 'Offered'
+  const id = String((offered ? book?.offeredTo : book?.agentId) || '')
+  /*
+   * NON-OFFERED IS UNTOUCHED, and it took two goes to get that right.
+   * bookdetail.test.mjs failed twice here — first because the id was a fallback
+   * for every state, then because the agents lookup was. Both put a holder row
+   * back onto a book sitting in the office, which is the contradiction that row
+   * was rewritten to remove. Only Offered is new; everything else reads
+   * agentName exactly as it did before, so there is no state whose behaviour
+   * changed except the one that was broken.
+   */
+  const known = (id && agents[id] && agents[id].name) || ''
+  const name = offered ? known : String(book?.agentName || '')
+  const label = offered ? 'Waiting on' : ({
+    Out: 'Who has it',
+    Returned: 'Brought back by',
+    Settled: 'Was with',
+    Lost: 'Last with',
+  }[book?.status] || 'Who has it')
+  /*
+   * THE BARE-ID FALLBACK IS FOR OFFERED ONLY, and bookdetail.test.mjs caught it
+   * being wider. An offered book has no name in the row by construction, so the
+   * id is the best answer there and "Waiting on A002" still tells somebody who
+   * to ask. Everywhere else an empty name means nobody holds it — held_by_agent
+   * can linger on a book that has been restocked — and falling back to the id
+   * there puts a holder row back onto a book sitting in the office, which is the
+   * contradiction the row was rewritten to remove.
+   */
+  const who = name || (offered ? id : '')
+  return { id, name: who, label, has: !!who }
+}
+
+/**
  * Inspects a typed range.
  *
  * @param from,to     whatever the person typed

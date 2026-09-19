@@ -25,7 +25,10 @@ const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
 const STORE = `
 import { reactive, computed } from 'vue'
-export const state = reactive({ cfg: { ticketsPerBook: 10, currency: 'RM' }, books: [], agents: [],
+export const state = reactive({ cfg: { ticketsPerBook: 10, currency: 'RM' }, books: [],
+  // One seller, so the Offered case is shown resolving a name. A002 is
+  // deliberately absent, so the fallback to a bare id is exercised too.
+  agents: [{ id: 'A001', name: 'TEST' }],
   tickets: __TICKETS__, user: __USER__ })
 export const isAdmin = computed(() => false)
 export function go() {}
@@ -80,6 +83,33 @@ console.log('the sheet never says somebody has a book that is back')
 
   const settled = await sheet({ status: 'Settled' })
   ok(/Was with JOHN/.test(settled.text), 'and a counted book says who it was with')
+}
+
+console.log('an offered book says who it is waiting on')
+{
+  /*
+   * ASKED LOOKING AT Book-009: "waiting to be accepted by who?" The sheet said
+   * "Waiting to be accepted" and stopped. Every other custody state names the
+   * person — who has it, brought back by, was with — and Offered, the one state
+   * whose entire point is that a named someone has not answered yet, named
+   * nobody.
+   *
+   * The cause is that an offered book is not HELD, so held_by_agent is empty by
+   * construction and the seller lives in offered_to_agent. agent_name in the
+   * ledger view joins on held_by_agent, so it is null however correct the row
+   * is, and the row was keyed on the name.
+   */
+  const offered = await sheet({ status: 'Offered', agentId: '', agentName: '', offeredTo: 'A001' })
+  ok(/Waiting on TEST/.test(offered.text),
+     `it names the seller it is waiting on (${offered.text.slice(0, 80)})`)
+  ok(!/Who has it/.test(offered.text),
+     'and does not claim they have it — they have not accepted yet')
+
+  // A seller the browser has no name for still gets a usable answer. "Waiting on
+  // A002" is worse than a name and far better than the silence this replaced.
+  const stranger = await sheet({ status: 'Offered', agentId: '', agentName: '', offeredTo: 'A002' })
+  ok(/Waiting on A002/.test(stranger.text),
+     `an unknown id falls back to the id rather than to nothing (${stranger.text.slice(0, 80)})`)
 }
 
 console.log('a due date is shown only while something is actually due')
