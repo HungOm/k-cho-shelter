@@ -234,7 +234,13 @@ export const MY = {
 
 /** Error codes from the server, so a failure is not only in English. */
 export const MY_ERRORS = {
-  MISSING_FIELD: 'လိုအပ်သော အချက်အလက် မပြည့်စုံပါ',
+  /* Phase 7: resetting a raffle. Burmese unreviewed — the English is the
+   * sentence that was meant, and is what to correct the Burmese against. */
+  NOTHING_SELECTED: 'ဘာကိုမှ ရွေးမထားပါ။',
+  NOTHING_TO_RESET: 'ရွေးထားသည့်အထဲတွင် ဘာမျှမရှိပါ။',
+  CONFIRM_MISMATCH: 'အတည်ပြုစာသားကို အတိအကျ ရိုက်ထည့်ပါ။',
+  PRINTED_TICKETS_EXIST: 'ပုံနှိပ်ပြီးသော လက်မှတ်များ ရှိနေပါသည်။ ဆက်လုပ်ရန် သီးခြားအတည်ပြုပါ။',
+  RESET_FAILED: 'ပြန်လည်သုတ်သင်ခြင်း မအောင်မြင်ပါ။ ဘာမျှ ပြောင်းလဲမှုမရှိပါ။',  MISSING_FIELD: 'လိုအပ်သော အချက်အလက် မပြည့်စုံပါ',
   BAD_REQUEST: 'တောင်းဆိုချက် မမှန်ကန်ပါ',
   BAD_PHONE: 'ဖုန်းနံပါတ် မမှန်ကန်ပါ',
   BOOK_NOT_FOUND: 'ဤစာအုပ်ကို ရှာမတွေ့ပါ',
