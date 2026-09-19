@@ -159,13 +159,25 @@ export const DEFAULT_DESIGN = {
   /*
    * WHERE THE STUB BEGINS, as a share of the ticket's width.
    *
-   * Measured at 1100 px on the 1600 px reference artwork — the perforation the
-   * CEAM ticket is printed with. It is not used to cut anything: the artwork
-   * already carries the line. It is here because every element belongs to one
-   * side of it or the other, and "which half is this on" is the question the
-   * design screen groups by and the print sheet folds on.
+   * MEASURED OFF THE ARTWORK, not taken from a drawing of it. The printed
+   * perforation is a red dashed rule, and scanning the artwork for the column
+   * with the most red pixels finds it at x 1183 of 1600 — 392 of the 517 rows,
+   * which is a dashed line and not a coincidence.
+   *
+   * It was 0.6875 (1100 px) for a day, taken from a mockup rather than from the
+   * picture. Eighty-three pixels too far left, which put the boundary THROUGH
+   * the QR box at 1025..1147 — so the digital ticket, which cuts the buyer's
+   * half here, sent out a picture with half a QR on it, and the sample
+   * watermark shaded a strip of the buyer's half as though it were stub. A
+   * number that is only ever compared against itself looks right for as long as
+   * nothing crosses it.
+   *
+   * It is not used to cut paper: the artwork already carries the line. It is
+   * here because every element belongs to one side of it or the other, and
+   * "which half is this on" is what the design screen groups by, what the
+   * watermark inks differ across, and where the digital ticket is cropped.
    */
-  stubAt: 0.6875,
+  stubAt: 0.7394,
 
   /* How it is printed. 190 mm across, four to a sheet of A4. */
   sheet: {
@@ -176,8 +188,34 @@ export const DEFAULT_DESIGN = {
     cutlines: true,
   },
 
-  /* The picture a buyer is sent. Phase 4 draws it; the settings live here. */
+  /*
+   * The card a buyer is sent. Only its size and quality live here: what is ON
+   * it comes from the organisation — brand colour, logo, name — rather than
+   * from this artwork, because a raffle can sell tickets before it has uploaded
+   * any. See digitalCardSVG.
+   */
   digital: { widthPx: 1200, quality: 0.92 },
+}
+
+/**
+ * Where the stub begins on this design, as a share of the width.
+ *
+ * ONE HOME FOR THE QUESTION, because the answer was copied into five places and
+ * one of them was wrong for a day. Every caller wrote `design.stubAt ?? 0.6875`
+ * with its own clamp, so correcting the measured default in DEFAULT_DESIGN
+ * corrected exactly none of them — a design that arrived without the field kept
+ * cutting at the old boundary, which on this artwork runs through the QR box.
+ *
+ * `designFor` always merges the defaults, so in practice the field is present
+ * and the fallback is for a design assembled some other way. That is precisely
+ * the path nobody exercises and nobody would notice: it does not throw, it
+ * quietly cuts in the wrong place.
+ */
+export function stubShare(design) {
+  const v = Number(design?.stubAt)
+  if (!Number.isFinite(v)) return DEFAULT_DESIGN.stubAt
+  /* 1 is legitimate and means a ticket with no stub at all. */
+  return Math.max(0.05, Math.min(1, v))
 }
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v)

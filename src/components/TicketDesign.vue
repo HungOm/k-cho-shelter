@@ -35,7 +35,7 @@
  */
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { state, api, setConfig, toast, isAdmin } from '../lib/store.js'
-import { designFor, validateDesign } from '../lib/ticketdesign.js'
+import { designFor, validateDesign, stubShare } from '../lib/ticketdesign.js'
 import {
   elementLayerSVG, placeElements, qrModuleMM, ticketVerifyUrl,
 } from '../lib/ticketart.js'
@@ -197,7 +197,7 @@ const TAG = { field: 'FLD', code: 'QR', text: 'TXT' }
  * the other half and should not then have to say so in a second control.
  */
 function sideOf(el) {
-  const at = Number(design.value?.stubAt ?? 0.6875)
+  const at = stubShare(design.value)
   return el.box.left + el.box.width / 2 >= at ? 'stub' : 'half'
 }
 
@@ -233,7 +233,7 @@ function inkNear(side) {
 }
 
 function addElementAt(kind, box) {
-  const side = box.left + box.width / 2 >= Number(design.value.stubAt ?? 0.6875) ? 'stub' : 'half'
+  const side = box.left + box.width / 2 >= stubShare(design.value) ? 'stub' : 'half'
   const el = normalElement({
     id: nextId(),
     kind,
@@ -339,7 +339,7 @@ function edgesExcept(id) {
     xs.push(e.box.left, e.box.left + e.box.width)
     ys.push(e.box.top, e.box.top + e.box.height)
   }
-  xs.push(0, 1, Number(design.value?.stubAt ?? 0.6875))
+  xs.push(0, 1, stubShare(design.value))
   ys.push(0, 1)
   return { xs, ys }
 }

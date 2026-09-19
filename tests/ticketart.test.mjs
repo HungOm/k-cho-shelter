@@ -19,6 +19,9 @@
  */
 import { DEFAULT_DESIGN, REFERENCE, designFor, validateDesign } from '../src/lib/ticketdesign.js'
 import { legacyFromElements } from '../src/lib/ticketelements.js'
+import { stubShare } from '../src/lib/ticketdesign.js'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   FONT, SPACING, advanceOf, checkSerial, place, placeFitted, placeBoth, numberLayerSVG, qrModuleMM,
   placeBook, placeBuyer, measurable, TEXT_FAMILY,
@@ -612,6 +615,67 @@ console.log('an element the old shape has no room for is left out, not faked')
   const out = legacyFromElements(gone)
   eq(out.qrMain.enabled, false, 'a removed QR is switched off for the older reader')
   eq(out.buyer.fields.phone.enabled, false, 'and so is a removed buyer line')
+}
+
+
+/*
+ * WHERE THE STUB BEGINS HAS ONE HOME, AND NOBODY KEEPS A COPY.
+ *
+ * The perforation was written as `design.stubAt ?? 0.6875` in five places, each
+ * with its own clamp. The number came from a mockup rather than from the
+ * artwork and was eighty-three pixels out — it ran through the QR box, so the
+ * digital ticket cropped the buyer's half with half a code on it.
+ *
+ * Correcting DEFAULT_DESIGN fixed exactly none of the five. That is the bug
+ * this test is about: not the wrong number, but a constant copied to the point
+ * where correcting it does nothing. The literal is deliberately NOT asserted
+ * here — it will change again the next time somebody measures, and pinning it
+ * would make this the sixth copy.
+ */
+console.log('where the stub begins has one home')
+{
+  const SRC = new URL('../src/', import.meta.url).pathname
+  const files = (function walk(dir) {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory()
+      ? walk(join(dir, e.name))
+      : /\.(js|vue)$/.test(e.name) ? [join(dir, e.name)] : []))
+  })(SRC)
+  ok(files.length > 20, `read the source (${files.length} files)`)
+
+  /* A default written at the point of use, in any of the shapes people reach
+   * for. Comments are stripped first: the history of the wrong number is
+   * recorded in several files on purpose and must not trip this. */
+  const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  const OWN_DEFAULT = /stubAt\s*(\?\?|\|\|)\s*[\d.]/
+
+  for (const f of files) {
+    const name = f.split('/src/')[1]
+    if (name === 'lib/ticketdesign.js') continue          // the one home
+    ok(!OWN_DEFAULT.test(strip(readFileSync(f, 'utf8'))),
+      `${name} does not keep its own default for stubAt`)
+  }
+}
+
+console.log('and it answers for a design that never carried one')
+{
+  const D2 = designFor({ width: REFERENCE.width, height: REFERENCE.height, design: {} })
+  eq(stubShare(D2), D2.stubAt, 'a design with the field gets its own value')
+  eq(stubShare({}), D2.stubAt, 'one without it gets the measured default, not a guess')
+  eq(stubShare(undefined), D2.stubAt, 'and so does no design at all')
+  eq(stubShare({ stubAt: 'x' }), D2.stubAt, 'and so does one whose value is not a number')
+  eq(stubShare({ stubAt: 2 }), 1, 'past the right edge clamps to the whole ticket')
+  eq(stubShare({ stubAt: 0 }), 0.05, 'and nought clamps to something with a ticket in it')
+  eq(stubShare({ stubAt: 1 }), 1, 'exactly 1 is allowed — a ticket with no stub')
+
+  /*
+   * THE PROPERTY THAT MADE THIS SURFACE. The digital ticket crops the buyer's
+   * half at this boundary, so a QR box straddling it is sent out as half a
+   * code. Asserted against the default design, where it was true for a day.
+   */
+  const cut = stubShare(D2) * REFERENCE.width
+  const qr = D2.qrMain
+  ok(qr.x + qr.size <= cut,
+    `the QR box ends at ${qr.x + qr.size} and the cut is at ${Math.round(cut)} — the code survives the crop`)
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
