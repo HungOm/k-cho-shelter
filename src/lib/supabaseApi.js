@@ -46,6 +46,10 @@ const WRITES = new Set([
    */
   'upload_template', 'list_templates', 'set_template_design',
   'set_active_template', 'remove_template', 'set_ticket_sizes',
+  /* reset_preview only counts, but it is registered as a write on the server so
+   * that no permissions row can hand it out, and the two lists have to agree or
+   * it gets the read timeout and is reported as failed after succeeding. */
+  'reset_preview', 'reset_apply',
   // Minting the codes that make a printed ticket provable, and drawing them.
   'generate_tickets', 'render_tickets',
   'record_payment', 'reverse_payment',

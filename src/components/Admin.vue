@@ -166,6 +166,87 @@ async function loadUsers() {
  * the same thing to the person refused, and not the same decision to the person
  * looking at the list.
  */
+/* ---------- resetting the raffle ---------- */
+
+/*
+ * THE MOST DESTRUCTIVE CONTROL IN THE APP, so it behaves like one.
+ *
+ * Nothing loads until it is asked for, and the feature list comes FROM THE
+ * SERVER rather than being written here — so the screen cannot offer something
+ * the server will refuse, and the counts come from the same code that does the
+ * deleting. A preview assembled separately is a preview that lies.
+ *
+ * The confirmation is not a fixed word. It carries the row counts, so it cannot
+ * be learned in advance and cannot be typed without reading what is about to be
+ * destroyed. The server counts again on the way in and refuses if the numbers
+ * moved while this sat open — somebody selling at a table does not know a reset
+ * is being considered.
+ */
+const resetInfo = ref(null)
+const resetPick = ref([])
+const resetPhrase = ref('')
+const resetBusy = ref(false)
+const resetErr = ref('')
+const acceptPrinted = ref(false)
+const resetDone = ref(null)
+
+async function previewReset() {
+  resetBusy.value = true
+  resetErr.value = ''
+  resetDone.value = null
+  try {
+    resetInfo.value = await api('reset_preview', { features: resetPick.value })
+  } catch (e) {
+    resetErr.value = e.message
+    if (e.code) toast(e.message, 'bad', e.code)
+  } finally {
+    resetBusy.value = false
+  }
+}
+
+function toggleReset(id) {
+  resetPick.value = resetPick.value.includes(id)
+    ? resetPick.value.filter((x) => x !== id)
+    : [...resetPick.value, id]
+  /* A phrase belongs to a selection. Changing the selection changes what is
+   * about to be destroyed, so anything already typed stops being consent. */
+  resetPhrase.value = ''
+  acceptPrinted.value = false
+  previewReset()
+}
+
+const resetReady = computed(() => {
+  const i = resetInfo.value
+  if (!i || !i.total || !i.willReset?.length) return false
+  if (i.printed > 0 && !acceptPrinted.value) return false
+  return resetPhrase.value.trim().replace(/\s+/g, ' ').toUpperCase() === i.phrase
+})
+
+async function applyReset() {
+  if (!resetReady.value) return
+  resetBusy.value = true
+  resetErr.value = ''
+  try {
+    resetDone.value = await api('reset_apply', {
+      features: resetPick.value,
+      phrase: resetPhrase.value,
+      acceptPrinted: acceptPrinted.value,
+    })
+    toast('The raffle was reset', 'ok')
+    resetPick.value = []
+    resetPhrase.value = ''
+    acceptPrinted.value = false
+    resetInfo.value = null
+  } catch (e) {
+    resetErr.value = e.message
+    if (e.code) toast(e.message, 'bad', e.code)
+    /* The counts moved under us. Show the new ones rather than the stale. */
+    if (e.code === 'CONFIRM_MISMATCH') previewReset()
+  } finally {
+    resetBusy.value = false
+  }
+}
+
 const STATUS_WORDS = {
   active: 'on', pending: 'waiting', suspended: 'paused', banned: 'stopped',
 }
@@ -538,6 +619,94 @@ function details(d) {
       </div>
       <p v-else class="hint">Every change anybody has made, most recent first.</p>
     </div>
+
+    <!--
+      LAST ON THE SCREEN, and only for the system admin. It is the only control
+      here that destroys anything, and it is not something to meet on the way to
+      something else.
+    -->
+    <div v-if="isSuper" class="card wipe">
+      <div class="spread">
+        <h3 style="margin:0">Reset this raffle</h3>
+        <button class="btn sm" :disabled="resetBusy" @click="previewReset">
+          {{ resetInfo ? 'Refresh' : 'Show' }}
+        </button>
+      </div>
+      <p class="muted small">
+        Empties what you choose, and cannot be undone. Nothing goes until you have
+        seen the counts and typed them back. There is no backup in here &mdash; take
+        one first if this raffle holds anything worth keeping.
+      </p>
+
+      <template v-if="resetInfo">
+        <ul class="feats">
+          <li v-for="f in resetInfo.features" :key="f.id">
+            <label class="choice">
+              <input type="checkbox" :checked="resetPick.includes(f.id)"
+                     :disabled="!f.offered || resetBusy"
+                     :title="f.offered ? `Reset ${f.name}` : f.never"
+                     @change="toggleReset(f.id)">
+              <span>{{ f.name }}
+                <span class="why">{{ f.offered ? f.why : f.never }}</span>
+              </span>
+            </label>
+          </li>
+        </ul>
+
+        <template v-if="resetPick.length">
+          <p v-if="resetInfo.added.length" class="note tiny">
+            <b>This takes more with it.</b>
+            <span v-for="a in resetInfo.added" :key="a.id"><br>{{ a.name }} &mdash; {{ a.why }}</span>
+          </p>
+          <p v-if="resetInfo.refused.length" class="note bad tiny">
+            <span v-for="r in resetInfo.refused" :key="r.id">{{ r.why }}<br></span>
+          </p>
+          <p v-if="resetInfo.loosens.length" class="note tiny">
+            <b>These rows stay, pointing at nothing.</b>
+            <span v-for="l in resetInfo.loosens" :key="l.table + l.by"><br>{{ l.why }}</span>
+          </p>
+
+          <table v-if="resetInfo.total" class="counts">
+            <tbody>
+              <tr v-for="(n, t) in resetInfo.counts" :key="t">
+                <td>{{ String(t).replace(/_/g, ' ') }}</td>
+                <td class="n">{{ n }}</td>
+              </tr>
+              <tr class="tot"><td>in total</td><td class="n">{{ resetInfo.total }}</td></tr>
+            </tbody>
+          </table>
+          <p v-else class="tiny muted">There is nothing in what you chose.</p>
+
+          <label v-if="resetInfo.printed > 0" class="choice">
+            <input v-model="acceptPrinted" type="checkbox">
+            <span>Yes, stop {{ resetInfo.printed }} printed ticket{{ resetInfo.printed === 1 ? '' : 's' }} verifying
+              <span class="why">
+                They are on paper in people&rsquo;s hands. Emptying their codes means
+                whoever holds one is told no ticket matches their link.
+              </span>
+            </span>
+          </label>
+
+          <template v-if="resetInfo.total">
+            <p class="tiny muted" style="margin-top:10px">Type this, exactly:</p>
+            <p class="phrase">{{ resetInfo.phrase }}</p>
+            <input v-model="resetPhrase" class="phrasein" spellcheck="false"
+                   aria-label="Type the confirmation" placeholder="Type it here">
+            <button class="btn danger wide" :disabled="!resetReady || resetBusy"
+                    :title="resetReady ? 'Empty everything listed above' : 'Tick what to reset, then type the line above exactly'"
+                    @click="applyReset">
+              {{ resetBusy ? 'Working…' : 'Reset it' }}
+            </button>
+          </template>
+        </template>
+        <p v-else class="tiny muted">Choose what to empty.</p>
+      </template>
+
+      <p v-if="resetErr" class="note bad tiny">{{ resetErr }}</p>
+      <p v-if="resetDone" class="note tiny">
+        Reset: {{ resetDone.reset.map(r => r.name).join(', ') }} &mdash; {{ resetDone.total }} rows.
+      </p>
+    </div>
   </div>
 </template>
 
@@ -553,4 +722,27 @@ function details(d) {
 }
 .log { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .log:last-child { border-bottom: 0; }
+
+/* The one card here that destroys things, edged so it does not read as another
+ * settings box. */
+.wipe { border-left: 3px solid var(--bad); }
+.feats { list-style: none; margin: 10px 0 0; padding: 0 }
+.feats li { border-bottom: 1px solid var(--border) }
+.feats li:last-child { border-bottom: 0 }
+.counts { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px }
+.counts td { padding: 3px 0; border-bottom: 1px solid var(--border) }
+.counts td.n { text-align: right; font-variant-numeric: tabular-nums;
+               font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
+.counts tr.tot td { font-weight: 600; border-bottom: 0 }
+/* The sentence is the thing being agreed to, so it is set as a quotation rather
+ * than as body text somebody skims past. */
+.phrase {
+  margin: 4px 0 8px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--bad-soft); color: var(--bad); font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word;
+}
+.phrasein { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
+.btn.danger { background: var(--bad); color: #fff; border-color: var(--bad) }
+.btn.danger:disabled { opacity: .5 }
+.wide { width: 100%; margin-top: 10px }
 </style>

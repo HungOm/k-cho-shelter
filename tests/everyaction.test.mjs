@@ -224,6 +224,19 @@ const CALLS = {
     sizes: [{ id: 'a7', label: 'A7', widthMM: 105, heightMM: 74, tolerance: 0.02, minWidthPx: 800 }],
   },
   /*
+   * Counting what a reset would destroy, which destroys nothing. The artwork is
+   * the one feature nothing else depends on, so this exercises the plan, the
+   * allowlist and a real count without dragging the raffle in behind it.
+   */
+  reset_preview: { features: ['artwork'] },
+  /*
+   * And the refusal that matters most on the way in. The phrase is generated
+   * from the row counts, so a wrong one — or a count that moved while the
+   * screen sat open — has to stop the reset rather than round it off. Nothing
+   * here reaches app_reset: it is refused before the call.
+   */
+  reset_apply: { features: ['artwork'], phrase: 'DELETE EVERYTHING' },
+  /*
    * The fixture has no ticket artwork, so this refuses with NO_TEMPLATE —
    * deliberately, and it is the right path to exercise: generating codes for
    * tickets that cannot be drawn would mint something nobody can print.
@@ -259,6 +272,15 @@ const DELIBERATE = new Set([
   // somebody else removed it in between — and it refuses by name rather than
   // writing a design onto nothing.
   'TEMPLATE_NOT_FOUND',
+  /*
+   * Resetting a raffle. All four are the action declining, and each is a
+   * refusal somebody should be able to hit: nothing ticked, nothing in what was
+   * ticked, a confirmation that does not match the counts it was generated
+   * from, and printed tickets that would stop verifying. RESET_FAILED is
+   * deliberately NOT here — that one is the SQL function raising, and a reset
+   * that fails is broken rather than careful.
+   */
+  'NOTHING_SELECTED', 'NOTHING_TO_RESET', 'CONFIRM_MISMATCH', 'PRINTED_TICKETS_EXIST',
   // Asking to generate ticket codes before any artwork has been uploaded.
   'NO_TEMPLATE',
   'BELOW_GENERATED', 'NOT_YOUR_BOOK', 'BOOK_WITH_SELLER', 'BOOK_CLOSED',

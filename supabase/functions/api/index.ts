@@ -44,6 +44,7 @@ import {
 import { configPayload } from './config.ts'
 import * as branding from './branding.ts'
 import * as templates from './templates.ts'
+import * as reset from './reset.ts'
 import * as printing from './printing.ts'
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
@@ -183,6 +184,8 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   set_active_template: { group: 'Access', label: 'Choose which ticket artwork to print', danger: true },
   remove_template: { group: 'Access', label: 'Remove a ticket artwork', danger: true },
   set_ticket_sizes: { group: 'Access', label: 'Change the accepted ticket sizes', danger: true },
+  reset_preview: { group: 'Access', label: 'See what resetting a raffle would destroy', danger: true },
+  reset_apply: { group: 'Access', label: 'Reset a raffle', danger: true },
   generate_tickets: { group: 'Books', label: 'Generate ticket codes for printing', danger: true },
   render_tickets: { group: 'Books', label: 'Draw tickets for printing' },
   settle_book: { group: 'Money', label: 'Settle a book', danger: true },
@@ -400,6 +403,19 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   set_active_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setActiveTemplate },
   remove_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.removeTemplate },
   set_ticket_sizes: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setTicketSizes },
+  /*
+   * EMPTYING A RAFFLE. Both are 'write' and both refuse anybody but the System
+   * Admin inside the handler as well as here — the registry decides which roles
+   * may reach an action, and 'write' is what stops a permissions row widening
+   * it, but neither of those says "only one person in the organisation". That
+   * check is in reset.ts and is the one that matters.
+   *
+   * reset_preview only counts. It is a write anyway, for the reason templates.ts
+   * gives: registering a read as a write is the only way to say this one cannot
+   * be given away from the Access screen.
+   */
+  reset_preview: { roles: ADMIN_ONLY, kind: 'write', fn: reset.resetPreview },
+  reset_apply: { roles: ADMIN_ONLY, kind: 'write', fn: reset.resetApply },
   // Minting the codes that make a ticket provable. Same bar as the artwork
   // above, and for a sharper reason: whoever can generate a code can make a
   // forgery verify.
