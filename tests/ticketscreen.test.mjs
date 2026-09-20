@@ -82,13 +82,14 @@ console.log('a seller is not shown the screen at all')
 console.log('with no artwork yet, an organiser is told so and can upload')
 {
   /*
-   * ShapesPanel is drawn for real: the shapes moved into a component of their
-   * own, and a stubbed child renders its slots and nothing else — so this
-   * assertion would fail against a screen that is perfectly correct. The
-   * assertion is unchanged; only where the markup lives has moved.
+   * ShapesPanel and TemplateRail are drawn for real: both moved into
+   * components of their own, and a stubbed child renders its slots and
+   * nothing else — so these assertions would fail against a screen that is
+   * perfectly correct. The assertions are unchanged; only where the markup
+   * lives has moved.
    */
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, EMPTY), {
-    drive: settle, renderReal: ['ShapesPanel.vue'],
+    drive: settle, renderReal: ['ShapesPanel.vue', 'TemplateRail.vue'],
   })
   const text = visibleText(html)
   /*

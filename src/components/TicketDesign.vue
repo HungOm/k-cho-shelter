@@ -48,6 +48,7 @@ import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
 import Dim from './ui/Dim.vue'
 import SheetTab from './ticketdesign/SheetTab.vue'
 import ShapesPanel from './ticketdesign/ShapesPanel.vue'
+import TemplateRail from './ticketdesign/TemplateRail.vue'
 import Ink from './ui/Ink.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 /* Across into the check page's own folder on purpose: the sample book and the
@@ -61,7 +62,6 @@ const sizes = ref([])
 const loading = ref(true)
 const loadErr = ref('')
 
-const fileInput = ref(null)
 const busy = ref(false)
 const uploadErr = ref('')
 const uploadNote = ref('')
@@ -972,9 +972,6 @@ function printTest() {
 }
 
 
-const kb = (n) => (n >= 1024 * 1024
-  ? `${Math.round(n / 1024 / 1024 * 10) / 10} MB`
-  : `${Math.round(n / 1024)} KB`)
 
 /* The ticket at its printed size. The height is never stored — it is the
  * artwork's own shape times the width, because a second number is a second
@@ -1359,52 +1356,14 @@ const printedSize = computed(() => {
 
       <!-- ================= ARTWORK & PAPER ================= -->
       <div v-else-if="tab === 'artwork'" class="studio">
-        <aside class="rail">
-          <div class="block grow">
-            <h3 class="rubric">Templates <span class="count">{{ templates.length }}</span></h3>
-            <ul class="tlist">
-              <li v-for="t in templates" :key="t.id" :class="{ on: t.id === activeId }">
-                <!--
-                  A PICTURE OF THE ARTWORK, NOT A DESCRIPTION OF IT. This was
-                  five lines of prose per template — name, pixels, kilobytes,
-                  date, uploader — in a list whose whole job is "which of these
-                  is the ticket I mean". A thumbnail answers that in one glance
-                  and the paperwork moves to the tooltip, where it is still
-                  there for whoever needs to check a file size.
-                -->
-                <div class="tthumb" :title="`${t.width} × ${t.height} px · ${kb(t.bytes)}`
-                       + (t.uploadedAt ? ` · uploaded ${String(t.uploadedAt).slice(0, 10)}` : '')
-                       + (t.uploadedBy ? ` by ${t.uploadedBy}` : '')">
-                  <img :src="t.url" :alt="t.name" loading="lazy">
-                  <span v-if="t.id === activeId" class="pill ok">printing</span>
-                </div>
-                <b class="tname">{{ t.name }}</b>
-                <div class="trow">
-                  <button v-if="t.id !== activeId" class="btn sm" :disabled="busy"
-                          @click="choose(t.id)">Print from this one</button>
-                  <button class="btn sm ghost" :disabled="busy" @click="remove(t.id)">Remove</button>
-                </div>
-              </li>
-            </ul>
-            <p v-if="!templates.length" class="tiny muted">
-              Nothing uploaded yet, so tickets cannot be printed.
-            </p>
-          </div>
-
-          <div class="block">
-            <button class="btn sm primary wide" :disabled="busy" @click="fileInput?.click()">
-              {{ busy ? 'Working…' : 'Upload new artwork' }}
-            </button>
-            <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp"
-                   :disabled="busy" @change="pickFile" hidden>
-            <p class="tiny muted"
-               title="One blank ticket with its stub. SVG is refused, and the size is read from the file's own header — renaming a file will not get it past.">
-              PNG, JPEG or WebP · up to 4 MB
-            </p>
-            <p v-if="uploadErr" class="note bad tiny">{{ uploadErr }}</p>
-            <p v-if="uploadNote" class="note tiny">{{ uploadNote }}</p>
-          </div>
-        </aside>
+        <!--
+          THE TEMPLATE RAIL IS ITS OWN COMPONENT. Five bindings in, four
+          events out, and the file input lives with it — the parent never
+          sees a DOM node, only the File somebody chose.
+        -->
+        <TemplateRail :templates="templates" :active-id="activeId" :busy="busy"
+                      :error="uploadErr" :note="uploadNote"
+                      @choose="choose" @remove="remove" @file="pickFile" />
 
         <div class="stagewrap">
           <template v-if="active && design">
@@ -1550,14 +1509,12 @@ const printedSize = computed(() => {
 
 /* ---- three columns: list, ticket, one thing's settings ---- */
 .panel { max-height: calc(100vh - 170px); overflow: auto }
-.block { display: flex; flex-direction: column; gap: 8px }
 
 /*
  * A RUBRIC, NOT A HEADING. These name a group of controls inside a panel and
  * must not compete with the screen's own title — small, spaced, and in the
  * muted colour, so the eye reads the ticket first and the labels second.
  */
-.count { float: right; font-variant-numeric: tabular-nums; letter-spacing: 0 }
 
 /* ---- segmented buttons: one of these, not many of those ---- */
 
@@ -1709,14 +1666,6 @@ const printedSize = computed(() => {
  * a day and overrode all three of them with a border and a margin.
  */
 /* A template is recognised by its picture, so the picture is the control. */
-.tthumb {
-  position: relative; display: block; width: 100%; aspect-ratio: 1600 / 517;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  overflow: hidden; background: var(--surface-2);
-}
-.tthumb img { display: block; width: 100%; height: 100%; object-fit: cover }
-.tthumb .pill { position: absolute; left: 6px; top: 6px }
-.tname { display: block; margin: 6px 0 4px; font-size: .9rem; line-height: 1.25 }
 /*
  * `.quad` is the INSPECTOR's grid — four box fields, where two columns pair
  * x with y and width with height. The sheet tab borrowed it for three
@@ -1739,11 +1688,7 @@ const printedSize = computed(() => {
 .report.info { background: var(--info-soft); color: var(--info) }
 
 /* ---- templates list ---- */
-.tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px }
-.tlist li { border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 3px }
-.tlist li.on { border-color: var(--brand); background: var(--brand-soft) }
 .tlist p { margin: 0 }
-.trow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
 
 /* ---- the artwork verdict ---- */
 .verdict { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px; background: var(--surface) }
