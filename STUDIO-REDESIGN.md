@@ -508,10 +508,80 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 4c | 4 Sell | Write down sales — one ticket or a pile of stubs | not verified |
 | 4d | 5 Money | Money — who owes what, running-balance statement | not verified |
 | 4h | 6 Control | Approvals — the waiting request first | yes |
-| **8a** | 7 Buyer | **Books → book → a ticket — the keepsake in the raffle's colour** | **NO — see below** |
-| **8b** | 7 Buyer | **Three treatments of the same ticket, one brand colour** | **NO** |
-| 4i | 7 Buyer | Ticket check — the public page | in progress (V1/V2/V3) |
-| 4e | 8 Draw | The draw — readiness as a checklist, prize form beside it | no owner |
+| 8a | 7 Buyer | Books → book → a ticket — the keepsake in the raffle's colour | yes (9d78cef) — less the Motto chip |
+| 8b | 7 Buyer | Three treatments of the same ticket, one brand colour | ticket-printing (Certificate) |
+| 4i | 7 Buyer | Ticket check — the public page | ticket-printing — **ruled, see below** |
+| 4e | 8 Draw | The draw — readiness as a checklist, prize form beside it | no owner — **fully backed, see below** |
+
+### 4e is fully backed — do not half-build it
+
+Established by `kcho-shelter-ff`, who was in the prize and reporting code all
+day. I had written a caution into the handout saying to check whether prizes
+existed and, if not, to build only the readiness panel. That was wrong and
+would have produced a deliberately half-built screen:
+
+* **Three tables** — `prize_types`, `prizes`, `winners` (schema.sql 736 / 787 / 846).
+* **Four built-in types** shipped on every install: cash, donated goods,
+  voucher, share of takings.
+* **Eight handlers** — `list_prizes`, `upsert_prize`, `remove_prize`,
+  `upsert_prize_type`, `record_winner`, `list_winners`, `set_winner_status`,
+  `report_draw_ready`. `upsertPrize` already enforces the card's own footnote:
+  quantity is a count on one row, and it refuses being cut below what has been
+  awarded.
+* **`export_entries` exists** — `{ roles: ADMIN_ONLY, sup: true, kind: 'report' }`,
+  labelled "Download the entry list".
+
+**The blockers come from the server, not the template.** `reportDrawReady`
+returns `problems[]` with `what`, `count`, `where`, `why` — and `where` IS the
+destination (`'books'`, `'approvals'`, `'here'`). Render that shape. A second
+hand-written list of blockers in the template is a copy that disagrees with the
+server the first time a blocker is added.
+
+**The permission trap, which `permissionui` cannot catch.** The card's sentence
+"Only the System Admin can download the entry list or add winners" is true of
+exactly two handlers — `record_winner` and `export_entries`, both `sup: true`.
+It is NOT true of the panel:
+
+| `upsert_prize` | `ADMIN_ONLY` | any admin may add a prize |
+| `list_winners` | viewer, recorder | a volunteer may SEE the winners |
+| `set_winner_status` | recorder | a recorder may mark one told or collected |
+
+Implement it as "disable this panel for non-admins" and you wrongly disable Add
+a prize for organisers who may use it, and wrongly hide a winners list viewers
+are entitled to. `permissionui` catches the hidden-instead-of-disabled half; it
+cannot catch sup-versus-admin, because both sides are "an admin". The words on
+screen must match the refusal the server sends — that is what `rolewords` is for.
+
+### 4i — RULED 2026-09-20: which token is presented decides what is shown
+
+The mockup draws Price, Book, Draw date and Recorded on the public check page.
+**They move to the buyer's receipt view.** The public page keeps answering only
+genuine-or-not and the state. Ruled by the user after `ticket-printing`'s
+argument, which is better than the question I was going to ask:
+
+> The QR is PRINTED ON THE PAPER. Anyone holding the ticket, or a photograph of
+> it, or standing behind somebody in a queue, has `?NUMBER.CODE`. It
+> authenticates the TICKET, not the person — `verify/index.ts` says so at the
+> head of the file — so it cannot be the thing that unlocks a buyer's name.
+
+The buyer-only token already exists and is `ticket_receipts.code`: minted per
+purchase at `printing.ts:542`, **never printed** (verified independently —
+`receipt` appears in the whole drawing layer exactly twice, both prose comments
+in `ticketart.js`; `ticket_receipts` is read only in `verify/index.ts`,
+`_shared/resetplan.ts` and `api/printing.ts`, never in `src/`), and already
+routed: `verify/index.ts` answers `?r=CODE`. So "the only way to hold a receipt
+code is to have been sent one" is a property of the system, not a policy laid
+on top of one.
+
+The framing is the reusable part. "How much may the public page show" is a
+policy question with no good answer; **"which token is being presented"** has
+two routes and two answers and needs no policy.
+
+**Consequence for the guard at `verify.test:200`**, which currently forbids
+`buyer_` and `amount` anywhere in that function's source: it becomes a named
+allowlist of which fields may travel on which route. Not "everything except" —
+that is the shape that admitted `seller_phone`. See
+[[everything-except-x]] and [[negative-defaults-admit-the-unknown-case]].
 
 ### Superseded — do not build
 
@@ -535,11 +605,27 @@ privacy note; `Look` as three chips — Raffle colour, Logo watermark, Motto on;
 `Set in Setup → how this raffle looks. Design it in the studio →`; then
 `Send on WhatsApp`, `Save the picture`, `Print`.
 
-**What exists today** is one column: a dark teal card with a white serial, no
-SOLD chip, no motto, no perforation, `PRICE` but no BOOK or SOLD date, no
-pager, and no right rail at all — so Buyer, Phone, Seller and Code are not
-shown, and the three Look chips do not exist. `--ticket-gold` is a token in
-`style.css` and this card, the one place it is for, does not use it.
+**Built at `9d78cef`** (`ViewTicket.vue`): the pager, the two columns, the gold
+serial, the SOLD chip, the perforation with mask-cut notches, the three-column
+`PRICE · BOOK · SOLD` fact row, the QR, the motto slot, the verify URL, the
+right rail with the `This ticket` facts table, the privacy note and the `Look`
+block. Rendered and read in both themes.
+
+**Deliberately not built — one chip.** 8a's third Look chip is `Motto on`.
+`digitalCardSVG` renders `values.motto` and `cardValues` passes
+`state.cfg.motto`, but **nothing anywhere sets it**: no Setup field, no field
+on the branding API, no column. A chip reading "Motto off" beside a link to a
+page with no motto field is a dead end wearing the costume of state, so the
+block ships with the two chips that are true — `Raffle colour` and `Logo`. The
+mockup's word for the second is "Logo watermark"; on the digital card the logo
+is the masthead mark and the watermark is a different thing on the printed
+sheet, so it is named for the role it plays here (see `name-tokens-for-the-role`).
+
+**Still open on this card:** the motto configuration field, handed out as its
+own piece; and 8a's rail puts `Print` beside `Save the picture`, where the
+modal footer already has a `Print` that prints the whole book. Two controls a
+click apart with the same word and different scopes is worse than one, so the
+footer's was left alone rather than a second Print invented.
 
 ---
 
