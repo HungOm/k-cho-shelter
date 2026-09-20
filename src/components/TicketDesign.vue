@@ -139,7 +139,15 @@ const sampleVerifyBase = computed(() => {
   return set || ((typeof location === 'undefined' ? '' : location.origin) + '/v')
 })
 
+/*
+ * Why the artwork drew nothing, when it draws nothing. A failure here used to
+ * become an HTML comment, so a preview that broke and a preview with nothing
+ * to draw looked identical on screen and in a screenshot.
+ */
+const previewError = ref('')
+
 const preview = computed(() => {
+  previewError.value = ''
   if (!design.value || !active.value) return ''
   try {
     return elementLayerSVG(design.value, sampleValues.value, {
@@ -151,7 +159,8 @@ const preview = computed(() => {
       encode: realQr.value ? encode : undefined,
     })
   } catch (err) {
-    return `<!-- ${String(err.message)} -->`
+    previewError.value = String(err?.message || err)
+    return ''
   }
 })
 
@@ -1498,7 +1507,10 @@ const printedSize = computed(() => {
               </span>
             </p>
 
-            <p v-if="problems.length" class="note bad tiny">
+            <p v-if="previewError" class="note bad tiny">
+      Nothing could be drawn on the ticket: {{ previewError }}
+    </p>
+    <p v-if="problems.length" class="note bad tiny">
               <span v-for="(p, i) in problems" :key="i">{{ p }}<br></span>
             </p>
           </div>
