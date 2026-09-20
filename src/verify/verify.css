@@ -54,6 +54,24 @@
      came to be 46px. A size, so no dark variant. */
   --tap: 52px;
   /*
+   * THE FOUR SUPPORTER BANDS, AS INK RATHER THAN AS FILLS.
+   *
+   * Named for the band, not for the colour, so "gold" moving to a different
+   * hue is one edit here and nothing anywhere else. Each is a TEXT colour on a
+   * tint mixed from itself — the pattern `.band` already uses — which is what
+   * keeps this out of the trap the rest of this file has been through twice: a
+   * brand or semantic colour used as a fill needs a companion ink token, and
+   * #fff is not it. Nothing is filled here, so nothing needs one.
+   *
+   * --band-silver is deliberately a slate rather than a grey. At grey it was
+   * indistinguishable from --muted, and a band that reads as disabled text is
+   * a thank-you that looks like a footnote.
+   */
+  --band-diamond: #2a6fb0;
+  --band-gold: #8a6a00;
+  --band-silver: #4d6470;
+  --band-faithful: #0d7a6f;
+  /*
    * THE GLYPH INSIDE THE ROUNDEL, and it has to be a token because it flips.
    *
    * The mark was `color: #fff` on a solid semantic fill, which is right in
@@ -83,6 +101,12 @@
     --bad: #fca5a0;
     /* Near-black on those light fills: about 11:1, against 1.6:1 for white. */
     --mark-ink: #0d1211;
+    /* Lifted the same way every other colour here is lifted: these are ink on
+       a dark surface, so the light-mode values would be unreadable. */
+    --band-diamond: #8fc4f5;
+    --band-gold: #e5c454;
+    --band-silver: #b3c3cb;
+    --band-faithful: #2bd4c0;
   }
 }
 * { box-sizing: border-box }
@@ -330,6 +354,49 @@ h1 { font-size: 19px; margin: 0 0 12px }
 }
 .fact dt { color: var(--muted); font-size: 14px; flex: 1; min-width: 0 }
 .fact dd { margin: 0; font-weight: 600; text-align: right; min-width: 0 }
+/*
+ * THE SUPPORTER BAND. Above the list of numbers, because it is about the
+ * person holding the receipt and the list is about the tickets.
+ *
+ * A tinted block with the band as its ink, not a filled medal: this sits on
+ * the buyer's own page under a verdict, and a saturated badge would out-shout
+ * the thing they came to read. The count under the name is the evidence and
+ * stays in the ordinary text colour — the compliment is coloured, the proof
+ * is not.
+ */
+.rank {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0 0 14px; padding: 12px 14px;
+  border: 1px solid currentColor; border-radius: var(--r-sm);
+  background: color-mix(in srgb, currentColor 8%, var(--surface));
+  text-align: left;
+}
+.rank b { font-size: 15px; letter-spacing: .01em }
+.rank span { font-size: 13px; color: var(--text) }
+.rank-diamond { color: var(--band-diamond) }
+.rank-gold { color: var(--band-gold) }
+.rank-silver { color: var(--band-silver) }
+.rank-faithful { color: var(--band-faithful) }
+
+/*
+ * THE TICKETS ON A RECEIPT. This was a bare <ul>: browser bullets, browser
+ * indent, and the number and its state running together on one line inside a
+ * card where everything else is laid out. A buyer checking ten tickets reads
+ * this list one line at a time, so the number is what the eye lands on and the
+ * state sits at the other end of the row where it can be scanned down.
+ */
+.tickets {
+  margin: 0; padding: 0; list-style: none;
+  text-align: left; font-size: 14px;
+}
+.tickets li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 8px 0; border-top: 1px solid var(--border);
+}
+.tickets li:first-child { border-top: 0 }
+.tickets b { font-variant-numeric: tabular-nums; letter-spacing: .02em }
+.tickets span { color: var(--muted); font-size: 13px; text-align: right }
+
 .state { margin: 0; font-weight: 600 }
 .good .state { color: var(--ok) }
 .warn .state { color: var(--warn) }

@@ -15,6 +15,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { state, api, toast, go, goStudio } from '../../lib/store.js'
 import { designFor, stubShare } from '../../lib/ticketdesign.js'
+import { rankFor, rankCount } from '../../lib/ranks.js'
 import { numberLayerSVG, ticketVerifyUrl, cardSVG, CARD_DESIGNS, CARD } from '../../lib/ticketart.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { date } from '../../lib/format.js'
@@ -171,9 +172,35 @@ async function loadLogo() {
 }
 
 /* What goes on the card, from what this screen and the config already hold. */
+/*
+ * HOW MANY TICKETS THIS BUYER HOLDS, counted out of the list this screen
+ * already has, keyed on the telephone number.
+ *
+ * ON THE PHONE, NOT THE NAME. Two buyers called "Ma Hla" are two people, and a
+ * count that merged them would hand one of them the other's standing on a card
+ * they are sent. A blank number is not an identity: it gets no band, rather
+ * than being pooled with every other blank — which would make "no number
+ * recorded" the largest supporter in the raffle.
+ *
+ * COUNTED LIVE HERE, STORED ON THE RECEIPT THERE, and they agree because both
+ * happen at the moment the ticket is sent: the same count, the same ladder
+ * (src/lib/ranks.js re-exports the one the server uses). Afterwards the picture
+ * the buyer holds and the receipt behind it both stop moving, which is what a
+ * receipt is. Buying more later earns the higher band on the NEXT one.
+ */
+function ticketsHeldBy(t) {
+  const phone = String(t?.buyer?.phone ?? '').trim()
+  if (!phone) return 0
+  return (state.tickets || []).filter((x) =>
+    isSold(x) && String(x?.buyer?.phone ?? '').trim() === phone).length
+}
+
+const bandFor = (t) => rankFor(ticketsHeldBy(t), Number(state.cfg?.ticketsPerBook ?? 0))
+
 function cardValues(t) {
   const c = state.cfg || {}
   const brand = String(c.brandColor || '').trim()
+  const band = bandFor(t)
   return {
     number: t.number,
     name: t.buyer?.name ?? '',
@@ -188,6 +215,10 @@ function cardValues(t) {
     soldOn: t.soldAt ? date(t.soldAt) : '',
     sold: isSold(t),
     motto: String(c.motto ?? '').trim(),
+    /* Blank when there is no band, which the card draws as nothing. It never
+       falls back to the bottom rung — see ranks.js. */
+    rankName: band?.name ?? '',
+    rankCount: rankCount(band),
     brand,
     /* Computed, never configured — an organisation choosing a colour is not
      * choosing a contrast ratio. See brand.js. */
@@ -518,6 +549,21 @@ onMounted(async () => {
               <div class="fact"><dt>Phone</dt><dd class="data">{{ t.buyer?.phone || '\u2014' }}</dd></div>
               <div class="fact"><dt>Seller</dt><dd>{{ t.buyer?.seller || '\u2014' }}</dd></div>
               <div class="fact"><dt>Code</dt><dd class="data">{{ t.code || '\u2014' }}</dd></div>
+              <!--
+                THE BAND, BESIDE THE BUYER IT BELONGS TO. A row rather than a
+                chip in the Look block: Look reports what the RAFFLE is wearing
+                and this is a fact about this ticket's buyer, which is what the
+                rail above it is for.
+
+                The row is absent when there is no band — no telephone number
+                recorded, or a raffle with no book size — rather than drawn
+                empty. "Supporter: —" invites somebody to go and set one, and
+                there is nowhere to set one: it is counted, never awarded.
+              -->
+              <div v-if="bandFor(t)" class="fact">
+                <dt>Supporter</dt>
+                <dd>{{ bandFor(t).name }} <span class="muted">· {{ rankCount(bandFor(t)) }}</span></dd>
+              </div>
             </dl>
 
           <!--

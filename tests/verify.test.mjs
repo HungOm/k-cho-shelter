@@ -61,8 +61,20 @@ function world(cfg = {}) {
      * construction rather than pushed later, because fakeDb builds its query
      * surface from the tables it is given and a table appended to afterwards is
      * not the one the handler reads. */
-    ticket_receipts: [{ code: 'RRRRRRRRRRRR', created_by: 'a@x.com' }],
-    ticket_receipt_items: [{ code: 'RRRRRRRRRRRR', ticket_idx: 1 }],
+    /*
+     * TWO RECEIPTS ON PURPOSE. RRRR... predates the supporter band and carries
+     * none, which is the state every receipt in a live table was in the day the
+     * column arrived; GGGG... carries one. Testing only the second would leave
+     * the common case — null — checked by nothing at all.
+     */
+    ticket_receipts: [
+      { code: 'RRRRRRRRRRRR', created_by: 'a@x.com', rank: null, rank_tickets: null },
+      { code: 'GGGGGGGGGGGG', created_by: 'a@x.com', rank: 'gold', rank_tickets: 41 },
+    ],
+    ticket_receipt_items: [
+      { code: 'RRRRRRRRRRRR', ticket_idx: 1 },
+      { code: 'GGGGGGGGGGGG', ticket_idx: 1 },
+    ],
     ticket_codes: [
       { ticket_idx: 1, code: GOOD, template_id: 'tpl-1', batch_id: 'b1' },
       { ticket_idx: 2, code: 'ZZZZZZZZ99999999', template_id: 'tpl-1', batch_id: 'b1' },
@@ -291,13 +303,34 @@ console.log('and the function is not even written to be able to')
    * why it is admissible here at all. What it feeds into the reply is the same
    * two facts a single ticket's answer carries, N times over.
    *
+   * ticket_receipts joined it for the supporter band, and the sentence this
+   * list exists to demand is this one. TWO COLUMNS ARE READ, `rank` and
+   * `rank_tickets`, and neither is a fact about a person: a band is one of four
+   * words and the count beside it is a number of tickets. The row also holds
+   * `created_by`, the organiser's email, which is NOT selected and must not be —
+   * it is the only identifying thing in the table.
+   *
+   * The band is read rather than derived on purpose. Working it out here would
+   * mean counting a buyer's tickets, which would mean identifying the buyer,
+   * which is the one thing the rule above forbids. So the api computes it when
+   * the receipt is minted and this function reads the answer.
+   *
    * The point of the list is that adding to it is a decision somebody writes
    * down rather than a line that slips in — so a table added here without a
    * sentence saying what it exposes is the thing to refuse in review.
    */
   const tables = [...code.matchAll(/\.from\('([a-z_]+)'\)/g)].map((m) => m[1])
-  eq([...new Set(tables)].sort().join(), 'config,ticket_codes,ticket_receipt_items,tickets',
-    'it reads the numbering, the tickets, the codes and a receipt\'s ticket list — nothing else')
+  eq([...new Set(tables)].sort().join(),
+    'config,ticket_codes,ticket_receipt_items,ticket_receipts,tickets',
+    'it reads the numbering, the tickets, the codes, a receipt and its ticket list — nothing else')
+  /*
+   * AND IT TAKES TWO COLUMNS OFF THAT ROW, NAMED. `select('rank,rank_tickets')`
+   * is checked literally rather than by the absence of `created_by`, because an
+   * absence cannot tell a narrow select from a `select('*')` that happens not
+   * to mention it yet.
+   */
+  ok(/from\('ticket_receipts'\)\s*\.select\('rank,rank_tickets'\)/.test(code),
+    'and takes only the band and its count off the receipt row, never created_by')
   // And it may not write.
   for (const write of ['.insert(', '.update(', '.upsert(', '.delete(']) {
     ok(!code.includes(write), `it never calls ${write} — a public endpoint that writes can be made to fill a table`)
@@ -393,6 +426,32 @@ console.log("a receipt shows the buyer their own copy")
   eq(r.body.tickets?.[0]?.book, 'Book-0001', 'the book, derived from the numbering')
   eq(r.body.drawDate, '2026-12-20', 'and the draw date')
   ok(r.body.tickets?.[0]?.paid !== undefined, 'with what was paid')
+  /*
+   * NO BAND ON THIS ONE, and the field is ABSENT rather than empty. A `rank:
+   * ''` would render as a band with no name on a page that draws a medal beside
+   * it; the page asks whether the key is there.
+   */
+  ok(!('rank' in r.body), 'a receipt with no band carries no band field')
+}
+
+console.log('a receipt that carries a supporter band says so, and says nothing else')
+{
+  const r = await call(world(), '?r=GGGGGGGGGGGG')
+  eq(r.body.rank, 'gold', 'the band, as it was stored when the receipt was minted')
+  eq(r.body.rankTickets, 41, 'and the count it was worked out from, so it can be checked')
+  /*
+   * THE BAND IS READ, NOT DERIVED. `count` here is ONE — this receipt names one
+   * ticket — while the band was worked out from forty-one. If the endpoint ever
+   * starts computing a band from what it can see, this is the assertion that
+   * catches it: it would say 'faithful'.
+   */
+  eq(r.body.count, 1, 'the receipt itself still covers exactly its own tickets')
+  /*
+   * And the band must not have brought the rest of the row with it. created_by
+   * is an organiser's email address and is the only identifying value in
+   * ticket_receipts.
+   */
+  ok(!JSON.stringify(r.body).includes('a@x.com'), 'and no organiser email came with it')
 }
 
 console.log("and the printed code still shows a stranger none of it")

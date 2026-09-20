@@ -77,6 +77,34 @@ export const S = {
   receiptCount: { en: '{n} tickets on this receipt', my: 'ဤပြေစာတွင် လက်မှတ် {n} စောင်' },
 
   /*
+   * THE SUPPORTER BAND, AND WHY IT IS ON THIS ROUTE ONLY.
+   *
+   * A raffle that is funded by a few people buying a great many tickets should
+   * be able to say thank you to them by name of band, and the thank-you is
+   * worth nothing if it cannot be checked. This is where it is checked: the
+   * band was worked out on the server when the receipt was minted, from the
+   * tickets the buyer actually holds, and this page reads it back.
+   *
+   * NOT on the printed QR. That code is on the paper, so anybody who picks up a
+   * dropped ticket has it, and "held by a Diamond supporter" would tell a
+   * stranger something about the person who lost it. A receipt is minted per
+   * purchase, printed on nothing, and delivered only inside the digital ticket
+   * the buyer is sent — the split the endpoint's own comments set out.
+   *
+   * WARM, AND STILL A STATEMENT OF FACT. The count is beside the name because a
+   * compliment with the number under it is a receipt; without the number it is
+   * flattery, and this page's whole job is to be believed.
+   */
+  rankFaithful: { en: 'Faithful supporter', my: 'သစ္စာရှိ ထောက်ပံ့သူ' },
+  rankSilver: { en: 'Silver supporter', my: 'ငွေ ထောက်ပံ့သူ' },
+  rankGold: { en: 'Gold supporter', my: 'ရွှေ ထောက်ပံ့သူ' },
+  rankDiamond: { en: 'Diamond supporter', my: 'စိန် ထောက်ပံ့သူ' },
+  rankThanks: {
+    en: '{n} tickets in this raffle — thank you.',
+    my: 'ဤကံစမ်းမဲတွင် လက်မှတ် {n} စောင် — ကျေးဇူးတင်ပါသည်။',
+  },
+
+  /*
    * The unsold line is the one that matters most and is the easiest to get
    * wrong. It must not accuse the seller: a ticket sold ten minutes ago at a
    * desk with no signal is genuinely not recorded yet, and that is ordinary.

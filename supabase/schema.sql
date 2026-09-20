@@ -600,7 +600,19 @@ create index if not exists ticket_codes_batch_idx on ticket_codes (batch_id);
 create table if not exists ticket_receipts (
   code       text primary key,
   created_at timestamptz not null default now(),
-  created_by text not null default ''
+  created_by text not null default '',
+  /*
+   * THE SUPPORTER BAND, FROZEN AT MINT. Worked out from the tickets the buyer
+   * held at the time, here rather than recomputed on demand because the page
+   * that states it in public is forbidden to touch a buyer's telephone number
+   * and so cannot count their tickets. Null means it was not worked out — no
+   * number recorded, or a receipt older than the column — and nothing is shown
+   * for it. A default would have written the bottom rung onto every receipt.
+   */
+  rank         text,
+  rank_tickets integer,
+  constraint ticket_receipts_rank_known
+    check (rank is null or rank in ('faithful', 'silver', 'gold', 'diamond'))
 );
 
 create table if not exists ticket_receipt_items (

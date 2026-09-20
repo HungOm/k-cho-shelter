@@ -25,6 +25,7 @@
  */
 import { ApiError, type AppUser } from './gate.ts'
 import { newCode, DEFAULT_LENGTH } from '../_shared/ticketcode.ts'
+import { rankFor } from '../_shared/ranks.ts'
 
 type Ctx = {
   supabaseAdmin: { from: (t: string) => any }
@@ -585,9 +586,32 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
   const length = Math.max(8, Math.min(32,
     Number((cfgRows ?? [])[0]?.value ?? DEFAULT_LENGTH) || DEFAULT_LENGTH))
 
+  /*
+   * THE SUPPORTER BAND, WORKED OUT HERE AND NOWHERE ELSE.
+   *
+   * It belongs at mint for one reason: the public ticket-check page is the
+   * place that says it out loud, and that function is forbidden from touching a
+   * buyer's telephone number — tests/verify names buyer_name as the only buyer
+   * field it may carry. It cannot count a buyer's tickets without becoming able
+   * to identify them, and it should not become able to. So the count happens on
+   * the side that is already allowed to see the buyer, and what crosses to the
+   * public page is a word and a number that name nobody.
+   *
+   * Stored, not recomputed later. A receipt is a record of one purchase on one
+   * day; if the same buyer takes four more books next month, the next receipt
+   * carries the higher band and this one goes on saying what was true when it
+   * was handed over.
+   */
+  const band = await bandFor(ctx, idxs)
+
   const code = newCode(length)
   const { error: headErr } = await ctx.supabaseAdmin
-    .from('ticket_receipts').insert({ code, created_by: user.email })
+    .from('ticket_receipts').insert({
+      code,
+      created_by: user.email,
+      rank: band?.id ?? null,
+      rank_tickets: band?.tickets ?? null,
+    })
   if (headErr) throw new ApiError('QUERY_FAILED', headErr.message)
 
   const { error: itemErr } = await ctx.supabaseAdmin
@@ -596,9 +620,46 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
 
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'MAKE_RECEIPT',
-    details: { code, tickets: wanted.length },
+    details: { code, tickets: wanted.length, rank: band?.id ?? '' },
     email: user.email,
   })
 
-  return { code, tickets: wanted, count: wanted.length, created: true }
+  return { code, tickets: wanted, count: wanted.length, created: true, rank: band?.id ?? '' }
+}
+
+/*
+ * HOW MANY TICKETS THIS BUYER HOLDS, AND WHICH BAND THAT IS.
+ *
+ * Keyed on the telephone number, not the name. Two buyers called "Ma Hla" are
+ * two people and a ladder that merged them would hand one of them the other's
+ * standing; a blank number is not an identity at all, so it gets no band rather
+ * than being pooled with every other blank — which would make "no number
+ * recorded" the largest supporter in the raffle.
+ *
+ * Returns null whenever it cannot answer, and every caller writes that through
+ * as null. A missing band shows nothing; it never falls back to the bottom rung
+ * — see _shared/ranks.ts, which refuses for the same reason.
+ */
+async function bandFor(ctx: Ctx, idxs: number[]) {
+  const { data: mine } = await ctx.supabaseAdmin
+    .from('tickets').select('buyer_phone').in('idx', idxs)
+  const phone = String((mine ?? [])
+    .map((t: Record<string, unknown>) => String(t.buyer_phone ?? '').trim())
+    .find((v: string) => v !== '') ?? '')
+  if (!phone) return null
+
+  /*
+   * Counted at the database rather than pulled back and measured here: a buyer
+   * with two hundred tickets would otherwise be two hundred rows fetched to
+   * learn one number, on a request whose job is to mint a code.
+   */
+  const { count, error } = await ctx.supabaseAdmin
+    .from('tickets').select('idx', { count: 'exact', head: true })
+    .eq('buyer_phone', phone).in('status', ['Sold', 'Donated'])
+  if (error) return null
+
+  const { data: cfgRows } = await ctx.supabaseAdmin
+    .from('config').select('key,value').eq('key', 'TICKETS_PER_BOOK')
+  const perBook = Number((cfgRows ?? [])[0]?.value ?? 0)
+  return rankFor(Number(count ?? 0), perBook)
 }

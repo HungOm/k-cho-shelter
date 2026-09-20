@@ -280,6 +280,27 @@ export default {
        * ten separate claims about who they belong to. */
       const buyer = String((on ?? []).find((t: Record<string, unknown>) =>
         String(t.buyer_name ?? '').trim())?.buyer_name ?? '').trim()
+
+      /*
+       * THE SUPPORTER BAND, READ RATHER THAN WORKED OUT.
+       *
+       * A band is a fact about how many tickets somebody holds, and this
+       * function may not learn that: it is allowed `buyer_name` and nothing
+       * else, so it cannot identify a buyer well enough to count their tickets
+       * — and it should not be able to. The count happened on the api side when
+       * the receipt was minted, and what is stored here is a word and a number
+       * that name nobody: 'gold', 41.
+       *
+       * Null for every receipt minted before the column existed, and for a
+       * buyer with no telephone number recorded. Nothing is shown for those.
+       * It is never computed from `count` above as a fallback: that count is
+       * this receipt, and the band is the buyer.
+       */
+      const { data: head } = await ctx.supabaseAdmin
+        .from('ticket_receipts').select('rank,rank_tickets').eq('code', receiptCode).limit(1)
+      const band = (head ?? [])[0] ?? null
+      const rank = String(band?.rank ?? '')
+
       return reply({
         ok: true,
         genuine: true,
@@ -287,6 +308,7 @@ export default {
         count: tickets.length,
         tickets,
         buyer,
+        ...(rank ? { rank, rankTickets: Number(band?.rank_tickets ?? 0) } : {}),
         drawDate: rcfg.drawDate,
         checkedAt: new Date().toISOString(),
       })

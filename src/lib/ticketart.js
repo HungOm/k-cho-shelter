@@ -1131,6 +1131,49 @@ function lumOf(hex) {
   return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
 }
 
+/*
+ * THE SUPPORTER BAND, DRAWN THE SAME WAY ON ALL THREE TREATMENTS.
+ *
+ * One function rather than three copies, because the three cards differ in
+ * where it goes and in nothing else — and because a band that appeared on Grand
+ * and quietly not on Stub would mean an organiser changing the treatment in the
+ * studio silently deleted a thank-you from every card the raffle sends. That is
+ * the kind of omission nobody reports: the card still looks finished.
+ *
+ * ONE <text> WITH A <tspan>, not two elements side by side. The count has to sit
+ * after a band name of unknown width, and the only way to place a second
+ * element there is to measure the first — which this file can do for the serial
+ * and cannot do for anything set in the Myanmar chain, whose metrics are not
+ * pinned. A tspan is laid out by the renderer, so it is right at any name length
+ * in any face. Two elements and an estimated x is how "Klang" once printed as
+ * "K l a n g".
+ *
+ * ONE COLOUR, NOT FOUR. The public check page tints each band and can afford to
+ * — it is a page. This is a ticket in the raffle's own colour with a single
+ * accent, and four medal colours dropped onto it would be four palettes
+ * fighting the brand. The band's NAME says which one it is, which is the part a
+ * buyer reads out anyway.
+ *
+ * NEVER WORKED OUT HERE. This file draws; a band is a fact about how many
+ * tickets somebody holds, which the drawing layer has no way to know and must
+ * not guess. ranks.js refuses rather than defaults for the same reason — the
+ * bottom rung printed on the card of the raffle's largest supporter is the one
+ * failure this feature can have that nobody would report.
+ */
+function bandLine(values, { x, y, size, ink, quiet, anchor = '' }) {
+  const name = String(values.rankName ?? '').trim()
+  if (!name) return ''
+  const count = String(values.rankCount ?? '').trim()
+  return `<text x="${round(x)}" y="${round(y)}" font-family='${TEXT_FAMILY}' `
+    + `font-size="${round(size)}" fill="${ink}" font-weight="700" letter-spacing="2" `
+    + `${anchor} xml:space="preserve">${esc(name.toUpperCase())}`
+    + (count
+      ? `<tspan fill="${quiet}" font-weight="400" letter-spacing="0">`
+        + `  \u00b7  ${esc(count)}</tspan>`
+      : '')
+    + `</text>`
+}
+
 export function certificateCardSVG(values = {}, opts = {}) {
   const { width: W, height: H } = CARD_CERT
   const brand = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
@@ -1211,7 +1254,8 @@ export function certificateCardSVG(values = {}, opts = {}) {
     <line x1="${W / 2 - 150}" y1="360" x2="${W / 2 + 150}" y2="360" stroke="${rule}" stroke-width="1"/>
     ${mid('Issued to', 418, 22, quiet, TEXT_FAMILY, 'letter-spacing="3"')}
     ${mid(name, 478, 46, ink, TEXT_FAMILY)}
-    ${mid(price, 534, 26, quiet, FONT.family)}
+    ${bandLine(values, { x: W / 2, y: 516, size: 20, ink, quiet, anchor: 'text-anchor="middle"' })}
+    ${mid(price, values.rankName ? 560 : 534, 26, quiet, FONT.family)}
     ${motto ? mid(motto, 622, 24, quiet, TEXT_FAMILY, 'font-style="italic"') : ''}
     ${code}
     ${seal}
@@ -1303,6 +1347,10 @@ export function stubCardSVG(values = {}, opts = {}) {
     + cap('TICKET NUMBER', 72, 400)
     + t(number, 72, 560, 140, gold, FONT.family, 'font-weight="700"')
     + t(facts, 72, 660, 34, ink, TEXT_FAMILY)
+    /* In the 120px between the facts line and the rule, not appended to the
+       facts: `name · price · book · GOLD SUPPORTER` would bury a thank-you in
+       a list of measurements. */
+    + bandLine(values, { x: 72, y: 722, size: 26, ink: gold, quiet })
 
     + `<line x1="72" y1="780" x2="${W - 72}" y2="780" stroke="${hair}" stroke-width="2"/>`
 
@@ -1481,6 +1529,19 @@ export function digitalCardSVG(values = {}, opts = {}) {
 
     + (name ? cap('ISSUED TO', 64, 386) : '')
     + t(name, 64, 438, 42, ink, TEXT_FAMILY, 'font-weight="700"')
+
+    /*
+     * UNDER THE NAME, BECAUSE IT IS PART OF THE NAME. It sits in the 82px
+     * between the buyer's name and the fact row, at 22px — smaller than
+     * everything above it and level with the captions, so it reads as a title
+     * held by that person rather than as another fact about the ticket.
+     *
+     * 472, NOT THE MIDDLE OF THAT GAP. Centred it sat 42px under the name and
+     * 40px above PRICE, so it belonged to neither and read as a fourth fact
+     * glued to the row below. 34 above and 48 below puts it with the name,
+     * which is what it is about.
+     */
+    + bandLine(values, { x: 64, y: 472, size: 22, ink: gold, quiet })
 
     + factRow
     + (facts.length ? '' : (draw ? cap('DRAW', 64, 520) + t(draw, 64, 566, 34, ink, TEXT_FAMILY) : ''))

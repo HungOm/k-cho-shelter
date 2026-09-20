@@ -495,7 +495,30 @@ async function run() {
     }).join('')
     const anyVoid = (body.tickets || []).some((t) => t.void)
     const anyUnsold = (body.tickets || []).some((t) => !t.sold && !t.void)
+    /*
+     * THE SUPPORTER BAND, ABOVE THE LIST because it is about the person
+     * reading, and the list is about the tickets. Drawn only when the reply
+     * carries one: a receipt minted before the band existed, or a buyer with no
+     * telephone number recorded, has none, and nothing is shown rather than a
+     * medal with no name in it.
+     *
+     * The key is built from a fixed map rather than from the value, so a band
+     * this page has never heard of draws nothing instead of reaching for a
+     * string called `rankSomething` and rendering the key.
+     */
+    const BAND = {
+      faithful: 'rankFaithful', silver: 'rankSilver',
+      gold: 'rankGold', diamond: 'rankDiamond',
+    }
+    const bandKey = BAND[String(body.rank || '')]
+    const band = bandKey
+      ? `<p class="rank rank-${escapeHtml(String(body.rank))}">
+           <b>${say(bandKey)}</b>
+           <span>${say('rankThanks').replace(/\{n\}/g, String(body.rankTickets ?? 0))}</span>
+         </p>`
+      : ''
     const details = `
+      ${band}
       <p class="state">${say('receiptCount').replace(/\{n\}/g, String(body.count ?? 0))}</p>
       <ul class="tickets">${list}</ul>
       <p class="privacy">${say('privacyNote')}</p>`
