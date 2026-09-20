@@ -151,6 +151,9 @@ export const MY = {
   'Add your sellers': 'ရောင်းသူများ ထည့်ရန်',
   'Hand books to a seller': 'ရောင်းသူထံ စာအုပ်ပေးရန်',
   'As they happen, or all at once later': 'ဖြစ်တိုင်း သို့မဟုတ် နောက်မှ တစ်ပြိုင်နက်',
+  /* Composed, like the rest of this file. "The tickets with numbers that this
+     raffle will sell." */
+  'The numbered tickets this raffle will sell': 'ဤကံစမ်းမဲတွင် ရောင်းမည့် နံပါတ်ပါ လက်မှတ်များ',
   'The people who will carry books. No account needed.':
     'စာအုပ်သယ်ဆောင်မည့်သူများ။ အကောင့် မလိုပါ။',
   'Getting your raffle': 'အချက်အလက်များ ရယူနေသည်',

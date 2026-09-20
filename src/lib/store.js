@@ -502,10 +502,20 @@ export const attention = computed(() => {
 export const gettingStarted = computed(() => {
   if (!isAdmin.value) return null
   const steps = [
+    /*
+     * "Run setup() in the Apps Script editor" — the first thing a new organiser
+     * was told to do, on a backend that no longer exists. backend.js puts it
+     * plainly: the migration finished and the spreadsheet is gone. So step one
+     * of four named a tool nobody has, and it was the ONLY step without an
+     * action, which is why it had no chevron and could not be pressed.
+     *
+     * It is a screen in this app now, and the step opens it.
+     */
     { done: state.tickets.length > 0, title: 'Make the tickets',
       detail: state.tickets.length
         ? `${state.tickets.length.toLocaleString()} tickets ready`
-        : 'Run setup() in the Apps Script editor' },
+        : 'The numbered tickets this raffle will sell',
+      action: state.tickets.length ? null : 'make-tickets' },
     { done: state.agents.length > 0, title: 'Add your sellers',
       detail: state.agents.length
         ? `${state.agents.length} ${state.agents.length === 1 ? 'person' : 'people'}`

@@ -10,7 +10,7 @@ import BookGrid from './ui/BookGrid.vue'
 import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
 
-const emit = defineEmits(['issue', 'add-agent', 'open-book', 'sell-book', 'report-back'])
+const emit = defineEmits(['issue', 'add-agent', 'open-book', 'sell-book', 'report-back', 'make-tickets'])
 
 /*
  * A SELLER HAS ONE JOB THIS SCREEN NEVER OFFERED THEM: reporting back.
@@ -38,6 +38,9 @@ function doStep(action) {
   if (action === 'add-agent') emit('add-agent')
   else if (action === 'issue') emit('issue')
   else if (action === 'sell') go('sell')
+  /* App.vue carries @make-tickets on the shared <component>, so this reaches
+     the same modal the Setup screen opens. */
+  else if (action === 'make-tickets') emit('make-tickets')
 }
 </script>
 
@@ -56,8 +59,8 @@ function doStep(action) {
       <p>
         Your sign-in worked — the tickets simply have not been made. The System
         Admin sets the numbering, then generates them on
-        <b>Books → Make more tickets</b>, which shows the range before it writes
-        anything. Nothing here will work until they have.
+        <b>Setup → Make the first tickets</b>, which shows the range before it
+        writes anything. Nothing here will work until they have.
       </p>
       <p class="muted small">
         The ticket numbering has to be right first — the prefix and the padding

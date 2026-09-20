@@ -76,9 +76,12 @@ function explain(err) {
              'cannot be changed now that tickets are printed. This raffle cannot grow ' +
              'to that size.'
     case 'SHEET_DRIFT':
-      return 'The spreadsheet and the settings disagree about how many tickets exist. ' +
-             'Nothing should be released until that is sorted — run verifyIntegrity in ' +
-             'the Apps Script editor first.'
+      /* SHEET_DRIFT is the old spreadsheet backend's code and cannot be raised
+         any more; SCHEMA_DRIFT is the one this server sends, and it arrives
+         with its own counts. Kept so an old client meeting an old server still
+         says something true, minus the editor nobody has. */
+      return 'The settings and the database disagree about how many tickets exist. ' +
+             'Nothing should be released until that is sorted out.'
     case 'TOO_MANY':
       return 'That is too many to create in one go. Release them in smaller batches.'
     default:
