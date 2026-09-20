@@ -267,9 +267,9 @@ export const SEEDS: Seedable[] = [
   },
   {
     id: 'settings', writes: [], makes: '',
-    never: 'Every install already has these — schema.sql seeds them, and they are the numbering '
-      + 'your tickets are issued under. Filling them again would renumber a raffle rather than '
-      + 'demonstrate one.',
+    never: 'Every raffle already has these from the day it is created, and they are the '
+      + 'numbering your tickets are issued under. Filling them again would renumber a raffle '
+      + 'rather than demonstrate one.',
   },
   {
     id: 'access', writes: [], makes: '',
@@ -327,8 +327,22 @@ export function needsFor(id: string): { feature: string; why: string }[] {
     const other = featureOf(to)
     if (!other || other === id) continue
     if (out.has(other)) continue
-    out.set(other, `Every ${from} row names a ${to} row, and the database refuses one that `
-      + `does not. ${nameOf(other)} has to exist first.`)
+    /*
+     * SAID IN THE FEATURES' OWN NAMES, not the tables'.
+     *
+     * The first version of this read "Every payments row names a agents row" —
+     * a broken article, and two table names on a screen whose reader is a
+     * System Admin rather than somebody who has seen schema.sql. It was written
+     * by reading the code and found by rendering the screen and reading it,
+     * which is the whole argument for doing the second.
+     *
+     * Phrased around "which" on purpose: feature names are plural in form
+     * ("Sellers", "Prizes and winners") and singular in sense, so any sentence
+     * that makes one the subject of a verb gets the agreement wrong half the
+     * time.
+     */
+    out.set(other, `${nameOf(id)} is recorded against ${nameOf(other)}, which therefore has `
+      + 'to be filled first — the database refuses a row that names something not there.')
   }
   for (const n of s.needs ?? []) if (!out.has(n.feature)) out.set(n.feature, n.why)
 
