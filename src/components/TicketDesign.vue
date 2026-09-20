@@ -1817,6 +1817,13 @@ const printedSize = computed(() => {
 }
 @media (min-width: 1024px) { .studio.digital { grid-template-columns: 320px 1fr } }
 .dpanel { padding: 16px; overflow: visible }
+/* BELOW 1024 THE PANEL IS THE FULL WIDTH OF THE SCREEN, and these two are the
+   only controls in it. A segmented control stretched across 780px puts Grand,
+   Certificate and Stub a hand apart from each other, and a 48-character field
+   given the same width invites a sentence that will be refused. At desk width
+   the 320px column already does this; the cap is for the stacked layout. */
+.dpanel .seg { max-width: 380px }
+.dpanel input { max-width: 420px }
 /* Its own box rather than the studio's `.stage`: that one is sized for an
    artboard you scroll and zoom, and a card is neither — it just needs to sit on
    something and be the size it is. */
