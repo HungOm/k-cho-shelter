@@ -9,23 +9,41 @@
 --
 -- and nothing was deleted.
 --
--- THE MECHANISM IS UNCONFIRMED. This header first named the `safeupdate`
--- extension. That was an inference from the message and it is WRONG:
--- ticket-printing-qr-integration measured the production database and
--- `safeupdate` is not installed — pg_extension lists only pg_stat_statements,
--- pg_trgm, pgcrypto, plpgsql, supabase_vault and uuid-ossp. They also ran an
--- unqualified `delete from t` as both postgres and service_role and it was
--- ALLOWED. So do not read the fix below as evidence of a cause that has been
--- found. It has not.
+-- THE MECHANISM IS UNCONFIRMED, AND ON THE HOSTED PROJECT IT IS RULED OUT.
 --
--- WHAT IS ESTABLISHED. The message reached the screen through the app, not
--- through the Supabase SQL editor: resetApply passes the rpc's error straight
--- into RESET_FAILED, and the organiser saw it in this app's own toast under
--- its own confirmation box. So the database raised it while app_reset was
--- running. What the measurement above did NOT cover is exactly that context —
--- it used a TEMP table, plain SQL rather than plpgsql `execute format`, and a
--- role set with SET LOCAL ROLE rather than the owner a security-definer
--- function runs as. Any of those three could be where the guard lives.
+-- This header first blamed the `safeupdate` extension. That was inferred from
+-- the message and is false. ticket-printing-qr-integration has network and
+-- measured the hosted database:
+--
+--   pg_extension                     no safeupdate
+--   plan_filter.statement_cost_limit 0 (off)
+--   a security-definer plpgsql function, owned by postgres, doing
+--     `execute format('delete from %I', t)` on a real table in public
+--                                    -> DELETE succeeded, no error
+--
+-- That last probe was built to differ from a naive test on all three axes the
+-- live function differs on — real relation rather than pg_temp, dynamic SQL in
+-- plpgsql rather than a plain statement, and SECURITY DEFINER rather than SET
+-- LOCAL ROLE. It still passed.
+--
+-- And two facts that close it: 20260921020000 IS NOT APPLIED to that project,
+-- and the app_reset running there still issues the unqualified delete. So the
+-- hosted deployment runs exactly the statement under suspicion against a
+-- database that demonstrably permits it. Whatever failed, it did not fail
+-- there for this reason.
+--
+-- WHAT IS ESTABLISHED: the error reached the screen through the APP, not the
+-- Supabase SQL editor. resetApply passes the rpc's error verbatim into
+-- RESET_FAILED, and the organiser saw it in this app's own toast beneath its
+-- own confirmation box. That proves the path and the raising side; it does not
+-- prove WHICH DATABASE. This repository supports a self-hosted stack — see
+-- 2175c92, the `kid`-less JWT fix, and functions/main — and a self-hosted
+-- Postgres is somebody else's image with somebody else's extensions, on which
+-- a DELETE guard is an ordinary thing to find.
+--
+-- SO THIS MIGRATION IS NOT A FIX FOR AN OUTAGE ANYBODY HAS REPRODUCED. It is
+-- harmless and portable: a statement that says which rows it means survives a
+-- stack that refuses one that does not. Apply it on that basis, not as a cure.
 --
 -- WHY `ctid is not null` AND NOT `where true`. The extension looks for a
 -- qualifier in the PLAN, and `where true` is constant-folded away before the

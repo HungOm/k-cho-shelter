@@ -206,8 +206,16 @@ console.log('the SQL function the app calls will accept every table the plan sen
     if (!m) continue
     allowed = [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])
     definedIn = f
-    /* Every delete the winning definition issues, kept for the check below. */
-    deletes = [...sql.matchAll(/execute format\(\s*'(delete from [^']*)'/g)].map((x) => x[1])
+    /*
+     * Every delete the winning definition ISSUES — from the code, not from the
+     * prose around it. The `--` lines are stripped first because this file's own
+     * header quotes the unqualified statement it exists to explain, and without
+     * this the migration that fixes the problem fails the test that describes
+     * it. A scanner that cannot tell a statement from a sentence about one will
+     * eventually read every comment as an instruction.
+     */
+    const code = sql.replace(/^\s*--.*$/gm, '')
+    deletes = [...code.matchAll(/execute format\(\s*'(delete from [^']*)'/g)].map((x) => x[1])
   }
 
   /* A parse that quietly matches nothing passes everything below it. */
@@ -260,7 +268,7 @@ console.log('the SQL function the app calls will accept every table the plan sen
      */
     ok(deletes.length > 0, `app_reset's deletes were found (${deletes.length}, in ${definedIn})`)
     for (const d of deletes) {
-      ok(/\swhere\s/.test(d), `"${d}" carries a where clause — safeupdate refuses one without`)
+      ok(/\swhere\s/.test(d), `"${d}" carries a where clause — a stack that guards deletes refuses one without`)
       ok(!/\swhere\s+true\s*$/i.test(d),
          `"${d}" does not rely on \`where true\`, which is folded away before the plan`)
     }
