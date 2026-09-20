@@ -24,7 +24,46 @@ import { numberLayerSVG } from './ticketart.js'
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
   .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-/** The paper this prints on. A4 portrait is the only sheet the app offers. */
+/*
+ * THE PAPER, NAMED — because "210 × 297" is not a thing anybody buys.
+ *
+ * A4 was hard-coded here and nowhere on the screen said so, which left the one
+ * question a person actually has — what am I putting in the tray — to be
+ * inferred from a number in a sum. The sizes below are the ones a charity
+ * printing tickets will meet; `custom` exists because somebody will have a
+ * guillotined stock that is none of them.
+ *
+ * ISO sizes are exact millimetres. Letter and Legal are inches converted and
+ * rounded to the tenth, which is the tolerance a domestic printer works to
+ * anyway.
+ */
+export const PAPERS = [
+  { id: 'a4', label: 'A4', widthMM: 210, heightMM: 297 },
+  { id: 'a3', label: 'A3', widthMM: 297, heightMM: 420 },
+  { id: 'a5', label: 'A5', widthMM: 148, heightMM: 210 },
+  { id: 'letter', label: 'Letter', widthMM: 215.9, heightMM: 279.4 },
+  { id: 'legal', label: 'Legal', widthMM: 215.9, heightMM: 355.6 },
+]
+
+/*
+ * The paper a design is on, with orientation applied. Anything unrecognised —
+ * an older design with no paper at all, a typo, a removed size — is A4, which
+ * is what every ticket printed before this existed was laid out on.
+ */
+export function paperOf(design) {
+  const sheet = design?.sheet ?? {}
+  const found = PAPERS.find((x) => x.id === String(sheet.paper ?? 'a4')) ?? PAPERS[0]
+  const landscape = sheet.landscape === true
+  return {
+    id: found.id,
+    label: found.label,
+    landscape,
+    widthMM: landscape ? found.heightMM : found.widthMM,
+    heightMM: landscape ? found.widthMM : found.heightMM,
+  }
+}
+
+/** The paper this prints on. A4 portrait, for anything that has not asked. */
 export const PAGE = { widthMM: 210, heightMM: 297 }
 
 /*
@@ -48,7 +87,9 @@ export function pageFit(design, opts = {}) {
   const widthMM = Number(opts.widthMM ?? sheet.widthMM ?? 190)
   const gapMM = Number(opts.gapMM ?? sheet.gapMM ?? 4)
   const marginMM = Number(opts.marginMM ?? sheet.marginMM ?? 10)
-  const pageHeightMM = Number(opts.pageHeightMM ?? PAGE.heightMM)
+  const paper = paperOf(design)
+  const pageHeightMM = Number(opts.pageHeightMM ?? paper.heightMM)
+  const pageWidthMM = Number(opts.pageWidthMM ?? paper.widthMM)
 
   const artW = Number(design?.artwork?.width ?? 1600)
   const artH = Number(design?.artwork?.height ?? 517)
@@ -58,7 +99,14 @@ export function pageFit(design, opts = {}) {
   const usable = pageHeightMM - 2 * marginMM
   const per = Math.max(1, Math.floor((usable + gapMM) / (heightMM + gapMM)))
   const used = per * heightMM + (per - 1) * gapMM + 2 * marginMM
-  return { per, heightMM, widthMM, gapMM, marginMM, pageHeightMM, used, fits: used <= pageHeightMM + 1e-9 }
+  return {
+    per, heightMM, widthMM, gapMM, marginMM,
+    pageHeightMM, pageWidthMM, paper,
+    /* Wider than the paper is a real way to get this wrong, and the old
+     * answer — a count derived from height alone — called it a fit. */
+    tooWide: widthMM + 2 * marginMM > pageWidthMM + 1e-9,
+    used, fits: used <= pageHeightMM + 1e-9 && widthMM + 2 * marginMM <= pageWidthMM + 1e-9,
+  }
 }
 
 /**
@@ -123,7 +171,8 @@ export function sheetHTML(design, numbers, imageHref, opts = {}) {
   const gapMM = Number(opts.gapMM ?? sheet.gapMM ?? 4)
   const marginMM = Number(opts.marginMM ?? sheet.marginMM ?? 10)
   const cutlines = opts.cutlines ?? sheet.cutlines ?? true
-  const page = String(opts.page ?? 'A4 portrait')
+  const paper = paperOf(design)
+  const page = String(opts.page ?? `${paper.label} ${paper.landscape ? 'landscape' : 'portrait'}`)
   const title = String(opts.title ?? 'Raffle tickets')
   const autoPrint = opts.autoPrint === true
 

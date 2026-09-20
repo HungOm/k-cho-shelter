@@ -43,7 +43,8 @@ import {
   SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, normalElement, nextId, legacyFromElements,
 } from '../lib/ticketelements.js'
 import { encode } from '../lib/qrcodegen.js'
-import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
+import { sheetHTML, pageFit, PAPERS } from '../lib/ticketsheet.js'
+import SheetPreview from './ui/SheetPreview.vue'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
 import Dim from './ui/Dim.vue'
 import Ink from './ui/Ink.vue'
@@ -1332,15 +1333,21 @@ const printedSize = computed(() => {
             <h3 class="rubric">Templates <span class="count">{{ templates.length }}</span></h3>
             <ul class="tlist">
               <li v-for="t in templates" :key="t.id" :class="{ on: t.id === activeId }">
-                <div class="trow">
+                <!--
+                  A PICTURE OF THE ARTWORK, NOT A DESCRIPTION OF IT. This was
+                  five lines of prose per template — name, pixels, kilobytes,
+                  date, uploader — in a list whose whole job is "which of these
+                  is the ticket I mean". A thumbnail answers that in one glance
+                  and the paperwork moves to the tooltip, where it is still
+                  there for whoever needs to check a file size.
+                -->
+                <div class="tthumb" :title="`${t.width} × ${t.height} px · ${kb(t.bytes)}`
+                       + (t.uploadedAt ? ` · uploaded ${String(t.uploadedAt).slice(0, 10)}` : '')
+                       + (t.uploadedBy ? ` by ${t.uploadedBy}` : '')">
+                  <img :src="t.url" :alt="t.name" loading="lazy">
                   <span v-if="t.id === activeId" class="pill ok">printing</span>
-                  <b>{{ t.name }}</b>
                 </div>
-                <p class="mono tiny muted">{{ t.width }} × {{ t.height }} px · {{ kb(t.bytes) }}</p>
-                <p class="tiny muted">
-                  {{ t.uploadedAt ? String(t.uploadedAt).slice(0, 10) : '' }}
-                  <template v-if="t.uploadedBy">· {{ t.uploadedBy }}</template>
-                </p>
+                <b class="tname">{{ t.name }}</b>
                 <div class="trow">
                   <button v-if="t.id !== activeId" class="btn sm" :disabled="busy"
                           @click="choose(t.id)">Print from this one</button>
@@ -1359,10 +1366,9 @@ const printedSize = computed(() => {
             </button>
             <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp"
                    :disabled="busy" @change="pickFile" hidden>
-            <p class="tiny muted">
-              PNG, JPEG or WebP of one blank ticket, stub included, up to 4 MB. SVG is
-              refused. The size is read from the file's own header — renaming a file will
-              not get it past.
+            <p class="tiny muted"
+               title="One blank ticket with its stub. SVG is refused, and the size is read from the file's own header — renaming a file will not get it past.">
+              PNG, JPEG or WebP · up to 4 MB
             </p>
             <p v-if="uploadErr" class="note bad tiny">{{ uploadErr }}</p>
             <p v-if="uploadNote" class="note tiny">{{ uploadNote }}</p>
@@ -1447,12 +1453,10 @@ const printedSize = computed(() => {
 
         <aside class="panel">
           <div class="pgroup">
-            <h4 class="rubric">Shapes we know</h4>
-            <p class="tiny muted">
-              A known shape is checked against its tolerance. An unfamiliar one is refused
-              rather than stretched — a picture of the wrong shape is either squashed or
-              cropped on every ticket, and neither can be put right afterwards.
-            </p>
+            <h4 class="rubric"
+                title="A known shape is checked against its tolerance. An unfamiliar one is refused rather than stretched — a picture of the wrong shape is squashed or cropped on every ticket, and neither can be put right afterwards.">
+              Shapes we know
+            </h4>
             <!--
               ONE BLOCK PER SHAPE, NOT A FIVE-COLUMN TABLE.
               A table of five numeric columns in a 300px panel truncates every
@@ -1506,31 +1510,58 @@ const printedSize = computed(() => {
               <button class="btn sm" @click="addSize">Add a shape</button>
               <button class="btn sm primary" :disabled="busy" @click="saveSizes">Save shapes</button>
             </div>
-            <p class="tiny muted">
-              The tolerance is on the aspect ratio, as a fraction: 0.02 allows two per cent
-              out of shape and still accepts it. Removing every shape restores the standard
-              list.
+            <p class="tiny muted"
+               title="Tolerance is on the aspect ratio, as a fraction: 0.02 accepts two per cent out of shape. Removing every shape restores the standard list. Only artwork too coarse to print is turned away — an unfamiliar shape is measured and offered, never thrown away.">
+              Tolerance is a fraction of the aspect ratio
             </p>
           </div>
 
-          <div class="pgroup">
-            <h4 class="rubric">What gets turned away</h4>
-            <p class="tiny muted">
-              Only artwork too coarse to print. An unfamiliar shape is measured and offered,
-              never thrown away — a second charity brings a second designer and a second
-              ticket.
-            </p>
-          </div>
         </aside>
       </div>
 
-      <!-- ================= PRINT SHEET ================= -->
-      <div v-else class="studio sheettab">
-        <div class="stagewrap wide">
+      <!-- ================= PRINT SHEET =================
+        THE PAGE IS THE SUBJECT, so the page is on the screen.
+        This tab used to be a single full-width column of sliders and a line of
+        arithmetic, while its two sibling tabs were three-column studios — so it
+        did not look like part of the same screen, and sixty per cent of the
+        window was empty. Worse, the one thing somebody dragging a margin wants
+        to know — does the last ticket still fit — was available only as a sum
+        they had to check against a sheet of A4 in their head. The drawing
+        already existed in the printing modal. It is shared now.
+      -->
+      <div v-else class="studio">
+        <div class="rail">
           <template v-if="active && design">
+            <!--
+              WHAT PAPER, ANSWERED BEFORE ANYTHING ELSE. The sheet was A4 by
+              assumption and nothing on the screen said so, which left the one
+              question somebody actually has — what goes in the tray — to be
+              inferred from a number inside a sum.
+            -->
+            <div class="pgroup">
+              <h4 class="rubric">Paper</h4>
+              <div class="papers">
+                <button v-for="pp in PAPERS" :key="pp.id" type="button" class="paper"
+                        :class="{ on: (design.sheet.paper || 'a4') === pp.id }"
+                        :title="`${pp.label} · ${pp.widthMM} × ${pp.heightMM} mm`"
+                        @click="design.sheet.paper = pp.id">
+                  <span class="pshape"
+                        :style="{ aspectRatio: `${pp.widthMM} / ${pp.heightMM}` }"></span>
+                  <b>{{ pp.label }}</b>
+                </button>
+              </div>
+              <p class="tiny muted mono">{{ fit ? `${fit.paper.widthMM} × ${fit.paper.heightMM} mm` : '' }}</p>
+              <div class="seg">
+                <button type="button" :class="{ on: !design.sheet.landscape }"
+                        @click="design.sheet.landscape = false">Portrait</button>
+                <button type="button" :class="{ on: !!design.sheet.landscape }"
+                        @click="design.sheet.landscape = true">Landscape</button>
+              </div>
+            </div>
+
             <div class="pgroup">
               <h4 class="rubric">How they sit on the page</h4>
-              <div class="quad">
+              <div class="quad one">
                 <Dim v-model="design.sheet.widthMM" label="Ticket width" :min="40" :max="210" unit="mm" />
                 <Dim v-model="design.sheet.gapMM" label="Gap between" :min="0" :max="30" unit="mm" />
                 <Dim v-model="design.sheet.marginMM" label="Page margin" :min="0" :max="30" unit="mm" />
@@ -1539,6 +1570,17 @@ const printedSize = computed(() => {
                 <input v-model="design.sheet.cutlines" type="checkbox"> Dashed line to cut along
               </label>
             </div>
+          </template>
+        </div>
+
+        <div class="stagewrap">
+          <SheetPreview v-if="active && design && fit" :fit="fit" :art="active.url"
+                        :cutlines="!!design.sheet.cutlines" />
+          <p v-else class="note">Upload some artwork before setting up the sheet.</p>
+        </div>
+
+        <div class="panel">
+          <template v-if="active && design">
 
             <!--
               HOW MANY FIT IS SHOWN, NOT ASKED FOR.
@@ -1553,9 +1595,31 @@ const printedSize = computed(() => {
               <h4 class="rubric">What that comes to</h4>
               <p class="fitline">
                 <b class="big">{{ fit.per }}</b>
-                <span>ticket{{ fit.per === 1 ? '' : 's' }} to a page of A4</span>
+                <span>ticket{{ fit.per === 1 ? '' : 's' }} to a sheet of {{ fit.paper.label }}</span>
               </p>
-              <p class="tiny mono" :class="fit.fits ? 'muted' : 'bad'">
+              <!--
+                TOO WIDE WAS COUNTED AS A FIT. The old arithmetic was about
+                height alone, so a 190mm ticket on A5 answered "2 per page" and
+                printed off the side of the paper.
+              -->
+              <p v-if="fit.tooWide" class="note bad tiny">
+                The ticket is wider than {{ fit.paper.label }}. Reduce the width or the margin.
+              </p>
+              <!--
+                THE SUM IS THE WORKING, NOT THE ANSWER. It was the only thing
+                here and it is how you CHECK the answer, not how you read it —
+                so the answer is the bar and the figure, and the arithmetic is
+                underneath for whoever wants to satisfy themselves.
+              -->
+              <p class="usedline" :class="fit.fits ? '' : 'over'">
+                <span class="usedbar" aria-hidden="true">
+                  <span :style="{ width: Math.min(100, (fit.used / fit.pageHeightMM) * 100) + '%' }"></span>
+                </span>
+                <span class="tiny">
+                  <b>{{ fit.used.toFixed(0) }}</b> of {{ fit.pageHeightMM.toFixed(0) }} mm used
+                </span>
+              </p>
+              <p class="tiny mono working" :class="fit.fits ? 'muted' : 'bad'">
                 {{ fit.per }} × {{ fit.heightMM.toFixed(1) }} +
                 {{ fit.per - 1 }} × {{ fit.gapMM.toFixed(1) }} +
                 2 × {{ fit.marginMM.toFixed(1) }} =
@@ -1580,7 +1644,6 @@ const printedSize = computed(() => {
               </p>
             </div>
           </template>
-          <p v-else class="note">Upload some artwork before setting up the sheet.</p>
         </div>
       </div>
 
@@ -1636,7 +1699,6 @@ const printedSize = computed(() => {
   display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px;
   gap: 14px; align-items: start;
 }
-.studio.sheettab { grid-template-columns: minmax(0, 1fr) }
 .rail, .panel {
   display: flex; flex-direction: column; gap: 12px;
   border: 1px solid var(--border); border-radius: var(--r-sm);
@@ -1813,6 +1875,38 @@ const printedSize = computed(() => {
 .pgroup:first-of-type { border-top: 0; padding-top: 0 }
 .quad { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px }
 .quad.one { grid-template-columns: 1fr }
+/* Paper is chosen by its shape, so the shapes are the control. */
+.papers { display: flex; gap: 6px; flex-wrap: wrap }
+.paper {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 6px 8px; min-width: 52px; cursor: pointer; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.paper.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-ink) }
+.paper .pshape { display: block; width: 18px; background: currentColor; opacity: .38; border-radius: 1px }
+.paper.on .pshape { opacity: .7 }
+.paper b { font-size: .76rem; font-weight: 600 }
+.seg { display: flex; margin-top: 6px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden }
+.seg button {
+  flex: 1; padding: 6px 4px; font-size: .78rem; cursor: pointer;
+  background: var(--surface); border: 0; color: var(--muted);
+}
+.seg button.on { background: var(--brand-soft); color: var(--brand-ink); font-weight: 600 }
+/* A template is recognised by its picture, so the picture is the control. */
+.tthumb {
+  position: relative; display: block; width: 100%; aspect-ratio: 1600 / 517;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  overflow: hidden; background: var(--surface-2);
+}
+.tthumb img { display: block; width: 100%; height: 100%; object-fit: cover }
+.tthumb .pill { position: absolute; left: 6px; top: 6px }
+.tname { display: block; margin: 6px 0 4px; font-size: .9rem; line-height: 1.25 }
+/*
+ * `.quad` is the INSPECTOR's grid — four box fields, where two columns pair
+ * x with y and width with height. The sheet tab borrowed it for three
+ * unrelated measurements, which left an empty fourth cell and implied a
+ * pairing between width and gap that does not exist. It uses `.one` now.
+ */
 .sitrow { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: end }
 .choice.bold { padding-bottom: 6px }
 .prow { display: flex; gap: 6px; flex-wrap: wrap }
@@ -1871,6 +1965,16 @@ const printedSize = computed(() => {
 .sgrid .unit { font-size: .66rem }
 
 .fitline { display: flex; align-items: baseline; gap: 8px; margin: 0 }
+.usedline { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0 }
+.usedbar {
+  display: block; height: 6px; border-radius: 999px;
+  background: var(--surface-2); overflow: hidden;
+}
+.usedbar > span { display: block; height: 100%; background: var(--brand); border-radius: 999px }
+.usedline.over .usedbar > span { background: var(--bad) }
+.usedline b { font-variant-numeric: tabular-nums }
+/* The arithmetic is how you check the answer, so it sits under it and quiet. */
+.working { margin: 2px 0 0; opacity: .75 }
 .fitline span { font-size: .84rem; color: var(--muted) }
 
 .footbar {

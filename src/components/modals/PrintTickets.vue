@@ -29,7 +29,7 @@ import { ref, computed, watch } from 'vue'
 import { state, api, toast } from '../../lib/store.js'
 import { designFor } from '../../lib/ticketdesign.js'
 import { numberLayerSVG, ticketVerifyUrl } from '../../lib/ticketart.js'
-import { sheetHTML, pageFit, PAGE } from '../../lib/ticketsheet.js'
+import { sheetHTML, pageFit } from '../../lib/ticketsheet.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { expandTicketRange, bookNumber, storedBook } from '../../lib/books.js'
 // Across into the check page's own folder on purpose: the sample book and the
@@ -37,6 +37,7 @@ import { expandTicketRange, bookNumber, storedBook } from '../../lib/books.js'
 // and that page may not import from lib/. See src/verify/sample.js.
 import { sampleBook, sampleVerifyUrl, SAMPLE_BOOK } from '../../verify/sample.js'
 import Sheet from '../ui/Sheet.vue'
+import SheetPreview from '../ui/SheetPreview.vue'
 
 const props = defineProps({ payload: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['close'])
@@ -429,7 +430,15 @@ function openSheet(download) {
      * at the sheet wondering what happened. The document is the only thing
      * that knows when it is ready.
      */
-    autoPrint: !download,
+    /*
+     * A PDF IS THE PRINT DIALOG'S OWN EXPORT, and that is not a workaround.
+     * Browsers write PDF from this sheet with live text and vector QR codes;
+     * a library would rasterise every ticket to fit in the bundle and produce
+     * a bigger, worse file. So the route to a PDF is the dialog, and the
+     * samples button opens it — there is nothing to stamp as printed on a
+     * sample, so "open" and "print" were never two different things here.
+     */
+    autoPrint: !download || isSample.value,
     ...sheetOpts.value,
   })
   const w = window.open('', '_blank')
@@ -455,8 +464,6 @@ async function printThem() {
 
 /* A ticket's height as a share of the page, so the preview is the real
  * proportion rather than a drawing of one. */
-const pcOfPage = (mm) => `${(mm / PAGE.heightMM) * 100}%`
-const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
 </script>
 
 <template>
@@ -511,18 +518,9 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
               exactly the thing somebody is looking for, which is whether the
               last ticket falls off the bottom.
             -->
-            <div class="a4">
-              <div class="pagemargin"
-                   :style="{ inset: pcOfPage(fit.marginMM) + ' ' + pcOfWidth(fit.marginMM) }">
-                <div v-for="(t, i) in page" :key="t.number" class="slot"
-                     :style="{ width: pcOfWidth(fit.widthMM), height: pcOfPage(fit.heightMM),
-                               marginBottom: i < page.length - 1 ? pcOfPage(fit.gapMM) : '0',
-                               outline: runSheet?.cutlines ? '1px dashed rgba(0,0,0,.35)' : 'none' }">
-                  <img :src="result.template.url" alt="">
-                  <div class="overlay" v-html="layerFor(t)"></div>
-                </div>
-              </div>
-            </div>
+            <SheetPreview :fit="fit" :art="result.template.url"
+                          :cutlines="!!runSheet?.cutlines"
+                          :items="page.map((t) => ({ key: t.number, overlay: layerFor(t) }))" />
 
             <!--
               THE PAGE SETUP, and the sum it produces. "Tickets to a page" used
@@ -554,10 +552,7 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
                 <label class="choice"><input v-model="runSheet.cutlines" type="checkbox"> Cut lines</label>
               </div>
               <p class="tiny mono" :class="fit.fits ? 'muted' : 'bad'">{{ pageSum }}</p>
-              <p class="tiny muted">
-                Changes here apply to this run. The template's own setup lives on the
-                Ticket design screen.
-              </p>
+              <p class="tiny muted">This run only. The template's own setup is on Ticket design.</p>
             </div>
           </template>
 
@@ -595,9 +590,8 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
             <label class="choice"><input v-model="mode" type="radio" value="sample"> Sample book</label>
             <div v-if="isSample" class="samplebox">
               <p class="tiny">
-                <b>Ten sample tickets, {{ SAMPLE_BOOK }}.</b> They are watermarked SAMPLE across
-                the face, they are not in the raffle, and they cannot be sold. Nothing is written
-                down: no ticket, no book, no code. Scanning one shows a sample page.
+                <b>Ten watermarked samples.</b> Not in the raffle, cannot be sold,
+                nothing written down.
               </p>
               <label class="choice tiny">
                 <input v-model="sampleOk" type="checkbox">
@@ -660,10 +654,7 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
 
             <div class="cgroup">
               <p class="rubric"><span class="step" v-if="!isSample">2</span> Put them on paper</p>
-              <p v-if="isSample" class="tiny muted">
-                There is nothing to stamp as printed — a sample is not a ticket and the
-                books do not know about it. Print as many as you like.
-              </p>
+              <p v-if="isSample" class="tiny muted">Nothing is stamped as printed. Print as many as you like.</p>
               <button v-if="!isSample" class="btn sm primary wide" :disabled="busy || !tickets.length"
                       :title="tickets.length ? 'Marks this batch printed, then opens the print dialog' : 'Nothing to print'"
                       @click="printThem">
@@ -672,14 +663,12 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
               <button class="btn sm wide" :class="{ primary: isSample }" :disabled="busy || !tickets.length"
                       :title="tickets.length ? 'Opens the same sheets without stamping the book as printed' : 'Nothing to open'"
                       @click="openSheet(true)">
-                {{ isSample ? 'Open the sample sheet' : 'Open without marking printed' }}
+                {{ isSample ? 'Print or save as PDF' : 'Open without marking printed' }}
               </button>
               <button v-if="!doneAll" class="btn sm wide" :disabled="busy" @click="nextBatch">
                 Next batch &rarr;
               </button>
-              <p class="tiny muted">
-                Artwork is carried inside the file once. Opens anywhere; print at 100%.
-              </p>
+              <p class="tiny muted">Print at 100%.</p>
             </div>
 
             <div v-if="bookRows.length" class="cgroup">
@@ -697,8 +686,7 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
                 </tbody>
               </table>
               <p class="tiny muted">
-                The batch on screen, not the whole raffle.
-                <template v-if="!doneAll">There are more books after it.</template>
+                This batch only.<template v-if="!doneAll"> More books follow.</template>
               </p>
             </div>
 
@@ -777,16 +765,6 @@ const pcOfWidth = (mm) => `${(mm / PAGE.widthMM) * 100}%`
  * inside is a percentage of it — so a ticket that would fall off the bottom
  * falls off the bottom here too, which is the entire reason to draw this.
  */
-.a4 {
-  position: relative; width: 100%; aspect-ratio: 210 / 297;
-  background: #fff; border: 1px solid var(--border); border-radius: 2px;
-  box-shadow: var(--shadow); overflow: hidden;
-}
-.pagemargin { position: absolute; display: flex; flex-direction: column; align-items: center }
-.slot { position: relative; flex: none; background: #fff }
-.slot img { display: block; width: 100%; height: 100%; object-fit: fill }
-.slot .overlay { position: absolute; inset: 0; pointer-events: none }
-.slot .overlay :deep(svg) { width: 100%; height: 100%; display: block }
 
 .setup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border) }
 .setupgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 10px; align-items: end }

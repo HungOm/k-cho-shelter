@@ -85,6 +85,26 @@ console.log('the test page is marked as what it is')
     'and a real sheet carries none')
 }
 
+console.log('a sample sheet opens the dialog, because that is where PDF lives')
+{
+  /*
+   * "Open the sample sheet" opened a page and did nothing, and the person
+   * looking at it wanted a PDF. There is no library here and there should not
+   * be one: a browser writes PDF from this sheet with live text and vector QR
+   * codes, where jsPDF would rasterise every ticket to fit in the bundle and
+   * produce a bigger, worse file. So the dialog IS the export, and for samples
+   * there is nothing to stamp as printed — "open" and "print" were never two
+   * different actions on that path.
+   */
+  const print = read('src/components/modals/PrintTickets.vue')
+  ok(/autoPrint: !download \|\| isSample\.value/.test(print),
+    'a sample sheet opens the print dialog even from the open button')
+  ok(/Print or save as PDF/.test(print), 'and the button says what it will do')
+  // The real-ticket path keeps both, because there the two differ: one stamps
+  // the batch as printed and the other deliberately does not.
+  ok(/Open without marking printed/.test(print), 'a real batch still has a silent open')
+}
+
 console.log('every way in to printing offers the samples too')
 {
   const app = read('src/App.vue')
