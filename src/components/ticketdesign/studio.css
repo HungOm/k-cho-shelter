@@ -38,37 +38,24 @@
 }
 
 /*
- * PLACE: ONE PANEL, TWO TABS — card 1b, and the reason it is a modifier rather
- * than a change to .studio is that three tabs share that grid. ARTWORK puts a
- * template rail beside the canvas and SHEET is a rail on its own; only PLACE
- * had three columns, so only PLACE loses one.
+ * WHY THIS IS THE ONLY PLACE THE GRID IS DECLARED.
  *
- * Canvas first, panel second, and the panel carries the tab strip: what you can
- * put on the ticket under "Fields", whatever is selected under "Selected".
- * Dropping the 240px rail and its gap gives the artboard 254px it did not have,
- * which on a 1280 laptop is the difference between a ticket you can aim at and
- * one you squint at.
+ * It used to be here AND in TicketDesign.vue's own scoped block, at 1023px and
+ * 1200px, for the same rule. The component's copy came second and won on order,
+ * so three columns actually needed 1201px while the comment reasoning about
+ * 1024 sat in the file that lost. The breakpoint and its documentation were
+ * 177px apart. One declaration, here, and the component keeps only what is
+ * genuinely its own furniture.
  *
- * WHAT IT COSTS, stated so the next person can judge whether it was too much:
- * you select FROM the list, so behind a tab the list is one press away every
- * time you move between objects. The mock accepts that in exchange for the
- * canvas width and for a panel whose contents change while its box does not.
- * That is the trade; if it turns out to be the wrong one, this comment is where
- * the argument was made.
- *
- * ONE PANEL ON A TABLET GOES UNDER THE CANVAS, NOT BESIDE IT. At 820px — iPad
- * portrait, which 3237020 made a legal size for this screen — a 320px panel
- * beside the artboard leaves under 490px for a ticket that is three times wider
- * than it is tall, so the artboard is the thing that suffers. Underneath it has
- * the full width, and the panel stops being a column of squeezed number fields.
- * 900px is the line because that is where 320px stops being a third of the
- * screen.
+ * A NOTE FOR WHOEVER READS THIS NEXT, because the file has been wrong twice.
+ * A commit built to card 1b collapsed PLACE to two columns with the rail as a
+ * tab in the right-hand panel. 1b is in the document's "Earlier explorations --
+ * superseded" list; the live card is 9b and it draws three: fields left,
+ * artboard dominant in the middle, the selected thing right. The organiser who
+ * uses the screen said the same from their own screen. Three columns is not
+ * inertia -- it is the current card, and it is what the person using it asked
+ * for.
  */
-.studio.placing { grid-template-columns: minmax(0, 1fr) 320px; }
-@media (max-width: 899px) {
-  .studio.placing { grid-template-columns: minmax(0, 1fr); }
-  .studio.placing > .panel { max-height: none; }
-}
 
 .rail, .panel {
   display: flex; flex-direction: column; gap: 12px;
@@ -77,26 +64,6 @@
 }
 .rail { max-height: calc(100vh - 170px); overflow: auto }
 
-/*
- * THE PANEL'S OWN TABS. `.seg` already is the segmented control this repo uses
- * for "one of these, not many of those", so these are that vocabulary rather
- * than a second one -- the difference is only that they fill the panel and stay
- * put while it scrolls.
- *
- * STICKY, because the panel scrolls and the tabs are how you get back. A strip
- * that scrolls away means reaching the list again is a scroll-up followed by a
- * press, and the press was already the price this arrangement paid.
- */
-.paneltabs {
-  position: sticky; top: 0; z-index: 1;
-  margin: -12px -12px 0; padding: 12px; background: var(--surface);
-  border-radius: var(--r-sm) var(--r-sm) 0 0;
-}
-/* The count rides the tab, as the card draws it -- "Fields - 10". Dimmed
-   rather than a pill: it is a detail of the label, not a status. */
-.paneltabs .n { opacity: .7; font-variant-numeric: tabular-nums }
-/* The body is what the rail was: a column of blocks with air between them. */
-.panelbody { display: flex; flex-direction: column; gap: 12px; min-width: 0 }
 .stagewrap { display: flex; flex-direction: column; gap: 8px; min-width: 0 }
 /* The stage takes what the bar above it does not, and centres the artboard in
    it — vertically as well as horizontally, which is what makes a canvas read

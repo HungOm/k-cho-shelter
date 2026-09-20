@@ -219,7 +219,21 @@ console.log('picking one opens what it prints and where it sits')
     drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' }, renderReal: ['Inspector.vue'],
   })
   const text = visibleText(html)
-  ok(/Selected/.test(text), 'the panel says it is describing one thing')
+  /*
+   * RE-AIMED 2026-09-20, not relaxed. This matched the word "Selected", which
+   * was a rubric above the element's name. Card 9b draws that header as the
+   * thing itself and which half it is on -- "Ticket number field · main half" --
+   * so the rubric now carries the HALF and the word "Selected" is gone: it was
+   * the panel repeating its own title, which tells a reader nothing the name
+   * below it does not.
+   *
+   * The invariant is unchanged and this asserts it harder. "Says it is
+   * describing one thing" is true of a panel that NAMES the thing; it was only
+   * ever approximated by a panel that said the word "Selected" over it.
+   */
+  ok(/Buyer|name/i.test(text), `the panel names the thing it is describing (${text.slice(0, 60)})`)
+  ok(/Main half|Stub/.test(text), 'and which half of the ticket it sits on')
+  ok(!/Nothing selected/.test(text), 'and is no longer waiting for a pick')
   ok(text.includes("Buyer's name"), 'and which thing that is')
   ok(/What it prints/.test(text), 'what goes in it can be changed')
   ok(/Its box/.test(text), 'where it sits can be changed')

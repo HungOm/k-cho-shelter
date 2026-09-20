@@ -72,12 +72,17 @@ const emit = defineEmits(['remove', 'pick-colour'])
 
 <template>
 <!--
-  NO LONGER THE PANEL ITSELF. The parent draws `.panel` and the tab strip; this
-  is what sits under the "Selected" tab, so it is a body rather than a box. The
-  rubric that said "Selected" went with it -- the tab says that now, and a panel
-  whose tab and whose first line say the same word is one of them wasted.
+  THE RIGHT-HAND COLUMN, which is what card 9b draws and what this was before a
+  commit built to the superseded card 1b made it a tab body. It is `.panel`
+  again: its own box beside the artboard, always present, its contents changing
+  with the selection rather than its geometry.
+
+  The half chip stays where the rubric that said "Selected" used to be. The
+  column no longer announces itself -- "Selected" was the tab's word, and a
+  panel whose first line is the name of the thing it is describing tells you
+  more than one that repeats its own title.
 -->
-<div class="panelbody">
+<aside class="panel">
   <template v-if="element">
     <div class="panelhead">
       <div>
@@ -230,7 +235,7 @@ const emit = defineEmits(['remove', 'pick-colour'])
       and where it sits.
     </p>
   </div>
-</div>
+</aside>
 </template>
 
 <style scoped src="./studio.css"></style>

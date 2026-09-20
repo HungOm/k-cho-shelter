@@ -222,22 +222,6 @@ const byHalf = computed(() => {
   return out
 })
 
-/*
- * WHICH HALF OF THE PANEL IS SHOWING -- card 1b.
- *
- * The rail and the inspector are one panel with two tabs now, so something has
- * to decide which is in front. Selecting anything shows the thing selected,
- * which is the whole reason you selected it; letting go of the selection goes
- * back to the list, because that is where the next action is.
- *
- * Watched on `sel` rather than set inside pick(), because pick() is only ONE of
- * the ways a selection happens -- clicking a box on the canvas and finishing a
- * freshly drawn one both assign sel directly, and a panel that only followed
- * the list would sit on "Fields" while the canvas showed a selected box.
- */
-const pane = ref('fields')
-watch(sel, (id) => { pane.value = id ? 'selected' : 'fields' })
-
 /* Which half the selected box is on, in the list's own words, for the chip at
  * the top of the panel. Derived here because sideOf needs the stub position and
  * that belongs to the design, not to the inspector. */
@@ -1266,9 +1250,114 @@ const printedSize = computed(() => {
 
     <template v-else>
       <!-- ================= PLACE ================= -->
-      <div v-if="tab === 'place'" class="studio placing">
+      <div v-if="tab === 'place'" class="studio">
         <template v-if="active && design">
 
+          <!-- ---------- the layers rail (card 9b) ---------- -->
+          <!--
+            LEFT, BESIDE THE ARTBOARD, which is where it was and where card 9b
+            draws it. It spent one commit as a tab inside the right-hand panel,
+            built to card 1b -- and 1b is in the document's "Earlier
+            explorations, superseded" list. The live card is 9b: fields left,
+            artboard dominant in the middle, the selected thing on the right.
+            The organiser who uses this screen said the same thing from their
+            own screen before anybody had read the index.
+
+            The cost of the tabbed version is what settles it. You select FROM
+            this list, so behind a tab it is a press away every time you move
+            between objects, and the artboard gained 254px it did not need
+            nearly as much as the list needed to be visible.
+          -->
+          <aside class="rail">
+            <div class="block">
+              <h3 class="rubric">Put something on the ticket</h3>
+              <div class="seg">
+                <button type="button" class="segbtn" :class="{ on: pending === 'field' }"
+                        @click="beginAdd('field')">A field</button>
+                <button type="button" class="segbtn" :class="{ on: pending === 'code' }"
+                        @click="beginAdd('code')">A code</button>
+                <button type="button" class="segbtn" :class="{ on: pending === 'text' }"
+                        @click="beginAdd('text')">Own words</button>
+              </div>
+              <p class="tiny muted">
+                Pick it, then draw a box anywhere on the artwork.
+                Nothing here is fixed by the system.
+              </p>
+            </div>
+
+            <div class="block grow">
+              <h3 class="rubric">
+                On this template <span class="count">{{ elements.length }}</span>
+              </h3>
+              <!--
+                GROUPED BY HALF, which is how card 7a draws it and how the
+                ticket itself is organised: MAIN HALF and STUB are two different
+                pieces of paper after somebody tears along the perforation, and
+                what is printed on each is a separate decision.
+
+                It was a flat list with the side repeated on every row as a
+                small grey word — ten rows carrying the same two answers, and
+                the reader doing the sorting. The heading says it once and
+                counts them, and a box that crosses the line changes GROUP when
+                it is dragged, which is the same fact told more loudly.
+              -->
+              <template v-for="g in HALVES" :key="g.k">
+                <h4 v-if="byHalf[g.k].length" class="halfhead">
+                  {{ g.t }} <span class="count data">{{ byHalf[g.k].length }}</span>
+                </h4>
+                <ul v-if="byHalf[g.k].length" class="ellist">
+                  <li v-for="el in byHalf[g.k]" :key="el.id"
+                      :class="{ on: sel === el.id, off: el.enabled === false }">
+                    <input
+                      v-model="el.enabled" type="checkbox"
+                      :aria-label="`Print ${nameOf(el)}`"
+                      :title="`Print ${nameOf(el)} on every ticket`">
+                    <span class="tag" :class="el.kind">{{ TAG[el.kind] }}</span>
+                    <button type="button" class="elname" @click="pick(el.id)">{{ nameOf(el) }}</button>
+                    <span v-if="trouble(el)" class="warnmark"
+                          :title="`${nameOf(el)} ${trouble(el)}`">!</span>
+                  </li>
+                </ul>
+              </template>
+              <p v-if="!elements.length" class="tiny muted">
+                Nothing is printed on this ticket yet. Pick something above and draw a box.
+              </p>
+            </div>
+
+            <!--
+              ARTBOARD — what the canvas DRAWS, as card 9b groups it.
+
+              These two were loose on the status bar beside Snap and Longest
+              entry, which mixes two kinds of control: what the artboard shows
+              you, and how the tool behaves while you drag. The card separates
+              them and it is right — "Real QR" changes the picture, "Snap"
+              changes the pointer.
+
+              The card also draws "Grid & guides" and "Bleed & safe area" here.
+              Neither is built: nothing in ticketsheet.js or ticketdesign.js has
+              ever heard of a bleed, and a toggle over absent machinery is the
+              sheet.perPage bug — a control that said four while the sheet did
+              something else. They are a pipeline task with a UI at the end.
+            -->
+            <div class="block">
+              <h3 class="rubric">Artboard</h3>
+              <label class="choice tiny"><input v-model="showAllBoxes" type="checkbox"> Every box</label>
+              <label class="choice tiny"><input v-model="realQr" type="checkbox"> Real QR</label>
+            </div>
+
+            <div class="block">
+              <h3 class="rubric">Where the stub begins</h3>
+              <div class="stubrow">
+                <input
+                  class="pcfield" type="number" step="0.1" min="5" max="95"
+                  :value="(design.stubAt * 100).toFixed(1)"
+                  aria-label="Where the stub begins, as a percentage of the ticket"
+                  @input="design.stubAt = Math.max(0.05, Math.min(0.95, Number($event.target.value) / 100))">
+                <span class="unit">%</span>
+                <span class="tiny muted">or drag the line on the ticket</span>
+              </div>
+            </div>
+          </aside>
           <!-- ---------- the canvas ---------- -->
           <div class="stagewrap">
             <div class="stagebar">
@@ -1376,137 +1465,14 @@ const printedSize = computed(() => {
             </p>
           </div>
 
-          <!-- ---------- the panel: one box, two tabs (card 1b) ---------- -->
-          <!--
-            CANVAS FIRST, PANEL SECOND, and the panel is always here whether or
-            not anything is selected -- only its contents change. The 240px rail
-            that used to stand on the left is the "Fields" tab of this panel;
-            the inspector is the "Selected" tab.
-          -->
-          <aside class="panel">
-            <div class="seg paneltabs" role="tablist">
-              <button type="button" role="tab" class="segbtn"
-                      :class="{ on: pane === 'fields' }" :aria-selected="pane === 'fields'"
-                      title="What you can put on the ticket, and what is on it already"
-                      @click="pane = 'fields'">
-                Fields <span class="n">&middot; {{ elements.length }}</span>
-              </button>
-              <!--
-                DISABLED WITH THE REASON WHEN NOTHING IS SELECTED, never hidden.
-                A tab that vanishes makes the strip change width under the
-                pointer and leaves somebody wondering where it went; this says
-                what to do to fill it. permissionui's rule is about permission,
-                but the reasoning is the same one and the cost of getting it
-                wrong here is identical.
-              -->
-              <button type="button" role="tab" class="segbtn"
-                      :class="{ on: pane === 'selected' }" :aria-selected="pane === 'selected'"
-                      :disabled="!chosen"
-                      :title="chosen ? `Everything about ${nameOf(chosen)}`
-                                     : 'Click a box on the ticket, or a name under Fields'"
-                      @click="pane = 'selected'">Selected</button>
-            </div>
-
-            <div v-show="pane === 'fields'" class="panelbody">
-            <div class="block">
-              <h3 class="rubric">Put something on the ticket</h3>
-              <div class="seg">
-                <button type="button" class="segbtn" :class="{ on: pending === 'field' }"
-                        @click="beginAdd('field')">A field</button>
-                <button type="button" class="segbtn" :class="{ on: pending === 'code' }"
-                        @click="beginAdd('code')">A code</button>
-                <button type="button" class="segbtn" :class="{ on: pending === 'text' }"
-                        @click="beginAdd('text')">Own words</button>
-              </div>
-              <p class="tiny muted">
-                Pick it, then draw a box anywhere on the artwork.
-                Nothing here is fixed by the system.
-              </p>
-            </div>
-
-            <div class="block grow">
-              <h3 class="rubric">
-                On this template <span class="count">{{ elements.length }}</span>
-              </h3>
-              <!--
-                GROUPED BY HALF, which is how card 7a draws it and how the
-                ticket itself is organised: MAIN HALF and STUB are two different
-                pieces of paper after somebody tears along the perforation, and
-                what is printed on each is a separate decision.
-
-                It was a flat list with the side repeated on every row as a
-                small grey word — ten rows carrying the same two answers, and
-                the reader doing the sorting. The heading says it once and
-                counts them, and a box that crosses the line changes GROUP when
-                it is dragged, which is the same fact told more loudly.
-              -->
-              <template v-for="g in HALVES" :key="g.k">
-                <h4 v-if="byHalf[g.k].length" class="halfhead">
-                  {{ g.t }} <span class="count data">{{ byHalf[g.k].length }}</span>
-                </h4>
-                <ul v-if="byHalf[g.k].length" class="ellist">
-                  <li v-for="el in byHalf[g.k]" :key="el.id"
-                      :class="{ on: sel === el.id, off: el.enabled === false }">
-                    <input
-                      v-model="el.enabled" type="checkbox"
-                      :aria-label="`Print ${nameOf(el)}`"
-                      :title="`Print ${nameOf(el)} on every ticket`">
-                    <span class="tag" :class="el.kind">{{ TAG[el.kind] }}</span>
-                    <button type="button" class="elname" @click="pick(el.id)">{{ nameOf(el) }}</button>
-                    <span v-if="trouble(el)" class="warnmark"
-                          :title="`${nameOf(el)} ${trouble(el)}`">!</span>
-                  </li>
-                </ul>
-              </template>
-              <p v-if="!elements.length" class="tiny muted">
-                Nothing is printed on this ticket yet. Pick something above and draw a box.
-              </p>
-            </div>
-
-            <!--
-              ARTBOARD — what the canvas DRAWS, as card 9b groups it.
-
-              These two were loose on the status bar beside Snap and Longest
-              entry, which mixes two kinds of control: what the artboard shows
-              you, and how the tool behaves while you drag. The card separates
-              them and it is right — "Real QR" changes the picture, "Snap"
-              changes the pointer.
-
-              The card also draws "Grid & guides" and "Bleed & safe area" here.
-              Neither is built: nothing in ticketsheet.js or ticketdesign.js has
-              ever heard of a bleed, and a toggle over absent machinery is the
-              sheet.perPage bug — a control that said four while the sheet did
-              something else. They are a pipeline task with a UI at the end.
-            -->
-            <div class="block">
-              <h3 class="rubric">Artboard</h3>
-              <label class="choice tiny"><input v-model="showAllBoxes" type="checkbox"> Every box</label>
-              <label class="choice tiny"><input v-model="realQr" type="checkbox"> Real QR</label>
-            </div>
-
-            <div class="block">
-              <h3 class="rubric">Where the stub begins</h3>
-              <div class="stubrow">
-                <input
-                  class="pcfield" type="number" step="0.1" min="5" max="95"
-                  :value="(design.stubAt * 100).toFixed(1)"
-                  aria-label="Where the stub begins, as a percentage of the ticket"
-                  @input="design.stubAt = Math.max(0.05, Math.min(0.95, Number($event.target.value) / 100))">
-                <span class="unit">%</span>
-                <span class="tiny muted">or drag the line on the ticket</span>
-              </div>
-            </div>
-            </div>
-
-            <Inspector v-show="pane === 'selected'"
-                       :element="chosen" :report="fitReport"
-                       :sheet-width-m-m="design.sheet.widthMM"
-                       :qr-density="qrDensity"
-                       :half="chosenHalf"
-                       :in-pixels="inPixels" :mm-per="mmPer"
-                       :swatches="swatches" :can-drop="canDrop"
-                       @pick-colour="dropper" @remove="removeElement" />
-          </aside>
+          <!-- ---------- the inspector: whatever is selected ---------- -->
+          <Inspector :element="chosen" :report="fitReport"
+                     :sheet-width-m-m="design.sheet.widthMM"
+                     :qr-density="qrDensity"
+                     :half="chosenHalf"
+                     :in-pixels="inPixels" :mm-per="mmPer"
+                     :swatches="swatches" :can-drop="canDrop"
+                     @pick-colour="dropper" @remove="removeElement" />
         </template>
 
         <p v-else class="note">
@@ -1932,8 +1898,9 @@ const printedSize = computed(() => {
  *
  * The grid now lives in studio.css alone. What is left here is the part that is
  * genuinely this component's: which of its own furniture disappears when there
- * is no width for it. PLACE is not mentioned because `.studio.placing` owns its
- * own arrangement, and a `.studio` rule here would outrank it by order.
+ * is no width for it. The grid itself is not here at all -- one declaration, in
+ * studio.css, because two of them at different breakpoints is what put the
+ * documented width 177px away from the effective one.
  */
 @media (max-width: 1023px) {
   .rail { max-height: none }
