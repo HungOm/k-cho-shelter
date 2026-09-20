@@ -88,6 +88,20 @@ async function numbering(ctx: Ctx) {
       tel: (map.ORG_PHONE ?? '').trim(),
       email: (map.ORG_EMAIL ?? '').trim(),
       site: (map.ORG_WEBSITE ?? '').trim(),
+      /*
+       * WHAT THIS RAFFLE IS, in the organiser's own words.
+       *
+       * The page carries a sentence under every verdict saying what kind of
+       * thing somebody has been handed. It was fixed in the page's own strings,
+       * which was right for one raffle and wrong for every other. Either half
+       * may be blank and the page keeps its built-in sentence for that language.
+       *
+       * It is organiser-published copy, like the contacts beside it, and
+       * carries nothing about a ticket, a buyer or a seller — which is what
+       * makes it safe to answer to anybody on a page with no session.
+       */
+      aboutMy: (map.ORG_ABOUT_MY ?? '').trim(),
+      aboutEn: (map.ORG_ABOUT_EN ?? '').trim(),
     },
   }
   cfgCache = { at: Date.now(), value }

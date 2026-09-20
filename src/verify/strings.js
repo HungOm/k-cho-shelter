@@ -13,8 +13,9 @@
 /*
  * BURMESE AWAITING A NATIVE READER.
  *
- * `whatThisIs` was written for a user who is reviewing it and must not be
- * reworded until they come back on it. The keys added with the page's redesign
+ * `whatThisIs` HAS now been reviewed — the user supplied both halves on
+ * 2026-09-20 and they are in verbatim. Do not reword either without them. The
+ * keys added with the page's redesign
  * — brandCheck, privacyNote, whyOneAnswer, whyOneAnswerNote, showSeller,
  * aboutMore — were written the same way and have had the same amount of native
  * review, which is none. The English in each is the sentence that was meant; if
@@ -86,9 +87,20 @@ export const S = {
    * approved or registered: this page cannot know that, and a line implying it
    * would be a claim the software has no way to stand behind.
    */
+  /*
+   * REVIEWED BY THE USER ON 2026-09-20, and both halves replaced with their
+   * wording. This is the one string on the page that had been waiting for a
+   * native reader, and it now has one — so the caveat above no longer applies
+   * to it. The English changed too: "families" became "members", which is the
+   * wider and truer claim about who the money reaches.
+   *
+   * It is also the DEFAULT rather than the text. An organiser can replace both
+   * halves from Setup; see ORG_ABOUT_MY / ORG_ABOUT_EN. This is what a raffle
+   * that has not set one says.
+   */
   whatThisIs: {
-    en: 'A small community charity raffle. Volunteers sell these tickets by hand to raise money for the most vulnerable families in the community. It is not a commercial ticket sale.',
-    my: 'ဤသည်မှာ ရပ်ရွာလူမှုကူညီရေးအတွက် အသေးစား ကံစမ်းမဲဖြစ်ပါသည်။ လက်မှတ်များကို စေတနာ့ဝန်ထမ်းများက လက်ဖြင့် ရောင်းချပြီး၊ ရရှိငွေကို ရပ်ရွာအတွင်း အကူအညီ အလိုအပ်ဆုံး မိသားစုများအတွက် အသုံးပြုပါသည်။ စီးပွားရေးအတွက် ရောင်းချခြင်း မဟုတ်ပါ။',
+    en: 'A small community charity raffle. Volunteers sell these tickets by hand to raise money for the most vulnerable members of the community. It is not a commercial ticket sale.',
+    my: 'ဤကံစမ်းမဲသည် ရပ်ရွာလူမှုကူညီရေးအတွက် ရည်ရွယ်ကျင်းပသည့် အသေးစား ကံစမ်းမဲအစီအစဉ် ဖြစ်ပါသည်။ ကံစမ်းမဲလက်မှတ်များကို စေတနာ့ဝန်ထမ်းများက ကိုယ်တိုင် ရောင်းချပေးပြီး၊ ရရှိသည့်ငွေများကို ရပ်ရွာအတွင်း အကူအညီအလိုအပ်ဆုံးသူများအား ထောက်ပံ့ကူညီရန် အသုံးပြုပါသည်။ ဤကံစမ်းမဲလက်မှတ်များသည် စီးပွားဖြစ် ရောင်းချခြင်းအတွက် မဟုတ်ပါ။',
   },
 
   /*

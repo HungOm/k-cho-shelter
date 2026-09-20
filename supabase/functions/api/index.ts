@@ -400,6 +400,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * has not signed in can be sent to by somebody else's typing.
    */
   set_org_contact: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setOrgContact },
+  set_org_about: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setOrgAbout },
 
   /*
    * THE TICKET ARTWORK — organisers and the System Admin, and not grantable.

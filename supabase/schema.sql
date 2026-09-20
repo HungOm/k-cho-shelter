@@ -1513,6 +1513,8 @@ insert into config (key, value, notes) values
   ('ORG_PHONE', '', 'Office telephone, as you would write it on a poster. Shown on the public ticket-check page. Blank shows no number.'),
   ('ORG_EMAIL', '', 'Office email. Shown on the public ticket-check page. Blank shows no address.'),
   ('ORG_WEBSITE', '', 'Your website, starting with https://. Shown on the public ticket-check page. Blank shows no link. Only http and https are accepted — nothing else reaches a link on a page anybody can open.'),
+  ('ORG_ABOUT_MY', '', 'What the public ticket-check page says this raffle is, in Burmese. Blank uses the wording the page comes with.'),
+  ('ORG_ABOUT_EN', '', 'The same sentence in English. Blank uses the wording the page comes with. Either language can be set on its own.'),
   ('BRAND_COLOR', '', 'Your main colour, as a hex code like #0B7285. Buttons, tabs and the default mark follow it. Blank keeps the standard colour. The text colour on top is worked out for readability and is not set here.'),
   ('PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. NOT part of ticket numbers, so it is safe to change at any time.'),
   ('ACTIVE_TICKETS', '', 'How many of the generated tickets are IN PLAY, counting from the first. Blank means all of them. Lower than TOTAL_TICKETS holds the rest back: they are not loaded, not sellable, and their books cannot be given out until released. Must be a whole number of books. Change it on the "Tickets in play" screen, not by hand.'),

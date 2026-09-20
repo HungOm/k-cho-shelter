@@ -298,3 +298,59 @@ export async function setOrgContact(p: Record<string, unknown>, user: AppUser, c
   })
   return { config: configPayload(await currentConfig(ctx)) }
 }
+
+/**
+ * WHAT THE PUBLIC TICKET-CHECK PAGE SAYS THIS RAFFLE IS.
+ *
+ * The page carries a paragraph under every verdict explaining what kind of
+ * thing somebody has been handed — a community raffle sold by volunteers, not
+ * a commercial ticket. It shipped as a fixed string in two languages, which
+ * was right for the raffle it was written for and wrong for every other one:
+ * a different charity, a different cause, a different sentence, and no way to
+ * say so without a deploy.
+ *
+ * BOTH HALVES OR NEITHER IS NOT ENFORCED, and that is deliberate. An organiser
+ * who writes only the Burmese has improved the page for nearly everybody who
+ * scans a ticket; refusing that until they also write English would be the
+ * app preferring its own tidiness to the reader's. Each half falls back to the
+ * built-in default on its own.
+ *
+ * PLAIN TEXT ONLY. This goes onto a page served to strangers, and although the
+ * page escapes it on the way out, a `<` is rejected HERE so that somebody
+ * pasting formatted text finds out at the moment they paste rather than seeing
+ * their angle brackets appear literally on the public page later.
+ */
+export const ABOUT_MAX = 600
+
+export async function setOrgAbout(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const my = String(p.my ?? '').trim()
+  const en = String(p.en ?? '').trim()
+
+  for (const [label, v] of [['Burmese', my], ['English', en]] as const) {
+    if (v.length > ABOUT_MAX) {
+      throw new ApiError('ABOUT_TOO_LONG',
+        `The ${label} description is ${v.length} characters and the limit is ` +
+        `${ABOUT_MAX}. This sits under the answer on the ticket-check page, ` +
+        'which somebody reads on a phone in a hall — a paragraph, not a page.')
+    }
+    if (/[<>]/.test(v)) {
+      throw new ApiError('ABOUT_MARKUP',
+        `The ${label} description cannot contain < or >. It is shown as plain ` +
+        'text on the public page, so any markup would appear literally.')
+    }
+  }
+
+  await writeConfig(ctx, { ORG_ABOUT_MY: my, ORG_ABOUT_EN: en })
+  /*
+   * Audited by which halves were set, not by their text — the same reasoning as
+   * ORG_CONTACT. This one is public copy rather than a contact detail, but the
+   * audit log is still read by more people than the settings screen and a
+   * paragraph repeated into it every time somebody fixes a typo is noise.
+   */
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'ORG_ABOUT',
+    details: { my: !!my, en: !!en },
+    email: user.email,
+  })
+  return { config: configPayload(await currentConfig(ctx)) }
+}

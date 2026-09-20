@@ -41,8 +41,18 @@ const root = document.getElementById('app')
  * shipped because nothing noticed. tests/verifypage.test.mjs pins the order so
  * that a future edit cannot quietly reintroduce it.
  */
-function say(key) {
-  const s = S[key]
+function say(key, pair) {
+  /*
+   * `pair` lets a caller supply the two halves instead of naming a key, and it
+   * exists so that this stays the ONLY function emitting a language pair.
+   * verifypage counts the pairs in this file and fails at more than one,
+   * deliberately: the failure it guards is a page half-inverted, carrying two
+   * orders at once because somebody added a second emitter and changed one.
+   *
+   * A caller passing `pair` is passing text this page did not write, so it
+   * escapes its own halves before handing them over — see aboutText().
+   */
+  const s = pair || S[key]
   if (!s) return ''
   return `<span class="my" lang="my">${s.my}</span><span class="en">${s.en}</span>`
 }
@@ -78,12 +88,73 @@ function topbar() {
  * The link is optional and prints nothing when no address is configured, rather
  * than offering a stranger somewhere that does not exist.
  */
+/*
+ * THE ORGANISER'S OWN WORDS, WHEN THEY HAVE WRITTEN ANY.
+ *
+ * `whatThisIs` describes one particular raffle — volunteers, a community, not
+ * a commercial sale. That is true of the raffle it was written for and is not
+ * the sentence every other organiser would write, and there was no way to
+ * change it short of a deploy. ORG_ABOUT_MY and ORG_ABOUT_EN replace either
+ * half; an unset half keeps the built-in one, so a raffle that has written only
+ * Burmese still reads correctly in both.
+ *
+ * ESCAPED, UNLIKE EVERY OTHER STRING ON THIS PAGE. Everything else here comes
+ * from strings.js, which is code. This comes from a database row somebody
+ * typed into, is served to strangers, and is the only untrusted text the page
+ * renders — so it goes through escapeHtml even though setOrgAbout already
+ * rejects angle brackets. Two places, because the server-side check is a
+ * courtesy to the person typing and this one is the thing that actually has to
+ * hold.
+ */
+let orgAbout = { my: '', en: '' }
+
+function aboutText() {
+  if (!orgAbout.my && !orgAbout.en) return say('whatThisIs')
+  /*
+   * Only the organiser's halves are escaped. The built-in ones are code, and
+   * running them through escapeHtml would be a no-op that implied otherwise.
+   */
+  return say(null, {
+    my: orgAbout.my ? escapeHtml(orgAbout.my) : S.whatThisIs.my,
+    en: orgAbout.en ? escapeHtml(orgAbout.en) : S.whatThisIs.en,
+  })
+}
+
 function about() {
   const more = String(import.meta.env.VITE_ABOUT_URL || '').trim()
   const link = more
     ? `<p class="aboutlink"><a href="${escapeHtml(more)}" rel="noopener noreferrer">${say('aboutMore')}</a></p>`
     : ''
-  return `<p class="about">${say('whatThisIs')}</p>` + link
+  return `<p class="about">${aboutText()}</p>` + link
+}
+
+/*
+ * FETCHED ALONGSIDE THE VERDICT, NEVER IN FRONT OF IT.
+ *
+ * This is a second request, and the whole design of this page is somebody on
+ * one bar of signal waiting to find out whether the ticket in their hand is
+ * real. So it never blocks: the verdict renders with the built-in sentence, and
+ * if the organiser's own arrives it is swapped into the paragraph already on
+ * screen. If the request is slow, fails, or the raffle has set nothing, the
+ * page is exactly what it was before — which is also what makes this safe to
+ * add to a page that must work when the network barely does.
+ */
+async function loadAbout() {
+  const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '')
+  if (!base) return
+  try {
+    const res = await fetch(`${base}/functions/v1/verify?about=1`, { method: 'GET' })
+    if (!res.ok) return
+    const body = await res.json()
+    const my = String(body?.org?.aboutMy ?? '').trim()
+    const en = String(body?.org?.aboutEn ?? '').trim()
+    if (!my && !en) return
+    orgAbout = { my, en }
+    const el = root.querySelector('.about')
+    if (el) el.innerHTML = aboutText()
+  } catch {
+    /* The built-in sentence stands. Nothing about a verdict depends on this. */
+  }
 }
 
 /*
@@ -154,6 +225,14 @@ async function run() {
    * off a printer with no connection, on a raffle that has not been numbered,
    * and years after the one it was printed for was wiped.
    */
+  /*
+   * STARTED HERE AND NEVER AWAITED. It updates a paragraph that is already on
+   * the screen whenever it arrives, including on the sample path below, which
+   * returns early and would otherwise be the one verdict that never got the
+   * organiser's own words.
+   */
+  loadAbout()
+
   const sample = sampleFromSearch(window.location.search)
   if (sample) {
     render(panel('sample', 'sampleHead', 'sampleNote',

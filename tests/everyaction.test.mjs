@@ -205,6 +205,19 @@ const CALLS = {
     phone: '+60 3-1234 5678', email: 'raffle@example.org', website: 'https://example.org',
   },
   /*
+   * The sentence under every verdict on the public check page. Both halves are
+   * sent because the handler writes both keys, so a partial payload blanks the
+   * one left out — the same shape as set_org_contact above. Burmese is included
+   * rather than left to the English half: this string exists precisely because
+   * the page is read by people who do not read English, and a fixture that only
+   * ever sends Latin text would not exercise the length check on the half most
+   * likely to be long.
+   */
+  set_org_about: {
+    my: 'ဤကံစမ်းမဲသည် ရပ်ရွာလူမှုကူညီရေးအတွက် ဖြစ်ပါသည်။',
+    en: 'A small community charity raffle.',
+  },
+  /*
    * The ticket artwork. A PNG header declaring 1600 x 517 — the shape of a
    * raffle ticket, which is what the handler checks, and NOT a 1x1 like the
    * logo above: this one measures the picture and refuses anything that is not

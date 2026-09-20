@@ -170,6 +170,61 @@ async function saveContact() {
   } finally { contactSaving.value = false }
 }
 
+/*
+ * WHAT THE PUBLIC TICKET-CHECK PAGE SAYS THIS RAFFLE IS.
+ *
+ * The page carries a paragraph under every verdict describing what somebody
+ * has been handed. It shipped as a fixed sentence about volunteers and a
+ * community, which is true of the raffle it was written for and is not what
+ * every organiser would write — and there was no way to change it short of a
+ * deploy. Both halves are optional and each falls back on its own, so an
+ * organiser who writes only Burmese has improved the page for nearly everybody
+ * who scans a ticket without being made to write English first.
+ */
+/* Matches ABOUT_MAX in supabase/functions/api/branding.ts. */
+const ABOUT_MAX = 600
+const about = ref({ my: '', en: '' })
+const savedAbout = ref({ my: '', en: '' })
+const aboutSaving = ref(false)
+const aboutErr = ref('')
+
+function seedAbout() {
+  savedAbout.value = {
+    my: c.value?.orgAboutMy || '',
+    en: c.value?.orgAboutEn || '',
+  }
+  about.value = { ...savedAbout.value }
+}
+const aboutDirty = computed(() =>
+  about.value.my !== savedAbout.value.my ||
+  about.value.en !== savedAbout.value.en)
+
+onMounted(seedAbout)
+// Re-seeded when the config lands, and skipped once they have typed — the same
+// cold-load problem the contact boxes have, for the same reason.
+watch(() => [c.value?.orgAboutMy, c.value?.orgAboutEn].join('\u0000'),
+      () => { if (!aboutDirty.value) seedAbout() })
+
+async function saveAbout() {
+  aboutErr.value = ''
+  aboutSaving.value = true
+  try {
+    // Both halves every time: the handler writes both keys, so a partial
+    // payload would blank the one left out.
+    const r = await api('set_org_about', {
+      my: about.value.my.trim(),
+      en: about.value.en.trim(),
+    })
+    if (r?.config) setConfig(r.config)
+    seedAbout()
+    toast('Description saved', 'ok')
+  } catch (err) {
+    // Inline, beside the box it is about — a toast slides away while the
+    // person is still reading the sentence they just typed.
+    aboutErr.value = err.message
+  } finally { aboutSaving.value = false }
+}
+
 function revertBrand() {
   brand.value = c.value?.brandColor || ''
   applyBrand(brand.value)
@@ -873,6 +928,49 @@ function details(d) {
                   : ADMIN_ONLY_WHY"
                 @click="saveContact">
           {{ contactSaving ? 'Saving\u2026' : 'Save contact details' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>What the check page says this raffle is</h3>
+      <p class="muted small">
+        Under every answer on the public ticket-check page there is a short
+        paragraph saying what kind of thing somebody is holding. Leave a box
+        empty to use the wording the page comes with.
+      </p>
+
+      <label class="lbl" for="aboutmy">In Burmese</label>
+      <textarea id="aboutmy" v-model="about.my" rows="4" :maxlength="ABOUT_MAX"
+                placeholder="Leave empty to use the built-in wording"></textarea>
+      <!--
+        The count is beside the box rather than in a toast on refusal: the limit
+        is a fact about the box while somebody is typing in it, not news about
+        something that has finished.
+      -->
+      <p class="muted tiny">{{ about.my.length }} / {{ ABOUT_MAX }}</p>
+
+      <label class="lbl" for="abouten">In English</label>
+      <textarea id="abouten" v-model="about.en" rows="4" :maxlength="ABOUT_MAX"
+                placeholder="Leave empty to use the built-in wording"></textarea>
+      <p class="muted tiny">{{ about.en.length }} / {{ ABOUT_MAX }}</p>
+
+      <p v-if="aboutErr" class="note bad tiny">{{ aboutErr }}</p>
+
+      <div class="sub">
+        <span class="muted small grow">
+          Shown to anybody who scans a ticket. It is the only thing on that page
+          written by you.
+        </span>
+        <button class="btn sm ghost" :disabled="!aboutDirty || aboutSaving"
+                :title="aboutDirty ? 'Put back what is saved' : 'Nothing has been changed'"
+                @click="seedAbout">Undo</button>
+        <button class="btn sm primary" :disabled="!isAdmin || !aboutDirty || aboutSaving"
+                :title="isAdmin
+                  ? (aboutDirty ? 'Save both' : 'Nothing has been changed')
+                  : ADMIN_ONLY_WHY"
+                @click="saveAbout">
+          {{ aboutSaving ? 'Saving\u2026' : 'Save description' }}
         </button>
       </div>
     </div>

@@ -73,6 +73,13 @@ export function configPayload(cfg: Record<string, string>) {
     orgPhone: cfg.ORG_PHONE ?? '',
     orgEmail: cfg.ORG_EMAIL ?? '',
     orgWebsite: cfg.ORG_WEBSITE ?? '',
+    /*
+     * What the public ticket-check page says this raffle IS. Blank means the
+     * page uses its own built-in sentence, so an empty value here is a real
+     * answer rather than a missing one — see setOrgAbout.
+     */
+    orgAboutMy: cfg.ORG_ABOUT_MY ?? '',
+    orgAboutEn: cfg.ORG_ABOUT_EN ?? '',
     // One colour; the stylesheet derives the rest. Blank is a real no-op —
     // applyBrand removes the tokens and the stylesheet's own colour stands,
     // rather than half a theme being applied over it.
