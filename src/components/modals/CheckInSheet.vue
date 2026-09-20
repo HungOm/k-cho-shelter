@@ -27,7 +27,7 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { api, state } from '../../lib/store.js'
-import { date, dateTime, money, plural } from '../../lib/format.js'
+import { date, dateTime, money, plural, orgNameOf} from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import Logo from '../ui/Logo.vue'
 
@@ -64,7 +64,7 @@ async function load() {
 }
 
 const cur = computed(() => r.value?.currency || state.cfg?.currency || '')
-const org = computed(() => state.cfg?.orgName || '')
+const org = computed(() => orgNameOf(state.cfg))
 const event = computed(() => state.cfg?.eventName || '')
 const project = computed(() => state.cfg?.projectCode || '')
 

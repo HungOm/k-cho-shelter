@@ -8,7 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { state, isAdmin, go, attention } from '../lib/store.js'
-import { ROLE_WORDS } from '../lib/format.js'
+import { ROLE_WORDS, APP_NAME} from '../lib/format.js'
 import Logo from './ui/Logo.vue'
 import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
@@ -130,7 +130,7 @@ defineEmits(['signout'])
       <div class="brand" :title="state.cfg?.orgName">
         <Logo :size="42" />
         <span class="grow">
-          <b>{{ state.cfg?.eventName || "Raffled" }}</b>
+          <b>{{ state.cfg?.eventName || APP_NAME }}</b>
           <span v-if="state.cfg?.projectCode" class="code">{{ state.cfg.projectCode }}</span>
         </span>
       </div>
@@ -166,7 +166,7 @@ defineEmits(['signout'])
       <header class="appbar noprint">
         <Logo :size="34" />
         <span class="grow">
-          <b>{{ state.cfg?.eventName || "Raffled" }}</b>
+          <b>{{ state.cfg?.eventName || APP_NAME }}</b>
           <small>{{ state.user?.name }} · {{ roleWord }}</small>
         </span>
         <button class="btn sm ghost" @click="$emit('signout')"><Bi text="Leave" /></button>

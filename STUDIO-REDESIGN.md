@@ -267,6 +267,19 @@ that changes when you turn the page is a total nobody can use.
   of equals.
 - **The verdict first**, then the facts, then identity — public pages and any
   screen answering a yes/no question.
+- **A correction goes beside the thing it corrects; a toast is for something
+  that has finished and gone.** Every validation refusal is a correction to
+  something still on the screen — the box is right there, and a toast slides
+  away while the reader is still looking at it. The wider form: a message about
+  live state belongs next to that state, and a message about a completed act
+  belongs in the transient layer. (72's rule, from the contact card.)
+- **Do not let a control imply an effect it has not got.** The rule in §11 is
+  not to ship a control over absent machinery; the honest form when the storage
+  is real and the consumer is not yet wired is to keep the control and correct
+  the CLAIM — "saved and audited from now, so the page has them the moment it
+  reads them, but saving one today does not change what a stranger sees."
+  Hiding the field would be worse: an organiser setting a raffle up should be
+  able to record its contact details whether or not a page reads them yet.
 
 ### Words
 

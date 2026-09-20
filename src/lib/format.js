@@ -80,6 +80,39 @@ export function plural(n, one, many) {
 }
 
 /** Book number with the padding stripped, for tiles: "Book-031" -> "31". */
+/**
+ * THE PRODUCT'S OWN NAME, and the only place it is written down.
+ *
+ * A raffle that has not said who is running it still has to put something on a
+ * printed report, a receipt and a ticket. Until now that was the empty string:
+ * a check-in sheet headed by nothing, and a ticket with a blank where an
+ * organisation belongs. Blank is not neutral on paper — it reads as a document
+ * somebody failed to finish.
+ *
+ * Set by the organiser 2026-09-20: no organisation is ever hardcoded, and where
+ * a name is needed and none has been given, the app answers with its own.
+ */
+export const APP_NAME = 'Raffled'
+
+/**
+ * Who this raffle says it is — the organisation's name, or the product's.
+ *
+ * ONE FUNCTION RATHER THAN `|| 'Raffled'` AT EIGHT CALL SITES, because the
+ * fallback is a decision and not a convenience: every place that prints a name
+ * has to make the same one, and eight copies of a default drift the first time
+ * somebody changes it in seven of them.
+ *
+ * WHAT THIS IS NOT FOR: the alt text of an organisation's logo. Logo.vue
+ * deliberately leaves that empty and says why — announcing "Raffled" where a
+ * charity's name belongs tells a screen-reader user something untrue about who
+ * is asking them for money. A name printed BESIDE the product's own mark is the
+ * product naming itself; a name attached to somebody's uploaded logo is a
+ * claim about them.
+ */
+export function orgNameOf(cfg) {
+  return String(cfg?.orgName ?? '').trim() || APP_NAME
+}
+
 export function bookShort(book) {
   return String(book).replace(/\D/g, '').replace(/^0+/, '') || '0'
 }

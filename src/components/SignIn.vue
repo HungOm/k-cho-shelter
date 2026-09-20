@@ -1,4 +1,5 @@
 <script setup>
+import { orgNameOf } from '../lib/format.js'
 /**
  * The way in.
  *
@@ -70,8 +71,14 @@ onMounted(async () => {
            Which made one organisation's name the credit line of every
            deployment. Nothing is the honest answer: a blank space says nothing,
            and a name says something untrue about who is asking for the money. -->
-      <p v-if="state.cfg?.orgName" class="tiny muted credit">
-        {{ state.cfg.orgName }}
+      <!--
+        ALWAYS A NAME, because a sign-in page with nothing under it reads as an
+        app that has not loaded. A raffle that has not said who is running it
+        gets the product's own name rather than a blank — which is also the
+        truth at that moment: nobody has claimed this raffle yet.
+      -->
+      <p class="tiny muted credit">
+        {{ orgNameOf(state.cfg) }}
       </p>
 
       <!-- checking -->

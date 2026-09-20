@@ -17,6 +17,7 @@
  * a default that resolves to this deployment's value is correct here, wrong
  * everywhere else, and silent in both places.
  */
+import { codeOf } from './source.mjs'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,10 +39,20 @@ const walk = (d) => readdirSync(d).flatMap((f) => {
  * explanation to be deleted, and the explanation is the most useful part of the
  * file. It is the RENDERED values that must be clean.
  */
+/*
+ * COMMENTS OUT FIRST, THEN LINES — through codeOf, which this repository
+ * already owns for exactly this.
+ *
+ * This was a line filter: drop any line STARTING with a comment marker. It
+ * cannot see the second line of a block comment, so a sentence explaining why
+ * something must not be hardcoded counted as the thing being hardcoded. That
+ * is not hypothetical — Logo.vue's comment argues, correctly, against putting
+ * the product's name where an organisation belongs, and the check read it as an
+ * offence. A test that flags the comment warning against the bug is a test
+ * somebody edits the comment to silence.
+ */
 function codeLines(src) {
-  return src.split('\n')
-    .filter((l) => !/^\s*(\/\/|\/\*|\*|--|#)/.test(l))
-    .filter((l) => l.trim())
+  return codeOf(src).split('\n').filter((l) => l.trim())
 }
 
 const OWNER = /k['’]?cho|ceam/i
@@ -63,6 +74,42 @@ console.log('no organisation is named or pictured in the code itself')
   ok(offenders.length === 0,
     offenders.length ? `an organisation is hardcoded:\n    ${offenders.join('\n    ')}`
                      : 'nothing in src/ names or pictures one')
+}
+
+console.log('a raffle that has not named itself is named after the app, once')
+{
+  /*
+   * THE OTHER HALF OF THE RULE ABOVE. "No organisation is hardcoded" leaves a
+   * question it does not answer: what goes on a check-in sheet, a receipt or a
+   * sign-in page before anybody has said who is running the raffle. It was the
+   * empty string — a printed report headed by nothing, which on paper reads as
+   * a document somebody failed to finish rather than as a neutral choice.
+   *
+   * Set by the organiser 2026-09-20: the app answers with its own name.
+   *
+   * WHAT THIS PINS IS THAT THE DEFAULT IS ONE DECISION. `|| 'Raffled'` written
+   * at each call site is the same trap as a duplicated colour — it drifts the
+   * first time somebody changes it in seven places out of eight, and the eighth
+   * is a printed sheet nobody looks at twice.
+   */
+  const fmt = readFileSync(join(ROOT, 'src/lib/format.js'), 'utf8')
+  ok(/export const APP_NAME = '[A-Za-z][^']*'/.test(fmt), 'the app name is declared in format.js')
+  ok(/export function orgNameOf\s*\(/.test(fmt), 'and orgNameOf is the one way to ask for it')
+
+  const APP = (fmt.match(/export const APP_NAME = '([^']+)'/) || [])[1]
+  const offenders = []
+  for (const f of walk(join(ROOT, 'src'))) {
+    if (!/\.(vue|js)$/.test(f) || f.endsWith('lib/format.js')) continue
+    for (const line of codeLines(readFileSync(f, 'utf8'))) {
+      // A second copy of the default, anywhere but the file that owns it.
+      if (line.includes(`'${APP}'`) || line.includes(`"${APP}"`)) {
+        offenders.push(`${f.replace(ROOT, '')}: ${line.trim().slice(0, 80)}`)
+      }
+    }
+  }
+  ok(offenders.length === 0,
+    offenders.length ? `the app name is written a second time:\n    ${offenders.join('\n    ')}`
+                     : `"${APP}" is written down once and asked for everywhere else`)
 }
 
 console.log('the logo comes from config, and never falls back to a bundled one')
