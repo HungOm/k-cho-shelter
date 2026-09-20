@@ -159,8 +159,13 @@ for (const status of ['Sold', 'Donated']) {
 
   console.log(`and a ${status.toLowerCase()} ticket can be traced`)
   {
+    /* Re-aimed, not relaxed. The trail stopped being a button to another
+       sheet and became a section of this one, so the words are now the
+       section's heading and the child has to be drawn to see them. The
+       invariant is the one this always asserted: from a sold ticket there
+       is a way into where it has been, without leaving the record. */
     const html = await renderScreen('src/components/SellTicket.vue', store, {
-      props: { ticket: { ...TICKET, status } },
+      props: { ticket: { ...TICKET, status } }, renderReal: ['Trail.vue'],
     })
     ok(/Where this ticket has been/.test(visibleText(html)),
        'the way into its history is on the ticket itself')

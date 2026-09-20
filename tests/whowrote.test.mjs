@@ -144,7 +144,9 @@ console.log('4b. the screens that show a recorder hand it the address they hold'
   ok(/<Who :email="t\.by"/.test(sell), "the ticket's record passes who wrote it down")
   ok(!/\{\{ t\.by \}\}/.test(sell), 'and no longer prints the raw address itself')
 
-  const hist = read('src/components/modals/History.vue')
+  /* The trail moved out of the sheet into ui/Trail.vue so a sold ticket can
+     show it inline. Same three places, same rule, one file along. */
+  const hist = read('src/components/ui/Trail.vue')
   // Three: the sale, the ticket's own recorded change, and the book's movement.
   // The third was the one still printing the address raw — "by
   // organiser@example.org" — two rows under a sale that resolved the same

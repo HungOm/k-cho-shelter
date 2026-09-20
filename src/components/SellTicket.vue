@@ -18,7 +18,7 @@ import Sheet from './ui/Sheet.vue'
 import RoleTag from './ui/RoleTag.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Bi from './ui/Bi.vue'
-import History from './modals/History.vue'
+import Trail from './ui/Trail.vue'
 import Who from './ui/Who.vue'
 
 const props = defineProps({ ticket: Object })
@@ -87,13 +87,6 @@ const blocked = computed(() => (done.value ? null : sellBlock(t.value)))
  */
 const onBehalf = ref('')
 const needsReason = computed(() => !done.value && !blocked.value && sellOverrideNeeded(t.value))
-
-/*
- * On top of this sheet, not instead of it: the answer to "who had this?" is
- * something you check and come back from, and losing the ticket you were
- * looking at to read it is how a screen stops being worth opening.
- */
-const showHistory = ref(false)
 
 async function focusFirst() {
   await nextTick()
@@ -290,7 +283,19 @@ async function correct() {
         <div v-if="t.by" class="fact"><span>Written down by</span><Who :email="t.by" /></div>
         <div class="fact"><span>Now</span><StatusPill :status="t.status" /></div>
       </div>
-      <button class="btn block mt" @click="showHistory = true">Where this ticket has been</button>
+      <!--
+        THE TRAIL, IN THE RECORD RATHER THAN BEHIND A BUTTON. A sold ticket
+        asks one question in three parts — what was written down, where the
+        ticket has been, and how to correct it — and the middle part was two
+        taps away in a sheet on top of this one. The same component draws it
+        as the sheet does; there is no second copy to drift.
+
+        It costs a request. Opening a sold ticket used to touch no network at
+        all, and now it asks for the book's history. Trail renders a skeleton
+        while it waits and says what happened if it fails, so the record and
+        the fix below stay usable either way.
+      -->
+      <Trail :ticket="t" heading="Where this ticket has been" class="mt" />
       <div v-if="t.source === 'settlement'" class="note warn">
         This was filled in when the book was counted, so nobody wrote down who bought it.
       </div>
@@ -394,7 +399,6 @@ async function correct() {
       </template>
     </template>
 
-    <History v-if="showHistory" :ticket="t" @close="showHistory = false" />
   </Sheet>
 </template>
 

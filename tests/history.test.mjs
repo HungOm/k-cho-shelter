@@ -72,7 +72,7 @@ const SOLD_TICKET = {
 
 console.log('a book that has moved')
 {
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(TRAIL), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(TRAIL), {
     props: { book: 'Book-031' }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -98,14 +98,14 @@ console.log('a book that has moved')
    */
   ok(!/organiser@example\.org/.test(said),
      'a movement no longer prints the raw address of whoever recorded it')
-  ok(/<Who :email="s\.by" \/>/.test(read('src/components/modals/History.vue')),
+  ok(/<Who :email="s\.by" \/>/.test(read('src/components/ui/Trail.vue')),
      'it hands it to the component that resolves a person instead')
   ok(!/undefined/.test(said) && !/null/.test(said), 'nothing on it reads as a missing value')
 }
 
 console.log('a ticket, whose sale belongs in the middle of its book\'s trail')
 {
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(TRAIL), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(TRAIL), {
     props: { ticket: SOLD_TICKET }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -121,7 +121,7 @@ console.log('a ticket, whose sale belongs in the middle of its book\'s trail')
    * that component on its own and asserts both halves of what it draws.
    */
   ok(/Written down by/.test(said), 'the trail still says who wrote it down')
-  ok(/<Who :email="sale\.by"/.test(read('src/components/modals/History.vue')),
+  ok(/<Who :email="sale\.by"/.test(read('src/components/ui/Trail.vue')),
      'and hands the address to the component that names the person')
   ok(/Given out/.test(said) && /Brought back/.test(said),
      'the book movements are there too: a ticket travels with its book')
@@ -141,7 +141,7 @@ console.log('a ticket, whose sale belongs in the middle of its book\'s trail')
 console.log('an unsold ticket invents no sale')
 {
   const free = { ...SOLD_TICKET, status: 'Available', name: '', agent: '', saleDate: '' }
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(TRAIL), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(TRAIL), {
     props: { ticket: free }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -152,7 +152,7 @@ console.log('an unsold ticket invents no sale')
 console.log('a book that has never moved says so')
 {
   const empty = "return { book: { number: 'Book-900', status: 'Unassigned' }, history: [] }"
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(empty), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(empty), {
     props: { book: 'Book-900' }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -173,7 +173,7 @@ console.log('a book that has moved, with nothing recorded, does not claim otherw
    * itself said, which teaches the reader that the trail cannot be trusted.
    */
   const moved = "return { book: { number: 'Book-001', status: 'Returned' }, history: [], tickets: [] }"
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(moved), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(moved), {
     props: { book: 'Book-001' }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -185,7 +185,7 @@ console.log('a book that has moved, with nothing recorded, does not claim otherw
   // The other half still has to work: a book in the office with no trail HAS
   // never moved, and saying so is the useful answer.
   const never = "return { book: { number: 'Book-900', status: 'Unassigned' }, history: [], tickets: [] }"
-  const still = visibleText(await renderScreen('src/components/modals/History.vue', storeFor(never), {
+  const still = visibleText(await renderScreen('src/components/ui/Trail.vue', storeFor(never), {
     props: { book: 'Book-900' }, drive: (b) => b.load(),
   }))
   ok(/has not been given out/.test(still), 'a book that truly has not moved still says so')
@@ -194,7 +194,7 @@ console.log('a book that has moved, with nothing recorded, does not claim otherw
 console.log('a call that failed keeps the sheet open')
 {
   const fails = "throw Object.assign(new Error('The server did not answer.'), { code: 'TIMEOUT' })"
-  const { ctx, cleanup } = await setupOf('src/components/modals/History.vue', storeFor(fails),
+  const { ctx, cleanup } = await setupOf('src/components/ui/Trail.vue', storeFor(fails),
     { book: 'Book-031' })
   await ctx.load()
   ok(/did not answer/.test(ctx.problem.value), 'it says what went wrong')
@@ -205,7 +205,7 @@ console.log('a call that failed keeps the sheet open')
   // the end of the file, and this region would then be the whole component —
   // which DOES contain emit('close'), twice, in the template. The assertion
   // would fail while naming a region it was not looking at.
-  const load = cut(read('src/components/modals/History.vue'),
+  const load = cut(read('src/components/ui/Trail.vue'),
                    'async function load', 'const WORDS', 'the load function')
   ok(!/emit\('close'\)/.test(load),
      'and never dismisses itself — that is what the receipt was reported for')
@@ -279,7 +279,7 @@ console.log('every movement the server can record has words for it')
 
   ok(verbs.size >= 8, `found ${verbs.size} movements the server can write`)
 
-  const vue = read('src/components/modals/History.vue')
+  const vue = read('src/components/ui/Trail.vue')
   // Code at both ends: this ended at the comment above words(), so rewording
   // that prose moves the marker, indexOf returns -1, and the slice runs to the
   // end of the file — scraping the whole component as if it were the table.
@@ -319,7 +319,7 @@ console.log('a movement that ended at the office says so')
         fromWho: { id: 'A1', name: 'MARY', zone: 'CCFM', phone: '' }, toWho: null,
         by: 'organiser@example.org', note: 'seller says it went missing' },
     ] }`
-  const said = visibleText(await renderScreen('src/components/modals/History.vue',
+  const said = visibleText(await renderScreen('src/components/ui/Trail.vue',
     storeFor(desk), { props: { book: 'Book-031' }, drive: (b) => b.load() }))
 
   ok(/Brought back from MARY \(CCFM\) to the office/.test(said.replace(/\s+/g, ' ')),
@@ -342,7 +342,7 @@ console.log('a confirmed handover reads as English, not as a column name')
         fromWho: null, toWho: { id: 'A1', name: 'JOHN', zone: '', phone: '' },
         by: 'organiser@example.org', note: 'Signed paper, witnessed by Hung Om' },
     ] }`
-  const said = visibleText(await renderScreen('src/components/modals/History.vue',
+  const said = visibleText(await renderScreen('src/components/ui/Trail.vue',
     storeFor(ack), { props: { book: 'Book-031' }, drive: (b) => b.load() }))
 
   ok(/Confirmed received/.test(said), 'the seller confirming is said in words')
@@ -370,7 +370,7 @@ console.log('a sale reconstructed at a count-in does not pass for one somebody t
         fromAmount: null, toAmount: 10, fromPayment: '', toPayment: 'Paid',
         source: 'settlement', by: 'organiser@example.org', note: '' },
     ] }`
-  const said = visibleText(await renderScreen('src/components/modals/History.vue',
+  const said = visibleText(await renderScreen('src/components/ui/Trail.vue',
     storeFor(withSource), { props: { book: 'Book-031' }, drive: (b) => b.load() }))
 
   ok(/nobody wrote the buyer down at the table/.test(said),
@@ -389,7 +389,7 @@ console.log('a verb nobody planned for still appears')
   // that silently omits a step is worse than one with an ugly word in it.
   const odd = `return { book: { number: 'Book-031', status: 'Out' },
     history: [{ at: '2026-08-01T09:00:00Z', action: 'reissued', from: null, to: 'JOHN', by: 'x@y.z', note: '' }] }`
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(odd), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(odd), {
     props: { book: 'Book-031' }, drive: (b) => b.load(),
   })
   ok(/Reissued/.test(visibleText(html)), 'an unknown movement still renders, capitalised')
@@ -431,7 +431,7 @@ const CORRECTED = `return {
 
 console.log('a corrected sale still shows the name that was on it')
 {
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(CORRECTED), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(CORRECTED), {
     props: { ticket: { ...SOLD_TICKET, name: 'Pa Thaung' } }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -443,7 +443,7 @@ console.log('a corrected sale still shows the name that was on it')
   // Same reason as above: the signature is a <Who>, which the harness stubs.
   // That each step carries its own author is asserted on the data instead, so
   // this stays a test of the trail rather than of the stub.
-  ok(/<Who :email="s\.by"/.test(read('src/components/modals/History.vue')),
+  ok(/<Who :email="s\.by"/.test(read('src/components/ui/Trail.vue')),
      'each change is signed by whoever made it, through the same component')
 
   const at = (x) => said.indexOf(x)
@@ -469,7 +469,7 @@ console.log('a sale older than the record is still shown')
       fromSeller: null, toSeller: 'MARY', fromBuyer: '', toBuyer: 'Somebody Else',
       fromPhone: '', toPhone: '0111111111', fromAmount: null, toAmount: 10,
       fromPayment: '', toPayment: 'Paid', source: 'app', by: 'x@y.z', note: '' }] }`
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(other), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(other), {
     props: { ticket: SOLD_TICKET }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -487,7 +487,7 @@ console.log('a step whose details are not for this reader says so')
       fromSeller: 'MARY', toSeller: 'MARY', fromBuyer: '', toBuyer: '', fromPhone: '', toPhone: '',
       fromAmount: 10, toAmount: 10, fromPayment: 'Paid', toPayment: 'Paid',
       source: 'app', by: 'organiser@example.org', note: '' }] }`
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(masked), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(masked), {
     props: { ticket: SOLD_TICKET }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -497,7 +497,7 @@ console.log('a step whose details are not for this reader says so')
   // And the other way round for the reader who may see it: the note IS the
   // change, and a step printing it must not also claim it is being withheld.
   const noted = masked.replace("note: '' }", "note: 'lives behind the market' }")
-  const mine = visibleText(await renderScreen('src/components/modals/History.vue', storeFor(noted), {
+  const mine = visibleText(await renderScreen('src/components/ui/Trail.vue', storeFor(noted), {
     props: { ticket: SOLD_TICKET }, drive: (b) => b.load(),
   }))
   ok(/lives behind the market/.test(mine), 'the note somebody typed about the buyer is shown to whoever may read it')
@@ -506,7 +506,7 @@ console.log('a step whose details are not for this reader says so')
 
 console.log('a book\'s history names the ticket each change was to')
 {
-  const html = await renderScreen('src/components/modals/History.vue', storeFor(CORRECTED), {
+  const html = await renderScreen('src/components/ui/Trail.vue', storeFor(CORRECTED), {
     props: { book: 'Book-031' }, drive: (b) => b.load(),
   })
   const said = visibleText(html)
@@ -520,11 +520,44 @@ console.log('the screen no longer claims the earlier name is gone')
   // the component quotes the retired sentence in order to say it was retired,
   // and a scan of the raw file reads that quote as the sentence still being on
   // the screen — the exact failure codeOf was written after.
-  const shown = codeOf(read('src/components/modals/History.vue'))
+  const shown = codeOf(read('src/components/ui/Trail.vue'))
   ok(!/earlier name is not kept/.test(shown),
      'that sentence was true when it was written and stopped being true when the trail landed')
   ok(/Nothing here can be edited or removed/.test(shown),
      'and says what is true now: the record is append only')
+}
+
+console.log('the sheet around it still knows what the book is now')
+{
+  /*
+   * THE ONE FACT THAT CROSSES THE NEW SEAM. The trail moved into ui/Trail.vue
+   * so a sold ticket can show it inline; the sheet stayed here. A book's
+   * subtitle says what the book IS now, which is only known once the history
+   * has been fetched — and the thing that fetches it is now the child. So the
+   * child says when it has loaded and the sheet listens.
+   *
+   * Without this, breaking that emit costs nothing visible: the sheet opens,
+   * the trail draws correctly underneath it, and only the subtitle quietly
+   * goes blank. Nothing else in this file would notice, because every other
+   * assertion here now renders the child on its own.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/modals/History.vue',
+    'export const state = {}', { book: 'Book-031' })
+
+  ok(ctx.subtitle.value === '', 'before the trail has loaded the sheet claims nothing')
+  ctx.loaded.value = { status: 'Out' }
+  ok(ctx.subtitle.value === 'Now: Out',
+     `once the trail reports, the sheet says where the book is (${ctx.subtitle.value})`)
+  cleanup()
+}
+
+console.log('a ticket names its book without waiting for anything')
+{
+  const { ctx, cleanup } = await setupOf('src/components/modals/History.vue',
+    'export const state = {}', { ticket: { number: 'KS-00413', book: 'Book-031' } })
+  ok(ctx.subtitle.value === 'In Book-031',
+     `a ticket's sheet is subtitled from what the caller already handed it (${ctx.subtitle.value})`)
+  cleanup()
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
