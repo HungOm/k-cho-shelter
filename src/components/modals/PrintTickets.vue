@@ -740,10 +740,17 @@ async function printThem() {
                       @click="generateMissing">
                 {{ missing.length ? `Generate ${missing.length}` : 'Nothing to generate' }}
               </button>
-              <p v-if="missing.length" class="note bad tiny">
+              <!--
+                Quiet, and conditional. This said the same thing as the line
+                above the button, in alarm red, underneath the button that
+                fixes it — so a first print run read it as a refusal: the
+                tickets would be left out whatever you did. They are only left
+                out if you print WITHOUT pressing Generate.
+              -->
+              <p v-if="missing.length" class="tiny muted">
                 {{ missing.slice(0, 6).join(', ') }}<template v-if="missing.length > 6">, and
-                {{ missing.length - 6 }} more</template> have no codes. They are listed and
-                skipped, never invented.
+                {{ missing.length - 6 }} more</template>. Print without generating and these
+                are left out — a code is never invented to fill a gap.
               </p>
             </div>
 
