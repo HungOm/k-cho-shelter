@@ -278,13 +278,30 @@ function stepZoom(dir) {
   zoom.value = next
 }
 
+/*
+ * THE FIT MEASURES THE CANVAS, AND THE CANVAS IS ONLY ON THE PLACE TAB.
+ *
+ * Artwork is uploaded from Artwork & paper, and with none uploaded the screen
+ * opens there deliberately — so all three calls to this (mounted, switching
+ * template, finishing an upload) ran while `stage` was unrendered, returned
+ * on the first line, and left the zoom set for the artwork before this one.
+ * Remembering what the zoom was last fitted to lets the fit happen when the
+ * canvas actually appears, and stops it overriding a zoom somebody chose.
+ */
+const fittedTo = ref('')
+
 function fitToWidth() {
   const el = stage.value
   const aw = design.value?.artwork?.width || 0
   if (!el || !aw) return
   /* 32px of breathing room, so the ticket is not jammed against the scroller. */
   zoom.value = Math.max(0.05, (el.clientWidth - 32) / aw)
+  fittedTo.value = activeId.value
 }
+
+watch(tab, (t) => {
+  if (t === 'place' && fittedTo.value !== activeId.value) nextTick(fitToWidth)
+})
 
 function scrollSelectionIntoView() {
   const p = chosenPlaced.value
@@ -1251,7 +1268,16 @@ const printedSize = computed(() => {
             </div>
 
             <div class="stage plain">
-              <div class="frame" :style="{ width: frameWidth + 'px' }">
+              <!--
+                FITTED, NOT ZOOMED. This view answers "is this the right
+                picture and is the stub line where I think it is", which
+                needs the whole ticket. It used to be drawn at the Place
+                tab's zoom — a control this tab does not have — so a canvas
+                left at 200% showed a scrolled crop here with no way back.
+                Capped at the artwork's own width so a small file is never
+                blown up past actual size.
+              -->
+              <div class="frame fitted" :style="{ maxWidth: (design.artwork?.width ?? active.width) + 'px' }">
                 <img :src="active.url" alt="" draggable="false">
                 <div class="overlay" v-html="preview"></div>
                 <div class="stubline still" :style="{ left: pc(design.stubAt) }"></div>
@@ -1436,6 +1462,7 @@ const printedSize = computed(() => {
   box-shadow: var(--shadow); background: var(--surface);
 }
 .frame.drawing { cursor: crosshair }
+.frame.fitted { width: 100% }
 .frame img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none }
 .frame .overlay { position: absolute; inset: 0; pointer-events: none }
 .frame .overlay :deep(svg) { width: 100%; height: 100%; display: block }

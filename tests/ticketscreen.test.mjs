@@ -336,5 +336,69 @@ console.log('where the browser has no dropper, nothing is lost')
   ok(/type="color"/.test(html) && /type="text"/.test(html), 'the picker and the hex remain')
 }
 
+console.log('the artwork tab shows the whole picture, whatever the canvas is zoomed to')
+{
+  /*
+   * ARTWORK CAN ONLY BE UPLOADED FROM THE ARTWORK TAB, AND THE FIT MEASURES
+   * THE OTHER ONE.
+   *
+   * `fitToWidth` reads the `stage` element, and `ref="stage"` sits inside
+   * `v-if="tab === 'place'"`. Uploading is only offered on Artwork & paper,
+   * and with nothing uploaded yet the screen opens there on purpose — so the
+   * fit that runs after an upload measured an element that was not rendered,
+   * returned early, and left the zoom at whatever it was. The Artwork tab
+   * then drew the picture at its pixel width times that zoom inside a column
+   * a fraction as wide: an organiser checking "is this the right picture"
+   * was shown a scrolled crop of it, on the one tab with no zoom control to
+   * undo it with. On a first upload that is the very first thing they see.
+   *
+   * Pinned as the rule rather than the mechanism, so it survives the canvas
+   * being extracted: a tab cannot be resized by a control it does not carry.
+   */
+  const atZoom = async (z) => renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => { await b.load(); b.tab.value = 'artwork'; b.zoom.value = z },
+  })
+  const half = await atZoom(0.5)
+  const wide = await atZoom(2)
+
+  const frameOf = (h) => {
+    const from = h.indexOf('stage plain')
+    return from < 0 ? '' : (h.slice(from).match(/<div class="frame[^>]*>/) ?? [''])[0]
+  }
+  ok(/class="stage plain"/.test(half), 'the artwork tab draws its own plain stage')
+  ok(frameOf(half).length > 0, `and the frame inside it is found (${frameOf(half).slice(0, 60)})`)
+  ok(frameOf(half) === frameOf(wide),
+    `it is drawn the same at any canvas zoom (0.5 gave ${frameOf(half)}, 2 gave ${frameOf(wide)})`)
+  ok(!/width:\s*3200px/.test(wide), 'never at the artwork pixel width times the zoom')
+}
+
+console.log('the canvas is fitted when it appears, not only when the artwork changed')
+{
+  /*
+   * The same early return from the other side. Three places ask for a fit —
+   * the mounted hook, switching template, and finishing an upload — and every
+   * one of them is a no-op if the organiser is not standing on the Place tab
+   * at that moment, which after an upload they never are. So the canvas
+   * opened at the zoom set for the artwork before it.
+   */
+  await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => {
+      await b.load()
+      b.tab.value = 'artwork'
+      b.zoom.value = 0.5
+      ok(b.fittedTo.value !== b.activeId.value,
+        'with the canvas off screen nothing has been fitted to this artwork')
+
+      /* The column, once it exists. 1000 - 32 of breathing room over 1600. */
+      b.stage.value = { clientWidth: 1000, scrollLeft: 0 }
+      b.fitToWidth()
+      ok(Math.abs(b.zoom.value - 0.605) < 1e-9,
+        `a fit with the canvas on screen sizes it to the column (got ${b.zoom.value})`)
+      ok(b.fittedTo.value === b.activeId.value,
+        'and records which artwork the zoom now belongs to')
+    },
+  })
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
