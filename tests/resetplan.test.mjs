@@ -199,13 +199,15 @@ console.log('rows come out children first, so nothing refuses halfway through')
 console.log('the SQL function the app calls will accept every table the plan sends it')
 {
   const MIG = ROOT + 'supabase/migrations/'
-  let allowed = null, definedIn = ''
+  let allowed = null, definedIn = '', deletes = []
   for (const f of readdirSync(MIG).filter((x) => x.endsWith('.sql')).sort()) {
     const sql = readFileSync(MIG + f, 'utf8')
     const m = sql.match(/create or replace function app_reset[\s\S]*?allowed constant text\[\] := array\[([\s\S]*?)\]/)
     if (!m) continue
     allowed = [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])
     definedIn = f
+    /* Every delete the winning definition issues, kept for the check below. */
+    deletes = [...sql.matchAll(/execute format\(\s*'(delete from [^']*)'/g)].map((x) => x[1])
   }
 
   /* A parse that quietly matches nothing passes everything below it. */
@@ -232,6 +234,34 @@ console.log('the SQL function the app calls will accept every table the plan sen
     for (const t of ['app_users', 'permissions', 'audit_log']) {
       ok(!set.has(t), `app_reset refuses ${t} — reset.sql does that from a terminal, not a page`)
     }
+    /*
+     * THE DELETE SAYS WHICH ROWS IT MEANS.
+     *
+     * app_reset emptied its tables with `delete from <table>` and nothing after
+     * it, which is exactly what it intends and is also what the `safeupdate`
+     * extension refuses: it hooks the executor and rejects any UPDATE or DELETE
+     * whose plan carries no qualifier. The extension is enabled on the project
+     * and not by these migrations, so nothing here changed on the day it began
+     * failing — an organiser typed the confirmation, pressed the button, and got
+     * "DELETE requires a WHERE clause" with the raffle still full.
+     *
+     * NOT `where true`. It is constant-folded away before the plan exists, so
+     * it reads to the guard exactly like no clause at all and is refused
+     * identically — which would look like a fix, pass a naive test, and fail in
+     * production in the same way. `ctid is not null` survives planning as a
+     * real qual and is true for every live row.
+     *
+     * Asserted on a POSITIVE COUNT first. A regex that quietly matches nothing
+     * would make every line below it vacuous, which is the failure this file is
+     * full of warnings about.
+     */
+    ok(deletes.length > 0, `app_reset's deletes were found (${deletes.length}, in ${definedIn})`)
+    for (const d of deletes) {
+      ok(/\swhere\s/.test(d), `"${d}" carries a where clause — safeupdate refuses one without`)
+      ok(!/\swhere\s+true\s*$/i.test(d),
+         `"${d}" does not rely on \`where true\`, which is folded away before the plan`)
+    }
+
     for (const t of allowed) {
       const owner = P.featureOf(t)
       ok(owner !== '', `${t} is on the allowlist and belongs to a feature`)
