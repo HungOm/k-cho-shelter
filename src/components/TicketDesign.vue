@@ -40,7 +40,7 @@ import {
   elementLayerSVG, placeElements, qrModuleMM, ticketVerifyUrl,
 } from '../lib/ticketart.js'
 import {
-  SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, nameOf, normalElement, nextId, legacyFromElements,
+  SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, lockAxis, keepRatio, nameOf, normalElement, nextId, legacyFromElements,
 } from '../lib/ticketelements.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
@@ -379,8 +379,15 @@ function onPointerMove(ev) {
   const st = drag.value
   if (!st) return
   const span = perShare()
-  const dx = (ev.clientX - st.px) / span.x
-  const dy = (ev.clientY - st.py) / span.y
+  /*
+   * SHIFT MEANS "I MEANT THIS EXACTLY". A box is nearly always meant level
+   * with something — a line of type, the box above it, the stub edge — and a
+   * drag on a preview at 15% puts a serial number a third of a millimetre out
+   * of true: invisible here, obvious on a sheet of forty.
+   */
+  const [dx, dy] = ev.shiftKey
+    ? lockAxis((ev.clientX - st.px) / span.x, (ev.clientY - st.py) / span.y)
+    : [(ev.clientX - st.px) / span.x, (ev.clientY - st.py) / span.y]
 
   if (st.mode === 'draw') {
     const r = frame.value.getBoundingClientRect()
@@ -420,6 +427,20 @@ function onPointerMove(ev) {
 
   if (st.mode === 'resize') {
     const c = st.corner
+    /* Shift on a corner keeps the shape it already had. Width leads, because
+     * these boxes are wider than they are tall and width is what is being
+     * dragged. */
+    if (ev.shiftKey && (c.includes('e') || c.includes('w'))) {
+      const width = c.includes('e')
+        ? Math.max(0.002, st.box.width + dx)
+        : Math.max(0.002, st.box.width - dx)
+      const kept = keepRatio(st.box, width, el.box.height)
+      if (c.includes('w')) el.box.left = st.box.left + st.box.width - kept.width
+      if (c.includes('n')) el.box.top = st.box.top + st.box.height - kept.height
+      el.box.width = kept.width
+      el.box.height = kept.height
+      return
+    }
     if (c.includes('e')) el.box.width = Math.max(0.002, snapTo(st.box.left + st.box.width + dx, xs) - st.box.left)
     if (c.includes('s')) el.box.height = Math.max(0.002, snapTo(st.box.top + st.box.height + dy, ys) - st.box.top)
     if (c.includes('w')) {

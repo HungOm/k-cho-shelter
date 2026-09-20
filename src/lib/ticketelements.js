@@ -115,6 +115,40 @@ const share = (v) => Math.round(clamp01(v) * 1e7) / 1e7
 
 /** A box of shares, clamped and rounded, with a positive extent. */
 /**
+ * DRAGGING WITH SHIFT HELD, as two pure decisions.
+ *
+ * A box on a ticket is nearly always meant to be level with something — a
+ * line of type, the box above it, the edge of the stub. Moving with a mouse
+ * on a preview 15% of actual size puts a serial number a third of a
+ * millimetre out of true, which is invisible on screen and obvious on a sheet
+ * of forty. Holding shift is how every drawing tool has said "I meant this
+ * exactly" for thirty years.
+ *
+ * Pure, and here rather than in the component, because what they decide is
+ * geometry and the thing worth testing is the decision and not the pointer.
+ */
+
+/** Shift while moving: whichever way you went furthest is the way you meant. */
+export function lockAxis(dx, dy) {
+  return Math.abs(dx) >= Math.abs(dy) ? [dx, 0] : [0, dy]
+}
+
+/**
+ * Shift while resizing: keep the shape the box already had.
+ *
+ * The WIDTH leads, because these boxes are overwhelmingly wider than they are
+ * tall — a serial number, a line of address — so width is the dimension a
+ * person is actually dragging. A zero-height box would divide by nothing, so
+ * a box with no shape yet keeps whatever height it is given.
+ */
+export function keepRatio(box, width, height) {
+  const w = Number(box?.width) || 0
+  const h = Number(box?.height) || 0
+  if (!(w > 0 && h > 0)) return { width, height }
+  return { width, height: Math.max(0.002, width * (h / w)) }
+}
+
+/**
  * WHAT TO CALL AN ELEMENT ON SCREEN.
  *
  * Lives here rather than in a component because two of them ask now — the

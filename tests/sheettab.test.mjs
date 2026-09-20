@@ -23,6 +23,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renderScreen } from './screen.mjs'
+import { lockAxis, keepRatio } from '../src/lib/ticketelements.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -123,6 +124,39 @@ console.log('and the tab really does mount it, not just intend to')
   const slots = (html.match(/class="slot"/g) || []).length
   ok(slots > 0, `with ${slots} ticket slots on it`)
   ok(/aspect-ratio/.test(html), 'at the shape of the paper')
+}
+
+console.log('holding shift means the drag was meant exactly')
+{
+  /*
+   * WHAT THIS IS FOR. A box on a ticket is nearly always meant level with
+   * something — a line of type, the box above it, the edge of the stub. The
+   * designer previews at about 15% of actual size, so a drag that looks
+   * perfect puts a serial number a third of a millimetre out of true:
+   * invisible on screen, obvious on a printed sheet of forty.
+   *
+   * The pointer handling is not testable here and does not need to be. What
+   * is worth pinning is the DECISION each modifier makes, which is geometry.
+   */
+  eq(lockAxis(0.05, 0.01).join(), '0.05,0', 'mostly across moves only across')
+  eq(lockAxis(0.01, 0.05).join(), '0,0.05', 'mostly down moves only down')
+  eq(lockAxis(-0.05, 0.01).join(), '-0.05,0', 'and direction is not what decides it, distance is')
+  // A tie has to go somewhere, and it has to go there every time: a box that
+  // jitters between axes at 45 degrees is worse than one that picks wrong.
+  eq(lockAxis(0.03, 0.03).join(), '0.03,0', 'an exact diagonal resolves the same way every time')
+
+  const wide = { width: 0.30, height: 0.05 }
+  const r = keepRatio(wide, 0.60, 0.99)
+  eq(r.width, 0.6, 'width leads, because width is what is being dragged')
+  eq((r.width / r.height).toFixed(2), (wide.width / wide.height).toFixed(2),
+    'and the shape it already had is kept')
+  /*
+   * A box with no shape yet cannot have one preserved, and dividing by its
+   * height would produce Infinity — which lands in the design JSON as null
+   * and takes the element off the ticket.
+   */
+  eq(keepRatio({ width: 0, height: 0 }, 0.2, 0.1).height, 0.1, 'a box with no shape keeps what it is given')
+  ok(keepRatio(wide, 0.001, 0.5).height >= 0.002, 'and a squashed one never reaches zero height')
 }
 
 console.log('the paper is named, chosen, and obeyed')
