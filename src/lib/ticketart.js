@@ -651,6 +651,27 @@ export function ticketVerifyUrl(base, number, code) {
   return `${root}/?${encodeURIComponent(String(number))}.${encodeURIComponent(String(code))}`
 }
 
+/**
+ * The address a BUYER's receipt points at — one code standing for every ticket
+ * they hold, so they check the lot in one go instead of one QR at a time.
+ *
+ * THE READABLE FORM, `?r=CODE`, where the ticket's is compact. The opposite
+ * trade applies: this link is sent in a message and clicked or typed, never
+ * scanned, so there is no QR whose modules get smaller — and `?r=` is the form
+ * somebody can read back over the phone. The verify function accepts `?r.CODE`
+ * too, for the day this is put on paper.
+ *
+ * NOTE WHAT THIS TOKEN IS. A ticket's code is printed on the ticket, so anybody
+ * holding the paper has it; a receipt code is printed on nothing and reaches
+ * only the person it was sent to. That difference is what lets the receipt view
+ * show a buyer their own facts — see §4i's ruling — and it only holds while
+ * this address stays out of the drawing layer.
+ */
+export function receiptVerifyUrl(base, code) {
+  const root = String(base || '').replace(/\/+$/, '')
+  return `${root}/?r=${encodeURIComponent(String(code))}`
+}
+
 /* ============ elements: a box, and something in it ============ */
 
 /*

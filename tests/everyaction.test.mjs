@@ -287,6 +287,14 @@ const CALLS = {
   generate_tickets: { book: 'Book-0001' },
   // Same fixture, same refusal: no artwork, so there is nothing to draw onto.
   render_tickets: { book: 'Book-0001' },
+  /*
+   * A number that exists in the fixture but is not recorded as sold, so this
+   * refuses with NOT_SOLD — which is the path worth exercising. A receipt is
+   * what a buyer is handed after they have paid, and one minted for an unsold
+   * ticket would be a document asserting a sale that did not happen, and it
+   * would verify.
+   */
+  make_receipt: { ticketNumbers: ['KS-00001'] },
   reverse_payment: { paymentId: 999, reason: 'recorded twice' },
   list_payments: { agentId: 'A001' },
 }

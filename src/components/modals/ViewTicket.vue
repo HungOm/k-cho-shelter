@@ -16,7 +16,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { state, api, toast, go, goStudio } from '../../lib/store.js'
 import { designFor, stubShare } from '../../lib/ticketdesign.js'
 import { rankFor, rankCount } from '../../lib/ranks.js'
-import { numberLayerSVG, ticketVerifyUrl, cardSVG, CARD_DESIGNS, CARD } from '../../lib/ticketart.js'
+import { numberLayerSVG, ticketVerifyUrl, receiptVerifyUrl, cardSVG, CARD_DESIGNS, CARD } from '../../lib/ticketart.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { date } from '../../lib/format.js'
 import { inkFor } from '../../lib/brand.js'
@@ -190,12 +190,15 @@ async function loadLogo() {
  */
 function ticketsHeldBy(t) {
   const phone = String(t?.buyer?.phone ?? '').trim()
-  if (!phone) return 0
-  return (state.tickets || []).filter((x) =>
-    isSold(x) && String(x?.buyer?.phone ?? '').trim() === phone).length
+  if (!phone) return []
+  return (state.tickets || [])
+    .filter((x) => isSold(x) && String(x?.buyer?.phone ?? '').trim() === phone)
+    .map((x) => String(x.number))
+    .sort()
 }
 
-const bandFor = (t) => rankFor(ticketsHeldBy(t), Number(state.cfg?.ticketsPerBook ?? 0))
+const bandFor = (t) =>
+  rankFor(ticketsHeldBy(t).length, Number(state.cfg?.ticketsPerBook ?? 0))
 
 function cardValues(t) {
   const c = state.cfg || {}
@@ -339,6 +342,70 @@ const THANKS_EN = 'Thank you — this keeps the shelter open.'
 
 function messageFor(t) {
   return [t.number, THANKS_MY, THANKS_EN, ticketVerifyUrl(verifyBase.value, t.number, t.code)].join('\n')
+}
+
+/*
+ * THE BUYER'S OWN LINK, and the reason it has to exist at all.
+ *
+ * Every ticket carries a QR, and that QR is PRINTED ON IT — so it authenticates
+ * the ticket and never the person, and the public answer it gets is genuine or
+ * not and nothing else. Price, book, draw date, what somebody paid and the
+ * supporter band are all on the other side of that line: they belong to the
+ * buyer, and §4i ruled that they travel on the token only the buyer holds.
+ *
+ * That token is `ticket_receipts.code`. It is minted per set, printed on
+ * nothing, and the only way to have one is to have been sent one. Until now
+ * nothing sent one. `make_receipt` was registered as a write and called by no
+ * screen; `?r=CODE` had a complete server and a complete page and no traffic,
+ * so every fact that ruling moved to the receipt view had been moved somewhere
+ * unreachable — including, as of this week, the thank-you on the card.
+ *
+ * ONE LINK FOR EVERYTHING THEY HOLD, not one per ticket. A buyer who took ten
+ * tickets was sent ten pictures and ten QR codes and had to check them one at a
+ * time, which is the case makeReceipt was written for. The set is their sold
+ * tickets, found by telephone number — never by name, because two buyers called
+ * "Ma Hla" are two people. With no number recorded there is no set, so the
+ * receipt covers this ticket alone: a receipt for one is still a receipt, and
+ * it is better than silently grouping strangers.
+ */
+function receiptSet(t) {
+  const held = ticketsHeldBy(t)
+  return held.length ? held : [String(t.number)]
+}
+
+function receiptMessage(count, url) {
+  return [
+    count > 1 ? `${count} tickets` : '1 ticket',
+    THANKS_MY,
+    THANKS_EN,
+    url,
+  ].join('\n')
+}
+
+async function sendReceipt(t) {
+  shareNote.value = { ...shareNote.value, [t.number]: '' }
+  sharing.value = t.number
+  try {
+    const numbers = receiptSet(t)
+    /*
+     * The same set always mints the same code — makeReceipt looks for an
+     * existing receipt covering exactly these tickets before making one. So
+     * pressing this twice sends the buyer the same link rather than a second
+     * artefact they have to work out which of is theirs.
+     */
+    const made = await api('make_receipt', { ticketNumbers: numbers })
+    const url = receiptVerifyUrl(verifyBase.value, made.code)
+    window.open(`https://wa.me/?text=${encodeURIComponent(receiptMessage(numbers.length, url))}`,
+                '_blank', 'noopener')
+    shareNote.value = { ...shareNote.value, [t.number]: numbers.length > 1
+      ? `One link covering all ${numbers.length} of this buyer's tickets is in the message.`
+      : 'The buyer\u2019s own link is in the message. It shows what they paid and which book, which the printed QR does not.' }
+  } catch (e) {
+    shareNote.value = { ...shareNote.value, [t.number]: e.message }
+    if (e.code) toast(e.message, 'bad', e.code)
+  } finally {
+    sharing.value = ''
+  }
 }
 
 /*
@@ -623,6 +690,24 @@ onMounted(async () => {
                     :title="cannotSend(t) || 'Send this ticket and its check link to the buyer'"
                     @click="send(t)">
               {{ sharing === t.number ? 'Working…' : 'Send on WhatsApp' }}
+            </button>
+            <!--
+              THE BUYER'S OWN LINK. Secondary, not primary: the everyday act on
+              this screen is handing somebody their ticket, and this is the
+              thing you send once so they can check the lot afterwards.
+
+              It carries the count in its label because the count is the whole
+              difference between it and the button above — "Send their receipt"
+              beside "Send on WhatsApp" reads as two ways to do one thing, and
+              "· 4 tickets" says in three characters what a sentence underneath
+              would have said and nobody would have read.
+            -->
+            <button class="btn wide" :disabled="!!cannotSend(t) || sharing === t.number"
+                    :title="cannotSend(t) || (receiptSet(t).length > 1
+                      ? 'One link covering every ticket this buyer holds, showing what they paid and which books'
+                      : 'The buyer\u2019s own link: what they paid and which book, which the printed QR never shows')"
+                    @click="sendReceipt(t)">
+              Send their receipt<template v-if="receiptSet(t).length > 1"> &middot; {{ receiptSet(t).length }} tickets</template>
             </button>
             <button class="btn wide" :disabled="!!cannotSend(t) || sharing === t.number"
                     :title="cannotSend(t) || 'Save the card as a picture'"

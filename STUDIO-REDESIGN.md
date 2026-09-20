@@ -498,7 +498,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 2a | 2 Studio | Artwork & paper — the verdict is the page | yes (72 confirmed) |
 | 7a | 2 Studio | Collapsed rail — Exit studio top left, hover or ⌘\ | yes (33dce6f, 008d630) |
 | 2b | 2 Studio | Print sheet — paper, how they sit, cut line | yes |
-| 8c | 2 Studio | Studio · Digital ticket **(future tab)** | no — marked future in the document |
+| 8c | 2 Studio | Studio · Digital ticket **(future tab)** | yes (bdc639b) — less the watermark, the three toggles and "Send a test" |
 | 5a | 3 Books | Books — selection raises the bar that owns Print tickets | open with ceam-raffle-15's user |
 | 5b | 3 Books | Print tickets step 1 — batch, honest empty preview | yes (6678c2e) |
 | 5c | 3 Books | Print tickets step 2 — codes then paper as two steps | yes |
@@ -508,7 +508,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 4c | 4 Sell | Write down sales — one ticket or a pile of stubs | yes (493388c) |
 | 4d | 5 Money | Money — who owes what, running-balance statement | yes (a71a080) — Export added; "account since" unbacked |
 | 4h | 6 Control | Approvals — the waiting request first | yes |
-| 8a | 7 Buyer | Books → book → a ticket — the keepsake in the raffle's colour | yes (9d78cef) — less the Motto chip |
+| 8a | 7 Buyer | Books → book → a ticket — the keepsake in the raffle's colour | yes (9d78cef) — Motto chip added at bdc639b |
 | 8b | 7 Buyer | Three treatments of the same ticket, one brand colour | ticket-printing (Certificate) |
 | 4i | 7 Buyer | Ticket check — the public page | ticket-printing — **ruled, see below** |
 | 4e | 8 Draw | The draw — readiness as a checklist, prize form beside it | no owner — **fully backed, see below** |
@@ -608,12 +608,25 @@ covers the frame. I had that backwards and 72 caught it.
    no grid control at all. This is also the user's own instruction: the tools
    should be icons with hover explanation, not sentences.
 
-**Not a defect, recorded so nobody re-reports it:** the header's "sa…" is
-`.statetxt`, the save status, truncating by design — `min-width: 0; overflow:
-hidden; text-overflow: ellipsis`, with a comment reading "The status may
-truncate; the action may not move." It is not a fourth tab and `.tabbtn`'s
-`white-space: nowrap` is not clipping it. Two sessions mis-identified it from a
-screenshot before anyone read the markup.
+**Was "not a defect"; is now fixed — 2026-09-21, `bdc639b`.** The header's
+"sa…" was `.statetxt`, the save status, truncating by design — `min-width: 0;
+overflow: hidden; text-overflow: ellipsis`, with a comment reading "The status
+may truncate; the action may not move." That reading was right and the
+conclusion was wrong, which only became visible with a FOURTH tab in the bar:
+at 900px the status truncated to the single letter **"s"** and the H2 wrapped
+to "Ticket / Studio" and rendered straight across the template picker.
+
+Neither is what the rule intended. The bar was measured at seven container
+widths with wrapping forced off, and its contents first sit inside the box at
+about **1200** — so `@media (min-width: 1024px) { .bar { flex-wrap: nowrap } }`
+had been squeezing it since it was written, roughly 1120 even with three tabs.
+The breakpoint moved to 1200; the H2 and the status are `flex: none`; the
+picker and the `.grow` spacer are the slack. Below 1200 the bar wraps, which is
+the honest failure and what it already did on a phone.
+
+**8d's `title` suggestion is therefore moot at desk width** and still right
+below it, where the bar wraps rather than truncates. Not taken here: still
+nobody's user has scoped it.
 
 **What IS arguably true there, and is 8d's region by the split they and 72
 agreed:** at desk width the status renders as `"sa…"`, which has stopped

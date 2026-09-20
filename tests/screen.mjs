@@ -49,6 +49,25 @@ const ESBUILD = join(ROOT, 'node_modules/.bin/esbuild')
 function build(componentPath, storeStub, withTemplate, real = []) {
   const dir = mkdtempSync(join(tmpdir(), 'screen-'))
   cpSync(join(ROOT, 'src'), join(dir, 'src'), { recursive: true })
+  /*
+   * AND THE SHARED MODULES, because src/ is not the whole of what a screen
+   * imports. `src/lib/ranks.js` re-exports the supporter ladder from
+   * `supabase/functions/_shared/ranks.ts` — one definition, read by the server
+   * that works a band out and by the client that draws it, so the two cannot
+   * drift. Copying only src/ left that import dangling and esbuild refused the
+   * bundle: "Could not resolve ../../supabase/functions/_shared/ranks.ts".
+   *
+   * WHAT MADE THAT WORTH FIXING HERE rather than in the component. The suite
+   * was GREEN while this was broken, because no test happens to render the one
+   * modal that imports it. A harness that cannot build a screen the app builds
+   * fine is a trap set for whoever writes that test — they get a resolution
+   * error about a file that plainly exists and no reason to suspect the copy.
+   *
+   * Only _shared. It is by definition the code both sides read, and widening
+   * this to the whole functions tree would let a screen import a handler.
+   */
+  cpSync(join(ROOT, 'supabase/functions/_shared'),
+         join(dir, 'supabase/functions/_shared'), { recursive: true })
   writeFileSync(join(dir, 'src/lib/store.js'), storeStub)
 
   const sfc = readFileSync(join(ROOT, componentPath), 'utf8')
