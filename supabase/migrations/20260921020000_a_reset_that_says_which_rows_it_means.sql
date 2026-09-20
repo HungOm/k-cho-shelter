@@ -7,11 +7,25 @@
 --
 --     DELETE requires a WHERE clause
 --
--- and nothing was deleted. That message is not ours and is not PostgREST's:
--- this path is an rpc, not a table endpoint. It is the `safeupdate` extension,
--- which Supabase offers and which was enabled on the project outside these
--- migrations — it hooks the executor and refuses any UPDATE or DELETE whose
--- plan carries no qualifier.
+-- and nothing was deleted.
+--
+-- THE MECHANISM IS UNCONFIRMED. This header first named the `safeupdate`
+-- extension. That was an inference from the message and it is WRONG:
+-- ticket-printing-qr-integration measured the production database and
+-- `safeupdate` is not installed — pg_extension lists only pg_stat_statements,
+-- pg_trgm, pgcrypto, plpgsql, supabase_vault and uuid-ossp. They also ran an
+-- unqualified `delete from t` as both postgres and service_role and it was
+-- ALLOWED. So do not read the fix below as evidence of a cause that has been
+-- found. It has not.
+--
+-- WHAT IS ESTABLISHED. The message reached the screen through the app, not
+-- through the Supabase SQL editor: resetApply passes the rpc's error straight
+-- into RESET_FAILED, and the organiser saw it in this app's own toast under
+-- its own confirmation box. So the database raised it while app_reset was
+-- running. What the measurement above did NOT cover is exactly that context —
+-- it used a TEMP table, plain SQL rather than plpgsql `execute format`, and a
+-- role set with SET LOCAL ROLE rather than the owner a security-definer
+-- function runs as. Any of those three could be where the guard lives.
 --
 -- WHY `ctid is not null` AND NOT `where true`. The extension looks for a
 -- qualifier in the PLAN, and `where true` is constant-folded away before the

@@ -238,12 +238,15 @@ console.log('the SQL function the app calls will accept every table the plan sen
      * THE DELETE SAYS WHICH ROWS IT MEANS.
      *
      * app_reset emptied its tables with `delete from <table>` and nothing after
-     * it, which is exactly what it intends and is also what the `safeupdate`
-     * extension refuses: it hooks the executor and rejects any UPDATE or DELETE
-     * whose plan carries no qualifier. The extension is enabled on the project
-     * and not by these migrations, so nothing here changed on the day it began
-     * failing — an organiser typed the confirmation, pressed the button, and got
+     * it. An organiser typed the confirmation, pressed the button, and got
      * "DELETE requires a WHERE clause" with the raffle still full.
+     *
+     * WHAT RAISES IT IS STILL UNKNOWN. `safeupdate` was the first guess and is
+     * measurably not installed, and an unqualified delete is allowed on that
+     * database as both postgres and service_role. So this assertion is NOT
+     * resting on a diagnosed cause — it rests on the narrower claim that a
+     * statement which cannot say which rows it means is worth refusing anyway,
+     * and that whatever raised the error once can raise it again.
      *
      * NOT `where true`. It is constant-folded away before the plan exists, so
      * it reads to the guard exactly like no clause at all and is refused
