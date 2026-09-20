@@ -208,7 +208,19 @@ async function save() {
 .now span { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; }
 .now b { font-size: 1.25rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.hint.warnish { color: var(--warn-ink, var(--muted)); }
+/*
+ * --warn-ink WAS NEVER DEFINED, anywhere, so this resolved to its fallback
+ * every time and the line rendered in ordinary supporting grey. The two
+ * branches above it — "puts N more into play" and "holds N back" — were
+ * therefore identical on screen, and the second is the one that takes tickets
+ * out of a seller's hands.
+ *
+ * Exactly the incident style.css already records a few lines below .sr: a
+ * class that silently does nothing is worse than no class, because the code
+ * reads as though the warning is handled. --warn is the token for this role
+ * and flips properly in both themes.
+ */
+.hint.warnish { color: var(--warn); }
 .note.plain { background: var(--surface-2); color: var(--muted); }
 .ok { text-align: center; padding: 18px 0 10px; }
 .ok .tick {
