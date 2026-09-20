@@ -32,6 +32,19 @@ export default [
         __APP_SHA__: 'readonly',
       },
     },
-    rules: { 'no-undef': 'error' },
+    rules: {
+      'no-undef': 'error',
+      /*
+       * A COMPONENT USED WITHOUT AN IMPORT RENDERS AS NOTHING.
+       *
+       * `no-undef` is about JavaScript identifiers and cannot see a template,
+       * so <Icon> with no import passed every check here and shipped as a
+       * button with no icon — silently, because Vue treats an unknown element
+       * as an element it does not know rather than as an error. Found exactly
+       * that way: noundef.test.mjs says "No component uses a name that does not
+       * exist" and, until this rule, did not check the half its name is about.
+       */
+      'vue/no-undef-components': 'error',
+    },
   },
 ]

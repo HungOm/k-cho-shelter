@@ -11,6 +11,15 @@ import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
 import History from './modals/History.vue'
 import Icon from './ui/Icon.vue'
+/*
+ * BOTH OF THESE WERE USED WITHOUT BEING IMPORTED, and Vue renders an unknown
+ * element as nothing rather than as an error — so a seller's own ticket panel
+ * and the pager under both result lists have been invisible on this screen,
+ * silently, in production. Found by enabling vue/no-undef-components, which is
+ * the half of "no undefined names" that noundef.test.mjs was not checking.
+ */
+import YourStock from './ui/YourStock.vue'
+import Pager from './ui/Pager.vue'
 
 const emit = defineEmits(['open'])
 const box = ref(null)

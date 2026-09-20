@@ -18,10 +18,14 @@ import Sheet from './ui/Sheet.vue'
 import RoleTag from './ui/RoleTag.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Bi from './ui/Bi.vue'
-import Trail from './ui/Trail.vue'
+import Icon from './ui/Icon.vue'
+import History from './modals/History.vue'
 import Who from './ui/Who.vue'
 
 const props = defineProps({ ticket: Object })
+/* The trail, open or not. Nothing is fetched until it is. */
+const showTrail = ref(false)
+
 const emit = defineEmits(['close', 'saved'])
 
 const name = ref(props.ticket?.name || '')
@@ -284,18 +288,22 @@ async function correct() {
         <div class="fact"><span>Now</span><StatusPill :status="t.status" /></div>
       </div>
       <!--
-        THE TRAIL, IN THE RECORD RATHER THAN BEHIND A BUTTON. A sold ticket
-        asks one question in three parts — what was written down, where the
-        ticket has been, and how to correct it — and the middle part was two
-        taps away in a sheet on top of this one. The same component draws it
-        as the sheet does; there is no second copy to drift.
-
-        It costs a request. Opening a sold ticket used to touch no network at
-        all, and now it asks for the book's history. Trail renders a skeleton
-        while it waits and says what happened if it fails, so the record and
-        the fix below stay usable either way.
+        THE TRAIL IS ASKED FOR, NOT FETCHED ON ARRIVAL.
+        
+        It was inline here for a while, which read well and cost a request on
+        every open: a sold ticket used to touch no network at all, and a
+        volunteer on a phone in a hall paid for a panel most of them were not
+        looking at. Set by the organiser — it is a click, the history is
+        fetched then, and it opens in a sheet ON TOP of this record rather than
+        inside it.
+        
+        The sheet is where the fetch lives, so there is nothing to undo here:
+        History mounts Trail, Trail loads on mount, and neither happens until
+        somebody presses this.
       -->
-      <Trail :ticket="t" heading="Where this ticket has been" class="mt" />
+      <button class="btn sm ghost mt" @click="showTrail = true">
+        <Icon name="clock" :size="16" />Where this ticket has been
+      </button>
       <div v-if="t.source === 'settlement'" class="note warn">
         This was filled in when the book was counted, so nobody wrote down who bought it.
       </div>
@@ -400,6 +408,10 @@ async function correct() {
     </template>
 
   </Sheet>
+
+  <!-- On top of the record, not inside it. History mounts Trail, which
+       fetches when it mounts — so pressing the button is what asks. -->
+  <History v-if="showTrail" :ticket="t" :book="t?.book" @close="showTrail = false" />
 </template>
 
 <style scoped>
