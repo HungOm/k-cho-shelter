@@ -251,8 +251,36 @@ console.log('the screen says what it is storing')
   const text = visibleText(html)
   ok(/shares of the template/.test(text), 'the footer states that positions are shares')
   ok(/not as pixels/.test(text), 'and says what they are not')
-  ok(/belongs to the template, not to any ticket/.test(text) || !/Selected/.test(text),
-    'and saving explains what it reaches')
+
+  /*
+   * THIS ASSERTION WAS DEAD AND HAD TO BE RE-AIMED, 2026-09-20.
+   *
+   * It read:
+   *   ok(/belongs to the template, not to any ticket/.test(text) || !/Selected/.test(text))
+   *
+   * The first half stopped matching when the sentence was reworded from "not to
+   * any ticket" to "not to a ticket". The second half then carried it: with
+   * nothing selected the inspector rendered "Nothing selected" -- lowercase s --
+   * so /Selected/ was false, the disjunction was true, and the assertion passed
+   * having checked nothing at all. It stayed green through every run since.
+   *
+   * What exposed it was card 1b putting a tab labelled "Selected" in the panel,
+   * which made the escape hatch false and the dead half visible. The escape
+   * hatch was the defect: it used the WORD "Selected" as a proxy for "the
+   * inspector is showing a selected element", and a word on a screen is not
+   * that fact.
+   *
+   * So it is asked of a screen that actually has a selection, and there is no
+   * disjunction left to hide in. Matched on the short durable clause rather
+   * than the full sentence, which is what rotted the first time.
+   */
+  const picked = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' },
+    renderReal: ['Inspector.vue'],
+  })
+  const chosenText = visibleText(picked)
+  ok(/Its box/.test(chosenText), 'the inspector really is showing a selected element')
+  ok(/belongs to the template/.test(chosenText), 'and saving explains what it reaches')
 }
 
 console.log('an unsaved change says so, and can be undone')
@@ -265,7 +293,18 @@ console.log('an unsaved change says so, and can be undone')
     },
   })
   const text = visibleText(html)
-  ok(/not yet saved/.test(text), 'the header admits there is unsaved work')
+  /*
+   * Re-aimed and tightened, not relaxed. "Edited 12:04 · not yet saved" was
+   * the longest thing in the bar and truncated to "All change…", so the
+   * sentence became a time and the amount moved onto the button that writes
+   * it. The invariant is the one this always pinned — the header admits
+   * there is unsaved work — and it is now asserted on TWO signals rather
+   * than one phrase, neither of which is colour.
+   */
+  ok(/edited \d{1,2}[:.]\d{2}|not saved/i.test(text),
+     `the header says so in words, with the time when it has one (${text.slice(0, 80)})`)
+  ok(/Save · 1\b/.test(text),
+     `and the button says how much is waiting to be written (${text.slice(0, 80)})`)
   ok(/Undo/.test(text), 'and undo is offered')
   ok(/Back to saved/.test(text), 'as is throwing the lot away, named for what it does')
 }

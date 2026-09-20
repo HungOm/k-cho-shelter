@@ -240,5 +240,46 @@ console.log('an account that is linked to the wrong seller can be put right')
   ok(/props\.user\?\.agentId \|\| ''/.test(form), 'and the seller picker opens on the current link')
 }
 
+console.log('no screen can take away every way of leaving it')
+{
+  /*
+   * A LIVE FAULT, NOT A PREFERENCE. The studio asks for focus mode, which
+   * used to be `.shell.focus .sidebar, .shell.focus .tabs { display: none }`
+   * — both navigations, at every width. The sidebar does not exist below
+   * 900px, and the studio runs from 720px up, so between 720 and 899 focus
+   * hid the phone tabs while there was no sidebar to replace them: no
+   * navigation of any kind, on a screen that had just decided it was big
+   * enough to work on. The guard added for screens BELOW 720 did not reach
+   * this band.
+   *
+   * Pinned as the rule rather than as the selector, so it survives the rail
+   * being restyled: focus may narrow a navigation, and may hide one of the
+   * two, but may never hide both.
+   */
+  const shell = readFileSync(new URL('../src/components/AppShell.vue', import.meta.url), 'utf8')
+  const css = shell.slice(shell.indexOf('<style'))
+
+  const hidden = []
+  for (const m of css.matchAll(/(\.shell\.focus[^{]*)\{([^}]*)\}/g)) {
+    if (!/display:\s*none/.test(m[2])) continue
+    for (const sel of m[1].split(',')) {
+      if (/\.sidebar\b/.test(sel)) hidden.push('sidebar')
+      if (/\.tabs\b/.test(sel)) hidden.push('tabs')
+    }
+  }
+  ok(/\.shell\.focus/.test(css), 'focus mode still has rules to check')
+  ok(!(hidden.includes('sidebar') && hidden.includes('tabs')),
+     `focus never hides both navigations at once (hides: ${hidden.join(', ') || 'neither'})`)
+
+  /*
+   * And an icon whose label is hidden still has to be identifiable. The
+   * sidebar's label is display:none in focus, so the button's accessible
+   * name comes from its title — which also still carries the refusal when
+   * the item is disabled, which is what permissionui requires.
+   */
+  ok(/:title="noRoom\(s\) \? roomWhy : s\.label"/.test(shell),
+     'a rail icon is named by its title, and a disabled one still says why')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -151,9 +151,13 @@ defineEmits(['signout'])
       </div>
 
       <nav>
+        <!-- The title is the item's name, not just a refusal: in focus mode the
+             label beside the icon is hidden, and an icon with no accessible
+             name is a button nobody can identify. A disabled one still says
+             why, which is the rule permissionui pins. -->
         <button v-for="s in visible" :key="s.id"
                 :class="['navitem', { on: state.screen === s.id }]"
-                :disabled="noRoom(s)" :title="noRoom(s) ? roomWhy : null"
+                :disabled="noRoom(s)" :title="noRoom(s) ? roomWhy : s.label"
                 @click="go(s.id)">
           <Icon :name="s.icon" :size="21" />
           <Bi class="grow" :text="s.label" />
@@ -255,14 +259,33 @@ defineEmits(['signout'])
  * rather than narrowed: a half-width rail is still a rail, and the width it
  * gives back is the point.
  *
- * THE BOTTOM TABS GO TOO, and that is the part to be careful about — on a phone
- * they are the only navigation there is. The screen asking for this is
- * organiser-only and desk-shaped, it carries its own visible way out, and
- * go() clears the flag, so there are three ways back before the shortcut. If a
- * screen a seller uses ever asks for focus, this rule needs a width gate.
+ * IT NARROWS TO A RAIL RATHER THAN DISAPPEARING, and that is the whole of the
+ * change. Hiding the navigation and narrowing it to 56px give the artboard the
+ * same width back; only one of them also takes away the answer to "where am I"
+ * and the way out somebody would reach for on any other screen. A mode whose
+ * only exits are a chord and one button is a mode people get stuck in.
+ *
+ * THE BOTTOM TABS NO LONGER GO, and that was a live fault rather than a
+ * preference. The sidebar does not exist below 900px, so between 720 — the
+ * narrowest screen the studio will run on — and 899, focus hid the phone tabs
+ * while there was no sidebar to replace them: no navigation of any kind, on a
+ * studio that had just decided the screen was big enough to work on. The tabs
+ * cost the artboard nothing, because the 900px rule already hides them where
+ * the rail appears.
  */
-.shell.focus .sidebar,
-.shell.focus .tabs { display: none; }
+.shell.focus .sidebar { width: 56px; flex: 0 0 56px; }
+.shell.focus .brand { padding: 16px 0 12px; justify-content: center; }
+.shell.focus .brand span,
+.shell.focus .navitem .grow,
+.shell.focus .who { display: none; }
+.shell.focus .navitem { justify-content: center; padding-left: 0; padding-right: 0; position: relative; }
+/* A count will not fit in 56px, and the fact that there IS something waiting
+   is the part that matters at this width. The number stays on the title. */
+.shell.focus .navitem .pill {
+  position: absolute; top: 6px; right: 10px;
+  min-width: 8px; width: 8px; height: 8px; padding: 0;
+  border-radius: 50%; font-size: 0; overflow: hidden;
+}
 
 /* ---------- sidebar (desktop only) ---------- */
 .sidebar { display: none; }

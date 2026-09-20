@@ -737,6 +737,30 @@ const dirty = computed(() => {
 
 const editedAt = ref('')
 
+/*
+ * HOW MUCH IS WAITING TO BE WRITTEN, on the button that writes it.
+ *
+ * Counted rather than invented: every element whose JSON differs from the
+ * saved copy, plus the two things that are not elements — where the stub
+ * begins and the sheet's own settings. An added or removed element counts
+ * once. A number on a button that did not come from the data is the
+ * `sheet.perPage` mistake again, so if there is nothing to count this says
+ * "Save the design" instead of "Save · 0".
+ */
+const changeCount = computed(() => {
+  const now = design.value, was = saved.value
+  if (!now || !was) return 0
+  const key = (e) => JSON.stringify(e)
+  const mine = new Map((now.elements ?? []).map((e) => [e.id, key(e)]))
+  const theirs = new Map((was.elements ?? []).map((e) => [e.id, key(e)]))
+  let n = 0
+  for (const [id, k] of mine) if (theirs.get(id) !== k) n += 1
+  for (const id of theirs.keys()) if (!mine.has(id)) n += 1
+  if (now.stubAt !== was.stubAt) n += 1
+  if (JSON.stringify(now.sheet) !== JSON.stringify(was.sheet)) n += 1
+  return n
+})
+
 async function pickFile(ev) {
   const file = ev.target.files?.[0]
   ev.target.value = ''
@@ -1175,9 +1199,22 @@ const printedSize = computed(() => {
 
       <span class="grow"></span>
 
-      <span class="statetxt" :class="{ unsaved: dirty }">
-        <template v-if="dirty">Edited {{ editedAt }} · not yet saved</template>
-        <template v-else-if="saved">All changes saved</template>
+      <!--
+        SHORT ENOUGH TO SURVIVE THE ROOM IT HAS. This truncated to "All
+        change…" at desk width, which is not a shorter way of saying
+        something — it is the same number of pixels spent saying nothing.
+        The time is the fact worth keeping ("did my last change land?"), the
+        count of what is unsaved moves onto the button that will write it,
+        and "saved" needs no sentence because an idle Save button beside a
+        time is already the message.
+      -->
+      <span class="statetxt data" :class="{ unsaved: dirty }">
+        <!-- editedAt is set by the design watcher, which does not fire for
+             every route a change can arrive by, so it can legitimately be
+             empty while dirty is true. "edited " with nothing after it is
+             worse than the sentence this replaced. -->
+        <template v-if="dirty">{{ editedAt ? `edited ${editedAt}` : 'not saved' }}</template>
+        <template v-else-if="saved">saved</template>
       </span>
 
       <button class="btn sm" :disabled="!active || !design"
@@ -1186,7 +1223,9 @@ const printedSize = computed(() => {
       <button class="btn sm primary"
               :disabled="savingDesign || !design || problems.length > 0"
               :title="problems.length ? problems[0] : 'Write this design onto the template'"
-              @click="saveDesign">{{ savingDesign ? 'Saving…' : 'Save the design' }}</button>
+              @click="saveDesign">
+        {{ savingDesign ? 'Saving…' : changeCount ? `Save · ${changeCount}` : 'Save the design' }}
+      </button>
     </header>
 
     <p v-if="loadErr" class="note bad">{{ loadErr }}</p>
@@ -1577,9 +1616,18 @@ const printedSize = computed(() => {
 .picker select { min-height: 34px; padding: 4px 8px; width: auto; max-width: 220px }
 .specs { font-family: var(--font-data); font-size: .72rem; color: var(--muted) }
 .tabs { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: var(--r-sm) }
+/*
+ * ONE LINE EACH, and it is not only a tidiness matter. "Artwork & paper" and
+ * "Print sheet" were breaking after the first word, so a control that reads
+ * as one row of three became six stacked words and the bar grew a second
+ * line. The bar's height is spent twice over: the studio below it is sized
+ * `calc(100vh - 150px)`, an allowance for this bar and the footer, so a bar
+ * that wraps pushes the footer's actions off the bottom of the frame.
+ */
 .tabbtn {
   border: 0; background: none; color: var(--muted); cursor: pointer;
   padding: 6px 12px; border-radius: 8px; font-size: .84rem; font-weight: 500;
+  white-space: nowrap;
 }
 .tabbtn.on { background: var(--brand); color: var(--brand-ink) }
 .tabbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
