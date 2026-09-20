@@ -618,9 +618,51 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
               Granting hands the books over straight away, in your name, and they
               are nobody else's to sell until they come back.
             </template>
+            <template v-else-if="isOffer(r)">
+              Saying yes puts these books on your record. They are yours to sell
+              and yours to bring back.
+            </template>
+            <template v-else-if="isCountIn(r)">
+              Saying yes counts the book in and settles what is on it.
+            </template>
             <template v-else>
               Approving carries it out straight away, in {{ r.requestedBy }}'s name.
             </template>
+          </p>
+          <!--
+            AND WHAT THE OTHER BUTTON DOES. This card described one of its two
+            buttons. The undescribed one is the one that feels irreversible —
+            turning down a volunteer who counted a book and sent the money in —
+            so it was the half somebody most needed before pressing.
+
+            EACH SENTENCE IS THE SERVER'S ACTUAL BEHAVIOUR, and they differ in
+            the way that matters. `decideApproval` releases stock inside
+            `if (offer)` and nowhere else, so an OFFER is the only refusal that
+            puts anything back on the shelf. Saying that on a request — where
+            nothing was ever reserved — sends an organiser to the Books screen
+            looking for stock that never moved, and spends the trust that makes
+            these sentences worth reading. tests/refusalsays pins it.
+          -->
+          <p class="hint">
+            <template v-if="isReport(r)">
+              Saying no leaves the books with them and counts nothing in.
+            </template>
+            <template v-else-if="isOffer(r)">
+              Saying no puts the books back on the shelf. Nothing was ever on
+              your balance.
+            </template>
+            <template v-else-if="isCountIn(r)">
+              Saying no leaves {{ r.detail?.book || 'the book' }} exactly where it
+              is, with {{ r.detail?.agentName || 'them' }}. Nothing is counted in.
+            </template>
+            <template v-else-if="isRequest(r)">
+              Saying no moves nothing and puts nothing on
+              {{ r.detail?.agentName || 'their' }} balance.
+            </template>
+            <template v-else>
+              Saying no runs nothing at all.
+            </template>
+            They see your reason and can put it right or ask again.
           </p>
         </div>
         <div v-else-if="canWithdraw(r)" class="mt">
