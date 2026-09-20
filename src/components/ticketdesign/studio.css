@@ -77,12 +77,6 @@
 }
 .quad { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px }
 .quad.one { grid-template-columns: 1fr }
-.seg { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: 9px }
-.segbtn {
-  flex: 1; border: 0; background: none; cursor: pointer; padding: 7px 6px;
-  border-radius: 7px; font-size: .8rem; color: var(--text); font-weight: 500;
-  white-space: nowrap;
-}
-.segbtn.on { background: var(--brand); color: var(--brand-ink) }
-.segbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
+/* .seg / .segbtn moved to src/style.css — TicketDock uses them and is not a
+   studio component, so a studio-scoped definition left it unstyled. */
 .mono { font-family: var(--font-data); font-variant-numeric: tabular-nums }

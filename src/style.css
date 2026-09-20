@@ -538,6 +538,27 @@ input[type=file] { padding: 10px }
 .req { color: var(--bad); }
 
 /* ---------- pills / chips ---------- */
+/*
+ * A SEGMENTED SWITCH, and it lives here because it is used outside the studio.
+ *
+ * These were in ticketdesign/studio.css, which is pulled in only by the studio's
+ * own components with `<style scoped src>`. TicketDock uses `.segbtn` for its
+ * "Write the sale" / "Where it has been" tabs and is NOT a studio component, so
+ * the class resolved to nothing and the tabs rendered as bare buttons: two white
+ * boxes with an invisible label, on a dark screen.
+ *
+ * A class that resolves to nothing is the same defect as `.bad` resolving to
+ * nothing further up this file — it reads as handled and does nothing.
+ */
+.seg { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: 9px }
+.segbtn {
+  flex: 1; border: 0; background: none; cursor: pointer; padding: 7px 6px;
+  border-radius: 7px; font-size: .8rem; color: var(--text); font-weight: 500;
+  white-space: nowrap;
+}
+.segbtn.on { background: var(--brand); color: var(--brand-ink) }
+.segbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
+
 .pill {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 12px; border-radius: 999px;
@@ -583,11 +604,18 @@ input[type=file] { padding: 10px }
 /* A row's lead is nearly always an identity — a ticket number, a book number,
    a seller id — so it takes the data face. Where it is a person's NAME the
    component overrides it; a name is prose. */
+/* BLOCK, or they are two inline spans in a row. `.grow` is `flex: 1` — a flex
+   ITEM, not a container — so nothing stacked these and a result read
+   "00001Book-001", the number welded to the book. Every other property here
+   already assumed block: `margin-top` does nothing inline, and the ellipsis
+   needs a box to overflow. Inline since the Vue rebuild, so not a regression —
+   just never looked at with a number and a book both long enough to collide. */
 .item .lead {
+  display: block;
   font-weight: 700; font-size: 1.06rem;
   font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
-.item .sub { font-size: .9rem; color: var(--muted); margin-top: 2px;
+.item .sub { display: block; font-size: .9rem; color: var(--muted); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .chev { color: var(--muted); font-size: 1.3rem; flex: 0 0 auto; }
 
