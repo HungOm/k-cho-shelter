@@ -80,7 +80,10 @@ console.log('1. an organiser is told what is free before they type')
   ok(drew(html), 'the panel is there for an organiser')
   ok(/KS-00001/.test(text) && /KS-00002/.test(text),
      `both free numbers are offered (${text.slice(0, 90)})`)
-  ok(/2 to sell/.test(text), 'and counted, so the size of the job is visible without counting tiles')
+  /* Re-aimed, not weakened: the wording became "still to sell" when the two
+     office figures were joined into one line. The invariant is unchanged —
+     the size of the job is stated, so nobody counts tiles. */
+  ok(/2 still to sell/.test(text), 'and counted, so the size of the job is visible without counting tiles')
 }
 
 console.log('2. a seller sees nothing here, because YourStock is their panel')
@@ -107,6 +110,16 @@ console.log('3. it never offers a ticket the screen would refuse')
      `but it is counted and named, not silently dropped (${text.slice(-120)})`)
   ok(!/4 to sell/.test(text),
      'and never folded into one "available" figure that means two different things')
+  /*
+   * "What have we got left?" is ONE question and used to need two readings —
+   * the count at the top of the panel and the count below the pager, added up
+   * by the person on the telephone. Both figures sit on one line now. Pinned
+   * because the composition is the card, and splitting them again would be
+   * invisible to every other assertion here: each number would still be
+   * present and still be correct.
+   */
+  ok(/2 still to sell, in 1 book · 2 tickets are out with sellers/.test(text),
+     `both office figures read as one sentence (${text.slice(0, 80)})`)
 }
 
 console.log('4. the books nobody is holding are named as runs')

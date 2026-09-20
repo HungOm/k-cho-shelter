@@ -83,12 +83,22 @@ watch(sellable, () => { if ((page.value - 1) * PAGE >= sellable.value.length) pa
     <div class="spread" style="margin-bottom:10px">
       <div>
         <h3 style="margin:0"><Bi text="To sell in the office" /></h3>
+        <!--
+          THE STATE OF THE OFFICE ON ONE LINE. These were two facts in two
+          places — what is sellable in the subtitle, what is in somebody's bag
+          in a paragraph below the pager — so answering "what have we got
+          left?" meant reading the top of the panel and the bottom of it and
+          adding up. They are one question and they are now one sentence.
+          Neither number is re-derived: both come from the computeds below,
+          which come from sellBlock, which is what the sale path itself asks.
+        -->
         <p class="muted small" style="margin:2px 0 0">
           <template v-if="sellable.length">
-            {{ sellable.length.toLocaleString() }} to sell, in {{ bookCount }}
-            {{ bookCount === 1 ? 'book' : 'books' }}
-          </template>
-          <template v-else>Nothing in the office is free to sell</template>
+            <b class="data">{{ sellable.length.toLocaleString() }}</b> still to sell,
+            in <b class="data">{{ bookCount.toLocaleString() }}</b>
+            {{ bookCount === 1 ? 'book' : 'books' }}</template><template v-else>Nothing in the office is free to sell</template><template v-if="withSellers">
+            · <b class="data">{{ withSellers.toLocaleString() }}</b>
+            {{ withSellers === 1 ? 'ticket is' : 'tickets are' }} out with sellers</template>
         </p>
       </div>
     </div>
@@ -108,10 +118,10 @@ watch(sellable, () => { if ((page.value - 1) * PAGE >= sellable.value.length) pa
       <template v-if="freeRest">and {{ freeRest }} more {{ freeRest === 1 ? 'run' : 'runs' }}</template>
     </p>
 
+    <!-- The count moved into the header; what is left here is the part that
+         tells somebody what to DO about it, which a header line cannot. -->
     <p v-if="withSellers" class="muted small">
-      Another {{ withSellers.toLocaleString() }}
-      {{ withSellers === 1 ? 'ticket is' : 'tickets are' }} out with sellers. Those are
-      theirs to sell — write them down when they report back.
+      Those tickets are the sellers' to sell — write them down when they report back.
     </p>
   </div>
 </template>
@@ -122,7 +132,7 @@ watch(sellable, () => { if ((page.value - 1) * PAGE >= sellable.value.length) pa
 .desk { border-left: 4px solid var(--muted, #888); }
 .tix { display: flex; flex-wrap: wrap; gap: 6px; }
 .tix-b {
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
   padding: 6px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
