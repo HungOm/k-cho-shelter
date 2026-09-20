@@ -137,6 +137,11 @@ const PATHS = {
    */
   bleed:     'M9 3v5.5M15 3v5.5M3 9h5.5M15.5 9H21M3 15h5.5M15.5 15H21M9 15.5V21M15 15.5V21',
   preview:   'M2.8 12S6.4 5.8 12 5.8 21.2 12 21.2 12 17.6 18.2 12 18.2 2.8 12 2.8 12ZM12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z',
+  /* The eye, struck through. There was no "not shown" drawing in the set, so a
+   * visibility control had to borrow phoneOff -- a crossed-out HANDSET beside a
+   * ticket field. The slash is the same M3 3l18 18 stroke phoneOff uses, so the
+   * two read as one convention rather than two. */
+  previewOff:'M3 3l18 18M10.6 6.1A7.6 7.6 0 0 1 12 5.8c5.6 0 9.2 6.2 9.2 6.2a17 17 0 0 1-2.8 3.4M6.5 8.1A17 17 0 0 0 2.8 12S6.4 18.2 12 18.2a8 8 0 0 0 3.2-.7M9.9 9.9a2.6 2.6 0 0 0 3.7 3.7',
   download:  'M12 4v10.5M8 11l4 4 4-4M4.5 17v1.5A1.5 1.5 0 0 0 6 20h12a1.5 1.5 0 0 0 1.5-1.5V17',
 
   // --- the studio: looking at it before it prints ----------------------

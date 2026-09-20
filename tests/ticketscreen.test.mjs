@@ -148,8 +148,15 @@ console.log('with artwork, the designer renders')
  */
 console.log('everything on the ticket is listed by a name somebody chose')
 {
+  /*
+   * Toggle IS RENDERED FOR REAL HERE, and it has to be. The visibility control
+   * on each row used to be a bare <input type="checkbox"> that this file owned;
+   * it is now <Toggle>, and a child left out of renderReal is stubbed to its
+   * slots -- so the assertion below would be reading an absence this harness
+   * creates rather than anything about the screen.
+   */
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle, renderReal: ['Inspector.vue'],
+    drive: settle, renderReal: ['Inspector.vue', 'Toggle.vue'],
   })
   const text = visibleText(html)
   for (const name of ['Ticket number', 'Book number', "Buyer's name", 'Phone', 'Address', 'Sold by']) {
@@ -160,7 +167,18 @@ console.log('everything on the ticket is listed by a name somebody chose')
   }
   // Ten elements come out of the CEAM design: two numbers, two books, two
   // codes, four buyer lines. A count that drifts means the migration changed.
-  ok(/aria-label="Print Ticket number"/.test(html), 'each one can be switched off by name')
+  /*
+   * RE-AIMED, NOT RELAXED. This matched `aria-label="Print Ticket number"`, the
+   * old checkbox's label. Card 9b draws an eye instead, and a button is named
+   * by what it DOES rather than by its state -- so the control now announces
+   * "Hide Ticket number" when the layer is on and "Show Ticket number" when it
+   * is off. The invariant is untouched: every row's control is individually
+   * addressable and says which element it governs.
+   */
+  ok(/aria-label="(Hide|Show) Ticket number"/.test(html),
+     'each one can be switched off by name')
+  ok(!/type="checkbox"[^>]*aria-label="Print /.test(html),
+     'and the tick box it replaced is gone rather than doubled up')
 }
 
 /*

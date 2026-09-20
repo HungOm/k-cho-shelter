@@ -55,6 +55,7 @@ import Inspector from './ticketdesign/Inspector.vue'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
 import Icon from './ui/Icon.vue'
+import Toggle from './ui/Toggle.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 /* Across into the check page's own folder on purpose: the sample book and the
  * page that answers a sample QR have to agree, and that page may not import
@@ -192,7 +193,26 @@ function trouble(el) {
 
 /** What an element is called on screen. Never its id, never a model key. */
 
-const TAG = { field: 'FLD', code: 'QR', text: 'TXT' }
+/*
+ * THE KIND OF THING A ROW IS, as a drawing rather than an abbreviation.
+ *
+ * This was `{ field: 'FLD', code: 'QR', text: 'TXT' }` set in three-letter
+ * badges -- a private vocabulary the reader has to learn, in the narrowest
+ * column on the screen. Card 9b draws a glyph per row.
+ *
+ *   field  a value the raffle fills in    -> the ticket it comes off
+ *   text   words somebody typed           -> the serif T of the type palette
+ *   code   the check code as a QR         -> the code drawing itself
+ *
+ * The word is still there, on the title, so nothing is carried by the picture
+ * alone -- the same rule as a status never being colour alone.
+ */
+const KIND_ICON = { field: 'ticket', text: 'type', code: 'code' }
+const KIND_WORD = {
+  field: 'A field the raffle fills in',
+  text: 'Words you typed',
+  code: 'The check code, as a QR',
+}
 
 /*
  * Which side of the perforation something is on.
@@ -1302,20 +1322,38 @@ const printedSize = computed(() => {
                 it is dragged, which is the same fact told more loudly.
               -->
               <template v-for="g in HALVES" :key="g.k">
-                <h4 v-if="byHalf[g.k].length" class="halfhead">
-                  {{ g.t }} <span class="count data">{{ byHalf[g.k].length }}</span>
-                </h4>
+                <!--
+                  A RUBRIC, NOT A HEADING. This was an <h4>, so "Main half"
+                  competed with the panel's own title and read as a name. Card
+                  9b sets it as a label -- MAIN HALF · 3 -- which is the
+                  treatment every other group in this panel already uses.
+                -->
+                <p v-if="byHalf[g.k].length" class="rubric halfhead">
+                  {{ g.t }} <span class="count data">&middot; {{ byHalf[g.k].length }}</span>
+                </p>
                 <ul v-if="byHalf[g.k].length" class="ellist">
                   <li v-for="el in byHalf[g.k]" :key="el.id"
                       :class="{ on: sel === el.id, off: el.enabled === false }">
-                    <input
-                      v-model="el.enabled" type="checkbox"
-                      :aria-label="`Print ${nameOf(el)}`"
-                      :title="`Print ${nameOf(el)} on every ticket`">
-                    <span class="tag" :class="el.kind">{{ TAG[el.kind] }}</span>
+                    <!--
+                      A GLYPH, NOT THREE LETTERS. The kind was rendered as FLD /
+                      QR / TXT, which is the screen teaching its own abbreviations
+                      in a 240px rail. Icon.vue already carries the element
+                      palette this studio was drawn against -- 47 drawings, and
+                      this file was asking for two of them.
+                    -->
+                    <Icon :name="KIND_ICON[el.kind]" :size="15" class="kind"
+                          :class="el.kind" :title="KIND_WORD[el.kind]" />
                     <button type="button" class="elname" @click="pick(el.id)">{{ nameOf(el) }}</button>
                     <span v-if="trouble(el)" class="warnmark"
                           :title="`${nameOf(el)} ${trouble(el)}`">!</span>
+                    <!--
+                      AN EYE, NOT A TICK BOX, and on the right where 9b draws it.
+                      A tick box says "include this in a set"; an eye says "show
+                      this", and a layer row is about what appears on the ticket.
+                      The control announces the ACTION -- "Hide Ticket number" --
+                      because a button is named by what it does, not by its state.
+                    -->
+                    <Toggle v-model="el.enabled" :label="nameOf(el)" :size="15" />
                   </li>
                 </ul>
               </template>
@@ -1686,9 +1724,35 @@ const printedSize = computed(() => {
 
 /* ---- the element list: a register, not a stack of cards ---- */
 .ellist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column }
+/*
+ * THE ROWS TAKE --row-h, WHICH THEY NEVER DID.
+ *
+ * This screen carries `.dense`, which sets --row-h to 34px at desk width and
+ * leaves it at 68px on anything smaller. Nothing in this list referenced it, so
+ * the rows sat at whatever their padding produced -- around 60px on a screen
+ * that had already declared itself dense, and an organiser reading nine layers
+ * got a third of a panel of air.
+ *
+ * `.dense .item` is the only rule in style.css that consumes the token, and a
+ * layer row is not an `.item`. Reading the token directly is the fix. --tap is
+ * untouched, and correctly so: nothing in this list is pressed one-handed in a
+ * field, which is the only thing --tap protects.
+ */
 .ellist li {
-  display: flex; align-items: center; gap: 7px; padding: 5px 4px;
+  display: flex; align-items: center; gap: 7px; padding: 2px 4px;
+  min-height: var(--row-h);
   border-bottom: 1px solid var(--border);
+}
+/*
+ * THE GROUP LABEL WAS AN <h4> AND HAD NO RULE OF ITS OWN, so it took the
+ * default heading weight and size and competed with the panel's title -- "Main
+ * half" read as the name of something rather than as a label over three rows.
+ * Card 9b sets it as a rubric: MAIN HALF · 3. The class now only carries what
+ * is particular to it, which is the count sitting at the far edge.
+ */
+.halfhead {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin: 10px 0 2px;
 }
 .ellist li.on { background: var(--brand-soft); border-radius: 6px }
 .ellist li.off .elname, .ellist li.off .side { opacity: .5 }
@@ -1699,15 +1763,13 @@ const printedSize = computed(() => {
 }
 .elname:hover { color: var(--brand) }
 .elname:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; border-radius: 3px }
-/* The kind, as three letters. A word would push the name out of a 240px rail;
- * a coloured dot alone would say nothing without a key. */
-.tag {
-  font-family: var(--font-data);
-  font-size: .58rem; font-weight: 700; letter-spacing: .04em;
-  padding: 2px 4px; border-radius: 3px; background: var(--surface-2); color: var(--muted);
-}
-.tag.code { background: var(--info-soft); color: var(--info) }
-.tag.text { background: var(--warn-soft); color: var(--warn) }
+/* The kind, as a drawing. It keeps the three-letter badges' colour coding,
+ * because that told the eye which rows were alike at a glance -- but the colour
+ * is now reinforcement for a shape rather than the only difference between FLD
+ * and TXT, and the word is on the title. */
+.kind { flex: none; color: var(--muted) }
+.kind.code { color: var(--info) }
+.kind.text { color: var(--warn) }
 .side { font-size: .68rem; color: var(--muted) }
 .warnmark {
   flex: none; width: 15px; height: 15px; border-radius: 50%;
