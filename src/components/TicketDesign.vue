@@ -34,7 +34,7 @@
  * positioned. The visible handles are small and their hit areas are generous.
  */
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { state, api, setConfig, toast, isAdmin, setFocus, go } from '../lib/store.js'
+import { state, api, setConfig, toast, isAdmin, setFocus, go, NO_ROOM_WHY } from '../lib/store.js'
 import { designFor, validateDesign, stubShare } from '../lib/ticketdesign.js'
 import {
   elementLayerSVG, placeElements, qrModuleMM, ticketVerifyUrl,
@@ -672,10 +672,23 @@ async function load() {
  * shortcut as the only way out is a trap wearing a feature's clothes.
  */
 onMounted(() => {
-  setFocus(true)
+  /*
+   * ONLY WHEN THE STUDIO CAN ACTUALLY RUN. Focus hides the sidebar AND the
+   * phone tabs, so taking it on a screen that is about to show "this needs a
+   * bigger screen" leaves somebody on a dead end with no navigation at all —
+   * the one state worse than the screen being unavailable.
+   */
+  if (state.roomy) setFocus(true)
   window.addEventListener('keydown', onFocusKey)
   load().then(() => nextTick(fitToWidth))
 })
+/*
+ * Turned off on the way down, never back on: a window dragged narrower must
+ * give the navigation back, but re-entering focus on the way up would undo a
+ * ⌘\ somebody pressed deliberately. Widening leaves the chrome showing, which
+ * is a working studio either way.
+ */
+watch(() => state.roomy, (roomy) => { if (!roomy) setFocus(false) })
 onUnmounted(() => {
   setFocus(false)
   window.removeEventListener('keydown', onFocusKey)
@@ -1113,6 +1126,22 @@ const printedSize = computed(() => {
     <p class="muted">This is an organiser's screen.</p>
   </section>
 
+  <!--
+    THE SAME REASON THE NAV GIVES, because a person who reached this screen on
+    a phone did so from a tab that said why, or from a link, and two different
+    explanations of one fact is how somebody decides the app is broken.
+  -->
+  <section v-else-if="!state.roomy" class="card noroom">
+    <Icon name="ticket" :size="34" />
+    <h3>Ticket Studio needs a bigger screen</h3>
+    <p class="muted">{{ NO_ROOM_WHY }}</p>
+    <p class="tiny muted">
+      Everything else in the app works here — this is the one screen that does not,
+      because an artboard and two rails of controls do not fit on a phone.
+    </p>
+    <button class="btn" @click="exitStudio">Back to Home</button>
+  </section>
+
   <section v-else class="designer dense">
     <!--
       THE HEADER IS THE TEMPLATE. Which artwork is being designed, what shape it
@@ -1137,20 +1166,6 @@ const printedSize = computed(() => {
           <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
       </label>
-      <!--
-        THE ARTBOARD'S OWN NUMBERS, written as card 9b writes them:
-        "190.0 x 61.5 mm - 2244 x 726 px - 300 dpi". The dpi was computed here
-        already and shown only inside the artwork verdict, which is the one tab
-        somebody is NOT on while placing boxes — so the resolution they are
-        designing against was invisible exactly when it constrains what they do.
-
-        All of it is data, so all of it takes --font-data.
-      -->
-      <span v-if="active && design" class="specs data">
-        {{ printedSize }} · {{ active.width }} × {{ active.height }} px<template
-          v-if="dpi"> · {{ dpi.v }} dpi</template>
-      </span>
-
       <nav class="tabs" role="tablist">
         <button
           v-for="t in TABS" :key="t.id" type="button" role="tab"
@@ -1285,6 +1300,20 @@ const printedSize = computed(() => {
               <label class="choice tiny"><input v-model="snapping" type="checkbox"> Snap to other boxes</label>
               <label class="choice tiny"><input v-model="showLongest" type="checkbox"> Longest entry</label>
               <span class="grow"></span>
+              <!--
+                THE ARTBOARD'S OWN NUMBERS: "190.0 × 61.5 mm · 2244 × 726 px ·
+                300 dpi". They were in the header beside the template picker,
+                where two shrinking items on one nowrap row overlapped each
+                other at desk width — and where they were also furthest from
+                the thing they describe. They belong under the artboard, beside
+                the zoom, which is the other reading of the same object.
+
+                All of it is data, so all of it takes --font-data.
+              -->
+              <span v-if="active && design" class="specs data">
+                {{ printedSize }} · {{ active.width }} × {{ active.height }} px<template
+                  v-if="dpi"> · {{ dpi.v }} dpi</template>
+              </span>
               <span class="tiny muted held">positions held as a share of the template, not as pixels</span>
             </div>
 
@@ -1505,6 +1534,45 @@ const printedSize = computed(() => {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding-bottom: 10px; border-bottom: 1px solid var(--border);
 }
+/*
+ * ONE ROW AT DESK WIDTH, which is what card 9b draws and what the bar is for.
+ *
+ * It wraps below that, correctly — eight controls cannot share a phone's width.
+ * But on a monitor the wrap put "Print a test page" and "Save the design" on a
+ * line of their own under everything else, which reads as a second toolbar
+ * rather than as the end of the first, and costs a row of the artboard's height
+ * to say nothing.
+ *
+ * The two that give way are the template name and the dimensions: a name can
+ * ellipsize and still be recognised, and the measurements are a reference
+ * somebody reads once rather than scans. Nothing that can be PRESSED shrinks.
+ */
+@media (min-width: 1024px) {
+  .bar { flex-wrap: nowrap; }
+  .bar .picker { min-width: 0; flex: 0 1 auto; }
+  /*
+   * `width: 100%` is the whole fix. A select with only a max-width keeps its
+   * intrinsic width while the label around it shrinks to nothing, so the
+   * template name rendered straight across the item beside it — two strings
+   * on top of each other at exactly the width this rule was added to tidy.
+   * It has to be told to follow its box, not just be stopped from exceeding it.
+   */
+  .bar .picker select { max-width: 180px; width: 100%; }
+}
+
+/*
+ * The unavailable screen. Centred and narrow because there is nothing to scan
+ * — it is one fact and one way out, and a full-width card of body text reads
+ * as an error the app had rather than a limit it has.
+ */
+.noroom {
+  max-width: 420px; margin: 40px auto; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.noroom :deep(.ic) { color: var(--muted-2); }
+.noroom h3 { margin: 0; }
+.noroom p { margin: 0; }
+.noroom .btn { margin-top: 8px; }
 .bar h2 { margin: 0; font-size: 1.05rem }
 .picker select { min-height: 34px; padding: 4px 8px; width: auto; max-width: 220px }
 .specs { font-family: var(--font-data); font-size: .72rem; color: var(--muted) }

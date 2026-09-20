@@ -89,6 +89,9 @@ export const state = reactive({
   /* The chrome is out of the way — see setFocus. Never persisted: a mode that
      survives a reload is a mode somebody wakes up trapped in. */
   focus: false,
+  /* Whether the screen has room for a layout tool — see ROOM_FOR_STUDIO.
+     True until a browser says otherwise, so nothing is withheld by default. */
+  roomy: true,
   loading: false,
   loadProgress: null,
   lastSync: null,
@@ -965,6 +968,57 @@ export function go(screen) {
 export function setFocus(on) {
   state.focus = !!on
 }
+
+/* ---------- whether the screen has room to lay artwork out ---------- */
+
+/**
+ * THE SCREEN THE TICKET STUDIO NEEDS.
+ *
+ * The studio is not a screen that happens to be wide. It is an artboard with a
+ * rail of layers on one side and the properties of the selected thing on the
+ * other, and the work is dragging a box to a position that will be printed —
+ * so it needs room to aim in, and a second hand's worth of it for the rails.
+ * On a phone the artboard came out about as wide as a credit card with two
+ * columns of controls squeezing it, which is not a small version of the tool;
+ * it is a tool that cannot do its job.
+ *
+ * A MEASUREMENT, NOT A DEVICE TEST. Nothing here asks what the machine is —
+ * user-agent sniffing gets a desktop browser at half width wrong in one
+ * direction and a tablet in the other. Two numbers:
+ *
+ *   720px wide   — a tablet held upright and up. An iPad mini is 744 CSS px
+ *                  across in portrait and is the smallest screen this is meant
+ *                  for; below it the artboard loses to the rails.
+ *   600px tall   — which is what actually rules out a phone turned sideways.
+ *                  A large phone in landscape is 932 px across and would pass
+ *                  a width test on its own, but it is 430 px tall, and an
+ *                  artboard needs height more than it needs width.
+ *
+ * Both are watched, not read once: rotating an iPad changes the answer, and a
+ * gate that only ran at startup would leave the tab dead in the orientation
+ * that can do the work.
+ */
+export const ROOM_FOR_STUDIO = '(min-width: 720px) and (min-height: 600px)'
+
+/**
+ * The reason, in the words the user sees. Exported because the nav shows it on
+ * a disabled tab and the screen shows it in place of the studio, and those two
+ * saying different things is how somebody concludes the feature is broken
+ * rather than unavailable here.
+ */
+export const NO_ROOM_WHY =
+  'The ticket studio needs a tablet or a computer — it places artwork to the millimetre.'
+
+function watchRoom() {
+  // No window in the test harness, and no matchMedia in very old browsers.
+  // Either way the default stands and nothing is taken away.
+  if (typeof window === 'undefined' || !window.matchMedia) return
+  const mq = window.matchMedia(ROOM_FOR_STUDIO)
+  const read = () => { state.roomy = mq.matches }
+  read()
+  if (mq.addEventListener) mq.addEventListener('change', read)
+}
+watchRoom()
 
 // ---------- the draw screen's own facts ----------
 

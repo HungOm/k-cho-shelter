@@ -32,6 +32,8 @@ import { reactive } from 'vue'
 export const state = reactive({
   cfg: { ticketPrefix: 'KS-', ticketDigits: 5, currency: 'RM', ticketArtwork: ${!!reply.active} },
   user: ${JSON.stringify(user)},
+  // The gate on the studio screen. The fixture is a desk.
+  roomy: true,
 })
 export const asked = []
 export const api = async (action) => { asked.push(action); return ${JSON.stringify(reply)} }
@@ -43,6 +45,8 @@ export const go = () => {}
 // that grows an import otherwise fails the BUNDLE, which reads as a broken
 // component rather than as a fixture one field behind.
 export const setFocus = () => {}
+export const NO_ROOM_WHY = 'The ticket studio needs a tablet or a computer.'
+export const ROOM_FOR_STUDIO = '(min-width: 720px) and (min-height: 600px)'
 export const isAdmin = ${user.role === 'admin'}
 export const isSuper = false
 `

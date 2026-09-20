@@ -10,10 +10,42 @@
  * rules separately to each component rather than making them global. One
  * source, no duplication, and nothing leaks into the rest of the app.
  */
+/*
+ * THE COLUMNS FILL THE SCREEN, and the artboard sits in the middle of what is
+ * left. `align-items: start` let all three columns end at their natural height,
+ * so a studio on a tall monitor was three short boxes with a field of empty
+ * page under them — and the artboard, which is the whole point of the screen,
+ * floated at the top of its column rather than in the space it had.
+ *
+ * The height is calculated rather than 100vh because the bar above it is part
+ * of the screen, not chrome the shell removed.
+ */
 .studio {
   display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px;
-  gap: 14px; align-items: start;
+  gap: 14px; align-items: stretch;
+  min-height: calc(100vh - 150px);
 }
+/*
+ * ON A TABLET, THE RAILS CANNOT BOTH STAND BESIDE THE ARTBOARD.
+ *
+ * 240 + 300 of rail plus the gaps is 568px, so on an iPad the artboard gets
+ * what is left — under 200px in portrait, which is a ticket the size of a
+ * stamp with two columns of controls staring at it. Three columns need about
+ * 1024px before the middle one is worth having, which is the same width the
+ * dense rows wait for, and for the same underlying reason: that is where a
+ * screen stops being something you hold.
+ *
+ * The PROPERTIES panel is the one that moves, not the layers rail. You consult
+ * properties AFTER selecting something; the rail is what you select FROM, so
+ * taking it off the side would mean scrolling away from the artboard to choose
+ * the thing you are about to aim. Underneath, full width, it also stops being
+ * a column of squeezed number fields.
+ */
+@media (max-width: 1023px) {
+  .studio { grid-template-columns: 200px minmax(0, 1fr); }
+  .studio > .panel { grid-column: 1 / -1; }
+}
+
 .rail, .panel {
   display: flex; flex-direction: column; gap: 12px;
   border: 1px solid var(--border); border-radius: var(--r-sm);
@@ -21,6 +53,10 @@
 }
 .rail { max-height: calc(100vh - 170px); overflow: auto }
 .stagewrap { display: flex; flex-direction: column; gap: 8px; min-width: 0 }
+/* The stage takes what the bar above it does not, and centres the artboard in
+   it — vertically as well as horizontally, which is what makes a canvas read
+   as a thing on a table rather than as content stuck to the top of a box. */
+.stagewrap > .stage { flex: 1; display: grid; place-content: center start }
 .pgroup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border) }
 .pgroup:first-of-type { border-top: 0; padding-top: 0 }
 .rubric {

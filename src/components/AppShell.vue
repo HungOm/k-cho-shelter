@@ -7,7 +7,7 @@
  * wide screen shows more rather than the same column stretched across it.
  */
 import { ref, computed } from 'vue'
-import { state, isAdmin, go, attention } from '../lib/store.js'
+import { state, isAdmin, go, attention, NO_ROOM_WHY } from '../lib/store.js'
 import { ROLE_WORDS, APP_NAME} from '../lib/format.js'
 import Logo from './ui/Logo.vue'
 import Icon from './ui/Icon.vue'
@@ -47,7 +47,13 @@ const SCREENS = [
    * permissions row can hand it to a seller. Hiding the tab is a courtesy;
    * it is not what makes it safe.
    */
-  { id: 'ticketdesign', icon: 'ticket', label: 'Ticket Studio', roles: ['admin'] },
+  /*
+   * `room` is the only entry that has one: the studio is a layout tool and
+   * cannot be used on a phone, so the tab is shown DISABLED with the reason
+   * rather than dropped. A tab that disappears on one device and not another
+   * reads as a broken app or a demoted account — see permissionui.
+   */
+  { id: 'ticketdesign', icon: 'ticket', label: 'Ticket Studio', roles: ['admin'], room: true },
   // Super admin only, so it is filtered by more than role — see `visible`.
   { id: 'permissions', icon: 'key', label: 'Access', roles: ['admin'], sup: true },
   { id: 'approvals', icon: 'hand', label: 'Approvals', roles: ['admin', 'recorder', 'agent'] }
@@ -56,6 +62,15 @@ const SCREENS = [
 const visible = computed(() => SCREENS.filter(s =>
   s.roles.includes(state.user?.role) &&
   (!s.sup || state.user?.isSuperAdmin)))
+
+/*
+ * NOT A FILTER, deliberately. Room is a property of the screen you are holding,
+ * not of who you are, so it greys the tab where role hides it — the same tab is
+ * there tomorrow at a desk, and a person who cannot find it today would
+ * otherwise have no way to learn that.
+ */
+const noRoom = (s) => !!s.room && !state.roomy
+const roomWhy = NO_ROOM_WHY
 
 /**
  * Eight tabs overflow a phone: on a 390px screen the last two sit off-screen
@@ -138,6 +153,7 @@ defineEmits(['signout'])
       <nav>
         <button v-for="s in visible" :key="s.id"
                 :class="['navitem', { on: state.screen === s.id }]"
+                :disabled="noRoom(s)" :title="noRoom(s) ? roomWhy : null"
                 @click="go(s.id)">
           <Icon :name="s.icon" :size="21" />
           <Bi class="grow" :text="s.label" />
@@ -207,11 +223,18 @@ defineEmits(['signout'])
             <h3><Bi text="More" /></h3>
             <button v-for="s in moreTabs" :key="s.id"
                     :class="['morerow', { on: state.screen === s.id }]"
+                    :disabled="noRoom(s)" :title="noRoom(s) ? roomWhy : null"
                     @click="pick(s.id)">
               <Icon :name="s.icon" :size="22" />
-              <Bi class="grow" :text="s.label" />
+              <span class="grow">
+                <Bi :text="s.label" />
+                <!-- A title attribute is unreachable on a touch screen, and
+                     this sheet is the phone's only nav. The reason is written
+                     where the finger already is. -->
+                <small v-if="noRoom(s)" class="why">Needs a tablet or a computer</small>
+              </span>
               <span v-if="badges[s.id]" class="pill bad">{{ badges[s.id] }}</span>
-              <span class="chev">›</span>
+              <span v-if="!noRoom(s)" class="chev">›</span>
             </button>
             <button class="btn block" @click="showMore = false">Close</button>
           </div>
@@ -263,8 +286,11 @@ defineEmits(['signout'])
   background: none; cursor: pointer; font-weight: 650; font-size: 1rem;
   color: var(--muted); text-align: left; transition: background .14s, color .14s;
 }
-.navitem:hover { background: var(--surface-2); color: var(--text); }
+.navitem:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 .navitem.on { background: var(--brand-soft); color: var(--brand); }
+/* Legible, not invisible: it has to be readable enough to be worth hovering
+   for the reason. The same .45 the buttons use everywhere else. */
+.navitem:disabled { opacity: .45; cursor: not-allowed; }
 .navitem :deep(.ic) { flex: 0 0 21px; }
 .navitem :deep(.bi) { align-items: flex-start; }
 
@@ -340,10 +366,18 @@ defineEmits(['signout'])
   border: 0; border-radius: var(--r-sm); background: none;
   font-size: 1.05rem; font-weight: 650; cursor: pointer; text-align: left;
 }
-.morerow:hover { background: var(--surface-2); }
+.morerow:hover:not(:disabled) { background: var(--surface-2); }
 .morerow.on { background: var(--brand-soft); color: var(--brand); }
 .morerow :deep(.ic) { flex: 0 0 22px; }
 .morerow .chev { color: var(--muted); font-size: 1.4rem; }
+.morerow > .grow {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  min-width: 0;
+}
+/* Dimmer than the row above it, because the row itself is already dimmed and
+   two greys at the same value read as one block of unavailable text. */
+.morerow:disabled { opacity: .55; cursor: not-allowed; }
+.morerow .why { font-size: .78rem; font-weight: 500; color: var(--muted); }
 
 /* ---------- wide screens: swap tabs for the sidebar ---------- */
 @media (min-width: 900px) {
@@ -360,5 +394,22 @@ defineEmits(['signout'])
 
 @media (min-width: 1400px) {
   .content { max-width: 1280px; }
+}
+
+/*
+ * A CANVAS IS NOT A COLUMN OF TEXT.
+ *
+ * `.content` is capped at 1280px because a reading measure longer than that is
+ * hard to track back to the start of the next line — right for every screen in
+ * this app except one. The studio is an artboard between two rails, and the cap
+ * left a quarter of a wide monitor empty while the artwork rendered at 15%.
+ *
+ * Focus mode is exactly the right switch for it: the screen that asked for the
+ * chrome to get out of the way is the screen that wants the width, and no
+ * reading screen asks for either.
+ */
+.shell.focus .content {
+  max-width: none;
+  padding-left: 20px; padding-right: 20px;
 }
 </style>
