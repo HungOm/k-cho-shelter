@@ -95,12 +95,11 @@ same file, they are the same task and one person does both.
 | 1 | Shapes panel out | `ticketdesign/ShapesPanel.vue` | **done** (`fa8a5c2`) |
 | 1 | Template rail out | `ticketdesign/TemplateRail.vue` | **done** (`48ed3f8`) |
 | 1 | Artwork verdict out | `ticketdesign/ArtworkVerdict.vue` | **done** (`a7fe5c9`) |
-| 2 | Inspector | `ticketdesign/Inspector.vue` + the shell | **next** |
-| 1 | Artwork stage out | `ticketdesign/ArtworkStage.vue` | after 3 |
-| 1 | Place tab out | `ticketdesign/PlaceTab.vue` | after 2 |
-| 2 | Inspector | `ticketdesign/Inspector.vue`, `PlaceTab.vue` | after 1c |
-| 3 | Canvas manipulation | `PlaceTab.vue`, `lib/ticketelements.js` | after 2 |
-| 4 | Action hierarchy | the shell | **done** |
+| 2 | Inspector | `ticketdesign/Inspector.vue` + the shell | **done** (`e6db02e`) |
+| 3 | Canvas manipulation | the shell, `lib/ticketelements.js` | **done** (`246c9bd`) |
+| 4 | Action hierarchy | the shell | **done** (`202efa3`) |
+| 1 | Artwork stage out | `ticketdesign/ArtworkStage.vue` | **closed, not done** — see below |
+| 1 | Place tab out | `ticketdesign/PlaceTab.vue` | **closed, not done** — see below |
 | 4 | Advanced print settings | — | **not built, deliberately** |
 | 5 | Preview mode | `ticketdesign/PreviewTab.vue`, `ui/SheetPreview.vue` | **offered → ticket-printing-qr-integration** |
 | 6 | Layers | `Inspector.vue` | after 2 |
@@ -108,6 +107,34 @@ same file, they are the same task and one person does both.
 | — | Wire the icons in | the studio files | after the icon set is committed |
 | — | `key` and `phoneOff` read as blobs | `ui/Icon.vue` | **unowned** — in the sidebar, nobody's |
 | — | Token audit | `src/style.css`, `studio.css` | **offered → kcho-shelter-72** |
+
+**THE LAST TWO PHASE 1 ROWS ARE CLOSED WITHOUT BEING DONE, 2026-09-20.**
+Phase 1 existed for a stated reason: *"Doing this first is what makes phases
+2–5 small."* Phases 2, 3 and 4 are in. Phase 5 is a NEW file fed by `pageFit`
+and does not touch the shell. Phase 6 this plan already defers. So the two
+remaining splits have outlived the thing they were enabling, and what is left
+is a large mechanical diff with no phase behind it.
+
+Measured before closing them, rather than argued. The canvas cannot be lifted
+on a narrow interface: its pointer handlers mutate `design`, set the selection,
+consult every other element for snapping, and drive the undo recorder — one
+piece of state with four faces. Counting what would have to cross, it is a
+dozen props and four emits, which is the eighteen-binding coupling this plan's
+own retrospective says not to write out longhand in a second file.
+
+Closed the same way the advanced print settings were: **a decision, not an
+omission.** If a later phase needs the seam, the seam will be obvious then and
+it will be worth what it costs. Reopen it with a reason, not for tidiness.
+
+**THE MEASUREMENT WAS WORTH MORE THAN THE REFACTOR WOULD HAVE BEEN.** Asking
+what actually crossed the boundary turned up a real defect in `cb8a055`:
+`frameWidth` was read by BOTH tabs, so the Artwork tab drew the picture at the
+Place tab's zoom — a control it does not carry — and `fitToWidth` measures an
+element that only exists on the Place tab, so the fit after an upload could
+never fire. On a first upload an organiser met a scrolled crop of their own
+ticket on the tab whose entire job is "is this the right picture". Fixed
+both ways; `frameWidth` is now the canvas's own. Diagnosis earns its keep even
+when the redesign it was for does not happen.
 
 **PHASE 1 WAS WRITTEN WRONG AND THE WORK CORRECTED IT.** The plan said "three
 tab components". What came out was five smaller ones, because the unit that
