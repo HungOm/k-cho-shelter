@@ -3,8 +3,8 @@
  * Finding things. On a wide screen the list keeps its place beside the ticket
  * you opened, so you can work down a stack without losing where you were.
  */
-import { ref, computed, watch } from 'vue'
-import { state, searchResults, agentMap, whereIs, isSold, isAdmin, api, toast, go } from '../lib/store.js'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { state, searchResults, agentMap, whereIs, isSold, isAdmin, api, toast, go, sellBlock } from '../lib/store.js'
 import { STATUS_WORDS } from '../lib/format.js'
 import { isFreeToIssue } from '../lib/books.js'
 import StatusPill from './ui/StatusPill.vue'
@@ -20,6 +20,7 @@ import Icon from './ui/Icon.vue'
  */
 import YourStock from './ui/YourStock.vue'
 import Pager from './ui/Pager.vue'
+import TicketDock from './ui/TicketDock.vue'
 
 const emit = defineEmits(['open'])
 const box = ref(null)
@@ -148,6 +149,152 @@ const pageRows = computed(() =>
    that lands somebody on page seven of the old one looks like no results. */
 watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhere],
       () => { page.value = 1 })
+
+/*
+ * ================= WORKING DOWN A STACK, FROM THE KEYBOARD =================
+ *
+ * TWO PRESENTATIONS OF ONE SELECTION. Wide enough for a column beside the
+ * list and the ticket opens in a dock; otherwise it opens in the sheet, as it
+ * always has. A phone has no room for a dock and no keyboard to earn one, and
+ * a seller standing up holding a book is the person on the phone. 1024px is
+ * the same gate the dense reading mode uses.
+ *
+ * The match is read once and listened to, and it answers false on the server,
+ * where there is no window — so a server render is the phone shape, which is
+ * the safe one to be wrong about.
+ */
+const wide = ref(false)
+let mq = null
+const onWide = (e) => { wide.value = e.matches; if (!e.matches) selected.value = null }
+onMounted(() => {
+  if (typeof window === 'undefined' || !window.matchMedia) return
+  mq = window.matchMedia('(min-width: 1024px)')
+  wide.value = mq.matches
+  mq.addEventListener('change', onWide)
+})
+onUnmounted(() => mq?.removeEventListener('change', onWide))
+
+/*
+ * The ticket in the dock. Held as the OBJECT rather than as a number, which
+ * is safe here and was worth checking before relying on: loadDelta merges
+ * with Object.assign onto the row already in state and reindex remaps the
+ * same objects, so a held reference keeps updating across a poll instead of
+ * going stale. Holding a number and looking it up every render would also
+ * work; it would just be re-deriving something the tree already gives us.
+ */
+const selected = ref(null)
+
+function openTicket(t) {
+  if (wide.value) { selected.value = t; focusNum.value = t.number }
+  else emit('open', t)
+}
+
+/*
+ * ---- ROVING FOCUS ----
+ *
+ * KEYED ON THE TICKET NUMBER, NOT ON A ROW INDEX. The results are a
+ * TransitionGroup and the list re-sorts and re-pages underneath; an index
+ * survives none of that and would move the focus ring to whichever ticket
+ * happened to land in that position. The number is the identity.
+ */
+const focusNum = ref('')
+const listEl = ref(null)
+
+/* The one row in the tab order. Everything else is reachable by arrow. */
+const rovingFor = (t) => (t.number === focusNum.value
+  || (!pageRows.value.some((r) => r.number === focusNum.value) && t === pageRows.value[0]) ? 0 : -1)
+
+/*
+ * SAID OUT LOUD, because three of the things this keyboard does are invisible.
+ * Turning a page, refusing to sell, and reaching the end of the results all
+ * change what the next key will do, and a sighted user sees the list move
+ * while a screen-reader user gets nothing at all.
+ */
+const said = ref('')
+function say(words) { said.value = words }
+
+const pageCount = computed(() => Math.max(1, Math.ceil(searchResults.value.results.length / PAGE)))
+
+async function focusRow(number) {
+  focusNum.value = number
+  await nextTick()
+  listEl.value?.querySelector(`[data-num="${number}"]`)?.focus()
+}
+
+/*
+ * DOWN AT THE BOTTOM OF A PAGE TURNS THE PAGE. The alternative is stopping
+ * dead on row 25 of a 601-ticket search, which reads as the key having
+ * stopped working — the page boundary is an artefact of drawing, not
+ * something the person searching asked for. It is announced, because the
+ * list changing under a held key is exactly the moment somebody loses their
+ * place.
+ */
+async function move(by) {
+  const rows = pageRows.value
+  if (!rows.length) return
+  const at = rows.findIndex((r) => r.number === focusNum.value)
+  const to = at < 0 ? 0 : at + by
+
+  if (to < 0) {
+    if (page.value === 1) return say('Top of the results.')
+    page.value -= 1
+    await nextTick()
+    const last = pageRows.value[pageRows.value.length - 1]
+    say(`Page ${page.value} of ${pageCount.value}.`)
+    return focusRow(last.number)
+  }
+  if (to >= rows.length) {
+    if (page.value >= pageCount.value) return say('End of the results.')
+    page.value += 1
+    await nextTick()
+    say(`Page ${page.value} of ${pageCount.value}.`)
+    return focusRow(pageRows.value[0].number)
+  }
+  return focusRow(rows[to].number)
+}
+
+/*
+ * S IS THE ONE SHORTCUT THAT CAN BE REFUSED, and a shortcut has no title
+ * attribute to carry the reason. permissionui's rule — never hidden, always
+ * with the reason — is satisfiable on the mouse path by a disabled button
+ * with a tooltip and has no equivalent here, so the live region is where the
+ * reason goes. Silently doing nothing would be the one outcome the rule
+ * exists to forbid.
+ */
+function sellFocused() {
+  const t = pageRows.value.find((r) => r.number === focusNum.value)
+  if (!t) return
+  if (isSold(t)) return say(`${t.number} is already sold.`)
+  const why = sellBlock(t)
+  if (why) return say(`${t.number} cannot be sold from here. ${why}`)
+  openTicket(t)
+  say(`${t.number} open. Who bought it?`)
+}
+
+function onKey(ev) {
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); move(1) }
+  else if (ev.key === 'ArrowUp') { ev.preventDefault(); move(-1) }
+  else if (ev.key === 'Enter') {
+    const t = pageRows.value.find((r) => r.number === focusNum.value)
+    if (t) { ev.preventDefault(); openTicket(t) }
+  } else if (ev.key === 's' || ev.key === 'S') {
+    ev.preventDefault()
+    sellFocused()
+  }
+}
+
+/** The next number worth typing into, so the dock can point at it. */
+const nextUnsold = computed(() => {
+  if (!selected.value) return null
+  const rows = searchResults.value.results
+  const at = rows.findIndex((r) => r.number === selected.value.number)
+  return rows.slice(at + 1).find((r) => !isSold(r) && !sellBlock(r)) || null
+})
+
+function goNext() {
+  const t = nextUnsold.value
+  if (t) { selected.value = t; focusRow(t.number) }
+}
 </script>
 
 <template>
@@ -200,8 +347,16 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
           {{ state.loadProgress.total.toLocaleString() }}…
         </template>
         <template v-else-if="searchResults.total">
-          {{ searchResults.total.toLocaleString() }}
+          <b class="data">{{ searchResults.total.toLocaleString() }}</b>
           {{ searchResults.total === 1 ? 'ticket' : 'tickets' }}
+          <!--
+            PRINTED ONLY WHERE IT IS TRUE. These keys exist on the wide
+            layout, where the list keeps focus beside the dock. Printing them
+            on a phone would describe affordances that are not there, and a
+            header that promises a keyboard to somebody who has none is worse
+            than a header that says nothing.
+          -->
+          <span v-if="wide" class="keys">↑↓ to move · Enter to open · S to sell</span>
           <!-- No "showing first N" any more: the pager under the list says which
                page this is and how many there are in total, which is the same
                fact stated where somebody can act on it. -->
@@ -224,7 +379,11 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
     <Pager v-if="!state.loadProgress" v-model:page="page"
            :total="searchResults.results.length" :size="PAGE" noun="tickets" />
 
-    <div class="card flush">
+    <div class="findsplit" :class="{ docked: wide && selected }">
+    <!-- The ref and the key handler sit on the container, not on the
+         TransitionGroup: a ref on a component hands back the component, and
+         keydown bubbles up from whichever row has focus anyway. -->
+    <div ref="listEl" class="card flush" @keydown="onKey">
       <!-- loading -->
       <ul v-if="state.loadProgress" class="list">
         <li v-for="i in 6" :key="i" class="skelrow">
@@ -234,9 +393,12 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
       </ul>
 
       <!-- results -->
-      <TransitionGroup v-else-if="searchResults.results.length" name="list" tag="ul" class="list">
-        <li v-for="t in pageRows" :key="t.number" class="rowpair">
-          <button class="item" @click="emit('open', t)">
+      <TransitionGroup v-else-if="searchResults.results.length" name="list"
+                       tag="ul" class="list">
+        <li v-for="t in pageRows" :key="t.number" class="rowpair"
+            :class="{ picked: selected && selected.number === t.number }">
+          <button class="item" :data-num="t.number" :tabindex="rovingFor(t)"
+                  @click="openTicket(t)" @focus="focusNum = t.number">
             <span class="grow">
               <span class="lead">{{ t.number }}</span>
               <span class="sub">{{ subtitle(t) }}</span>
@@ -278,8 +440,21 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
       </Empty>
     </div>
 
+    <!--
+      THE TICKET, BESIDE THE LIST. Only on the wide layout, and only once
+      something is selected — an empty column is furniture. On a phone this
+      never renders and the sheet opens as it always did.
+    -->
+    <TicketDock v-if="wide && selected" :ticket="selected" :next-unsold="nextUnsold"
+                @close="selected = null" @saved="selected = null"
+                @open-full="(t) => emit('open', t)" @go-next="goNext" />
+    </div>
+
     <Pager v-if="!state.loadProgress" v-model:page="page"
            :total="searchResults.results.length" :size="PAGE" noun="tickets" />
+
+    <!-- Nothing to look at, and the only way three of these keys say anything. -->
+    <p class="sr" aria-live="polite">{{ said }}</p>
 
     <!-- On top of the list, not instead of it. -->
     <History v-if="showHistory" :ticket="showHistory" @close="showHistory = null" />
@@ -288,6 +463,20 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
 
 <style scoped>
 .searchcard { padding: 16px; }
+/* One column until there is room for two. The dock is sticky inside its own
+   column so the list scrolls past it rather than dragging it along. */
+.findsplit { display: block }
+@media (min-width: 1024px) {
+  .findsplit.docked { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start }
+}
+/* .sr is defined only inside TicketDesign's SCOPED block, so it does not
+   reach here — a live region without it is a stray paragraph of text on the
+   screen. Copied rather than left broken; it belongs in style.css as a
+   utility and e3 owns that file this round. */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%) }
+.keys { margin-left: 10px; font-size: .74rem; color: var(--muted-2, var(--muted)) }
+.rowpair.picked { background: var(--brand-soft) }
+.item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px }
 /* The same shape as the history control beside it: a small square that does one
    named thing, rather than a word competing with the row itself. */
 .ask:disabled { opacity: .5; }

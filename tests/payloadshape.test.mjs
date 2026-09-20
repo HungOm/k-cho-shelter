@@ -35,7 +35,11 @@ const read = p => readFileSync(new URL(p, import.meta.url), 'utf8')
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
 
-const client = read('../src/components/SellTicket.vue')
+/* The four ticket writes moved out of the sheet into lib/ticketsale.js when
+   the dock beside the Find results started recording sales too — one set of
+   rules, two presentations. The payloads are what this file is about and they
+   went with them. */
+const client = read('../src/lib/ticketsale.js')
 const ts = read('../supabase/functions/api/tickets.ts')
 
 /** The payload object the client passes for a given action. */

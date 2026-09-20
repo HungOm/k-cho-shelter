@@ -167,6 +167,9 @@ export const searchResults = computed(() => ({
 export const agentMap = computed(() => ({ A001: { id: 'A001', name: 'Josh', zone: 'CCFM' } }))
 export const whereIs = () => ({ book: 'Book-001', status: 'Out', agentName: 'Josh' })
 export const isSold = () => false
+/* Find asks this before offering the S shortcut. Null here: this fixture is
+   about the history control on a row, not about what may be sold. */
+export const sellBlock = () => null
 export const api = async () => ({ book: {}, history: [], tickets: [] })
 export const toast = () => {}
 export const refresh = async () => {}

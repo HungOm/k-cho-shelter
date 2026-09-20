@@ -533,7 +533,9 @@ console.log('the screens ask why, rather than letting the refusal arrive as an e
   const blockFn = store.slice(start, store.indexOf('\n}\n', start))
   ok(!/reason/i.test(blockFn), 'and bookBlock itself still answers only whether you may')
 
-  const sellTicket = readFileSync(new URL('../src/components/SellTicket.vue', import.meta.url), 'utf8')
+  /* Same rule, one file along: the sale's rules are lib/ticketsale.js now, so
+     that both the sheet and the Find dock ask the question the same way. */
+  const sellTicket = readFileSync(new URL('../src/lib/ticketsale.js', import.meta.url), 'utf8')
   ok(/sellOverrideNeeded/.test(sellTicket), 'the ticket screen asks the question')
   ok((sellTicket.match(/reason: onBehalf\.value\.trim\(\)/g) || []).length === 2,
      'and sends the answer on both the sale and the hold')
