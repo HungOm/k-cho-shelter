@@ -160,11 +160,16 @@ async function release() {
           taking tickets out of play. The warning that this cannot be undone
           still applies and stays.
         -->
-        <div class="note plain">
-          This creates tickets that do not exist yet, and cannot be undone.<template v-if="current">
-          To sell fewer of the tickets you already have, use <b>Tickets in play</b>
-          instead — that one can be moved back.</template>
-        </div>
+        <!--
+          THREE LINES SAYING TWO THINGS, ONE OF WHICH THE SUBTITLE ALREADY SAID.
+          "This creates tickets that do not exist yet" is the subtitle verbatim,
+          two inches above. What is left is the part that cannot be read twice:
+          it is permanent, and there is a reversible thing to use instead.
+        -->
+        <p class="note plain tiny">
+          Permanent — tickets cannot be removed.<template v-if="current">
+          To sell fewer, use <b>Tickets in play</b>.</template>
+        </p>
 
         <label>How many more?</label>
         <div class="chips">

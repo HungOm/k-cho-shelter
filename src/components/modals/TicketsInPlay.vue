@@ -139,10 +139,10 @@ async function save() {
         <div><span>Printed in total</span><b>{{ made.toLocaleString() }}</b></div>
       </div>
 
-      <div v-if="!waiting && live >= made" class="note info">
-        Every ticket that has been made is already in play. To go further, the
-        tickets have to be created first.
-      </div>
+      <!-- Was two sentences to say one fact and one instruction. -->
+      <p v-if="!waiting && live >= made" class="note info tiny">
+        All made tickets are already in play — make more to go further.
+      </p>
 
       <label>Put more into play</label>
       <div class="chips">
@@ -180,10 +180,11 @@ async function save() {
         </div>
       </div>
 
-      <div class="note plain">
-        This only moves a line. Nothing is deleted, and moving it back puts the
-        tickets straight back into play.
-      </div>
+      <!-- "This only moves a line" and "nothing is deleted" are the same
+           reassurance twice; the reversibility is the part worth keeping. -->
+      <p class="note plain tiny">
+        Nothing is deleted — move the line back and they return to play.
+      </p>
     </template>
 
     <template #actions>
