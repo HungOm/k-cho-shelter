@@ -177,11 +177,24 @@ console.log('and it reuses the screen\'s own controls rather than inventing them
    * So: one rule per class name in this file, checked, because a duplicate
    * class is invisible in a diff and global in effect.
    */
+  /*
+   * CHECKED IN EVERY FILE THAT STYLES THIS SCREEN, not only the one where it
+   * happened. studio.css is the shell the three tabs share, so a duplicate
+   * there reaches further than the one that caused this — and it is about to
+   * be edited repeatedly by the token work, which is exactly when a class
+   * gets reintroduced.
+   */
+  for (const f of ['src/components/ticketdesign/SheetTab.vue',
+                   'src/components/ticketdesign/studio.css',
+                   'src/components/TicketDesign.vue']) {
+    const text = read(f)
+    const block = f.endsWith('.css') ? text : text.slice(text.indexOf('<style'))
+    const names = [...block.matchAll(/^\.([a-zA-Z][\w-]*) *\{/gm)].map((m) => m[1])
+    const twice = names.filter((n, i) => names.indexOf(n) !== i)
+    ok(names.length > 0, `${f} has rules to check (${names.length})`)
+    eq(twice.length, 0, `${f} defines no class twice (${[...new Set(twice)].join(', ') || 'none'})`)
+  }
   const style = read('src/components/ticketdesign/SheetTab.vue')
-  const style_block = style.slice(style.indexOf('<style'))
-  const names = [...style_block.matchAll(/^\.([a-zA-Z][\w-]*) *\{/gm)].map((m) => m[1])
-  const twice = names.filter((n, i) => names.indexOf(n) !== i)
-  eq(twice.length, 0, `no class is defined twice (${[...new Set(twice)].join(', ') || 'none'})`)
   ok(/class="seg orient"/.test(style), 'orientation uses the existing segmented control')
   ok(/segbtn/.test(style.slice(style.indexOf('orient'))) || /class="segbtn"/.test(style),
     'with the same button class as the others')
