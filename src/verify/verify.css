@@ -181,16 +181,35 @@ h1, .note, .state, .stamp, .about, .my, .en,
  * somebody came for, so this is small, quiet, and above the card rather than
  * wrapped around it.
  */
-.topbar { display: flex; align-items: center; gap: 10px; margin: 0 4px 14px }
+.topbar { display: flex; align-items: flex-start; gap: 10px; margin: 0 4px 14px }
 .logo {
   flex: none; width: 30px; height: 30px; border-radius: 50%;
   background: var(--seal); border: 2px solid var(--surface);
   box-shadow: 0 0 0 1px var(--seal);
 }
-/* The two lines stack; the row still centres on the mark beside them. */
-.brandwrap { display: flex; flex-direction: column; min-width: 0; gap: 1px }
-.brand { min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.25 }
-.service { font-size: 12px; color: var(--muted); line-height: 1.25 }
+/*
+ * THE HEADER IS FOUR LINES HERE, NOT THE MOCK'S TWO, and that is not a mistake
+ * to design away — the mock is English-only and this page is not. Both strings
+ * go through say(), which emits a Burmese line and an English one, so a
+ * two-line header is four the moment it is bilingual.
+ *
+ * What that broke is proportion, not correctness: main.js calls this header
+ * "deliberately quiet — a heading, not a banner — because the verdict
+ * underneath is the thing somebody came for", and four lines of it stopped
+ * being quiet.
+ *
+ * So the service line is set as a caption rather than as a second heading, and
+ * the mark aligns to the FIRST line rather than centring on the whole block —
+ * centring put a 30px roundel in the middle of a stack three times its height,
+ * pointing at the gap between the two strings instead of at the name.
+ *
+ * The Burmese is not dropped to save a line. A reader who needs "official" said
+ * to them is more likely to be the one reading the Burmese, not less.
+ */
+.brandwrap { display: flex; flex-direction: column; min-width: 0; gap: 2px }
+.brand { min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.2 }
+.service { font-size: 11px; color: var(--muted); line-height: 1.2 }
+.service .my { opacity: .6 }
 
 /*
  * The link that was scanned, on a failure. Monospace and left alone: this is

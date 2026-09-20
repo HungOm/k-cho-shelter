@@ -307,6 +307,12 @@ async function loadAbout() {
  *
  * Only on failure. On a genuine ticket the number is already shown, larger and
  * in its own right; repeating the URL underneath would be noise.
+ *
+ * IT GOES INSIDE THE CARD, through panel()'s `extra`, which lands between the
+ * headline and the note. Hung underneath as a sibling it read as a third peer
+ * of the verdict and the explanation — a separate thing the page also wanted to
+ * say. It is not: it is what the verdict is ABOUT, and the sentence under it
+ * ("do not pay for this ticket") is advice about this link specifically.
  */
 function linkScanned() {
   const raw = String(window.location.search || '').replace(/^\?/, '')
@@ -414,7 +420,7 @@ async function run() {
 
   const p = params()
   if (!p) {
-    render(panel('bad', 'notGenuine', 'malformedNote') + linkScanned() + whyOneAnswer())
+    render(panel('bad', 'notGenuine', 'malformedNote', linkScanned()) + whyOneAnswer())
     return
   }
 
@@ -436,7 +442,7 @@ async function run() {
      * page. From where the person is standing those are the same thing, and the
      * distinction would only be useful to somebody probing the endpoint.
      */
-    if (res.status === 400) { render(panel('bad', 'notGenuine', 'malformedNote') + linkScanned() + whyOneAnswer()); return }
+    if (res.status === 400) { render(panel('bad', 'notGenuine', 'malformedNote', linkScanned()) + whyOneAnswer()); return }
     if (!res.ok || !body || body.ok !== true) { render(panel('warn', 'cannotCheck', 'cannotCheckNote')); return }
   } catch {
     // No signal, or the function is down. Not the same as a forged ticket, and
@@ -460,7 +466,7 @@ async function run() {
      * does not reflow under somebody reading a verdict.
      */
     const todo = `<p class="todo">${say('showSeller')}</p>`
-    render(panel('bad', 'notGenuine', 'notGenuineNote') + linkScanned()
+    render(panel('bad', 'notGenuine', 'notGenuineNote', linkScanned())
       + todo
       + `<div class="acts-slot">${actions()}</div>`
       + whyOneAnswer()
