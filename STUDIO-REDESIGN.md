@@ -230,6 +230,30 @@ The neutrals lean green so they belong to the brand. Semantic `--ok / --warn /
 --bad / --info` and their `-soft` companions are unchanged and still carry
 meaning; a status is never conveyed by colour alone.
 
+### Who opens a modal — the map, not the heuristic
+
+`.dense` asks "is this an organiser reading many rows at a desk", and for
+SCREENS that is answerable by looking. For MODALS it is not: `App.vue` hangs
+the whole handler block off `<component :is="current">`, so any screen can
+raise any modal, and a rule of thumb produces guesses.
+
+kcho-shelter-72 traced each one from the events screens actually emit. The
+answer, which is the artefact rather than the method:
+
+- **Organiser only** — `checkin`, `deadlines`, `inplay`, `make`, `prize`,
+  `user`, `winner`. Seven of twenty-three.
+- **Reachable by a seller** — `reportback` and `ticket` from Sell;
+  `agent`, `book`, `bookaction`, `issue`, `payment`, `printtickets`,
+  `sellbook` from Home or Money, where a seller sees their own.
+
+And the conclusion, which surprised the brief: **no modal takes `.dense`.** The
+organiser-only ones are almost all FORMS, where shrinking an input buys no
+reading; the two that look like tables — `CheckInSheet`, `RoundReport` — are
+printed documents, where density changes what comes out of the printer.
+
+The general rule that falls out: **a density decision needs the opener, not the
+content.** A table in a modal tells you nothing about who is holding the phone.
+
 ### Density — two, gated twice
 
 `.dense` on a screen root **and** a `min-width: 1024px` media query. Inside it:
