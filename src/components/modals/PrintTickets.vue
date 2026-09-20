@@ -716,6 +716,26 @@ async function printThem() {
       </p>
     </template>
 
+          <!--
+            NOTHING CHOSEN YET, SAID OUT LOUD. This column rendered nothing at
+            all until a batch was loaded, so the first thing an organiser saw
+            was blank space where the sheet would be. That answers none of the
+            questions they opened this to ask, and an empty area reads as a
+            screen that has failed rather than one that is waiting.
+
+            It also says where the sheets get drawn, because the thing anybody
+            is nervous about here is committing paper to a printer. Being told
+            the drawing happens on screen first is what makes the button safe
+            to press.
+          -->
+          <div v-else class="nodraw">
+            <p class="head">Nothing drawn yet</p>
+            <p class="tiny muted">
+              Pick a batch, then <b>See what is there</b>.
+              The sheets are drawn here before anything reaches a printer.
+            </p>
+          </div>
+
     <template #actions>
       <button class="btn ghost" @click="emit('close')">Close</button>
     </template>
@@ -758,6 +778,13 @@ async function printThem() {
 .tworow .sub-in { margin: 0; width: 100% }
 
 .pager { display: flex; align-items: center; gap: 6px }
+.nodraw {
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+  min-height: 220px; padding: 20px; gap: 6px;
+  border: 1px dashed var(--border); border-radius: var(--r-sm); background: var(--surface-2);
+}
+.nodraw .head { margin: 0; font-weight: 650; color: var(--muted) }
+.nodraw p { margin: 0 }
 .runline { margin: 0 }
 
 /*
