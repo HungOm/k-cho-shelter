@@ -181,10 +181,21 @@ console.log('it says who is answering, what it will not show, and why it says so
    * that the page cannot be used to map the raffle — which reads as ignorance
    * unless the page says it is a refusal.
    */
-  const refusals = [...main.matchAll(/panel\('bad'/g)].length
-  const explained = [...main.matchAll(/panel\('bad'[\s\S]{0,160}?\)\s*\+\s*whyOneAnswer\(\)/g)].length
-  ok(refusals >= 3, `every way of failing is covered (${refusals} refusal paths)`)
-  eq(explained, refusals, 'and every one of them explains why it says nothing more')
+  /*
+   * Counted per RENDER CALL rather than by how close the two happen to sit.
+   * The old form required `whyOneAnswer()` within 160 characters of the
+   * panel, which was true until a refusal grew a third thing between them —
+   * the contact buttons — and then reported a missing explanation that was
+   * three lines further down. The rule was never about adjacency: it is that
+   * no refusal reaches the screen without the paragraph saying why the page
+   * answers every failure the same way.
+   */
+  const calls = main.split('render(').slice(1)
+  const refusals = calls.filter((c) => /panel\('bad'/.test(c.slice(0, 400)))
+  const explained = refusals.filter((c) => /whyOneAnswer\(\)/.test(c.slice(0, 900)))
+  ok(refusals.length >= 3, `every way of failing is covered (${refusals.length} refusal paths)`)
+  eq(explained.length, refusals.length,
+     'and every one of them explains why it says nothing more')
 
   /*
    * "Could not check" must NOT carry it. The explanation is about refusing to
@@ -213,6 +224,98 @@ console.log('what the raffle is for survives every answer')
     'called from render, so no branch can forget it')
   ok(!/function panel\([\s\S]{0,400}whatThisIs/.test(main),
     'and never from panel, which only the answered states reach')
+}
+
+console.log('where "call the office" points, and what never reaches an href')
+{
+  /*
+   * THE ONE FIELD ON THIS PAGE WHERE A BAD VALUE IS A SCRIPT. The contacts
+   * are typed into a database through a web form and served to strangers on
+   * a page with no session and no framework. The server checks them when
+   * they are saved, which helps the person typing; this is the check that
+   * has to hold. `javascript:` in ORG_WEBSITE would run.
+   *
+   * Tested directly rather than through a render, because these three
+   * decide what goes inside an href and that is worth asking in one line
+   * instead of inferring from markup.
+   */
+  const { telOf, emailOf, siteOf, dialOf } = await import('../src/verify/contacts.js')
+
+  eq(siteOf('https://ceam.example.org/raffle'), 'https://ceam.example.org/raffle',
+     'an ordinary https address is a website')
+  eq(siteOf('http://ceam.example.org'), 'http://ceam.example.org', 'and so is http')
+  for (const bad of ['javascript:alert(1)', 'JavaScript:alert(1)', 'data:text/html,<b>',
+                     'ceam.example.org', '//ceam.example.org', 'https://a b', 'https://a"onx']) {
+    eq(siteOf(bad), '', `refused as a website: ${bad}`)
+  }
+
+  eq(telOf('012-345 6789'), '012-345 6789', 'a telephone number keeps the shape it was typed in')
+  eq(dialOf('012-345 6789'), '0123456789', 'and is dialled as digits')
+  eq(dialOf('+60 12-345 6789'), '+60123456789', 'keeping a country code')
+  for (const bad of ['', '  ', 'ring the office', '123', 'tel:012345678', '012345<script>']) {
+    eq(telOf(bad), '', `refused as a telephone number: ${JSON.stringify(bad)}`)
+  }
+
+  eq(emailOf('office@ceam.example.org'), 'office@ceam.example.org', 'an address is an address')
+  for (const bad of ['', 'office', 'office@localhost', 'a@b', 'two @ signs@x.org', 'a@b.c d']) {
+    eq(emailOf(bad), '', `refused as an email: ${JSON.stringify(bad)}`)
+  }
+}
+
+console.log('a contact nobody set is a control nobody sees')
+{
+  /*
+   * NOTHING RATHER THAN A DEAD BUTTON, and this is the assertion the card
+   * turns on. A raffle that has set no telephone number must show no
+   * telephone button — and so must a page whose ?about has not deployed yet,
+   * which is the state production is in as this is written: the function is
+   * a version behind and answers 400 to ?about.
+   *
+   * Those two are deliberately indistinguishable HERE. A stranger holding a
+   * ticket does not care whether the office number is missing because nobody
+   * set one or because a function is old; they care that the page is not
+   * offering them something that does nothing. The difference is real and
+   * belongs on the organiser's screen, where somebody can act on it.
+   *
+   * Read off the source because main.js runs on load and cannot be imported:
+   * both builders return '' before they emit any markup.
+   */
+  const main = readFileSync(join(ROOT, 'src/verify/main.js'), 'utf8')
+
+  const acts = main.slice(main.indexOf('function actions('))
+  ok(/if \(!tel && !email\) return ''/.test(acts.slice(0, 400)),
+     'no telephone and no email means no action buttons at all')
+  ok(/const call = tel\s*\n?\s*\?/.test(acts.slice(0, 700)),
+     'the call button is conditional on a telephone number')
+  ok(/const report = email\s*\n?\s*\?/.test(acts.slice(0, 900)),
+     'and the report button on an address')
+
+  const foot = main.slice(main.indexOf('function orgFoot('))
+  ok(/withContact && href/.test(foot.slice(0, 700)),
+     'the footer button needs both a destination and a verdict that earns one')
+
+  /*
+   * AND THE PRODUCT'S NAME IS NEVER THE FALLBACK. Telling a stranger checking
+   * a charity's ticket the name of the software is a worse sentence than
+   * saying nothing — the argument Logo.vue makes about alt text. So the name
+   * line is conditional on the raffle having one, and APP_NAME never appears
+   * on this page.
+   */
+  ok(/name \?/.test(foot.slice(0, 1400)), 'the identity line appears only when the raffle has a name')
+  ok(!/APP_NAME|'Raffled'/.test(main), 'and the product never stands in for a charity here')
+}
+
+console.log('the refusal tells somebody not to pay before it tells them anything else')
+{
+  const strings = readFileSync(join(ROOT, 'src/verify/strings.js'), 'utf8')
+  /*
+   * The old sentence was "Show this ticket to the person who sold it to
+   * you" — what to do, with the instruction that matters left out. This page
+   * is usually being read in the moment before money changes hands.
+   */
+  ok(/Do not pay for this ticket/.test(strings), 'the refusal leads with not paying')
+  ok(!/CEAM|Raffled/.test(strings),
+     'and names no organisation, because the sentence belongs to every raffle that runs this')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -148,10 +148,36 @@ export const S = {
   },
 
   /* What to actually do about it, which the refusal on its own does not say. */
+  /*
+   * STRONGER THAN IT WAS, because the old sentence left out the instruction
+   * that matters. "Show this ticket to the person who sold it to you" is what
+   * to DO; it does not say what not to do, and the moment this page is being
+   * read is usually the moment before money changes hands. The verify mockup
+   * leads with the refusal for that reason.
+   *
+   * The office is not named. Which organisation this is belongs to the raffle
+   * and arrives with ?about; a sentence with a charity's name baked into it is
+   * a sentence that is wrong for every other raffle that runs this.
+   */
   showSeller: {
-    en: 'Show this ticket to the person who sold it to you.',
-    my: 'ဤလက်မှတ်ကို ရောင်းချသူထံ ပြသပါ။',
+    en: 'Do not pay for this ticket. Show this screen to the person selling it, and contact the office.',
+    my: 'ဤလက်မှတ်အတွက် ငွေမပေးပါနှင့်။ ဤစာမျက်နှာကို ရောင်းချနေသူအား ပြသပြီး ရုံးသို့ ဆက်သွယ်ပါ။',
   },
+
+  /*
+   * THE THREE BUTTON LABELS, and all three are UNREVIEWED Burmese — written
+   * the same way as the keys named in the caveat at the top of this file, and
+   * with the same amount of native review, which is none. Kept together and
+   * apart from `whatThisIs`, which the user supplied verbatim on 2026-09-20
+   * and which is the one reviewed pair in here.
+   *
+   * Every one of them only ever renders when the raffle has somewhere for it
+   * to point, so a wrong word here is never a dead button — see actions() and
+   * orgFoot() in main.js.
+   */
+  callOffice: { en: 'Call the office', my: 'ရုံးသို့ ဖုန်းဆက်ရန်' },
+  reportIt: { en: 'Report it', my: 'တိုင်ကြားရန်' },
+  contactUs: { en: 'Contact us', my: 'ဆက်သွယ်ရန်' },
 
   aboutMore: { en: 'More about this raffle', my: 'အသေးစိတ် ဖတ်ရှုရန်' },
 

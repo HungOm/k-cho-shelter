@@ -25,6 +25,7 @@
  */
 import { S } from './strings.js'
 import { sampleFromSearch } from './sample.js'
+import { telOf, emailOf, siteOf, dialOf } from './contacts.js'
 
 const root = document.getElementById('app')
 
@@ -129,6 +130,100 @@ function about() {
 }
 
 /*
+ * WHERE "CALL THE OFFICE" POINTS.
+ *
+ * ORG_PHONE, ORG_EMAIL and ORG_WEBSITE have been stored and validated for a
+ * while and nothing had ever read them; schema.sql says outright that they
+ * were added "when the public check page needed somewhere for 'call the
+ * office' to point". This is that somewhere.
+ *
+ * EVERY ONE OF THESE IS UNTRUSTED, exactly like the about text beside them:
+ * typed into a database by somebody, served to strangers. The server checks
+ * them when they are saved, which is a courtesy to the person typing; these
+ * checks are the ones that have to hold. A site especially — an href is the
+ * one field on this page where a bad value is not a wrong sentence but a
+ * script, so nothing but http and https is allowed near it.
+ */
+let orgContact = { name: '', tel: '', email: '', site: '' }
+
+/*
+ * WHAT TO DO ABOUT A TICKET THAT IS NOT REAL, under the explanation.
+ *
+ * NOTHING RATHER THAN A DEAD BUTTON. A raffle that has set no telephone
+ * number gets no telephone button — the same argument the about link already
+ * makes next door. And a button that cannot be pressed is worse here than on
+ * any other screen in this system, because the person reading it is standing
+ * in front of somebody who may have just tried to sell them a forgery.
+ *
+ * This is also what a page whose ?about has not deployed yet looks like, and
+ * deliberately the same. A stranger holding a ticket does not care whether
+ * the office telephone is missing because nobody set one or because a
+ * function is a version behind; they care that the page is not lying about
+ * what it can do for them. The difference between those two is real and it
+ * belongs on the organiser's own screen, where somebody can act on it.
+ */
+function actions() {
+  const tel = telOf(orgContact.tel)
+  const email = emailOf(orgContact.email)
+  if (!tel && !email) return ''
+  const call = tel
+    ? `<a class="act primary" href="tel:${escapeHtml(dialOf(tel))}">${say('callOffice')}</a>`
+    : ''
+  const report = email
+    ? `<a class="act" href="mailto:${escapeHtml(email)}">${say('reportIt')}</a>`
+    : ''
+  return `<div class="acts">${call}${report}</div>`
+}
+
+/*
+ * THE FOOT: WHEN IT WAS CHECKED, AND WHO IS ASKING.
+ *
+ * The time was already here as a stamp. What it lacked is whose raffle this
+ * is — the card the mockup draws puts the charity's identity at the foot of
+ * every verdict, which is the difference between a page that has told you
+ * something and a page you can act on.
+ *
+ * THE NAME IS THE RAFFLE'S OR IT IS ABSENT. Nothing falls back to the
+ * product's name here. Telling a stranger checking a charity's ticket the
+ * name of the software would be a worse sentence than saying nothing, which
+ * is the argument Logo.vue makes about alt text and verify/index.ts makes
+ * about this very field.
+ *
+ * The mockup's second line reads "CEAM Malaysia · Kajang, Selangor". There is
+ * no location in ?about and none is being invented for it: a config key added
+ * to satisfy a picture is a schema grown from a mock.
+ */
+function orgFoot(checkedAt, withContact) {
+  const site = siteOf(orgContact.site)
+  const email = emailOf(orgContact.email)
+  const href = site || (email ? `mailto:${email}` : '')
+  const contact = withContact && href
+    ? `<a class="act" href="${escapeHtml(href)}"${site ? ' rel="noopener noreferrer"' : ''}>${say('contactUs')}</a>`
+    : ''
+  const name = String(orgContact.name ?? '').trim()
+  return `<footer class="orgfoot">
+    <p class="stamp">
+      <span>${say('checkedAt')} ${escapeHtml(new Date(checkedAt).toLocaleString())}</span>
+      ${name ? `<span class="who">${escapeHtml(name)}</span>` : ''}
+    </p>
+    ${contact}
+  </footer>`
+}
+
+/*
+ * Repainted when the contacts arrive, because they arrive after the verdict
+ * has already been drawn — see loadAbout. Both regions are rendered empty and
+ * filled in place, so nothing moves on the screen except the buttons
+ * appearing, and nothing appears at all if the raffle has set nothing.
+ */
+function paintOrg() {
+  const acts = root.querySelector('.acts-slot')
+  if (acts) acts.innerHTML = actions()
+  const foot = root.querySelector('.orgfoot-slot')
+  if (foot && foot.dataset.at) foot.innerHTML = orgFoot(foot.dataset.at, foot.dataset.contact === '1')
+}
+
+/*
  * FETCHED ALONGSIDE THE VERDICT, NEVER IN FRONT OF IT.
  *
  * This is a second request, and the whole design of this page is somebody on
@@ -146,6 +241,19 @@ async function loadAbout() {
     const res = await fetch(`${base}/functions/v1/verify?about=1`, { method: 'GET' })
     if (!res.ok) return
     const body = await res.json()
+    /*
+     * The contacts are taken before the early return below: a raffle may well
+     * have set a telephone number and no description, and the buttons are the
+     * half somebody standing in a hall actually needs.
+     */
+    orgContact = {
+      name: String(body?.org?.name ?? '').trim(),
+      tel: String(body?.org?.tel ?? '').trim(),
+      email: String(body?.org?.email ?? '').trim(),
+      site: String(body?.org?.site ?? '').trim(),
+    }
+    paintOrg()
+
     const my = String(body?.org?.aboutMy ?? '').trim()
     const en = String(body?.org?.aboutEn ?? '').trim()
     if (!my && !en) return
@@ -295,8 +403,23 @@ async function run() {
   if (!body.genuine) {
     /* What to do about it, which the refusal on its own does not say: the person
      * who sold it is usually standing there. */
+    /*
+     * WHAT TO DO SITS WITH THE THING THAT DOES IT. This sentence used to be
+     * inside the card, above the explanation; the mockup puts it under the
+     * explanation and directly over the two buttons, which is where an
+     * instruction belongs when the next thing on the screen is the way to
+     * carry it out.
+     *
+     * The buttons land in the slot when ?about answers, which is after this
+     * render. An empty slot rather than a conditional render, so the page
+     * does not reflow under somebody reading a verdict.
+     */
     const todo = `<p class="todo">${say('showSeller')}</p>`
-    render(panel('bad', 'notGenuine', 'notGenuineNote', todo) + whyOneAnswer())
+    render(panel('bad', 'notGenuine', 'notGenuineNote')
+      + todo
+      + `<div class="acts-slot">${actions()}</div>`
+      + whyOneAnswer()
+      + `<div class="orgfoot-slot" data-at="${escapeHtml(new Date().toISOString())}" data-contact="0">${orgFoot(new Date().toISOString(), false)}</div>`)
     return
   }
 
@@ -326,8 +449,8 @@ async function run() {
       <ul class="tickets">${list}</ul>
       <p class="privacy">${say('privacyNote')}</p>`
     render(panel(anyVoid ? 'warn' : 'good', 'receiptGenuine',
-                 anyUnsold ? 'unsoldNote' : 'photocopy', details) + `
-      <p class="stamp">${say('checkedAt')} ${escapeHtml(new Date(body.checkedAt).toLocaleString())}</p>`)
+                 anyUnsold ? 'unsoldNote' : 'photocopy', details)
+      + `<div class="orgfoot-slot" data-at="${escapeHtml(body.checkedAt)}" data-contact="1">${orgFoot(body.checkedAt, true)}</div>`)
     return
   }
 
@@ -361,8 +484,8 @@ async function run() {
     </dl>
     <p class="privacy">${say('privacyNote')}</p>`
 
-  render(panel(tone, 'genuine', noteKey, details) + `
-    <p class="stamp">${say('checkedAt')} ${escapeHtml(new Date(body.checkedAt).toLocaleString())}</p>`)
+  render(panel(tone, 'genuine', noteKey, details)
+    + `<div class="orgfoot-slot" data-at="${escapeHtml(body.checkedAt)}" data-contact="1">${orgFoot(body.checkedAt, true)}</div>`)
 }
 
 /* The number comes from the server, but it began life in somebody's URL. */

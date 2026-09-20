@@ -279,7 +279,10 @@ h1 { font-size: 19px; margin: 0 0 12px }
 }
 /* What to do about a refusal. Inside the card, because it is part of the
  * answer rather than context for it. */
-.todo { margin: 14px 0 0; font-size: 14px; font-weight: 600; text-align: left }
+/* Out of the card and onto the page, directly above the buttons it is telling
+   somebody to press — so it takes the page's own side margin rather than the
+   card's inner one. */
+.todo { margin: 16px 4px 0; font-size: 14px; font-weight: 600; text-align: left; line-height: 1.5 }
 
 /*
  * WHY EVERY FAILURE READS THE SAME. Outside the card and quieter than it, for
@@ -295,7 +298,52 @@ h1 { font-size: 19px; margin: 0 0 12px }
 }
 .why h2 .my { text-transform: none; letter-spacing: 0; font-size: 12px; opacity: 1 }
 .why p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.55 }
-.stamp { margin: 12px 4px 0; font-size: 11px; color: var(--muted); text-align: center }
+/*
+ * THE FOOT OF EVERY VERDICT: when it was checked, and whose raffle it is.
+ *
+ * The stamp used to be a centred line on its own. It keeps its size and its
+ * quiet, and gains a second line and, where the raffle has somewhere to point,
+ * a button beside it. Left-aligned now because two lines centred under a card
+ * read as a caption for the card rather than as the page's own footer.
+ */
+.orgfoot {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+  margin: 18px 4px 0; padding-top: 12px; border-top: 1px solid var(--line, rgba(0,0,0,.1));
+}
+.stamp {
+  margin: 0; font-size: 11px; color: var(--muted); text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.stamp .who { color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+
+/*
+ * THE TWO THINGS TO DO ABOUT A TICKET THAT IS NOT REAL.
+ *
+ * Side by side and sharing the width, because they are alternatives rather
+ * than a primary with an afterthought — one is for the person standing in
+ * front of you, the other is for afterwards. Each is a real link (tel: and
+ * mailto:), so they work from the phone that scanned the code without this
+ * page needing any script to run.
+ *
+ * They are only ever rendered when the raffle has somewhere for them to
+ * point, so there is no disabled state here on purpose: on this page a
+ * control that cannot be pressed is worse than one that is absent, because
+ * the person reading it may be standing in front of whoever sold them the
+ * ticket.
+ */
+.acts { display: flex; gap: 10px; margin: 14px 4px 0 }
+.act {
+  flex: 1 1 0; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 46px; padding: 10px 14px; border-radius: 12px;
+  border: 1.5px solid var(--brand); color: var(--brand);
+  font-size: 14px; font-weight: 600; text-decoration: none; text-align: center;
+}
+.act.primary { background: var(--brand); color: #fff; border-color: var(--brand) }
+.orgfoot .act { flex: 0 0 auto; min-height: 38px; font-size: 13px; padding: 8px 14px }
+.act .my { display: block }
+.act .en { display: block; font-weight: 500; opacity: .85; font-size: 12px }
 /*
  * Outside the card, and quieter than everything in it. It is context for the
  * verdict, never a second verdict — so: no border, no background, no mark, and
