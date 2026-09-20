@@ -540,3 +540,37 @@ SOLD chip, no motto, no perforation, `PRICE` but no BOOK or SOLD date, no
 pager, and no right rail at all — so Buyer, Phone, Seller and Code are not
 shown, and the three Look chips do not exist. `--ticket-gold` is a token in
 `style.css` and this card, the one place it is for, does not use it.
+
+---
+
+## 14. The standing rule for every round
+
+**Before building anything, read the card. Before briefing anyone, read the
+index.** The document is `~/Downloads/Ticket Designer.html`. It is the source;
+this file is notes about it, and notes go stale in exactly the way §13 records.
+
+Every handout, every loop iteration and every piece of work states:
+
+1. **Which card it is building**, by id, checked against §13 — live or
+   superseded. `1a`, `1b`, `1c` and `4b` are retired and must not be built.
+2. **The card's contents verbatim**, extracted, not summarised. Extraction:
+   `/` → `/` and `\"` → `"`, then `<div class="dv-opt" id="…">` for cards,
+   `<span class="dv-tname">` for chapters, `<div class="dv-olabel">` for titles.
+3. **Which design-system rules apply** — §9 here: the colour table, `--tap`
+   never overridden, density gated twice, tabular figures on every serial and
+   every sum, filter chips that partition, a disabled control carrying its
+   reason, alerts with a left bar, the verdict first on any page answering a
+   yes/no question.
+4. **What the screen is that the mockup never drew**, if so — those are
+   refactored from the same system rather than left alone. §9's list: a
+   seller's own money, a helper's record, sign-in, permissions, the draw.
+
+The mockup is English-only and this product is bilingual with **Burmese first**.
+Where the two conflict — a two-line header that becomes four, a footer that
+becomes taller than drawn — the language wins and the proportion gives way.
+Never drop a language to match a picture.
+
+And the mockup is a *drawing*. Where a user of the screen disagrees with it,
+that is a decision for their user, not a defect to be fixed back — see the
+studio's panel arrangement, where the retired card, the live card and the user
+all had to be reconciled before anybody was right.
