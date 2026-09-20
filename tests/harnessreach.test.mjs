@@ -62,18 +62,45 @@ console.log('the harness copies every directory a screen imports from')
    * Every relative import in the app, resolved against the file it is written
    * in. Bare specifiers ('vue', '@supabase/…') are somebody else's problem —
    * esbuild is told they are external.
+   *
+   * BOTH QUOTE STYLES. The first version of these patterns required single
+   * quotes, and every relative import in this tree happens to use them — so it
+   * worked, and a file written `from "./x"` would have been invisible rather
+   * than reported. Unseen is the wrong failure for a guard: an eslint quote
+   * rule or a formatter flips a whole tree at once, and the check would have
+   * gone from missing one file to reporting nothing, silently, in one commit.
    */
   const files = walk(join(ROOT, 'src')).filter((f) => /\.(vue|js)$/.test(f))
   ok(files.length > 40, `${files.length} source files read`)
 
   const escaping = []
+  /*
+   * THE PARSE ITSELF IS GUARDED, and this line is the whole lesson of the file
+   * applied one step earlier than I applied it.
+   *
+   * The two collections feeding this loop were checked — the copy list was
+   * parsed, the walk found files — and the collection INSIDE it was not. Break
+   * both patterns and `specs` is empty for every file: the per-import checks
+   * never run, `escaping` stays empty, and that is indistinguishable from the
+   * healthy state where nothing escapes. 311 assertions become 8 and the suite
+   * stays green. kcho-shelter-72 reproduced it with those numbers in a scratch
+   * copy before telling me, which is the only way that claim was worth making.
+   *
+   * Note what is asserted and what is only printed, because they are different
+   * states. Zero ESCAPING imports is legitimate — somebody may correctly remove
+   * the coupling — so that is printed. Zero relative imports INSPECTED across
+   * forty-odd source files is not a state this app can be in; it means the
+   * parse broke. Same shape as gate.test's `ok(ACTIONS.length > 60)`.
+   */
+  let seen = 0
   for (const f of files) {
     const src = readFileSync(f, 'utf8')
     const specs = [
-      ...src.matchAll(/\bfrom\s+'(\.[^']+)'/g),
-      ...src.matchAll(/\bimport\s*\(\s*'(\.[^']+)'\s*\)/g),
+      ...src.matchAll(/\bfrom\s+['"](\.[^'"]+)['"]/g),
+      ...src.matchAll(/\bimport\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g),
     ].map((m) => m[1])
     for (const spec of specs) {
+      seen += 1
       const target = resolve(dirname(f), spec)
       const rel = relative(ROOT, target)
       /*
@@ -90,11 +117,14 @@ console.log('the harness copies every directory a screen imports from')
     }
   }
 
+  ok(seen > 100, `${seen} relative imports inspected`)
+
   /*
    * Said out loud rather than left implicit. If this ever reads zero the loop
    * above asserted nothing about the escape rule, and a reader deciding whether
    * this file still protects anything needs to see that rather than infer it
-   * from a row of passes.
+   * from a row of passes. Printed and not asserted, because zero escaping
+   * imports is a legitimate state — unlike zero inspected, above.
    */
   console.log(`  (${escaping.length} import${escaping.length === 1 ? '' : 's'} leave src/: `
     + `${escaping.map((e) => `${e.from} → ${e.rel}`).join('; ') || 'none'})`)
