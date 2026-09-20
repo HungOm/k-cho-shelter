@@ -18,7 +18,7 @@
  * the app reads them from.
  */
 import { DEFAULT_DESIGN, REFERENCE, designFor, validateDesign } from '../src/lib/ticketdesign.js'
-import { legacyFromElements } from '../src/lib/ticketelements.js'
+import { legacyFromElements, validateElements } from '../src/lib/ticketelements.js'
 import { stubShare } from '../src/lib/ticketdesign.js'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -676,6 +676,40 @@ console.log('and it answers for a design that never carried one')
   const qr = D2.qrMain
   ok(qr.x + qr.size <= cut,
     `the QR box ends at ${qr.x + qr.size} and the cut is at ${Math.round(cut)} — the code survives the crop`)
+}
+
+console.log('a box that spans the tear is refused, because it would be torn in half')
+{
+  /*
+   * FOUND BY A REVIEWER DOING THE ARITHMETIC THE SCREEN WAS ASKING FOR. The
+   * live studio showed Left 35.3, Width 34.9 and a stub marker at 68.8%.
+   * 35.3 + 34.9 = 70.2, so the ticket number crossed the perforation by 1.4%
+   * and nothing said so — half the serial would go home with the buyer and
+   * half would stay in the book.
+   *
+   * Invisible on screen by construction: the perforation is a hairline over
+   * artwork, the box is a dashed outline, and at the zoom anybody designs at
+   * the overlap is a couple of pixels. Only the numbers show it, and the
+   * numbers were three fields apart.
+   */
+  const box = (left, width) => ({
+    id: 'a', kind: 'field', source: 'ticket.number', text: '',
+    box: { left, top: 0.1, width, height: 0.041 },
+  })
+
+  const crossed = validateElements([box(0.353, 0.349)], 0.688)
+  eq(crossed.length, 1, 'the live case is refused')
+  ok(/crosses the perforation/.test(crossed[0]), 'and says what is wrong')
+  ok(/35\.3% to 70\.2%/.test(crossed[0]) && /68\.8%/.test(crossed[0]),
+     'with both numbers, so the designer does not have to do the sum again')
+
+  eq(validateElements([box(0.353, 0.300)], 0.688).length, 0, 'a box that clears the tear is fine')
+  eq(validateElements([box(0.72, 0.20)], 0.688).length, 0, 'and one wholly on the stub is fine')
+  /* Touching the line is not crossing it — a box may butt up against the tear,
+     and flagging that would make the check something people route around. */
+  eq(validateElements([box(0.4, 0.288)], 0.688).length, 0, 'ending exactly on the tear is fine')
+  /* Older callers pass no stub share; the check is skipped rather than guessed. */
+  eq(validateElements([box(0.353, 0.349)]).length, 0, 'and with no tear given it says nothing')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -353,7 +353,7 @@ export function validateDesign(design, artwork) {
 
   /* Whatever the organiser has actually placed. The checks above are about the
    * slots the defaults ship with; this is about the list that replaced them. */
-  if (Array.isArray(design?.elements)) problems.push(...validateElements(design.elements))
+  if (Array.isArray(design?.elements)) problems.push(...validateElements(design.elements, stubShare(design)))
 
   return problems
 }

@@ -441,9 +441,16 @@ export function valueFor(el, values = {}) {
  * Returns sentences rather than throwing, so the screen can show every problem
  * at once beside the boxes that caused them.
  */
-export function validateElements(elements) {
+/*
+ * `stubAt` is where the ticket tears, as a share of the width. Passed in rather
+ * than imported so this file stays free of ticketdesign.js, which imports from
+ * here. Omit it and the perforation check is skipped.
+ */
+export function validateElements(elements, stubAt) {
   const problems = []
   const seen = new Set()
+  const tear = Number(stubAt)
+  const tears = Number.isFinite(tear) && tear > 0 && tear < 1
   for (const el of elements ?? []) {
     const name = el.kind === 'text'
       ? `"${el.text || 'empty words'}"`
@@ -460,6 +467,24 @@ export function validateElements(elements) {
     if (b.width <= 0 || b.height <= 0) problems.push(`${name} has a box with no size.`)
     if (b.left + b.width > 1.0001 || b.top + b.height > 1.0001) {
       problems.push(`${name} runs off the edge of the artwork.`)
+    }
+    /*
+     * A BOX THAT SPANS THE TEAR PRINTS ACROSS IT. Half the value goes home with
+     * the buyer and half stays in the book, and neither half is readable — the
+     * same class of defect as running off the artwork, which is why it sits
+     * beside it and blocks the save the same way.
+     *
+     * Not visible on screen: the perforation is a hairline over artwork, the
+     * box is a dashed outline, and at the zoom anybody designs at the overlap
+     * is a few pixels. It is arithmetic the screen was asking the designer to
+     * do — left 35.3 plus width 34.9 is 70.2, against a tear at 68.8.
+     */
+    if (tears && b.left < tear - 0.0005 && b.left + b.width > tear + 0.0005) {
+      const pc = (v) => `${(v * 100).toFixed(1)}%`
+      problems.push(
+        `${name} crosses the perforation: it runs from ${pc(b.left)} to ` +
+        `${pc(b.left + b.width)} and the ticket tears at ${pc(tear)}, so it would ` +
+        'be printed across the tear.')
     }
     if (el.kind === 'text' && !String(el.text ?? '').trim()) {
       problems.push('One element is set to print words, but no words were typed.')
