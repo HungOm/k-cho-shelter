@@ -35,6 +35,16 @@
   /* 3.03:1 — large text, icons and rules only, never a caption. */
   --muted-2: #8a9793;
   --brand: #0d7a6f;
+  /*
+   * TEXT ON A BRAND FILL, and it is a token for the same reason --mark-ink is.
+   * In dark mode --brand is #2bd4c0, a light mint: white on it measures
+   * 1.86:1, so the primary action on a refusal — "call the office", the one
+   * control a stranger holding a forged ticket needs — was very nearly
+   * invisible. #06211e on it is 9.07:1. The app has carried this token since
+   * .btn.primary existed; I left it out when copying the palette across, which
+   * is how the gap arrived rather than anybody choosing #fff.
+   */
+  --brand-ink: #ffffff;
   --ok: #157a3c;
   --warn: #9a5b06;
   --bad: #b3261e;
@@ -64,6 +74,7 @@
     --muted: #9aaaa4;
     --muted-2: #7c8b86;
     --brand: #2bd4c0;
+    --brand-ink: #06211e;
     --ok: #6ee7a0;
     --warn: #fbbf50;
     --bad: #fca5a0;
@@ -340,7 +351,7 @@ h1 { font-size: 19px; margin: 0 0 12px }
   border: 1.5px solid var(--brand); color: var(--brand);
   font-size: 14px; font-weight: 600; text-decoration: none; text-align: center;
 }
-.act.primary { background: var(--brand); color: #fff; border-color: var(--brand) }
+.act.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand) }
 .orgfoot .act { flex: 0 0 auto; min-height: 38px; font-size: 13px; padding: 8px 14px }
 .act .my { display: block }
 .act .en { display: block; font-weight: 500; opacity: .85; font-size: 12px }
