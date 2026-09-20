@@ -18,7 +18,7 @@
  * things cannot be talked through over the phone — which is how this raffle is
  * actually supported.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { renderScreen, setupOf, visibleText } from './screen.mjs'
 const read = p => readFileSync(new URL(p, import.meta.url), 'utf8')
 
@@ -279,6 +279,43 @@ console.log('no screen can take away every way of leaving it')
    */
   ok(/:title="noRoom\(s\) \? roomWhy : s\.label"/.test(shell),
      'a rail icon is named by its title, and a disabled one still says why')
+}
+
+console.log('a screen that takes something global gives it back on the way out')
+{
+  /*
+   * Screens live inside <KeepAlive>, so onMounted runs once a session and
+   * onUnmounted never. Focus taken in onMounted worked on the first visit
+   * only; a window listener removed on unmount stayed bound for the session.
+   * The rule binds the NEXT screen: reach outside yourself, release on
+   * deactivate.
+   */
+  const shell = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  ok(/<KeepAlive>/.test(shell),
+     'screens are still kept alive, which is what makes this rule necessary')
+
+  const dir = new URL('../src/components/', import.meta.url)
+  const screens = readdirSync(dir).filter((f) => f.endsWith('.vue'))
+  ok(screens.length > 10, `there are screens to check (${screens.length})`)
+
+  const reaching = screens.filter((f) => {
+    const src = readFileSync(new URL(f, dir), 'utf8')
+    return /window\.addEventListener/.test(src) || /setFocus\(/.test(src)
+  })
+  ok(reaching.length > 0,
+     `at least one screen reaches outside itself, or this check is testing nothing (${reaching.join(', ')})`)
+
+  for (const f of reaching) {
+    const src = readFileSync(new URL(f, dir), 'utf8')
+    ok(/onDeactivated\(/.test(src),
+       `${f} gives back what it took when you navigate away, not only when it unmounts`)
+    if (/setFocus\(true\)/.test(src)) {
+      ok(/onActivated\(/.test(src),
+         `${f} takes focus on activation, so the second visit works like the first`)
+      ok(!/onMounted\([\s\S]{0,300}?setFocus\(true\)/.test(src),
+         `${f} does not take focus in onMounted, which runs once for the whole session`)
+    }
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

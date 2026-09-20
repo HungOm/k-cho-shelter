@@ -33,7 +33,7 @@
  * placing print artwork to the pixel; a 52px target would cover the thing being
  * positioned. The visible handles are small and their hit areas are generous.
  */
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue'
 import { state, api, setConfig, toast, isAdmin, setFocus, go, NO_ROOM_WHY } from '../lib/store.js'
 import { designFor, validateDesign, stubShare } from '../lib/ticketdesign.js'
 import {
@@ -695,15 +695,25 @@ async function load() {
  * shortcut as the only way out is a trap wearing a feature's clothes.
  */
 onMounted(() => {
-  /*
-   * ONLY WHEN THE STUDIO CAN ACTUALLY RUN. Focus hides the sidebar AND the
-   * phone tabs, so taking it on a screen that is about to show "this needs a
-   * bigger screen" leaves somebody on a dead end with no navigation at all —
-   * the one state worse than the screen being unavailable.
-   */
+  load().then(() => nextTick(fitToWidth))
+})
+
+/*
+ * ACTIVATED, NOT MOUNTED: App.vue keeps screens alive, so onMounted runs once
+ * a session and onUnmounted never. go() clears focus on every navigation, so
+ * the studio collapsed the nav on the first visit only; and the Cmd-\ listener,
+ * removed on unmount, stayed bound and toggled the nav away from every other
+ * screen. onActivated also fires on first mount, so this is the only path.
+ */
+onActivated(() => {
+  /* Not on a screen about to say it needs a bigger one. */
   if (state.roomy) setFocus(true)
   window.addEventListener('keydown', onFocusKey)
-  load().then(() => nextTick(fitToWidth))
+})
+
+onDeactivated(() => {
+  setFocus(false)
+  window.removeEventListener('keydown', onFocusKey)
 })
 /*
  * Turned off on the way down, never back on: a window dragged narrower must
