@@ -153,8 +153,35 @@ console.log('and the function is not even written to be able to')
    */
   const src = readFileSync(ROOT + 'supabase/functions/verify/index.ts', 'utf8')
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-  for (const forbidden of ['buyer_', 'phone', 'agents', 'app_users', 'sold_by', 'amount', 'notes', 'audit_log']) {
+  for (const forbidden of ['buyer_', 'agents', 'app_users', 'sold_by', 'amount', 'notes', 'audit_log']) {
     ok(!code.includes(forbidden), `the verify function never mentions ${forbidden}`)
+  }
+
+  /*
+   * TELEPHONE NUMBERS: THE ORGANISATION'S, AND NOBODY ELSE'S.
+   *
+   * This list used to contain the bare word 'phone', which forbade every
+   * telephone number in the file including the raffle's own office number. That
+   * bluntness was most of its value and it is not given up lightly — but it
+   * also blocked the one number this page most needs. A stranger holding a
+   * ticket that does not verify is offered "call the office", and until now
+   * there was nothing for it to ring.
+   *
+   * Decided by the organiser on 2026-09-20, in those words: official contacts
+   * only. So the rule is NARROWED, not loosened. 'buyer_' above already refuses
+   * buyer_phone and buyer_name by prefix; what follows names the only phone-ish
+   * identifiers this file may carry, and refuses every other one.
+   *
+   * NAMED RATHER THAN NEGATED, which is the whole point. "Everything except
+   * buyer_phone" would admit `seller_phone`, `agent_phone`, `contact_phone` and
+   * whatever the next column is called — this repository has paid for that
+   * shape three times. A list of what MAY pass cannot admit a thing nobody
+   * thought of.
+   */
+  const ALLOWED_PHONE = ['ORG_PHONE', 'orgPhone']
+  for (const m of code.matchAll(/[A-Za-z_]*[Pp]hone[A-Za-z_]*/g)) {
+    ok(ALLOWED_PHONE.includes(m[0]),
+       `${m[0]} is a telephone number this page may carry — only the raffle's own office number is`)
   }
   /*
    * THE TABLES IT MAY READ, AS A LIST THAT HAS TO BE EDITED ON PURPOSE.
