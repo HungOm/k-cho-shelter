@@ -15,7 +15,7 @@
  * This one owns a narrower question: does an organiser see a working screen,
  * before any artwork exists and after.
  */
-import { renderScreen, visibleText } from './screen.mjs'
+import { renderScreen, visibleText, setupOf } from './screen.mjs'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -483,6 +483,70 @@ console.log('the canvas is fitted when it appears, not only when the artwork cha
         'and records which artwork the zoom now belongs to')
     },
   })
+}
+
+console.log('the grid snaps in millimetres, which is not the same share on both axes')
+{
+  /*
+   * CARD 9b DRAWS `[grid] Grid 2 mm` AND NOTHING IMPLEMENTED IT. Snapping to
+   * the other boxes lines a field up with its neighbours; snapping to a grid
+   * lines it up with the ticket, which is the alignment a print shop's eye
+   * actually reads — a row of fields each aligned to a different neighbour is
+   * not aligned to anything.
+   *
+   * THE BUG THIS FILE EXISTS TO HOLD. Boxes are stored as SHARES of the
+   * template, so a step in millimetres has to be divided by the artboard's own
+   * size ON THAT AXIS. This fixture's ticket is 190 mm across and 61.39 down.
+   * One share for both would make the horizontal grid 2 mm and the vertical
+   * grid a little over 6 — and nothing on screen would say so: the inspector
+   * would read clean percentages and the fields would be wrong on paper, which
+   * is a box of printed tickets rather than a rendering fault.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+
+  const W = 190, H = 190 * (517 / 1600)
+  const near = (a, b, what) => ok(Math.abs(a - b) < 1e-9, `${what} (got ${a}, want ${b})`)
+
+  near(ctx.gridX.value, 2 / W, 'the horizontal step is 2 mm of the artboard\'s width')
+  near(ctx.gridY.value, 2 / H, 'the vertical step is 2 mm of its height')
+  /*
+   * Stated as a ratio as well as a value, because the two assertions above
+   * would both pass against a pair of constants that happened to be right for
+   * this one fixture. This says the steps are the same DISTANCE, which is the
+   * property.
+   */
+  near(ctx.gridY.value / ctx.gridX.value, W / H,
+    'so the two steps are the same distance on the ticket, not the same share')
+  ok(ctx.gridY.value > ctx.gridX.value * 3,
+    'and on a landscape ticket the vertical share is visibly the larger of the two')
+
+  /*
+   * The two tools are independent, which is how 9b draws them — both lit, and
+   * either able to be off. Folding the grid into the snap toggle would have
+   * made one control that does two things and can only say one of them.
+   */
+  ctx.snapping.value = false
+  near(ctx.snapX(2 / W + 0.001, []), 2 / W, 'with neighbours off, the grid still catches a box')
+  ok(ctx.snapX(0.5, [0.501]) === 0.5, 'and a neighbour\'s edge no longer does')
+
+  ctx.snapping.value = true
+  ctx.gridding.value = false
+  ok(ctx.snapX(2 / W + 0.001, []) === 2 / W + 0.001, 'with the grid off, a grid line does not catch it')
+  near(ctx.snapX(0.501, [0.5]), 0.5, 'and a neighbour\'s edge still does')
+
+  /*
+   * NEAREST WINS between the two rather than one taking precedence. A field
+   * dragged past a neighbour's edge that happens to sit half a grid step away
+   * should land on whichever it is actually closer to; a fixed precedence
+   * would pull it off the edge it was visibly next to.
+   */
+  ctx.gridding.value = true
+  const g = 4 * (2 / W)
+  near(ctx.snapX(g + 0.0005, [g + 0.0002]), g + 0.0002, 'the nearer of an edge and a grid line wins')
+  near(ctx.snapX(g + 0.0005, [g + 0.0035]), g, 'and it is the grid when the grid is nearer')
+
+  await cleanup()
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

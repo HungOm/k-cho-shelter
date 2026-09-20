@@ -118,6 +118,32 @@ const PATHS = {
   align:     'M4.5 4v16M8.5 7.5h11M8.5 12h7.5M8.5 16.5h9.5',
   layers:    'M12 3.8 3.6 8.4 12 13l8.4-4.6L12 3.8ZM4.2 12.4 12 16.7l7.8-4.3',
   /*
+   * SNAP is a horseshoe magnet, which is card 9b's own drawing and is the one
+   * metaphor for this that nobody has to be taught. The alternative — two
+   * boxes with a dashed line between them — is a picture of the RESULT, and at
+   * 15px beside an 11px label it reads as a diagram rather than as a tool.
+   *
+   * Two arches and two pole faces: the legs stay open, because a closed
+   * horseshoe is an arch and an arch is a bridge.
+   */
+  magnet:    'M5 17V10a7 7 0 0 1 14 0v7M9 17v-7a3 3 0 0 1 6 0v7M5 17h4M15 17h4',
+  /*
+   * GRID IS FOUR CROSSING LINES, AND NOT FOUR SQUARES, which is what the card
+   * draws and what I drew first.
+   *
+   * Four equal panes is `ph-grid-four`, and in this app it collides: `code`
+   * above is a QR, three large squares and two small, and at 15px in the same
+   * screen — the rail lists "Check code" while the stage bar offers "Grid 2 mm"
+   * — a reader has two arrangements of small squares to tell apart. That is
+   * rule 1 of this set failing quietly: unmistakable beats handsome, and it has
+   * to be unmistakable against the set's OWN neighbours, not in isolation.
+   *
+   * Lines are also the truer drawing. A grid is what a box snaps TO, and what
+   * it snaps to is the lines, not the panes between them. Four marks, gaps of
+   * about five grid units, which is coarse enough to hold at the small end.
+   */
+  grid:      'M4 9.5h16M4 14.5h16M9.5 4v16M14.5 4v16',
+  /*
    * FIT is two walls and an arrow between them, not the four corner brackets
    * the rest of the world uses for "fit to frame". The control it belongs to
    * is fitToWidth: the ticket grows until it touches the sides of the sheet,

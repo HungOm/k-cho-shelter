@@ -195,6 +195,19 @@ const realQr = ref(true)
 const showGuides = ref(false)
 const showAllBoxes = ref(true)
 const snapping = ref(true)
+/*
+ * CARD 9b DRAWS THREE TOOLS AND THIS ONE DID NOT EXIST: `[magnet] Snap`,
+ * `[grid] Grid 2 mm`, `[Aa] Longest entry`. Snapping to the other boxes lines a
+ * field up with its neighbours; snapping to a grid lines it up with the ticket
+ * itself, which is the one a print shop's eye reads — a row of fields each
+ * aligned to a different neighbour is not aligned to anything.
+ *
+ * INDEPENDENT OF `snapping`, exactly as 9b draws them: both are lit at once and
+ * either can be off. Folding the grid into the snap toggle would have made one
+ * control that does two things and can only say one of them.
+ */
+const gridding = ref(true)
+const GRID_MM = 2
 
 const sampleVerifyBase = computed(() => {
   const set = String(state.cfg?.verifyUrl || '').trim()
@@ -455,16 +468,58 @@ const drag = ref(null)
  */
 const SNAP = 0.004
 
-function snapTo(value, candidates) {
-  if (!snapping.value) return value
+/*
+ * Nearest wins between the two, rather than one taking precedence. A field
+ * being dragged past a neighbour's edge that happens to sit half a grid step
+ * away should land on whichever it is actually closer to — a fixed precedence
+ * would pull it off the edge it was visibly next to.
+ *
+ * `step` is already 0 when the grid is off, so the two gates are separate: the
+ * `snapping` check guards the neighbours only.
+ */
+function snapTo(value, candidates, step = 0) {
   let best = value
   let dist = SNAP
-  for (const c of candidates) {
-    const d = Math.abs(c - value)
-    if (d < dist) { dist = d; best = c }
+  if (snapping.value) {
+    for (const c of candidates) {
+      const d = Math.abs(c - value)
+      if (d < dist) { dist = d; best = c }
+    }
+  }
+  if (step > 0) {
+    const g = Math.round(value / step) * step
+    const d = Math.abs(g - value)
+    if (d < dist) { dist = d; best = g }
   }
   return best
 }
+
+/*
+ * TWO MILLIMETRES IS TWO MILLIMETRES ON BOTH AXES, and that is the whole
+ * reason these are two computeds rather than one.
+ *
+ * Boxes are stored as SHARES of the template, so a step in millimetres has to
+ * be divided by the artboard's own size on that axis. The ticket is 190 mm
+ * across and about 61 mm down: one share value for both would have made the
+ * horizontal grid 2 mm and the vertical grid a little over 6, and the fields
+ * would have looked aligned in the inspector and been wrong on paper.
+ *
+ * The height is derived, never stored — the artwork's own shape times the
+ * width — which is the same rule `printedSize` follows and for the same
+ * reason: a second stored number is a second thing to get wrong.
+ */
+const gridX = computed(() => {
+  const mm = Number(design.value?.sheet?.widthMM ?? 0)
+  return gridding.value && mm > 0 ? GRID_MM / mm : 0
+})
+const gridY = computed(() => {
+  const mm = Number(design.value?.sheet?.widthMM ?? 0)
+  const t = active.value
+  if (!gridding.value || !mm || !t?.width || !t?.height) return 0
+  return GRID_MM / (mm * (t.height / t.width))
+})
+const snapX = (v, xs) => snapTo(v, xs, gridX.value)
+const snapY = (v, ys) => snapTo(v, ys, gridY.value)
 
 function edgesExcept(id) {
   const xs = []
@@ -547,12 +602,12 @@ function onPointerMove(ev) {
   const { xs, ys } = edgesExcept(st.id)
 
   if (st.mode === 'move') {
-    const left = snapTo(st.box.left + dx, xs)
-    const top = snapTo(st.box.top + dy, ys)
+    const left = snapX(st.box.left + dx, xs)
+    const top = snapY(st.box.top + dy, ys)
     /* Snapping the trailing edge too, so a box lines up on whichever of its
      * sides is nearest something — the left edge is not privileged. */
-    const right = snapTo(st.box.left + dx + st.box.width, xs) - st.box.width
-    const bottom = snapTo(st.box.top + dy + st.box.height, ys) - st.box.height
+    const right = snapX(st.box.left + dx + st.box.width, xs) - st.box.width
+    const bottom = snapY(st.box.top + dy + st.box.height, ys) - st.box.height
     el.box.left = Math.abs(left - (st.box.left + dx)) <= Math.abs(right - (st.box.left + dx)) ? left : right
     el.box.top = Math.abs(top - (st.box.top + dy)) <= Math.abs(bottom - (st.box.top + dy)) ? top : bottom
     return
@@ -574,16 +629,16 @@ function onPointerMove(ev) {
       el.box.height = kept.height
       return
     }
-    if (c.includes('e')) el.box.width = Math.max(0.002, snapTo(st.box.left + st.box.width + dx, xs) - st.box.left)
-    if (c.includes('s')) el.box.height = Math.max(0.002, snapTo(st.box.top + st.box.height + dy, ys) - st.box.top)
+    if (c.includes('e')) el.box.width = Math.max(0.002, snapX(st.box.left + st.box.width + dx, xs) - st.box.left)
+    if (c.includes('s')) el.box.height = Math.max(0.002, snapY(st.box.top + st.box.height + dy, ys) - st.box.top)
     if (c.includes('w')) {
-      const left = snapTo(st.box.left + dx, xs)
+      const left = snapX(st.box.left + dx, xs)
       const right = st.box.left + st.box.width
       el.box.left = Math.min(left, right - 0.002)
       el.box.width = right - el.box.left
     }
     if (c.includes('n')) {
-      const top = snapTo(st.box.top + dy, ys)
+      const top = snapY(st.box.top + dy, ys)
       const bottom = st.box.top + st.box.height
       el.box.top = Math.min(top, bottom - 0.002)
       el.box.height = bottom - el.box.top
@@ -1506,8 +1561,6 @@ const printedSize = computed(() => {
                 <button type="button" class="zbtn" title="Zoom in" @click="stepZoom(1)">+</button>
                 <button type="button" class="btn sm ghost" @click="fitToWidth">Fit</button>
               </div>
-              <label class="choice tiny"><input v-model="snapping" type="checkbox"> Snap to other boxes</label>
-              <label class="choice tiny"><input v-model="showLongest" type="checkbox"> Longest entry</label>
               <span class="grow"></span>
               <!--
                 THE ARTBOARD'S OWN NUMBERS: "190.0 × 61.5 mm · 2244 × 726 px ·
@@ -1523,7 +1576,72 @@ const printedSize = computed(() => {
                 {{ printedSize }} · {{ active.width }} × {{ active.height }} px<template
                   v-if="dpi"> · {{ dpi.v }} dpi</template>
               </span>
-              <span class="tiny muted held">positions held as a share of the template, not as pixels</span>
+              <!--
+                THE SENTENCE THAT WAS HERE — "positions held as a share of the
+                template, not as pixels" — is gone, and it is not lost. The
+                footer says it in full, three lines down: "Held as shares of
+                the template, so the same design survives a redraw at any size".
+                Both arrived in one commit, adf1fca, so this was one author
+                writing the fact twice rather than two decisions to state it.
+
+                NOT A CLEAN DUPLICATE, WHICH I HAD TO BE TOLD. The footer said
+                what SURVIVES a redraw; this said what the positions are NOT —
+                pixels — and ticketscreen holds those as two facts on purpose.
+                Deleting this dropped the second one, and the suite said so.
+                The words moved into the footer rather than out of the screen.
+
+                Worth moving here specifically because the rest of this change
+                takes two sentences OUT of this bar on the grounds that a tool
+                should be an icon with its explanation on hover. Leaving a third
+                sentence saying half of what the footer says would have been the
+                same noise in a different voice.
+              -->
+
+              <!--
+                THE THREE TOOLS, as cards 9b and 9c draw them: an icon, a short
+                label, lit when on. They were two captioned checkboxes reading
+                "Snap to other boxes" and "Longest entry", and the organiser's
+                instruction about this bar was that the tools should be icons
+                with a hover explanation rather than sentences.
+
+                THE SENTENCE MOVED, IT DID NOT GO. What the checkbox said in
+                the bar is what the button says in its `title` — which is the
+                same place this app already puts the reason a control cannot be
+                used, so a reader looking for "what does this do" and a reader
+                looking for "why can I not press this" look in one place.
+
+                A BUTTON WITH aria-pressed, NOT A CHECKBOX WITH ITS BOX HIDDEN.
+                Hiding the input would leave a control that a screen reader
+                still announces as a checkbox inside a label whose text is one
+                word; this says what it is.
+
+                Right-aligned after the measurements, which is 9b's own
+                arrangement: what the artboard IS on the left, what you can do
+                to it on the right.
+              -->
+              <div class="tools">
+                <button
+                  type="button" class="tool" :class="{ on: snapping }"
+                  :aria-pressed="String(snapping)"
+                  title="Line a box up with the edges of the other boxes as you drag it"
+                  @click="snapping = !snapping">
+                  <Icon name="magnet" :size="15" />Snap
+                </button>
+                <button
+                  type="button" class="tool" :class="{ on: gridding }"
+                  :aria-pressed="String(gridding)"
+                  title="Line a box up with a 2 mm grid on the ticket itself, so a row of fields is square to the paper rather than to each other"
+                  @click="gridding = !gridding">
+                  <Icon name="grid" :size="15" />Grid {{ GRID_MM }} mm
+                </button>
+                <button
+                  type="button" class="tool" :class="{ on: showLongest }"
+                  :aria-pressed="String(showLongest)"
+                  title="Draw the longest value each field will ever hold, so a box that is too small shows it here rather than on the printed ticket"
+                  @click="showLongest = !showLongest">
+                  <Icon name="type" :size="15" />Longest entry
+                </button>
+              </div>
             </div>
 
             <div ref="stage" class="stage">
@@ -1774,8 +1892,8 @@ const printedSize = computed(() => {
       -->
       <footer v-if="tab !== 'digital'" class="footbar">
         <span class="tiny muted grow">
-          Held as shares of the template, so the same design survives a redraw at any size —
-          and a different charity's artwork starts from its own.
+          Held as shares of the template and not as pixels, so the same design survives a
+          redraw at any size — and a different charity's artwork starts from its own.
         </span>
         <!--
           THREE ACTIONS THAT LOOKED IDENTICAL AND ARE NOT.
@@ -2023,7 +2141,33 @@ const printedSize = computed(() => {
   min-width: 42px; text-align: center; font-size: .76rem;
   font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
-.held { text-align: right }
+/*
+ * THE THREE TOOLS. An icon, a short label, lit when on — cards 9b and 9c.
+ *
+ * COLOUR IS THE STATE and there is no box. `--brand` when on, `--muted` when
+ * off, which is the colour table's own pairing and the same one `.tabbtn` uses
+ * one row up. A filled pill for each would have put three lozenges in a bar
+ * that already holds a zoom stepper and a line of measurements, and the bar
+ * would have read as four groups of controls instead of two.
+ *
+ * NOT `--tap`. That token is a correctness constraint for a control a SELLER
+ * presses on a phone, standing up, one-handed — and this studio refuses to
+ * open below tablet width and says so on its own screen. These are an
+ * organiser's desk tools beside a 26px zoom stepper, so the density side of
+ * that trade is the right one. 30px of height still clears a finger on the
+ * tablet that is the smallest thing this screen will run on.
+ */
+.tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap }
+.tool {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 30px; padding: 4px 8px;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: .74rem; color: var(--muted);
+  border-radius: 7px; white-space: nowrap;
+}
+.tool.on { color: var(--brand) }
+.tool:hover { background: var(--surface-2) }
+.tool:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
 
 /* --stage, not --surface-2: the artboard sits ON something, and in dark mode
  * that something has to be BELOW the panels rather than level with them --
@@ -2203,8 +2347,5 @@ const printedSize = computed(() => {
  */
 @media (max-width: 1023px) {
   .rail { max-height: none }
-}
-@media (max-width: 820px) {
-  .held { display: none }
 }
 </style>
