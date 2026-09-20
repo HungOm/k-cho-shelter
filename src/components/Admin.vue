@@ -718,7 +718,7 @@ function details(d) {
           The ticket your buyers hold &mdash; its artwork, and where the number is printed on it.
           <template v-if="!c?.ticketArtwork"><b>No artwork uploaded yet</b>, so tickets cannot be printed.</template>
         </span>
-        <button class="btn sm" @click="go('ticketdesign')">Ticket design &rarr;</button>
+        <button class="btn sm" @click="go('ticketdesign')">Ticket Studio &rarr;</button>
       </div>
     </div>
 

@@ -18,7 +18,7 @@ const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-t
  * coordinates sent to every screen to answer a question two buttons ask.
  */
 const hasArtwork = computed(() => !!state.cfg?.ticketArtwork)
-const noArtworkWhy = 'No ticket artwork has been uploaded yet — see the Ticket design screen.'
+const noArtworkWhy = 'No ticket artwork has been uploaded yet — see the Ticket Studio screen.'
 
 const currency = computed(() => state.cfg?.currency || '')
 const canSettle = computed(() => ['Out', 'Returned'].includes(props.book.status))

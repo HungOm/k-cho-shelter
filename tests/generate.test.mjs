@@ -59,7 +59,7 @@ console.log('without artwork there is nothing to print onto')
   const w = world({ TICKET_ARTWORK_ID: '' })
   const err = await errOf(() => gen(w, { book: 'Book-0001' }))
   eq(err.code, 'NO_TEMPLATE', 'generating is refused')
-  ok(/Ticket design/.test(err.message), 'and the refusal says where to fix it')
+  ok(/Ticket Studio/.test(err.message), 'and the refusal says where to fix it')
   eq(w.table('ticket_codes').length, 0, 'and nothing was minted')
 }
 

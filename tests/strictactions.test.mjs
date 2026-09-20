@@ -116,7 +116,7 @@ console.log('the screen behind them is organisers-only too')
 {
   const shell = readFileSync(join(ROOT, 'src/components/AppShell.vue'), 'utf8')
   const tab = shell.match(/\{\s*id:\s*'ticketdesign'[^}]*\}/)
-  ok(!!tab, 'the Ticket design tab exists')
+  ok(!!tab, 'the Ticket Studio tab exists')
   ok(/roles:\s*\['admin'\]/.test(tab?.[0] ?? ''), 'and is offered to organisers only')
 }
 

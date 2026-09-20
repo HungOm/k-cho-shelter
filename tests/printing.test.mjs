@@ -61,7 +61,7 @@ console.log('with no artwork there is nothing to draw onto')
   const w = world({ noArtwork: true })
   const e = await errOf(() => render(w, { book: 'Book-0001' }))
   eq(e.code, 'NO_TEMPLATE', 'it refuses')
-  ok(/Ticket design/.test(e.message), 'and says where to fix it')
+  ok(/Ticket Studio/.test(e.message), 'and says where to fix it')
 
   // The setting names an artwork that has been removed — a different failure
   // from never having had one, and it says so rather than crashing on a null.

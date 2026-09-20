@@ -47,7 +47,7 @@ const SCREENS = [
    * permissions row can hand it to a seller. Hiding the tab is a courtesy;
    * it is not what makes it safe.
    */
-  { id: 'ticketdesign', icon: 'ticket', label: 'Ticket design', roles: ['admin'] },
+  { id: 'ticketdesign', icon: 'ticket', label: 'Ticket Studio', roles: ['admin'] },
   // Super admin only, so it is filtered by more than role — see `visible`.
   { id: 'permissions', icon: 'key', label: 'Access', roles: ['admin'], sup: true },
   { id: 'approvals', icon: 'hand', label: 'Approvals', roles: ['admin', 'recorder', 'agent'] }

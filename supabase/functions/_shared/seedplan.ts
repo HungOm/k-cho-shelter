@@ -243,7 +243,7 @@ export const SEEDS: Seedable[] = [
    */
   {
     id: 'artwork', writes: [], makes: '',
-    never: 'The seed cannot invent a picture of your ticket. Upload one on the Ticket design '
+    never: 'The seed cannot invent a picture of your ticket. Upload one on the Ticket Studio '
       + 'screen — that screen works on an empty raffle, and it is the one thing here worth '
       + 'setting up by hand.',
   },

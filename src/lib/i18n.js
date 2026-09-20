@@ -43,6 +43,20 @@ export const MY = {
   'Money': 'ငွေကြေး',
   'Draw': 'မဲဖောက်ခြင်း',
   'Setup': 'စနစ်ပြင်ဆင်ခြင်း',
+  /*
+   * THE NAV ITEM THAT HAS NEVER HAD A LINE HERE.
+   *
+   * Every other tab in the sidebar carries its Burmese; "Ticket design" carried
+   * none, and nothing was ever going to say so. The nav renders
+   * `<Bi :text="s.label">` — a BOUND expression — and i18n.test's scan looks for
+   * the literal `<Bi text="...">`, so one binding put the whole sidebar outside
+   * the check that exists to catch exactly this.
+   *
+   * ဒီဇိုင်းခန်း is "design room", which is what Studio means here: the place a
+   * ticket is drawn, not an action somebody performs. Unreviewed, like
+   * everything in this file.
+   */
+  'Ticket Studio': 'လက်မှတ် ဒီဇိုင်းခန်း',
   'Access': 'ခွင့်ပြုချက်',
   'More': 'နောက်ထပ်',
 

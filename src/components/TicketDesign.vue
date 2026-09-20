@@ -977,7 +977,7 @@ function printTest() {
   )]))
 
   const html = sheetHTML(design.value, tickets.map((t) => t.number), active.value.url, {
-    title: 'Ticket design — a sheet of samples, not real tickets',
+    title: 'Ticket Studio — a sheet of samples, not real tickets',
     watermark: 'SAMPLE',
     autoPrint: true,
     layers,
@@ -1004,7 +1004,7 @@ const printedSize = computed(() => {
 
 <template>
   <section v-if="!isAdmin" class="card">
-    <h3>Ticket design</h3>
+    <h3>Ticket Studio</h3>
     <p class="muted">This is an organiser's screen.</p>
   </section>
 
@@ -1016,7 +1016,7 @@ const printedSize = computed(() => {
       question a screen with three tabs and two side panels most easily loses.
     -->
     <header class="bar">
-      <h2>Ticket design</h2>
+      <h2>Ticket Studio</h2>
 
       <label v-if="templates.length" class="picker">
         <span class="sr">Template being designed</span>

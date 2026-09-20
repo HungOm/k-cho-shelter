@@ -72,7 +72,7 @@ skip and what replaces them. Read that one alongside this, not instead of it.
    simply stops matching.
 
    `TOTAL_TICKETS` can always be raised later from the same screen. It can never be lowered.
-9. **Upload the ticket artwork.** Sign in as an organiser and open **Ticket design**. Give it a
+9. **Upload the ticket artwork.** Sign in as an organiser and open **Ticket Studio**. Give it a
    picture of one blank ticket, stub included — PNG, JPEG or WebP, about 2244 pixels wide for a
    sharp press run at 190 mm. It is measured on the way in and refused if its shape is not one
    the raffle prints; the accepted shapes are a list on the same screen, and

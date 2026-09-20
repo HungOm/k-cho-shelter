@@ -189,7 +189,7 @@ export async function generateTickets(p: Record<string, unknown>, user: AppUser,
   if (!templateId) {
     throw new ApiError('NO_TEMPLATE',
       'There is no ticket artwork yet, so tickets cannot be printed. ' +
-      'Upload it on the Ticket design screen first.')
+      'Upload it on the Ticket Studio screen first.')
   }
 
   const { rows: scope, more } = await resolveScope(p, ctx, MAX_PER_CALL)
@@ -295,7 +295,7 @@ export async function renderTickets(p: Record<string, unknown>, user: AppUser, c
   if (!templateId) {
     throw new ApiError('NO_TEMPLATE',
       'There is no ticket artwork yet, so tickets cannot be printed. ' +
-      'Upload it on the Ticket design screen first.')
+      'Upload it on the Ticket Studio screen first.')
   }
   const { data: tpl, error: tplErr } = await ctx.supabaseAdmin
     .from('ticket_templates')
@@ -306,7 +306,7 @@ export async function renderTickets(p: Record<string, unknown>, user: AppUser, c
   if (!template) {
     throw new ApiError('NO_TEMPLATE',
       'The ticket artwork this raffle prints from is no longer there. ' +
-      'Choose one on the Ticket design screen.')
+      'Choose one on the Ticket Studio screen.')
   }
 
   const { rows: scope, more } = await resolveScope(p, ctx, MAX_PER_PRINT)
