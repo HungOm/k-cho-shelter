@@ -120,8 +120,28 @@ screen.
    psql "$SUPABASE_DB_URL" -f supabase/functions.sql  # the functions
    psql "$SUPABASE_DB_URL" -f supabase/rls.sql        # the views and the policies
    supabase functions deploy api --project-ref ruadqxxfvbqsdhwkkejl
+   supabase functions deploy verify --project-ref ruadqxxfvbqsdhwkkejl
    git push                                           # deploys the browser app
    ```
+
+   **BOTH FUNCTIONS, AND THIS LINE WAS MISSING UNTIL 2026-09-20.** `api` and
+   `verify` are separate deploys and `deploy api` does not carry `verify`.
+   SETUP.md has said so since it was written; this block did not, which is
+   worse, because this is the one somebody follows at speed after a backup with
+   everybody told to stop touching the system.
+
+   It matters because one commit changes both. `ce39846` added `make_receipt`
+   to `api/printing.ts` AND the code path in `verify/index.ts` that answers a
+   receipt's QR. Deploy `api` alone and an organiser can hand a buyer a receipt
+   covering ten tickets whose code the check page has never heard of: the buyer
+   scans it and is told no ticket matches their link. Nothing appears wrong on
+   the organiser's side. It is visible only to the person holding the paper,
+   and what it looks like to them is that their tickets are fake.
+
+   Deploying both every time is the right default. Whether a given change needs
+   both is a question to answer per change rather than assume — the Ticket
+   Studio rename, for instance, reaches production through `api` only, because
+   nothing under `verify/` imports either file it touched.
 
    **MIGRATIONS FIRST, FUNCTION SECOND, RESET LAST**, and the order is not a
    preference. `master` has code calling `issue_books_tx`, `return_books_tx`,

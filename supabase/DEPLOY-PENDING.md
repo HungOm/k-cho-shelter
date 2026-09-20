@@ -354,10 +354,19 @@ it. Re-derive every line before acting on it.
 | the same function, allowlist corrected | `20260920500000` | the same push |
 | `reset_preview`, `reset_apply` | `api/reset.ts` | `supabase functions deploy api` |
 | `seed_preview`, `seed_apply` | `api/seed.ts` | the same deploy |
+| `make_receipt`, and the QR it mints | `api/printing.ts` **and** `verify/index.ts` | `deploy api` **and** `deploy verify` |
 
 Migrations before the function, as always: `reset_apply` calls `app_reset`, and
 a function deployed first answers the screen with a Postgres error about a
 function that does not exist.
+
+**And there are TWO functions.** The row above is the one that catches people:
+`supabase functions deploy api` does not deploy `verify`, and `ce39846` changed
+both in the same commit. Deploy `api` alone and a buyer holding a ten-ticket
+receipt is told no ticket matches their link, while nothing looks wrong to the
+organiser who issued it. The table above said only `api` when it was written
+this morning, which is the same omission `supabase/RESET-RUNBOOK.md` carried
+until it was corrected the same day.
 
 **The client half is already safe to push on its own.** Both screens catch
 `UNKNOWN_ACTION` and say the server has not been updated yet, rather than
