@@ -319,7 +319,12 @@ h1 { font-size: 19px; margin: 0 0 12px }
  */
 .orgfoot {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
-  margin: 18px 4px 0; padding-top: 12px; border-top: 1px solid var(--line, rgba(0,0,0,.1));
+  /* --border, not a hardcoded fallback. This page's own token set — --ink,
+     --line, --card — was retired when the palette was unified, so `var(--line,
+     rgba(0,0,0,.1))` resolved to the fallback every time: black at a tenth
+     opacity, which is a rule you can see in light mode and cannot in dark. The
+     divider four rules up already uses --border, which flips. */
+  margin: 18px 4px 0; padding-top: 12px; border-top: 1px solid var(--border);
 }
 .stamp {
   margin: 0; font-size: 11px; color: var(--muted); text-align: left;

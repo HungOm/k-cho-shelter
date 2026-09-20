@@ -256,6 +256,21 @@ console.log('where "call the office" points, and what never reaches an href')
     eq(telOf(bad), '', `refused as a telephone number: ${JSON.stringify(bad)}`)
   }
 
+  /*
+   * WHAT COMES BACK IS WHAT WAS CHECKED. Each of these trims first and then
+   * anchors the pattern, so the string that was validated is the string that
+   * is returned. The tidy-up that breaks it is folding the trim into the
+   * pattern as `^\\s*` and dropping the call — after which a value can pass
+   * the check and be returned with whatever was around it still attached.
+   * Nothing else in the file would notice.
+   */
+  eq(siteOf('  https://ok.example.org/x  '), 'https://ok.example.org/x',
+     'a website comes back trimmed, not merely accepted while untrimmed')
+  eq(telOf('  012-345 6789  '), '012-345 6789', 'and so does a telephone number')
+  eq(siteOf('  javascript:alert(1)'), '', 'leading whitespace does not smuggle a scheme past the anchor')
+  eq(siteOf('https://ok.example.org\njavascript:alert(1)'), '',
+     'and a newline does not hide a second one behind the first')
+
   eq(emailOf('office@ceam.example.org'), 'office@ceam.example.org', 'an address is an address')
   for (const bad of ['', 'office', 'office@localhost', 'a@b', 'two @ signs@x.org', 'a@b.c d']) {
     eq(emailOf(bad), '', `refused as an email: ${JSON.stringify(bad)}`)
