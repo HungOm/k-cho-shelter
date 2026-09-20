@@ -1551,10 +1551,10 @@ const printedSize = computed(() => {
                 </button>
               </div>
               <p class="tiny muted mono">{{ fit ? `${fit.paper.widthMM} × ${fit.paper.heightMM} mm` : '' }}</p>
-              <div class="seg">
-                <button type="button" :class="{ on: !design.sheet.landscape }"
+              <div class="seg orient">
+                <button type="button" class="segbtn" :class="{ on: !design.sheet.landscape }"
                         @click="design.sheet.landscape = false">Portrait</button>
-                <button type="button" :class="{ on: !!design.sheet.landscape }"
+                <button type="button" class="segbtn" :class="{ on: !!design.sheet.landscape }"
                         @click="design.sheet.landscape = true">Landscape</button>
               </div>
             </div>
@@ -1886,12 +1886,13 @@ const printedSize = computed(() => {
 .paper .pshape { display: block; width: 18px; background: currentColor; opacity: .38; border-radius: 1px }
 .paper.on .pshape { opacity: .7 }
 .paper b { font-size: .76rem; font-weight: 600 }
-.seg { display: flex; margin-top: 6px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden }
-.seg button {
-  flex: 1; padding: 6px 4px; font-size: .78rem; cursor: pointer;
-  background: var(--surface); border: 0; color: var(--muted);
-}
-.seg button.on { background: var(--brand-soft); color: var(--brand-ink); font-weight: 600 }
+/*
+ * Orientation uses the segmented control this screen already has — .seg with
+ * .segbtn children, the same one the field/code/words switch and the
+ * alignment and overflow rows use. A second `.seg` rule was defined here for
+ * a day and overrode all three of them with a border and a margin.
+ */
+.orient { margin-top: 6px }
 /* A template is recognised by its picture, so the picture is the control. */
 .tthumb {
   position: relative; display: block; width: 100%; aspect-ratio: 1600 / 517;

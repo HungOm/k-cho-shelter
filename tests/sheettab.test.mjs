@@ -163,6 +163,30 @@ console.log('the paper is named, chosen, and obeyed')
   ok(/wider than \{\{ fit\.paper\.label \}\}/.test(design), 'the too-wide case is said in the interface')
 }
 
+console.log('and it reuses the screen\'s own controls rather than inventing them')
+{
+  /*
+   * A SECOND `.seg` RULE LIVED HERE FOR A DAY. This screen already has a
+   * segmented control — .seg with .segbtn children — used by the
+   * field/code/words switch, the alignment row and the overflow row. The
+   * orientation toggle was given its own `.seg { ... }` block, which does not
+   * scope to the toggle: it overrode all three of the others with a border, a
+   * margin and a different background. Nothing failed, nothing looked broken
+   * enough to report, and three unrelated controls quietly changed shape.
+   *
+   * So: one rule per class name in this file, checked, because a duplicate
+   * class is invisible in a diff and global in effect.
+   */
+  const style = read('src/components/TicketDesign.vue')
+  const style_block = style.slice(style.indexOf('<style'))
+  const names = [...style_block.matchAll(/^\.([a-zA-Z][\w-]*) *\{/gm)].map((m) => m[1])
+  const twice = names.filter((n, i) => names.indexOf(n) !== i)
+  eq(twice.length, 0, `no class is defined twice (${[...new Set(twice)].join(', ') || 'none'})`)
+  ok(/class="seg orient"/.test(style), 'orientation uses the existing segmented control')
+  ok(/segbtn/.test(style.slice(style.indexOf('orient'))) || /class="segbtn"/.test(style),
+    'with the same button class as the others')
+}
+
 console.log('it is the same shell as the tabs beside it')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ONE), { drive: onSheetTab })
