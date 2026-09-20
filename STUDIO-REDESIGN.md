@@ -505,7 +505,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 4a | 4 Sell | Home — one banner, what needs looking at, then doing | yes |
 | 6a | 4 Sell | List + docked ticket panel | yes (89ac4f5) |
 | 6b | 4 Sell | A sold ticket — record, movement, correction in one modal | **diverges by ruling — trail stays a sheet** |
-| 4c | 4 Sell | Write down sales — one ticket or a pile of stubs | not verified |
+| 4c | 4 Sell | Write down sales — one ticket or a pile of stubs | yes (493388c) |
 | 4d | 5 Money | Money — who owes what, running-balance statement | yes (a71a080) — Export added; "account since" unbacked |
 | 4h | 6 Control | Approvals — the waiting request first | yes |
 | 8a | 7 Buyer | Books → book → a ticket — the keepsake in the raffle's colour | yes (9d78cef) — less the Motto chip |
