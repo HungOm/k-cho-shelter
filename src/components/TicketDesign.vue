@@ -1497,7 +1497,7 @@ const printedSize = computed(() => {
 
 <style scoped>
 .designer { display: flex; flex-direction: column; gap: 12px; min-height: 0 }
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%) }
+/* .sr moved to style.css — it is a global utility and was trapped here. */
 .grow { flex: 1; min-width: 0 }
 
 /* ---- the bar ---- */

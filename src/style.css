@@ -313,6 +313,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
  * few glyphs that are not fixed-width in every family.
  */
 .data { font-family: var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+/*
+ * FOR A SCREEN READER ONLY — a live region, or a label a sighted person gets
+ * from the shape of the control.
+ *
+ * Global because it was written twice in scoped blocks, which is the one place
+ * a visually-hidden rule must not live: scoped means it reaches nothing else,
+ * and the failure when it is missing is not subtle — a live region with no rule
+ * renders as a stray paragraph of text in the middle of the screen, announcing
+ * to everybody what it was meant to announce to one person.
+ *
+ * clip-path rather than `display: none` or `visibility: hidden`, both of which
+ * take the element out of the accessibility tree and so silence the very thing
+ * this exists to say.
+ */
+.sr {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 /*
  * Text colours for a state. These were being used before they existed —
  * `:class="ok ? 'muted' : 'bad'"` on the QR density warning resolved to nothing,
