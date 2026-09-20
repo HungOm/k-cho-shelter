@@ -8,6 +8,9 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { state, api, toast, isSuper, isAdmin, canWrite, drawStamp, go } from '../lib/store.js'
 import { moneyShort, money, date } from '../lib/format.js'
+/* Was a local function here; the Money statement needs the same one, and two
+   copies is how two exports come to disagree about quoting. See lib/csv.js. */
+import { downloadCsv } from '../lib/csv.js'
 import Empty from './ui/Empty.vue'
 import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
@@ -188,23 +191,11 @@ async function exportEntries() {
     const head = ['Ticket', 'Book', 'Buyer', 'Phone', 'Area', 'Seller', 'Can contact']
     const rows = r.entries.map(e => [e.ticket, e.book, e.buyerName, e.buyerPhone,
       e.buyerZone, e.agentName, e.contactable ? 'yes' : 'NO'])
-    download(`entries-${new Date().toISOString().slice(0, 10)}.csv`, head, rows)
+    downloadCsv(`entries-${new Date().toISOString().slice(0, 10)}.csv`, head, rows)
     toast(`${r.count} entries saved`, 'ok')
   } catch (err) { toast(err.message, 'bad', err.code) }
 }
 
-function download(filename, head, rows) {
-  const q = v => {
-    const s = String(v ?? '')
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
-  }
-  const csv = [head.map(q).join(','), ...rows.map(r => r.map(q).join(','))].join('\n')
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
-  a.download = filename
-  document.body.appendChild(a); a.click()
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove() }, 1000)
-}
 </script>
 
 <!--

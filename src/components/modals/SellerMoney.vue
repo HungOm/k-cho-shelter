@@ -25,6 +25,9 @@ import { money, date, COUNTED_IN_HELP } from '../../lib/format.js'
 // at all — a number nobody can ring is not the same as no number, and a link
 // that looks like the real one is how somebody reaches a stranger.
 import { isDialable } from '../../lib/search.js'
+/* Shared with the draw's entry list, so the two exports cannot disagree about
+   quoting or about the BOM Excel needs to read a Burmese name. */
+import { downloadCsv, csvName } from '../../lib/csv.js'
 import Sheet from '../ui/Sheet.vue'
 import Pager from '../ui/Pager.vue'
 import Who from '../ui/Who.vue'
@@ -207,6 +210,41 @@ const undoneBy = computed(() => !receipt.value?.id ? null
 /* On top of this sheet, so closing the book puts you back on the seller. */
 const showHistory = ref(null)
 
+/*
+ * THE STATEMENT AS A FILE, which is card 4d's Export beside the filters.
+ *
+ * It exports WHAT IS ON SCREEN, filter and all, and puts the filter's name in
+ * the filename — "TEST-A001-charges.csv", not "statement.csv". Exporting the
+ * whole account regardless would be the safer-sounding choice and is worse: a
+ * reader who filtered to Charges and pressed Export would get a file that
+ * disagrees with the screen they were looking at, and would have no way to
+ * tell. The screen already takes this seriously one line above, where it says
+ * "Showing N of M lines" rather than letting a highlighted chip carry it.
+ *
+ * The Balance column is copied as the RUNNING balance the server computed, not
+ * recomputed here. Money has two doors — a book figure and hand payments — and
+ * a file that re-derived the balance a second way would be a second opinion
+ * about what a seller owes, printed and taken to a meeting.
+ */
+function exportStatement() {
+  const head = ['When', 'What', 'Reference', 'Description', 'To',
+                `Charged (${currency.value})`, `Received (${currency.value})`,
+                `Balance (${currency.value})`]
+  const rows = filtered.value.map((e) => [
+    e.at ? date(e.at) : '',
+    KINDS[e.kind] || e.kind,
+    e.ref || '',
+    e.description || '',
+    e.by || '',
+    e.charge || '',
+    e.credit || '',
+    e.balance,
+  ])
+  const which = filter.value === 'all' ? '' : (FILTERS.find((f) => f.k === filter.value) || {}).t
+  downloadCsv(csvName(props.agent.name || props.agent.agentId, props.agent.agentId,
+                      which || 'statement'), head, rows)
+}
+
 /** A statement line's own word for itself, so the table reads without a key. */
 const KINDS = {
   sale: 'Tickets sold',
@@ -316,6 +354,16 @@ const KINDS = {
             Showing {{ filtered.length }} of {{ entries.length }} lines. The balance
             below is the whole account's.
           </span>
+          <span v-else class="grow"></span>
+          <!-- Takes the statement to whoever keeps the books. Disabled with its
+               reason rather than hidden when the filter has emptied the table,
+               per permissionui — a button that vanishes reads as a broken
+               screen, and an empty file reads as an account with no history. -->
+          <button type="button" class="btn sm ghost" :disabled="!filtered.length"
+                  :title="filtered.length
+                    ? 'Save these lines as a spreadsheet file'
+                    : 'Nothing to export — this filter matches no lines'"
+                  @click="exportStatement">Export</button>
         </template>
       </Filters>
 
