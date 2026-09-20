@@ -494,7 +494,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 4g | 1 Set up | Access — System Admin only, page says so, shows diffs | yes |
 | 9a | 2 Studio | Start a design — two routes, artboard set before you draw | yes (d5d82a6) |
 | **9b** | 2 Studio | **Studio from scratch, light — layers LEFT, artboard MIDDLE with rulers, inspector RIGHT** | **regressed by 6d4feb1; 72 rebuilding** |
-| **9c** | 2 Studio | The same studio in dark mode — chrome flips, ticket keeps its own colours | **never looked at** |
+| 9c | 2 Studio | The same studio in dark mode — chrome flips, ticket keeps its own colours | looked at; artboard fixed (5ba9bae), 3 gaps open |
 | 2a | 2 Studio | Artwork & paper — the verdict is the page | yes (72 confirmed) |
 | 7a | 2 Studio | Collapsed rail — Exit studio top left, hover or ⌘\ | yes (33dce6f, 008d630) |
 | 2b | 2 Studio | Print sheet — paper, how they sit, cut line | yes |
@@ -582,6 +582,38 @@ two routes and two answers and needs no policy.
 allowlist of which fields may travel on which route. Not "everything except" —
 that is the shape that admitted `seller_phone`. See
 [[everything-except-x]] and [[negative-defaults-admit-the-unknown-case]].
+
+### 9c — looked at 2026-09-20; one defect fixed, three gaps left with 72
+
+**Fixed (5ba9bae).** `.frame` — the artboard, the sheet the ticket prints on —
+was painted `--surface`, so it followed the theme and went near-black in dark
+mode. 9c's own info line legislates against exactly that: *"Dark mode only
+changes the studio chrome — the ticket keeps its own colours."* Now `--paper`,
+theme-free beside `--ticket-gold`, named in `tokens.test.mjs`'s `THEME_FREE`
+and proved red by removing it. `.stage` deliberately still flips — it is the
+surround, and that IS the chrome.
+
+Where it showed: artwork with an alpha channel (`templates.ts` accepts PNG and
+WebP and never inspects transparency), plus the image's loading and failed-load
+windows. **NOT** the from-scratch route — `blankticket.js` paints white before
+drawing precisely so the upload has no alpha, so that artwork is opaque and
+covers the frame. I had that backwards and 72 caught it.
+
+**Open, and 72's to place when their user scopes the studio rebuild:**
+
+1. No sun/moon control in the studio header; 9c draws one.
+2. The info line itself is not on screen anywhere.
+3. The stage bar is captioned checkboxes — "Snap to other boxes", "Longest
+   entry" — where 9c draws `[magnet] Snap` and `[grid] Grid 2 mm`, and there is
+   no grid control at all. This is also the user's own instruction: the tools
+   should be icons with hover explanation, not sentences.
+
+**Not a defect, recorded so nobody re-reports it:** the header's "sa…" is
+`.statetxt`, the save status, truncating by design — `min-width: 0; overflow:
+hidden; text-overflow: ellipsis`, with a comment reading "The status may
+truncate; the action may not move." It is not a fourth tab and `.tabbtn`'s
+`white-space: nowrap` is not clipping it. Two sessions mis-identified it from a
+screenshot before anyone read the markup.
 
 ### Superseded — do not build
 
