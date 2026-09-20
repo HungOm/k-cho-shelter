@@ -160,6 +160,34 @@ Rules that come with the form:
   loop runs zero times and the suite passes having tested nothing. Assert the
   count first — `ok(ACTIONS.length > 60, ...)` in `gate.test.mjs` is the
   pattern.
+### Never assert on the ABSENCE of a bad signal
+
+This is one rule, and it is the one that has caught the most real defects here.
+Assert a **positive count of the good signal**, and prove the assertion red
+against the actually-broken version before trusting it green.
+
+The failure it prevents always has the same shape: *the signal you checked is
+produced by the failure itself, or is absent in exactly the way success is
+absent.* Four from a single day, all of which die to this rule:
+
+| What was checked | Why it could not fail | What to check instead |
+|---|---|---|
+| `grep -c "^  FAIL"` returns 0 | A crashed run prints no FAIL lines. Neither does a clean one. | `250 passed` — a positive count, or the exit code |
+| No compile error from the template | A duplicate `v-else` discards the branch silently; discarding it *is* the compile succeeding | five radios actually rendered |
+| `includes('See what is there')` | The empty state the bug leaves behind *contains* that string | match the control, not the prose around it |
+| The suite is gone from `run.sh` | A suite deleted alongside its runner line leaves a directory and a runner that agree | `everytestruns` sees N names |
+
+So: "no FAIL lines" becomes "N passed". "No compile error" becomes "five radios
+rendered". "It is not in run.sh" becomes "the runner lists N suites". The
+checker and the thing being checked must not be able to fail together.
+
+Two specifics worth carrying: a scratch copy missing `package.json` makes Node
+read every ESM module as CommonJS and the run dies before printing anything;
+and `run.sh` pipes the first invocation through `tail -1`, so a stack trace
+arrives as *no summary line at all* rather than as a failure.
+
+*(The general rule is kcho-shelter-15's formulation, from four instances two of
+us had each written up separately as war stories.)*
 - **Test the value that is not in the set.** `/paid|received|in/i` matched
   `Unpaid`, and every unpaid ticket in the raffle showed as paid. "Everything
   except X" conditions are only caught by an assertion on a value nobody

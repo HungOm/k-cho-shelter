@@ -23,6 +23,22 @@
   --bg: #f4f6f5;
   --surface: #ffffff;
   --surface-2: #eef1f0;
+  /*
+   * THE THING AN ARTBOARD SITS ON, and it is named for that role rather than
+   * for how dark it is.
+   *
+   * `--surface-2` cannot serve here: it is LIGHTER than `--surface`, and this
+   * surface has to be DEEPER than the panels that lift off it. In the studio's
+   * dark mode the layers rail and the stage landed at nearly the same
+   * near-black, so the panel stopped separating from the canvas and the screen
+   * read as one flat void with controls floating in it.
+   *
+   * A name describing the value — `--surface-3`, `--surface-deep` — would be
+   * wrong again one step along, the first time somebody builds a light stage.
+   * The relationship "deeper than what lifts off it" is true in both themes,
+   * which is why the role is the durable name.
+   */
+  --stage: #e7ebe9;
   --border: #e4e9e7;
   /* The heavier rule: table dividers, and any edge that has to hold a column
      apart rather than merely suggest an edge. One border weight was never
@@ -129,6 +145,9 @@
     --bg: #0d1211;
     --surface: #161b1a;
     --surface-2: #1e2523;
+    /* Below --bg, not between the surfaces: the panels have to lift off it,
+       and at #161b1a against #0d1211 they were not lifting off anything. */
+    --stage: #070a09;
     --border: #2a3230;
     --border-strong: #3a4441;
     --text: #e9efec;
@@ -629,7 +648,7 @@ td.num, th.num {
   /* A dark-mode screen prints as white text on white paper — a blank sheet
      and a very confused volunteer. Force the light tokens for both themes. */
   :root, :root:not([data-theme="light"]) {
-    --bg: #fff; --surface: #fff; --surface-2: #fff;
+    --bg: #fff; --surface: #fff; --surface-2: #fff; --stage: #fff;
     --text: #000; --muted: #444; --border: #999;
     --shadow: none; --shadow-lg: none;
   }
