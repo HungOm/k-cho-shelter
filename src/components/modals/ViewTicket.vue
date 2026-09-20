@@ -13,9 +13,9 @@
  * listed by number instead, with the reason.
  */
 import { ref, computed, watch, onMounted } from 'vue'
-import { state, api, toast, go, NO_ROOM_WHY } from '../../lib/store.js'
+import { state, api, toast, go } from '../../lib/store.js'
 import { designFor, stubShare } from '../../lib/ticketdesign.js'
-import { numberLayerSVG, ticketVerifyUrl, digitalCardSVG, CARD } from '../../lib/ticketart.js'
+import { numberLayerSVG, ticketVerifyUrl, cardSVG, CARD_DESIGNS, CARD } from '../../lib/ticketart.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { date } from '../../lib/format.js'
 import { inkFor } from '../../lib/brand.js'
@@ -200,12 +200,42 @@ function cardValues(t) {
 
 /* Close first: leaving a modal open over the screen it just navigated to is
    how a sheet ends up floating above an unrelated page. */
-function toStudio() {
+/*
+ * SETUP, NOT THE STUDIO, because the studio cannot change this card.
+ *
+ * The link here read "Design it in the studio". The studio lays out boxes on
+ * the PRINTED artwork; this card is drawn from scratch by digitalCardSVG out of
+ * the raffle's colour, ink and logo, and those live on Setup. Nothing an
+ * organiser did in the studio ever moved a pixel of the thing they were looking
+ * at while they clicked it.
+ *
+ * What made it plausible: digitalCardSVG's first parameter is `design`, and it
+ * is never read — 136 lines, zero references. A signature that claims a
+ * relationship the body does not have is how a screen ends up linking to it.
+ * The parameter is gone with this.
+ *
+ * No room gate either. The studio needs a tablet; Setup does not, so a seller
+ * on a phone can now reach the thing the chips above are describing.
+ */
+function toSetup() {
   emit('close')
-  go('ticketdesign')
+  go('admin')
 }
 
-const cardFor = (t) => digitalCardSVG(design.value, cardValues(t), {
+/*
+ * WHICH OF THE THREE. Card 8b shipped Grand, Certificate and Stub and only
+ * Grand was ever reachable. The raffle's stored choice is the default; this
+ * lets an organiser look at the other two against a real ticket before it is
+ * settled, which is the only way anybody can actually choose.
+ *
+ * Per-view, not saved: the raffle-wide setting belongs with the rest of the
+ * branding config and is somebody's to add there. A picker here that quietly
+ * persisted would be this modal deciding the raffle's appearance, which is the
+ * thing the Look block's own comment says it must not do.
+ */
+const cardStyle = ref(CARD_DESIGNS.find(d => d.id === state.cfg?.cardDesign)?.id || 'grand')
+
+const cardFor = (t) => cardSVG(cardStyle.value, cardValues(t), {
   qrUrl: ticketVerifyUrl(verifyBase.value, t.number, t.code),
   encode,
 })
@@ -474,12 +504,6 @@ onMounted(async () => {
               <div class="fact"><dt>Code</dt><dd class="data">{{ t.code || '\u2014' }}</dd></div>
             </dl>
 
-          <p class="tiny muted">
-            The buyer&rsquo;s name is printed on it, so a copy passed to someone else is
-            visibly not theirs. Their phone, area and seller stay on the stub and are
-            never sent.
-          </p>
-
           <!--
             Card 8a's "Look" block: what this card is currently wearing, and
             where to change it. Status, not controls — a modal about one ticket
@@ -502,39 +526,52 @@ onMounted(async () => {
               </li>
               <li class="chip" :class="{ off: !state.cfg?.logo }">{{ state.cfg?.logo ? 'Logo' : 'No logo' }}</li>
             </ul>
-            <p class="tiny muted">
-              Set in Setup &rarr; how this raffle looks.
-              <!--
-                Disabled with the reason rather than hidden, per permissionui —
-                the studio needs a tablet or a computer, and a seller on a phone
-                who is told why is not a seller who thinks the app is broken.
-              -->
-              <button type="button" class="linky" :disabled="!state.roomy"
-                      :title="state.roomy ? 'Open the ticket studio' : NO_ROOM_WHY"
-                      @click="toStudio">Design it in the studio &rarr;</button>
-            </p>
+
+            <!-- Buttons, not chips: the row above reports what the raffle is
+                 wearing, this one changes what you are looking at. Same shape
+                 for two different jobs would be the worse choice. -->
+            <p class="rubric sub">Design</p>
+            <ul class="chips">
+              <li v-for="d in CARD_DESIGNS" :key="d.id">
+                <button type="button" class="chip pick" :class="{ on: cardStyle === d.id }"
+                        :title="d.note" :aria-pressed="String(cardStyle === d.id)"
+                        @click="cardStyle = d.id">{{ d.name }}</button>
+              </li>
+            </ul>
+            <!-- The sentence that used to wrap this link is gone: the link says
+                 where it goes, and a caption explaining a link is furniture. -->
+            <button type="button" class="linky" title="Change the raffle's colour and logo"
+                    @click="toSetup">Change it in Setup &rarr;</button>
           </section>
 
-          <button class="btn primary wide" :disabled="!!cannotSend(t) || sharing === t.number"
-                  :title="cannotSend(t) || 'Send this ticket and its check link to the buyer'"
-                  @click="send(t)">
-            {{ sharing === t.number ? 'Working…' : 'Send on WhatsApp' }}
-          </button>
-          <button class="btn wide" :disabled="!!cannotSend(t) || sharing === t.number"
-                  :title="cannotSend(t) || 'Save the card as a picture'"
-                  @click="savePicture(t)">Save the picture</button>
+          <!--
+            THE ACTIONS ARE THEIR OWN BLOCK, separated from what the panel is
+            telling you rather than continuing the same 8px rhythm as the facts
+            above. Reading and acting are different jobs and the eye needs the
+            break to tell them apart.
+          -->
+          <div class="doing">
+            <button class="btn primary wide" :disabled="!!cannotSend(t) || sharing === t.number"
+                    :title="cannotSend(t) || 'Send this ticket and its check link to the buyer'"
+                    @click="send(t)">
+              {{ sharing === t.number ? 'Working…' : 'Send on WhatsApp' }}
+            </button>
+            <button class="btn wide" :disabled="!!cannotSend(t) || sharing === t.number"
+                    :title="cannotSend(t) || 'Save the card as a picture'"
+                    @click="savePicture(t)">Save the picture</button>
 
-          <p class="note tiny fallback">
-            If the phone cannot make the picture, a WhatsApp message carrying the check
-            link is sent instead.
-          </p>
-
-          <p v-if="cannotSend(t)" class="tiny muted">{{ cannotSend(t) }}</p>
-          <p v-else class="tiny muted">
-            Sending is refused until the sale is recorded, and it never mints a code for
-            an unprinted book.
-          </p>
-          <p v-if="shareNote[t.number]" class="note tiny">{{ shareNote[t.number] }}</p>
+            <!--
+              WHAT IS SAID HERE IS ONLY EVER ABOUT NOW. Two standing paragraphs
+              used to sit under these buttons: one describing the link fallback,
+              one describing when sending is refused. Both are already said at
+              the moment they apply — the refusal by cannotSend on the disabled
+              button and below, the fallback by shareNote after a send. A
+              permanent notice about an occasional outcome is read once and then
+              becomes furniture, and it was the tallest thing in the column.
+            -->
+            <p v-if="cannotSend(t)" class="tiny muted">{{ cannotSend(t) }}</p>
+            <p v-if="shareNote[t.number]" class="note tiny">{{ shareNote[t.number] }}</p>
+          </div>
           </aside>
         </div>
       </div>
@@ -565,6 +602,13 @@ onMounted(async () => {
 .send.off { opacity: .6 }
 .send p { margin: 0 }
 .rail { display: flex; flex-direction: column; gap: 8px; min-width: 0 }
+/* The gap above is the rhythm for rows of facts. Buttons are not a fact, so
+ * they get a rule and real air rather than one more 8px step. */
+.doing {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);
+}
+.doing .note, .doing .tiny { margin: 0 }
 
 /*
  * The "Look" block. A quiet group, not a card: it is the fourth container in a
@@ -581,6 +625,10 @@ onMounted(async () => {
 }
 /* Absent, not broken — the raffle simply has no logo yet. */
 .chip.off { color: var(--muted); background: none }
+.chip.pick { cursor: pointer; font: inherit; font-size: .8rem }
+.chip.pick.on { border-color: var(--brand); background: var(--brand-soft); color: var(--text) }
+.chip.pick:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px }
+.rubric.sub { margin-top: 10px }
 .swatch { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18) }
 
 /* A link that is a button because it navigates the app rather than an href. */
@@ -618,9 +666,6 @@ onMounted(async () => {
  */
 .card { border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); align-self: start }
 .card :deep(svg) { display: block; width: 100%; height: auto }
-/* The fallback is information, not a warning: it is what happens next, and a
- * red note would read as something having gone wrong before it has. */
-.fallback { border-left: 3px solid var(--info); background: var(--info-soft); color: var(--info) }
 .mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .ticketpreview { position: relative; width: 100%; border: 1px solid var(--border); border-radius: 6px; overflow: hidden }
 .ticketpreview img { display: block; width: 100%; height: auto }

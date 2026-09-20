@@ -1131,7 +1131,7 @@ function lumOf(hex) {
   return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
 }
 
-export function certificateCardSVG(design, values = {}, opts = {}) {
+export function certificateCardSVG(values = {}, opts = {}) {
   const { width: W, height: H } = CARD_CERT
   const brand = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
 
@@ -1218,7 +1218,7 @@ export function certificateCardSVG(design, values = {}, opts = {}) {
   </svg>`
 }
 
-export function stubCardSVG(design, values = {}, opts = {}) {
+export function stubCardSVG(values = {}, opts = {}) {
   const { width: W, height: H } = CARD_STUB
   const paper = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
   const ink = String(values.ink || '#ffffff')
@@ -1297,7 +1297,52 @@ export function stubCardSVG(design, values = {}, opts = {}) {
     + '</svg>'
 }
 
-export function digitalCardSVG(design, values = {}, opts = {}) {
+/* No `design` here on purpose. This card is not the printed ticket: it is drawn
+ * from the raffle's own colour, ink and logo, and the template's layout has no
+ * say in it. The parameter used to be first in this list, was never once read,
+ * and had ViewTicket linking organisers to the studio to change a card the
+ * studio cannot touch. */
+/*
+ * THE THREE DESIGNS, NAMED.
+ *
+ * Card 8b drew the same ticket three ways and shipped all three; nothing
+ * outside this file ever called two of them, so Certificate and Stub have been
+ * built and unreachable. A renderer nobody can choose is a drawing, not a
+ * feature.
+ *
+ * Named rather than exported as three functions a caller picks between,
+ * because the choice is a stored setting and a stored setting is a string. The
+ * shapes differ — Stub is portrait and phone-shaped, the other two landscape —
+ * so `size` travels with the renderer rather than being looked up separately
+ * by every caller that has to lay one out.
+ */
+export const CARD_DESIGNS = [
+  { id: 'grand', name: 'Grand', size: CARD,
+    note: 'Landscape, foil rule, serif number' },
+  { id: 'certificate', name: 'Certificate', size: CARD_CERT,
+    note: 'Light stock, tinted border, seal' },
+  { id: 'stub', name: 'Stub', size: CARD_STUB,
+    note: 'Portrait, phone-shaped, number first' },
+]
+
+/** The chosen design, falling back to Grand rather than to nothing drawn. */
+export function cardDesign(id) {
+  return CARD_DESIGNS.find((d) => d.id === id) || CARD_DESIGNS[0]
+}
+
+/*
+ * ONE DOOR TO ALL THREE. Callers name a design and hand over the same values;
+ * which function draws it is this file's business. Anything else spreads a
+ * three-way branch across every screen that shows a card, and the third branch
+ * is the one somebody forgets.
+ */
+export function cardSVG(id, values = {}, opts = {}) {
+  if (id === 'certificate') return certificateCardSVG(values, opts)
+  if (id === 'stub') return stubCardSVG(values, opts)
+  return digitalCardSVG(values, opts)
+}
+
+export function digitalCardSVG(values = {}, opts = {}) {
   const { width: W, height: H } = CARD
   const paper = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
   const ink = String(values.ink || '#ffffff')

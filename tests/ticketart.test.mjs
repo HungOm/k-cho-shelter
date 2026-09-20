@@ -27,6 +27,7 @@ import {
   placeBook, placeBuyer, measurable, TEXT_FAMILY,
   stubCardSVG, CARD_STUB,
   certificateCardSVG, CARD_CERT,
+  digitalCardSVG, cardSVG, CARD_DESIGNS,
 } from '../src/lib/ticketart.js'
 import { sheetHTML, pageFit, PAGE } from '../src/lib/ticketsheet.js'
 
@@ -721,7 +722,7 @@ console.log('the stub treatment is portrait and leads with the number')
    * send, because a chat is a phone: portrait fills the screen where landscape
    * letterboxes, and the number is what gets read down a telephone.
    */
-  const svg = stubCardSVG(null, {
+  const svg = stubCardSVG({
     number: 'KS-00031', name: 'John Kui', org: 'Fundraising Raffle',
     price: 'RM 10.00', book: 'Book-004', sold: true,
     motto: 'Love is patient, love is kind', brand: '#0e2a30', ink: '#ffffff',
@@ -735,7 +736,7 @@ console.log('the stub treatment is portrait and leads with the number')
   ok(/John Kui\s+·\s+RM 10\.00\s+·\s+Book-004/.test(svg),
      'and the three facts run as one line, as 8b draws them')
   ok(svg.includes('SOLD'), 'a sold ticket says so')
-  ok(!stubCardSVG(null, { number: 'KS-1' }, {}).includes('SOLD'), 'and an unsold one does not')
+  ok(!stubCardSVG({ number: 'KS-1' }, {}).includes('SOLD'), 'and an unsold one does not')
 
   /*
    * THE RULE MUST CLEAR THE QR. The first version put the QR at the foot and
@@ -772,7 +773,7 @@ console.log('the certificate treatment prints on light stock and measures its ow
     const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
     return (hi + 0.05) / (lo + 0.05)
   }
-  const draw = (brand) => certificateCardSVG(null, {
+  const draw = (brand) => certificateCardSVG({
     brand, org: 'Fundraising Raffle', number: 'KS-00031', name: 'John Kui',
     price: 'RM 10.00', motto: 'Love is patient, love is kind',
   }, {})
@@ -819,9 +820,91 @@ console.log('the certificate treatment prints on light stock and measures its ow
    * so today it is always absent, and the card must not leave a gap where it
    * would go.
    */
-  const noMotto = certificateCardSVG(null, { brand: '#0d7a6f', number: 'KS-1', name: 'A' }, {})
+  const noMotto = certificateCardSVG({ brand: '#0d7a6f', number: 'KS-1', name: 'A' }, {})
   ok(!/font-style="italic"/.test(noMotto), 'and no empty line where an unset motto would be')
 }
+
+/* ---------- every treatment that exists can be reached ---------- */
+
+/*
+ * A DRAWING NOBODY CAN OPEN IS NOT A FEATURE.
+ *
+ * Card 8b shipped three treatments. Two of them — Certificate and Stub — were
+ * exported, rendered, contrast-checked across eight brand colours and asserted
+ * about at length in this very file, and `git grep` at the commit that added
+ * them returns one caller: ticketart.js. Nobody using the app could see either.
+ *
+ * screen.mjs names this failure in its own header — "a helper can be correct,
+ * thoroughly tested, and never called", counted four times in two days. This
+ * was the fifth, and the reason the existing guards missed it is that
+ * backontheshelf watches registered ACTIONS reaching a screen: same defect,
+ * different noun, no guard pointed at it.
+ *
+ * THE NAIVE VERSION OF THIS TEST WOULD NOW FAIL. "Every *CardSVG export has a
+ * caller outside this file" was true of the fix on the day it was suggested and
+ * stopped being true an hour later: the three renderers are reached through
+ * cardSVG now, so all three are internal by design. Asserting the old shape
+ * would force the registry back apart.
+ *
+ * So it asserts REACHABILITY instead, which is what was actually wanted: every
+ * exported treatment must be what some registered id draws, and the registry
+ * must itself be reachable from the app. A fourth treatment added and not
+ * registered fails here on the day it is written.
+ */
+const CARD_VALUES = {
+  number: 'KS-00039', name: 'JOHN KUI', org: 'CEAM Shelter', brand: '#12343B', ink: '#ffffff',
+}
+const cardOpts = {}
+
+const treatments = { grand: digitalCardSVG, certificate: certificateCardSVG, stub: stubCardSVG }
+const exported = Object.keys(readFileSync(new URL('../src/lib/ticketart.js', import.meta.url).pathname, 'utf8')
+  .split('\n')
+  .filter((l) => /^export function \w*CardSVG\b/.test(l))
+  .reduce((o, l) => ({ ...o, [l.match(/^export function (\w+)/)[1]]: 1 }), {}))
+
+ok(exported.length === 3 + 0 || exported.length >= 3,
+   `three card treatments are exported (${exported.join(', ')})`)
+
+// Every exported treatment is what some registered id draws — compared by the
+// bytes it produces, so a registry entry pointing at the wrong function fails
+// here rather than looking right.
+for (const [id, fn] of Object.entries(treatments)) {
+  const listed = CARD_DESIGNS.some((d) => d.id === id)
+  ok(listed, `"${id}" is in CARD_DESIGNS`)
+  if (listed) {
+    ok(cardSVG(id, CARD_VALUES, cardOpts) === fn(CARD_VALUES, cardOpts),
+       `and cardSVG('${id}') draws that treatment and not another`)
+  }
+}
+
+// The other direction: nothing in the registry points at a treatment that is
+// not exported, and every id actually draws something.
+for (const d of CARD_DESIGNS) {
+  ok(typeof treatments[d.id] === 'function', `CARD_DESIGNS id "${d.id}" has a renderer`)
+  ok(cardSVG(d.id, CARD_VALUES, cardOpts).startsWith('<svg'), `and "${d.id}" draws an svg`)
+  ok(Number(d.size?.width) > 0 && Number(d.size?.height) > 0, `and "${d.id}" carries its size`)
+}
+
+ok(exported.every((n) => Object.values(treatments).some((f) => f.name === n)),
+   'no exported *CardSVG treatment is missing from the reachability check above')
+
+/*
+ * AND THE REGISTRY ITSELF IS REACHED. Everything above would pass with perfect
+ * marks in an app where no screen ever calls cardSVG — which is the original
+ * defect one level up, and exactly how two treatments hid behind a file that
+ * tested them thoroughly.
+ */
+const appFiles = []
+;(function walk(dir) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const f = join(dir, e.name)
+    if (e.isDirectory()) walk(f)
+    else if (/\.(vue|js)$/.test(e.name) && !f.endsWith('lib/ticketart.js')) appFiles.push(f)
+  }
+})(new URL('../src/', import.meta.url).pathname)
+const callers = appFiles.filter((f) => /\bcardSVG\s*\(/.test(readFileSync(f, 'utf8')))
+ok(callers.length > 0,
+   `some screen calls cardSVG (${callers.map((f) => f.split('/').pop()).join(', ') || 'NONE'})`)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
