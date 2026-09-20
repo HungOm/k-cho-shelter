@@ -47,6 +47,7 @@ import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
 import Dim from './ui/Dim.vue'
 import SheetTab from './ticketdesign/SheetTab.vue'
+import ShapesPanel from './ticketdesign/ShapesPanel.vue'
 import Ink from './ui/Ink.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 /* Across into the check page's own folder on purpose: the sample book and the
@@ -1481,72 +1482,14 @@ const printedSize = computed(() => {
           <p v-else class="note">Upload a picture of one blank ticket to begin.</p>
         </div>
 
-        <aside class="panel">
-          <div class="pgroup">
-            <h4 class="rubric"
-                title="A known shape is checked against its tolerance. An unfamiliar one is refused rather than stretched — a picture of the wrong shape is squashed or cropped on every ticket, and neither can be put right afterwards.">
-              Shapes we know
-            </h4>
-            <!--
-              ONE BLOCK PER SHAPE, NOT A FIVE-COLUMN TABLE.
-              A table of five numeric columns in a 300px panel truncates every
-              field, which is how "190 × 61 mm" became "190 ×" and a height of
-              61.39 became "61.". A shape is a small specification, so it is laid
-              out as one — and the tolerance lives with the shape it belongs to
-              rather than in a second list keyed by the same names.
-            -->
-            <ul class="shapes">
-              <li v-for="(s, i) in sizes" :key="i"
-                  :class="{ on: artworkReport && artworkReport.size === s }">
-                <div class="shead">
-                  <input v-model="s.label" class="sname" aria-label="Shape name">
-                  <span v-if="artworkReport && artworkReport.size === s" class="pill ok">matched</span>
-                  <button class="btn sm ghost" :title="`Remove ${s.label}`"
-                          @click="sizes = sizes.filter((_, k) => k !== i)">×</button>
-                </div>
-                <div class="sgrid">
-                  <label class="formrow"><span class="cap">Width</span>
-                    <span class="wrap">
-                      <input v-model.number="s.widthMM" type="number" step="0.01"
-                             :aria-label="`Width of ${s.label} in millimetres`">
-                      <span class="unit">mm</span>
-                    </span>
-                  </label>
-                  <label class="formrow"><span class="cap">Height</span>
-                    <span class="wrap">
-                      <input v-model.number="s.heightMM" type="number" step="0.01"
-                             :aria-label="`Height of ${s.label} in millimetres`">
-                      <span class="unit">mm</span>
-                    </span>
-                  </label>
-                  <label class="formrow"><span class="cap">Least width</span>
-                    <span class="wrap">
-                      <input v-model.number="s.minWidthPx" type="number" step="10"
-                             :aria-label="`Least pixels wide for ${s.label}`">
-                      <span class="unit">px</span>
-                    </span>
-                  </label>
-                  <label class="formrow"><span class="cap">Tolerance</span>
-                    <span class="wrap">
-                      <input v-model.number="s.tolerance" type="number" step="0.005"
-                             :aria-label="`Tolerance for ${s.label}`">
-                    </span>
-                  </label>
-                </div>
-              </li>
-            </ul>
-            <p v-if="sizeErr" class="note bad tiny">{{ sizeErr }}</p>
-            <div class="prow">
-              <button class="btn sm" @click="addSize">Add a shape</button>
-              <button class="btn sm primary" :disabled="busy" @click="saveSizes">Save shapes</button>
-            </div>
-            <p class="tiny muted"
-               title="Tolerance is on the aspect ratio, as a fraction: 0.02 accepts two per cent out of shape. Removing every shape restores the standard list. Only artwork too coarse to print is turned away — an unfamiliar shape is measured and offered, never thrown away.">
-              Tolerance is a fraction of the aspect ratio
-            </p>
-          </div>
-
-        </aside>
+        <!--
+          THE SHAPES PANEL IS ITS OWN COMPONENT. Four bindings wide — the list,
+          its error, and two actions — where the rest of this tab is eighteen.
+          That is why it went first: a seam you can state in one line.
+        -->
+        <ShapesPanel :sizes="sizes" :error="sizeErr" :matched="artworkReport?.size ?? null"
+                     :busy="busy" @add="addSize" @save="saveSizes"
+                     @remove="(i) => { sizes = sizes.filter((_, k) => k !== i) }" />
       </div>
 
       <!--
@@ -1654,7 +1597,6 @@ const printedSize = computed(() => {
   width: 82px; min-height: 32px; padding: 4px 8px; text-align: right;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
 }
-.unit { font-size: .74rem; color: var(--muted) }
 
 /* ---- the stage ---- */
 .stagebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap }
@@ -1819,12 +1761,6 @@ const printedSize = computed(() => {
 .badt { color: var(--bad) }
 
 /* ---- accepted shapes ---- */
-.shapes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px }
-.shapes li { border: 1px solid var(--border); border-radius: 8px; padding: 8px }
-.shapes li.on { border-color: var(--brand); background: var(--brand-soft) }
-.shead { display: flex; align-items: center; gap: 6px; margin-bottom: 6px }
-.sname { flex: 1; min-width: 0; min-height: 30px; padding: 3px 6px; font-size: .84rem; font-weight: 500 }
-.sgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px }
 /*
  * A specification is typed, not slid — 190 by 61.39 at a 2% tolerance is a
  * figure somebody was given, not one they feel their way to. So these stay
