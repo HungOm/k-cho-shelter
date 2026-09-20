@@ -105,6 +105,26 @@ console.log('the page itself draws, at the shape of the paper')
   ok(/inset:[^"]*%/.test(html), 'the margin is drawn as a share of the page')
 }
 
+console.log('and the tab really does mount it, not just intend to')
+{
+  /*
+   * THE ASSERTION THE HARNESS COULD NOT MAKE UNTIL NOW. Children render their
+   * slots and nothing of their own, so a tab that mounts the page rendered an
+   * empty stage here however correct it was — the page had to be tested
+   * separately and the WIRING taken on trust. `renderReal` asks for one child
+   * to be drawn for real, which is also the thing that makes splitting this
+   * screen into tab components possible: without it, moving a tab into a child
+   * blanks every assertion about its contents while the screen is fine.
+   */
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ONE), {
+    drive: onSheetTab, renderReal: ['SheetPreview.vue'],
+  })
+  ok(/class="a4"/.test(html), 'the page is drawn inside the tab, not merely referenced')
+  const slots = (html.match(/class="slot"/g) || []).length
+  ok(slots > 0, `with ${slots} ticket slots on it`)
+  ok(/aspect-ratio/.test(html), 'at the shape of the paper')
+}
+
 console.log('the paper is named, chosen, and obeyed')
 {
   const { pageFit, PAPERS, paperOf } = await import('../src/lib/ticketsheet.js')

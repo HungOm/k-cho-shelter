@@ -43,8 +43,10 @@ const ESBUILD = join(ROOT, 'node_modules/.bin/esbuild')
  * @param withTemplate  compile the render function too. Needed for anything a
  *                      template reaches on its own; a script-only build cannot
  *                      see it and reports clean.
+ * @param real          child .vue files to compile FOR REAL rather than stub,
+ *                      matched on the end of the import path. See below.
  */
-function build(componentPath, storeStub, withTemplate) {
+function build(componentPath, storeStub, withTemplate, real = []) {
   const dir = mkdtempSync(join(tmpdir(), 'screen-'))
   cpSync(join(ROOT, 'src'), join(dir, 'src'), { recursive: true })
   writeFileSync(join(dir, 'src/lib/store.js'), storeStub)
@@ -65,7 +67,58 @@ function build(componentPath, storeStub, withTemplate) {
   const name = componentPath.split('/').pop().replace('.vue', '')
   const home = componentPath.slice(0, componentPath.lastIndexOf('/'))
   const probe = join(dir, home, `__${name}.js`)
-  const stub = (code) => code.replace(/from '(.*)\.vue'/g, "from './__stubvue.js'")
+  /*
+   * EVERY CHILD IS STUBBED UNLESS IT IS ASKED FOR BY NAME.
+   *
+   * That default is right and stays: a screen test is about the screen, and a
+   * child rendering its own body would let an assertion pass on markup the
+   * parent does not own. But it stops being right the moment a screen is
+   * SPLIT INTO children — a designer broken into three tab components renders
+   * as an empty shell, and seventy-four assertions about its contents fail
+   * while the screen is perfectly correct. That is the harness failing the
+   * refactor, not the refactor failing the tests.
+   *
+   * So a caller may name the children it wants drawn. Matched on the end of
+   * the import path, so `place.vue` catches './tabs/place.vue' without the
+   * test having to know where the parent keeps them.
+   */
+  const wanted = (real ?? []).map((r) => String(r).replace(/^\.\//, ''))
+  const keep = (spec) => wanted.some((w) => `${spec}.vue`.endsWith(w))
+
+  /*
+   * A CHILD THAT IS KEPT HAS TO BE COMPILED, not merely left alone. esbuild
+   * has no idea what a .vue file is — leaving the import pointing at one fails
+   * the bundle with a parse error rather than rendering anything. So a kept
+   * child is compiled to a probe beside itself, exactly the way the parent is,
+   * and the import is pointed at that. Its own children are stubbed: one level
+   * is what a split screen needs, and deeper is a different test.
+   */
+  const compiled = new Set()
+  const compileChild = (fromDir, spec) => {
+    const rel = `${spec}.vue`
+    const abs = join(dir, fromDir, rel)
+    const outRel = rel.replace(/([^/]+)\.vue$/, '__$1.child.js')
+    if (compiled.has(abs)) return outRel.replace(/\.vue$/, '')
+    compiled.add(abs)
+    const childSrc = readFileSync(abs, 'utf8')
+    const { descriptor: cd } = parse(childSrc, { filename: rel })
+    const cs = compileScript(cd, { id: 'c', inlineTemplate: false })
+    const ct = compileTemplate({
+      source: cd.template.content, id: 'c', filename: rel,
+      compilerOptions: { bindingMetadata: cs.bindings },
+    })
+    const plain = (code) => code.replace(/from '(.*)\.vue'/g, "from './__stubvue.js'")
+    writeFileSync(join(dir, fromDir, outRel),
+      plain(cs.content).replace('export default', 'const __c =') + '\n' +
+      plain(ct.code) + '\nexport default { ...__c, render }\n')
+    return `./${outRel}`
+  }
+
+  const stub = (code, fromDir) => code.replace(
+    /from '(.*)\.vue'/g,
+    (whole, spec) => (keep(spec)
+      ? `from '${compileChild(fromDir, spec)}'`
+      : "from './__stubvue.js'"))
 
   if (withTemplate) {
     // bindingMetadata is what tells the template that these names come from the
@@ -77,10 +130,10 @@ function build(componentPath, storeStub, withTemplate) {
       compilerOptions: { bindingMetadata: script.bindings },
     })
     writeFileSync(probe,
-      stub(script.content).replace('export default', 'const __c =') + '\n' +
-      stub(tpl.code) + '\nexport default { ...__c, render }\n')
+      stub(script.content, home).replace('export default', 'const __c =') + '\n' +
+      stub(tpl.code, home) + '\nexport default { ...__c, render }\n')
   } else {
-    writeFileSync(probe, stub(script.content))
+    writeFileSync(probe, stub(script.content, home))
   }
 
   /*
@@ -167,11 +220,11 @@ export async function setupOf(componentPath, storeStub, props = {}, { emit } = {
  * trade than driving the component's own bindings.
  */
 export async function renderScreen(
-  componentPath, storeStub, { props = {}, drive } = {},
+  componentPath, storeStub, { props = {}, drive, renderReal = [] } = {},
 ) {
   const { createSSRApp } = await import('vue')
   const { renderToString } = await import('vue/server-renderer')
-  const { out, cleanup } = build(componentPath, storeStub, true)
+  const { out, cleanup } = build(componentPath, storeStub, true, renderReal)
   const real = (await import('file://' + out)).default
   /*
    * THE PROPS DECLARATION IS CARRIED THROUGH, and it has to be.
