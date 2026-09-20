@@ -19,7 +19,7 @@ import RoleTag from './ui/RoleTag.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Bi from './ui/Bi.vue'
 import Icon from './ui/Icon.vue'
-import Trail from './ui/Trail.vue'
+import History from './modals/History.vue'
 import Who from './ui/Who.vue'
 
 const props = defineProps({ ticket: Object })
@@ -146,36 +146,35 @@ watch(() => props.ticket, focusFirst, { immediate: true })
         <div class="fact"><span>Now</span><StatusPill :status="t.status" /></div>
       </div>
       <!--
+        THIS DIVERGES FROM CARD 6b ON PURPOSE. DO NOT "FIX" IT BACK.
+
+        6b is titled "record, movement and correction in one modal, no second
+        dialog", and the trail here IS a second surface. That was put to the
+        organiser on 2026-09-21 with the card quoted and the alternative built
+        and working — inline, expanding in place, with the lazy fetch kept — and
+        they chose the sheet. It was briefly shipped inline at 437b15e and
+        reverted at their word.
+
+        So the card is not being overlooked and the inline version is not
+        untried. The mockup describes a screen; this is the organiser's ruling
+        about their own screen, and it outranks the drawing.
+
         THE TRAIL IS ASKED FOR, NOT FETCHED ON ARRIVAL.
-
-        It was unconditionally inline for a while, which read well and cost a
-        request on every open: a sold ticket used to touch no network at all,
-        and a volunteer on a phone in a hall paid for a panel most of them were
-        not looking at. So it is a click, and the history is fetched then.
-
-        THAT IS A RULE ABOUT WHEN TO FETCH, NOT ABOUT WHERE TO DRAW, and the
-        two were solved together by putting it in a sheet. Only the first
-        needed solving. `v-if` is what makes the fetch lazy — Trail loads on
-        mount and nothing mounts until this is pressed — and that holds exactly
-        as well with the trail expanding in place.
+        
+        It was inline here for a while, which read well and cost a request on
+        every open: a sold ticket used to touch no network at all, and a
+        volunteer on a phone in a hall paid for a panel most of them were not
+        looking at. Set by the organiser — it is a click, the history is
+        fetched then, and it opens in a sheet ON TOP of this record rather than
+        inside it.
+        
+        The sheet is where the fetch lives, so there is nothing to undo here:
+        History mounts Trail, Trail loads on mount, and neither happens until
+        somebody presses this.
       -->
-      <!--
-        IN THIS MODAL, NOT ON TOP OF IT. Card 6b is titled "record, movement and
-        correction in one modal, NO SECOND DIALOG", and this opened History — a
-        sheet over the record, hiding the facts somebody is reading the trail in
-        order to make sense of.
-
-        The lazy fetch that sheet was chosen for is kept exactly: Trail loads on
-        mount and nothing mounts until this is pressed, so a volunteer on a phone
-        who never opens the trail still touches no network. Only the container
-        changed. Trail's own `heading` prop exists for precisely this — it owns
-        the count, so "Where this ticket has been · 5 movements · newest last"
-        is one binding rather than a number crossing back to a caller.
-      -->
-      <button class="btn sm ghost mt" :aria-expanded="showTrail" @click="showTrail = !showTrail">
+      <button class="btn sm ghost mt" @click="showTrail = true">
         <Icon name="clock" :size="16" />Where this ticket has been
       </button>
-      <Trail v-if="showTrail" :ticket="t" :book="t?.book" heading="Where this ticket has been" />
       <div v-if="t.source === 'settlement'" class="note warn">
         This was filled in when the book was counted, so nobody wrote down who bought it.
       </div>
@@ -281,6 +280,9 @@ watch(() => props.ticket, focusFirst, { immediate: true })
 
   </Sheet>
 
+  <!-- On top of the record, not inside it. History mounts Trail, which
+       fetches when it mounts — so pressing the button is what asks. -->
+  <History v-if="showTrail" :ticket="t" :book="t?.book" @close="showTrail = false" />
 </template>
 
 <style scoped>

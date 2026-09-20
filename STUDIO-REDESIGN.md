@@ -504,7 +504,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 5c | 3 Books | Print tickets step 2 — codes then paper as two steps | yes |
 | 4a | 4 Sell | Home — one banner, what needs looking at, then doing | yes |
 | 6a | 4 Sell | List + docked ticket panel | yes (89ac4f5) |
-| 6b | 4 Sell | A sold ticket — record, movement, correction in one modal | yes (437b15e) — trail now inline |
+| 6b | 4 Sell | A sold ticket — record, movement, correction in one modal | **diverges by ruling — trail stays a sheet** |
 | 4c | 4 Sell | Write down sales — one ticket or a pile of stubs | not verified |
 | 4d | 5 Money | Money — who owes what, running-balance statement | not verified |
 | 4h | 6 Control | Approvals — the waiting request first | yes |
@@ -623,6 +623,38 @@ idiom is that information you cannot read should stay *reachable*, the same
 rule that makes a disabled control carry its reason. A `title` with the full
 text is one attribute. Not taken: nobody's user has scoped it, and it is not
 mine to put in their file.
+
+### 6b — the trail stays a second surface, by the organiser's ruling
+
+**Do not rebuild this from the card.** 6b is titled "record, movement and
+correction in one modal, **no second dialog**", and the trail on a sold ticket
+is a second surface. That is deliberate.
+
+The history, because it has now gone round twice:
+
+| | |
+|---|---|
+| `d2398c2` 17:03 | trail made an inline SECTION, cost named honestly in the message |
+| `58a2348` 17:18 | moved back behind a click, in a sheet — "set by the organiser" |
+| `437b15e` (2026-09-21) | inline again, lazy fetch preserved — **my change** |
+| reverted | organiser chose the sheet when asked directly |
+
+The reason first given was the network cost: opening a sold ticket otherwise
+touches no network, and a volunteer on a phone in a hall was paying for a panel
+most of them never open. **My change preserved that entirely** — `v-if` is what
+makes the fetch lazy, not the sheet — so the choice was put to the organiser as
+container-only, with the inline version built and working. They still chose the
+sheet.
+
+So the card is not being overlooked, and the inline version is not untried. **A
+mockup describes a screen; the organiser's ruling is about their own screen, and
+it outranks the drawing.** §14 already says a user disagreeing with the drawing
+is their call; this is the first time it has been exercised against a card.
+
+`ui/Trail.vue`'s `heading` prop remains documented for a caller that does not
+exist. Left deliberately — a prop describing an absent caller reads as
+intentional design rather than as a leftover, so this row is where that is
+written down.
 
 ### Superseded — do not build
 
