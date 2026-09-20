@@ -50,6 +50,9 @@
   --bad: #b3261e;
   --r: 16px;
   --r-sm: 11px;
+  /* The app's touch minimum. Not in this file until now, which is how .act
+     came to be 46px. A size, so no dark variant. */
+  --tap: 52px;
   /*
    * THE GLYPH INSIDE THE ROUNDEL, and it has to be a token because it flips.
    *
@@ -430,12 +433,12 @@ h1 { font-size: 19px; margin: 0 0 12px }
   flex: 1 1 0; min-width: 0;
   display: inline-flex; flex-direction: column;
   align-items: center; justify-content: center;
-  min-height: 46px; padding: 10px 14px; border-radius: var(--r-sm);
+  min-height: var(--tap); padding: 10px 14px; border-radius: var(--r-sm);
   border: 1.5px solid var(--brand); color: var(--brand);
   font-size: 14px; font-weight: 600; text-decoration: none; text-align: center;
 }
 .act.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand) }
-.orgfoot .act { flex: 0 0 auto; min-height: 38px; font-size: 13px; padding: 8px 14px }
+.orgfoot .act { flex: 0 0 auto; font-size: 13px; padding: 8px 14px }
 .act .my { display: block }
 .act .en { display: block; font-weight: 500; opacity: .85; font-size: 12px }
 /*
