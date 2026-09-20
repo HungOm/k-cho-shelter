@@ -57,6 +57,12 @@ function world(cfg = {}) {
       { idx: 4, number: 'KS-00004', book_idx: 1, status: 'Sold', version: 1,
         buyer_name: 'U Kyaw', buyer_phone: '0125550004', buyer_zone: 'Ipoh', notes: '' },
     ],
+    /* One receipt, standing for KS-00001 — the sold ticket above. Seeded at
+     * construction rather than pushed later, because fakeDb builds its query
+     * surface from the tables it is given and a table appended to afterwards is
+     * not the one the handler reads. */
+    ticket_receipts: [{ code: 'RRRRRRRRRRRR', created_by: 'a@x.com' }],
+    ticket_receipt_items: [{ code: 'RRRRRRRRRRRR', ticket_idx: 1 }],
     ticket_codes: [
       { ticket_idx: 1, code: GOOD, template_id: 'tpl-1', batch_id: 'b1' },
       { ticket_idx: 2, code: 'ZZZZZZZZ99999999', template_id: 'tpl-1', batch_id: 'b1' },
@@ -91,8 +97,15 @@ const call = async (w, query, init) => {
  */
 console.log('the office contacts are asked for on their own')
 {
+  /*
+   * These also feed the receipt view further down. numbering() caches config for
+   * the process, so whatever the FIRST call sets is what every later call sees —
+   * which makes this the only place the book numbering and the draw date can be
+   * given to a test in this file.
+   */
   const w = world({ ORG_NAME: 'CEAM Malaysia', ORG_PHONE: '03-1234 5678',
-                    ORG_EMAIL: 'office@example.org', ORG_WEBSITE: 'https://example.org' })
+                    ORG_EMAIL: 'office@example.org', ORG_WEBSITE: 'https://example.org',
+                    BOOK_PREFIX: 'Book-', BOOK_DIGITS: '4', DRAW_DATE: '2026-12-20' })
   const r = await call(w, '?about')
   eq(r.res.status, 200, 'it answers')
   eq(r.body.ok, true, 'and says so')
@@ -197,7 +210,7 @@ console.log('and the function is not even written to be able to')
    */
   const src = readFileSync(ROOT + 'supabase/functions/verify/index.ts', 'utf8')
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-  for (const forbidden of ['buyer_', 'agents', 'app_users', 'sold_by', 'amount', 'notes', 'audit_log']) {
+  for (const forbidden of ['agents', 'app_users', 'sold_by', 'notes', 'audit_log']) {
     ok(!code.includes(forbidden), `the verify function never mentions ${forbidden}`)
   }
 
@@ -222,6 +235,48 @@ console.log('and the function is not even written to be able to')
    * shape three times. A list of what MAY pass cannot admit a thing nobody
    * thought of.
    */
+  /*
+   * WHICH BUYER FIELDS MAY TRAVEL, AND THE REASON THEY MAY.
+   *
+   * `buyer_` was a flat ban, and it was right while every route here answered a
+   * stranger. It stopped being right when the buyer's own copy arrived, because
+   * the two routes present different tokens and deserve different answers:
+   *
+   *   ?t=NUMBER.CODE   the code is PRINTED ON THE TICKET. Anybody holding the
+   *                    paper, a photograph of it, or standing behind somebody in
+   *                    a queue has it. It authenticates the TICKET, never the
+   *                    person, and its answer is unchanged: genuine, or not.
+   *   ?r=RECEIPT       minted per purchase, printed on nothing, and delivered
+   *                    only in the digital ticket the buyer is sent. The only
+   *                    way to hold one is to have been sent one.
+   *
+   * So this is not "the public page may now show more". It is that a second
+   * token exists which only the buyer has.
+   *
+   * NAMED, NOT NEGATED, for the reason ALLOWED_PHONE gives one screen down: a
+   * ban on `buyer_phone` admits `seller_phone`, and this repository has paid for
+   * that shape. `buyer_name` is on a printed ticket already — it is the whole
+   * anti-copy argument — so showing it to somebody who was sent the receipt
+   * tells them nothing they are not holding. `buyer_phone` and `buyer_zone` are
+   * on no ticket and stay out.
+   */
+  const ALLOWED_BUYER = ['buyer_name']
+  for (const m of code.matchAll(/buyer_[a-z_]+/g)) {
+    ok(ALLOWED_BUYER.includes(m[0]),
+       `${m[0]} is a buyer field this endpoint may carry — only buyer_name is`)
+  }
+
+  /*
+   * What somebody paid, on the receipt route only. It is the sum on their own
+   * receipt; ticketart.js already calls the digital ticket "the only receipt
+   * they get" and prints it there.
+   */
+  const ALLOWED_MONEY = ['amount']
+  for (const m of code.matchAll(/[a-z_]*amount[a-z_]*/gi)) {
+    ok(ALLOWED_MONEY.includes(m[0]),
+       `${m[0]} is a money field this endpoint may carry — only amount is`)
+  }
+
   const ALLOWED_PHONE = ['ORG_PHONE', 'orgPhone']
   for (const m of code.matchAll(/[A-Za-z_]*[Pp]hone[A-Za-z_]*/g)) {
     ok(ALLOWED_PHONE.includes(m[0]),
@@ -315,6 +370,61 @@ console.log('it is deployed as the one function with the platform check off')
  * empty space under it, which reads as a page that failed to load rather than a
  * raffle that has not filled its details in. tests/verifypage owns that.
  */
+
+/*
+ * THE BUYER'S OWN COPY — AND THE TICKET ROUTE STILL CARRYING NONE OF IT.
+ *
+ * Two tokens, two answers. The ticket's code is printed on the paper, so anybody
+ * holding it has it; it authenticates the ticket, never the person. A receipt
+ * code is minted per purchase, printed on nothing, and delivered only inside the
+ * digital ticket the buyer is sent.
+ *
+ * The second assertion here matters more than the first. If a buyer's name ever
+ * appears on a ?t= answer, every ticket in a hall becomes a name somebody can
+ * read off a stranger's paper — which is the disclosure this split exists to
+ * prevent, and it would not be visible from the receipt view looking right.
+ */
+console.log("a receipt shows the buyer their own copy")
+{
+  const r = await call(world(), '?r=RRRRRRRRRRRR')
+  eq(r.body.receipt, true, 'it is a receipt')
+  eq(r.body.genuine, true, 'and it is genuine')
+  eq(r.body.buyer, 'Daw Hla', 'issued to, from the ticket the receipt names')
+  eq(r.body.tickets?.[0]?.book, 'Book-0001', 'the book, derived from the numbering')
+  eq(r.body.drawDate, '2026-12-20', 'and the draw date')
+  ok(r.body.tickets?.[0]?.paid !== undefined, 'with what was paid')
+}
+
+console.log("and the printed code still shows a stranger none of it")
+{
+  const w = world()
+  const sold = await call(w, `?t=KS-00001&c=${GOOD}`)
+  eq(sold.body.genuine, true, 'the ticket verifies, as before')
+  eq(Object.keys(sold.body).sort().join(), 'checkedAt,genuine,number,ok,state',
+     'and carries exactly what it carried before the buyer view existed')
+  /*
+   * BOTH ASSERTIONS ARE LOAD-BEARING AND NEITHER IS ENOUGH ALONE. Checked by
+   * running them against three bodies rather than by reasoning about them:
+   *
+   *   real     {ok,genuine,number,state,checkedAt}   keys pass, no leak
+   *   leaking  the same plus buyer:'Daw Hla'         keys FAIL, leak seen
+   *   empty    {}                                    keys FAIL, NO LEAK
+   *
+   * The empty row is the reason the line above this one exists. An absence
+   * check passes just as happily against a handler that returns nothing at all,
+   * so on its own it would call a completely broken endpoint private. The key
+   * list is what proves the answer is still there; the names below are what
+   * prove nothing joined it. Deleting either leaves a test that cannot fail for
+   * the reason it was written.
+   *
+   * Named individually rather than by key count, because a field added under a
+   * different name would pass a count and fail a person.
+   */
+  for (const secret of ['Daw Hla', '0125550001', 'Klang', 'paid cash', 'Book-0001', '2026-12-20']) {
+    ok(!JSON.stringify(sold.body).includes(secret),
+       `a stranger scanning a printed ticket does not learn ${JSON.stringify(secret)}`)
+  }
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()

@@ -83,6 +83,15 @@ async function numbering(ctx: Ctx) {
      * wrong number on a page somebody reaches after being handed a forgery
      * sends them to the wrong charity.
      */
+    /*
+     * For the buyer's own copy on ?r=. The book label is DERIVED from the
+     * prefix and the padding rather than read out of the books table, so the
+     * table allowlist in tests/verify stays at four — a receipt view is not a
+     * reason to hand this endpoint another table.
+     */
+    bookPrefix: map.BOOK_PREFIX ?? 'Book-',
+    bookDigits: Number(map.BOOK_DIGITS ?? 4) || 4,
+    drawDate: (map.DRAW_DATE ?? '').trim(),
     org: {
       name: (map.ORG_NAME ?? '').trim(),
       tel: (map.ORG_PHONE ?? '').trim(),
@@ -222,24 +231,63 @@ export default {
         return reply({ ok: true, genuine: false, checkedAt: new Date().toISOString() })
       }
 
+      /*
+       * THE BUYER'S OWN COPY, AND WHY THIS ROUTE MAY CARRY IT.
+       *
+       * A receipt code is minted per purchase, printed on nothing, and reaches
+       * the buyer only inside the digital ticket they are sent. The only way to
+       * hold one is to have been sent one — a property of the system rather
+       * than a policy laid over it.
+       *
+       * The ticket's own code is the opposite. It is PRINTED ON THE PAPER, so
+       * anybody holding the ticket, a photograph of it, or standing behind
+       * somebody in a queue has it. It authenticates the TICKET and never the
+       * person, which is why ?t= answers exactly what it answered before this
+       * and carries none of what follows.
+       *
+       * buyer_name is on the printed ticket already — it is the whole reason a
+       * copy passed to somebody else is visibly not theirs — so showing it to
+       * whoever was sent the receipt tells them nothing they are not holding.
+       * buyer_phone and buyer_zone are on no ticket and are not selected;
+       * tests/verify names the buyer fields this file may mention at all.
+       */
+      const rcfg = await numbering(ctx)
       const { data: on, error: tErr } = await ctx.supabaseAdmin
-        .from('tickets').select('number,status').in('idx', idxs).order('idx')
+        .from('tickets').select('number,status,buyer_name,amount,book_idx')
+        .in('idx', idxs).order('idx')
       if (tErr) return reply({ ok: false, reason: 'unavailable' }, 503)
 
       const SOLD = ['Sold', 'Donated']
+      const bookOf = (n: unknown) => {
+        const i = Number(n)
+        return Number.isFinite(i) && i > 0
+          ? rcfg.bookPrefix + String(i).padStart(rcfg.bookDigits, '0')
+          : ''
+      }
       const tickets = (on ?? []).map((t: Record<string, unknown>) => ({
         number: String(t.number),
         sold: SOLD.includes(String(t.status)),
+        book: bookOf(t.book_idx),
+        /* Blank rather than zero when nothing was recorded: "RM 0.00" is a
+         * statement about a donation, and an unknown is not one. */
+        paid: t.amount == null ? '' : String(t.amount),
         // A cancelled ticket on a receipt is the one line somebody must not
         // miss, and "not sold" would be the wrong sentence for it.
         void: String(t.status) === 'Void',
       }))
+      /* One name for the receipt rather than one per line: a receipt is one
+       * purchase by one person, and repeating it down ten tickets would read as
+       * ten separate claims about who they belong to. */
+      const buyer = String((on ?? []).find((t: Record<string, unknown>) =>
+        String(t.buyer_name ?? '').trim())?.buyer_name ?? '').trim()
       return reply({
         ok: true,
         genuine: true,
         receipt: true,
         count: tickets.length,
         tickets,
+        buyer,
+        drawDate: rcfg.drawDate,
         checkedAt: new Date().toISOString(),
       })
     }
