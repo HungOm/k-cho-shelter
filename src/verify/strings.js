@@ -24,8 +24,29 @@
 export const S = {
   checking: { en: 'Checking this ticket…', my: 'အသိအမှတ်ကို စစ်ဆေးနေသည်…' },
 
-  genuine: { en: 'This is a real ticket', my: 'ဤလက်မှတ်မှန်ကန်ပါသည်' },
-  notGenuine: { en: 'This is not a valid ticket', my: 'ဤလက်မှတ် မမှန်ပါ' },
+  /*
+   * THE VERDICT IS A VERDICT, NOT A CLAIM ABOUT THE PAPER.
+   *
+   * These read "This is a real ticket" and "This is not a valid ticket", and
+   * card 4i draws "Verified ticket" and "Not verified". The difference is not
+   * tone. "Real" is a statement about the object in somebody's hand, which
+   * this page cannot make — a genuine ticket can be photocopied, and the note
+   * below says so in the same breath. What the page can actually attest is
+   * that it checked the number against the raffle's records and they matched.
+   * "Verified" says that and claims nothing more; "real" over-claims on the
+   * one page whose whole value is that it does not.
+   *
+   * The negative matters more. "This is not a valid ticket" tells somebody
+   * holding paper that their paper is fake, when the same page is returned for
+   * a number never issued, a book never printed and a code altered by one
+   * character — see whyOneAnswer(). "Not verified" is what actually happened.
+   *
+   * THE BURMESE IS COMPOSED, not written by a reader of it, like the rest of
+   * this file: အတည်ပြု is "confirm/verify". It wants checking by somebody who
+   * reads Burmese, and the English above is the sentence that was meant.
+   */
+  genuine: { en: 'Verified ticket', my: 'အတည်ပြုပြီး လက်မှတ်' },
+  notGenuine: { en: 'Not verified', my: 'အတည်မပြုနိုင်ပါ' },
   cannotCheck: { en: 'Could not check this ticket', my: 'စစ်ဆေး၍ မရပါ' },
 
   sold: { en: 'Recorded as sold', my: 'ရောင်းပြီးအဖြစ် မှတ်တမ်းရှိသည်' },
@@ -52,7 +73,7 @@ export const S = {
    * somebody who reads Burmese before this is shown to buyers — the same
    * treatment the rest of this file has already had.
    */
-  receiptGenuine: { en: 'These are real tickets', my: 'ဤလက်မှတ်များ မှန်ကန်ပါသည်' },
+  receiptGenuine: { en: 'Verified tickets', my: 'အတည်ပြုပြီး လက်မှတ်များ' },
   receiptCount: { en: '{n} tickets on this receipt', my: 'ဤပြေစာတွင် လက်မှတ် {n} စောင်' },
 
   /*
@@ -222,7 +243,7 @@ export const S = {
 
   checkedAt: { en: 'Checked', my: 'စစ်ဆေးချိန်' },
   photocopy: {
-    en: 'A real ticket can still be copied. The raffle is decided by its own records, not by a printed ticket.',
+    en: 'A genuine ticket can still be photocopied — the draw is settled by the charity\'s own records, not by a printed ticket.',
     my: 'မှန်ကန်သည့် လက်မှတ်ကိုလည်း မိတ္တူကူးနိုင်သည်။ ဆုရာကို မှတ်တမ်းဖြင့်သာ ဆုံးဖြတ်ပါသည်။',
   },
 }
