@@ -20,6 +20,7 @@
 import { DEFAULT_DESIGN, REFERENCE, designFor, validateDesign } from '../src/lib/ticketdesign.js'
 import { legacyFromElements, validateElements } from '../src/lib/ticketelements.js'
 import { stubShare } from '../src/lib/ticketdesign.js'
+import { encode } from '../src/lib/qrcodegen.js'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -744,11 +745,37 @@ console.log('the stub treatment is portrait and leads with the number')
    * may not scan. Both are absolute coordinates in one viewBox, so the overlap
    * is arithmetic even though the render is a string.
    */
-  const qrY = CARD_STUB.height - 660
-  const qrBottom = qrY + 230
-  const ruleY = Number((svg.match(/<line x1="72" y1="(\d+)"/) || [])[1])
-  ok(ruleY > qrBottom, `the rule sits clear of the QR (${ruleY} against ${qrBottom})`)
-  ok(ruleY < CARD_STUB.height, 'and inside the card')
+  /*
+   * DERIVED FROM THE SVG, NOT FROM REMEMBERED COORDINATES. This used to hard-code
+   * the QR at `height - 660`, size 230, and read only the FIRST <line> — so when
+   * the number moved to the top of the card and a second rule appeared above the
+   * QR, it failed on a layout that was correct. A test that pins coordinates
+   * fails every time the design changes and says nothing about whether the thing
+   * it cares about still holds.
+   *
+   * The QR's white backing rect is the largest square in the card, so the band
+   * comes out of the drawing itself, and EVERY rule is checked rather than one.
+   */
+  /* WITH A QR IN IT. The svg above is built with `{}` for opts, so it carries
+     no code at all — the previous version of this check computed a QR band from
+     CARD_STUB's constants and compared a rule against geometry that was not in
+     the drawing. It could not have caught a line through a QR because there was
+     never a QR. */
+  const withQr = stubCardSVG({ number: 'KS-00031', sold: true },
+                             { qrUrl: 'https://example.org/v/?KS-00031.ABC', encode })
+  const squares = [...withQr.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="#ffffff"\/>/g)]
+    .map((m) => ({ y: +m[2], size: +m[3] }))
+    .filter((r) => r.size > 100)
+  eq(squares.length, 1, 'the QR backing is found in the drawing')
+  const band = { top: squares[0].y, bottom: squares[0].y + squares[0].size }
+
+  const rules = [...withQr.matchAll(/<line x1="72" y1="(\d+)"/g)].map((m) => +m[1])
+  ok(rules.length >= 1, `rules were found (${rules.length})`)
+  for (const y of rules) {
+    ok(y <= band.top || y >= band.bottom,
+       `a rule at ${y} clears the QR band ${band.top}-${band.bottom} — a line through a QR may not scan`)
+  }
+  for (const y of rules) ok(y < CARD_STUB.height, `a rule at ${y} is inside the card`)
 }
 
 /*

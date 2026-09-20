@@ -1258,16 +1258,22 @@ export function stubCardSVG(values = {}, opts = {}) {
      at the bottom, and the code is the thing somebody holds up to be scanned. */
   /* Beside the number rather than under the motto: at the bottom it sat across
      the rule that separates the ticket from what the raffle says for itself. */
-  const qr = { enabled: true, x: W - 302, y: H - 660, size: 230, ecc: 'M', backing: true }
+  /* Centred and large: with the number moved to the top this is the middle of
+     the card, and a code held up to be scanned wants size over placement. */
+  const qr = { enabled: true, x: (W - 340) / 2, y: 900, size: 340, ecc: 'M', backing: true }
   const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
 
   const weave = `<pattern id="sweave" width="18" height="18" patternUnits="userSpaceOnUse" `
     + `patternTransform="rotate(-24)"><line x1="0" y1="0" x2="0" y2="18" `
     + `stroke="rgba(255,255,255,.035)" stroke-width="7"/></pattern>`
-  /* Centred and large enough to hold the upper two-thirds. Portrait leaves a
-     tall gap between the masthead and the number; the watermark is what makes
-     that space read as a ticket face rather than as nothing. */
-  const watermark = `<g opacity=".055" transform="translate(190 620) scale(7)">`
+  /*
+   * TEXTURE, NOT A PATCH. This used to be described here as what made the
+   * upper two-thirds "read as a ticket face rather than as nothing" — which
+   * was an admission that the layout had a hole in it and a mark had been put
+   * over the hole. The number leads now and the card is full top to bottom, so
+   * this is a watermark doing a watermark's job.
+   */
+  const watermark = `<g opacity=".055" transform="translate(190 780) scale(6)">`
     + `<path d="M8 14h84a8 8 0 0 1 8 8v16a14 14 0 0 0 0 28v16a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V66a14 14 0 0 0 0-28V22a8 8 0 0 1 8-8z" `
     + `fill="none" stroke="${ink}" stroke-width="6"/></g>`
 
@@ -1281,19 +1287,32 @@ export function stubCardSVG(values = {}, opts = {}) {
     + t(org, 180, 128, 38, ink, TEXT_FAMILY, 'font-weight="700"')
     + chip
 
-    /* NUMBER FIRST is the whole of this treatment, so it takes the lower half
-       where a thumb is and where the eye lands last. */
-    + cap('TICKET NUMBER', 72, H - 620)
-    + t(number, 72, H - 500, 104, gold, FONT.family, 'font-weight="700"')
-    + t(facts, 72, H - 420, 32, ink, TEXT_FAMILY)
+    /*
+     * NUMBER FIRST, WHICH IS THE WHOLE OF THIS TREATMENT.
+     *
+     * It used to sit at H - 500 — about seventy per cent down a 1920-tall card
+     * — under a comment that said "number first, so it takes the lower half
+     * where the eye lands last". That sentence contradicts itself, and the
+     * picture showed it: two-thirds of the card was empty and everything was
+     * crammed along the bottom edge. Card 8b distinguishes Stub from Grand by
+     * exactly one thing, that it LEADS with the serial, and it did not.
+     *
+     * The thumb argument does not hold either. Thumb reach is for things you
+     * press; a ticket number is read, and a QR is held up to somebody else.
+     */
+    + cap('TICKET NUMBER', 72, 400)
+    + t(number, 72, 560, 140, gold, FONT.family, 'font-weight="700"')
+    + t(facts, 72, 660, 34, ink, TEXT_FAMILY)
+
+    + `<line x1="72" y1="780" x2="${W - 72}" y2="780" stroke="${hair}" stroke-width="2"/>`
 
     + code
-    + t(code ? 'Scan to check this ticket' : '', W - 187, H - 400, 22, quiet, TEXT_FAMILY, 'text-anchor="middle"')
+    + t(code ? 'Scan to check this ticket' : '', W / 2, 1300, 24, quiet, TEXT_FAMILY, 'text-anchor="middle"')
 
-    + `<line x1="72" y1="${H - 330}" x2="${W - 72}" y2="${H - 330}" stroke="${hair}" stroke-width="2"/>`
-    + t(motto ? `\u201C${motto}\u201D` : '', 72, H - 270, 32, gold, FONT.family, 'font-style="italic"')
-    + t(s(values.thanks), 72, motto ? H - 220 : H - 270, 30, ink, TEXT_FAMILY)
-    + t(s(values.link), 72, H - 90, 22, quiet, FONT.family)
+    + `<line x1="72" y1="${H - 520}" x2="${W - 72}" y2="${H - 520}" stroke="${hair}" stroke-width="2"/>`
+    + t(motto ? `\u201C${motto}\u201D` : '', 72, H - 430, 34, gold, FONT.family, 'font-style="italic"')
+    + t(s(values.thanks), 72, motto ? H - 360 : H - 430, 32, ink, TEXT_FAMILY)
+    + t(s(values.link), 72, H - 90, 24, quiet, FONT.family)
     + '</svg>'
 }
 
