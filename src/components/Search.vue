@@ -469,11 +469,6 @@ function goNext() {
 @media (min-width: 1024px) {
   .findsplit.docked { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start }
 }
-/* .sr is defined only inside TicketDesign's SCOPED block, so it does not
-   reach here — a live region without it is a stray paragraph of text on the
-   screen. Copied rather than left broken; it belongs in style.css as a
-   utility and e3 owns that file this round. */
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%) }
 .keys { margin-left: 10px; font-size: .74rem; color: var(--muted-2, var(--muted)) }
 .rowpair.picked { background: var(--brand-soft) }
 .item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px }
