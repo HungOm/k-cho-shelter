@@ -71,6 +71,53 @@ fit-to-page, actual size. `pageFit` already returns everything it needs.
 Only if the element list grows past what a flat list reads well. Reorder,
 show/hide, lock. The model supports it; the interface does not need it yet.
 
+## Who does what
+
+Several sessions work in this tree at once, so the unit of distribution is a
+FILE, not a feature. Two workers in one file is the failure that has cost the
+most here — a duplicate `.seg` rule restyled three controls nobody was
+touching, and a shared index nearly swept a half-staged feature into somebody
+else's commit. Every task below names the files it owns. If two tasks want the
+same file, they are the same task and one person does both.
+
+| Phase | Task | Files it owns | Can start |
+|---|---|---|---|
+| 1 | Print sheet tab out | `ticketdesign/SheetTab.vue`, `studio.css` | **done** (`c6350da`) |
+| 1 | Artwork tab out | `ticketdesign/ArtworkTab.vue` + the shell | after 1a |
+| 1 | Place tab out | `ticketdesign/PlaceTab.vue` + the shell | after 1b |
+| 2 | Inspector | `ticketdesign/Inspector.vue`, `PlaceTab.vue` | after 1c |
+| 3 | Canvas manipulation | `PlaceTab.vue`, `lib/ticketelements.js` | after 2 |
+| 4 | Toolbar + advanced | the shell, `studio.css` | after 1c |
+| 5 | Preview mode | `ticketdesign/PreviewTab.vue`, `ui/SheetPreview.vue` | **offered → ticket-printing-qr-integration** |
+| 6 | Layers | `Inspector.vue` | after 2 |
+| — | Icon set | `ui/Icon.vue` | **offered → kcho-shelter-e3** |
+| — | Token audit | `src/style.css`, `studio.css` | **offered → kcho-shelter-72** |
+
+**The three 1a→1b→1c rows are one worker's job, in order.** They all edit the
+shell as they remove a tab from it, so splitting them across workers means
+three people editing one file. That is not parallelism, it is a merge.
+
+An offer is not an assignment. Each of those sessions has its own user, and a
+peer saying yes is not that user saying yes — so a row stays open until the
+session itself confirms.
+
+**The offered rows are genuinely independent** and are the ones to hand
+out: preview mode is a new component fed by `pageFit`, the icon set is one
+file the whole spec depends on, and the token audit is a read-then-edit of two
+stylesheets nobody is in.
+
+**Phases 2, 3 and 6 are sequential and belong together**, because an inspector
+that edits a selection, a canvas that changes it, and a layer list that
+reorders it are three views of one piece of state. Distributing them produces
+three answers to "what is selected".
+
+### Handing a task over
+
+Say the file list before you start, in a message, and wait for an answer. Work
+through a private index (`GIT_INDEX_FILE`) with explicit paths — the shared
+one has carried other sessions' staged work all day. Verify from
+`git archive <sha>` and not from the worktree.
+
 ## Rules for whoever picks this up
 
 - **The design skill gates this.** `.claude/skills/hungom's design director`
