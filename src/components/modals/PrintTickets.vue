@@ -559,10 +559,25 @@ async function printThem() {
           <p v-else-if="result" class="note tiny">
             Nothing in this batch can be drawn yet.
           </p>
-          <p v-else class="note tiny">
-            Choose what to print, then <b>See what is there</b>. The sheet is drawn here
-            before anything reaches a printer.
-          </p>
+          <!--
+            NOTHING CHOSEN YET, SAID OUT LOUD. This column rendered nothing at
+            all until a batch was loaded, so the first thing an organiser saw
+            was blank space where the sheet would be. That answers none of the
+            questions they opened this to ask, and an empty area reads as a
+            screen that has failed rather than one that is waiting.
+
+            It also says where the sheets get drawn, because the thing anybody
+            is nervous about here is committing paper to a printer. Being told
+            the drawing happens on screen first is what makes the button safe
+            to press.
+          -->
+          <div v-else class="nodraw">
+            <p class="head">Nothing drawn yet</p>
+            <p class="tiny muted">
+              Pick a batch, then <b>See what is there</b>.
+              The sheets are drawn here before anything reaches a printer.
+            </p>
+          </div>
         </div>
 
         <!-- ---------- what to print ---------- -->
@@ -715,27 +730,6 @@ async function printThem() {
         </template>
       </p>
     </template>
-
-          <!--
-            NOTHING CHOSEN YET, SAID OUT LOUD. This column rendered nothing at
-            all until a batch was loaded, so the first thing an organiser saw
-            was blank space where the sheet would be. That answers none of the
-            questions they opened this to ask, and an empty area reads as a
-            screen that has failed rather than one that is waiting.
-
-            It also says where the sheets get drawn, because the thing anybody
-            is nervous about here is committing paper to a printer. Being told
-            the drawing happens on screen first is what makes the button safe
-            to press.
-          -->
-          <div v-else class="nodraw">
-            <p class="head">Nothing drawn yet</p>
-            <p class="tiny muted">
-              Pick a batch, then <b>See what is there</b>.
-              The sheets are drawn here before anything reaches a printer.
-            </p>
-          </div>
-
     <template #actions>
       <button class="btn ghost" @click="emit('close')">Close</button>
     </template>

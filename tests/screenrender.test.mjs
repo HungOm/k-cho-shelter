@@ -386,5 +386,79 @@ ok(assigners.length === 0, `nothing outside store.js assigns state.cfg (${assign
 ok(/setConfig\(me\.config\)/.test(readFileSync(join(ROOT, 'src/App.vue'), 'utf8')),
    'and the one place config arrives goes through it')
 
+/* ---------- the print modal offers what it exists to offer ---------- */
+
+/*
+ * WHY A COUNT OF CONTROLS. fa6c542 put an empty-state box one closing tag too
+ * far out, which made it a second `v-else` on the modal's outermost chain. Vue
+ * accepts that and discards the branch before it, so the whole printing screen
+ * — mode picker, book inputs, generate, print — compiled and never rendered.
+ * Nothing failed: no compile error, no console error, no failed request, and
+ * every test in this suite stayed green while books could not be turned into
+ * paper.
+ *
+ * branches.test.mjs asserts the mechanism: a chain may end once. This asserts
+ * the CONSEQUENCE, which is the blunter and more durable half — a screen that
+ * renders none of its controls is broken however it got that way, including
+ * ways nobody has thought of yet.
+ *
+ * DELIBERATELY COUNTING, not matching one sentence. A single assertion on
+ * "What to print" passes on a screen that has lost everything but its heading.
+ */
+const printStore = `
+import { reactive, computed } from 'vue'
+export const state = reactive({
+  cfg: { ticketArtwork: __ART__, currency: 'RM' },
+  books: [{ book: 'Book-001' }, { book: 'Book-010' }],
+  booksAllLoaded: true,
+  user: { role: 'admin' },
+  tickets: [],
+})
+export const api = async () => ({})
+export const toast = () => {}
+export const canWrite = computed(() => true)
+export const isAdmin = computed(() => true)
+export const isSuper = computed(() => true)
+export const go = () => {}
+export const agentMap = computed(() => ({}))
+`
+const printing = (art) => printStore.replace('__ART__', JSON.stringify(art))
+
+const PRINT = 'src/components/modals/PrintTickets.vue'
+const withArt = await renderScreen(PRINT, printing('/artwork.png'),
+                                   { props: { payload: { book: 'Book-001' } } })
+const printText = visibleText(withArt)
+
+// The five ways to say which tickets. A chain that drops the control column
+// takes all five with it, which is the shape fa6c542 shipped.
+for (const scope of ['This book', 'A run of books', 'Numbers you type',
+                     'The whole raffle', 'Sample book'])
+  ok(printText.includes(scope), `the print modal offers "${scope}"`)
+
+ok((withArt.match(/type="radio"/g) || []).length === 5,
+   'five scope radios, not a heading with nothing under it')
+/*
+ * MATCHED AS A BUTTON, not as a sentence. The empty-state box also contains the
+ * words "See what is there" — so a plain text match passes on precisely the
+ * broken screen this exists to catch. Checked: of these assertions run against
+ * fa6c542, every one fails except that text match, which sails through.
+ */
+ok(/<button[^>]*>See what is there<\/button>/.test(withArt),
+   'and the button that draws the batch, as a button')
+ok(printText.includes('Organisers only'), 'and says who may use it')
+
+/*
+ * THE OTHER END OF THE SAME CHAIN. The bug was branch SELECTION, so asserting
+ * one branch renders proves half of it: a modal wired to show the artwork
+ * warning always would pass everything above by failing everything here.
+ */
+const noArt = await renderScreen(PRINT, printing(''),
+                                 { props: { payload: { book: 'Book-001' } } })
+const noArtText = visibleText(noArt)
+ok(noArtText.includes('There is no ticket artwork yet'),
+   'with no artwork it says so instead')
+ok(!noArtText.includes('What to print'),
+   'and does not also offer controls that cannot print anything')
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
