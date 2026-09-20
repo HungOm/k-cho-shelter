@@ -603,10 +603,21 @@ covers the frame. I had that backwards and 72 caught it.
 
 1. No sun/moon control in the studio header; 9c draws one.
 2. The info line itself is not on screen anywhere.
-3. The stage bar is captioned checkboxes — "Snap to other boxes", "Longest
-   entry" — where 9c draws `[magnet] Snap` and `[grid] Grid 2 mm`, and there is
-   no grid control at all. This is also the user's own instruction: the tools
-   should be icons with hover explanation, not sentences.
+3. ~~The stage bar is captioned checkboxes~~ — **done 2026-09-21, `e40123b`.**
+   Three icon tools now, which is 9b's drawing: `[magnet] Snap`,
+   `[grid] Grid 2 mm`, `[Aa] Longest entry`, lit when on and muted when off.
+   9c drops the third only because its dark card is narrower — read 9b for this
+   one, not 9c, and read the extract rather than this line.
+
+   The grid did not exist at all and does now, independent of the snap toggle
+   as both cards draw them. It is in MILLIMETRES on both axes, which is not one
+   share: this ticket is 190 mm across and 61.39 down, so a single share value
+   would make the vertical grid a little over 6 mm and nothing on screen would
+   say so. `ticketscreen` asserts both steps and their ratio.
+
+   Each checkbox's sentence moved into its button's `title` — the same place
+   this app puts the reason a control cannot be used — which is the organiser's
+   own instruction: icons with hover explanation, not sentences.
 
 **Was "not a defect"; is now fixed — 2026-09-21, `bdc639b`.** The header's
 "sa…" was `.statetxt`, the save status, truncating by design — `min-width: 0;
