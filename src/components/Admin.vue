@@ -7,7 +7,7 @@
  */
 import { ref, onMounted, computed, watch } from 'vue'
 import { state, setConfig, api, toast, isAdmin, isSuper, go } from '../lib/store.js'
-import { money, date, dateTime, ROLE_WORDS } from '../lib/format.js'
+import { money, date, dateTime, ROLE_WORDS, orgNameOf, APP_NAME } from '../lib/format.js'
 import { applyBrand, inkFor } from '../lib/brand.js'
 import { toPayload, reject as rejectLogo } from '../lib/logofile.js'
 import Logo from './ui/Logo.vue'
@@ -78,9 +78,97 @@ onMounted(() => { brand.value = c.value?.brandColor || '' })
  */
 watch(brand, v => applyBrand(v))
 
-/** What the button will actually look like, in the colour currently typed. */
-const previewInk = computed(() => inkFor(brand.value) || 'var(--brand-ink)')
+/*
+ * What the SWATCH shows. The examples below no longer need a companion for the
+ * ink: applyBrand() has already put --brand-ink on the document by the time
+ * they render, so they read the same token every other screen does. A second
+ * computed copy of that decision was one more place for the preview and the
+ * app to disagree.
+ */
 const previewBrand = computed(() => inkFor(brand.value) ? brand.value.replace(/^#?/, '#') : 'var(--brand)')
+
+/* ---------- how to reach the raffle ---------- */
+
+/**
+ * The office number, address and website.
+ *
+ * WHY THEY EXIST AT ALL, and it is not "an organisation has contact details".
+ * The public ticket-check page is opened by a stranger holding a paper ticket,
+ * and its worst moment is the one where the ticket does not verify. Until now
+ * that page could say only that it did not match. "Ring the office" had nothing
+ * to ring. These three fields are what it offers instead.
+ *
+ * ALL THREE ARE OPTIONAL AND BLANK IS A REAL VALUE. An organiser taking a
+ * number down is as ordinary as putting one up, so an empty box is sent as an
+ * empty string rather than skipped — skipping it would make removal impossible
+ * from the only screen that can do it.
+ *
+ * NO SECOND COPY OF THE RULES. The server validates and its refusals are
+ * written to be read by whoever typed — BAD_PHONE says what a number may
+ * contain, BAD_WEBSITE says a link has to start with https:// and why. A
+ * client-side regex beside them would be a second definition to drift, and the
+ * one that a person actually hits is the server's.
+ */
+/*
+ * One sentence, used on every control in the card. `permissionui`: a control
+ * somebody cannot use is shown disabled WITH THE REASON, never hidden — and
+ * five copies of the reason is five things to reword badly.
+ */
+const ADMIN_ONLY_WHY = 'Only an organiser can change how the raffle is contacted'
+
+const contact = ref({ phone: '', email: '', website: '' })
+const savedContact = ref({ phone: '', email: '', website: '' })
+const contactSaving = ref(false)
+const contactErr = ref('')
+
+function seedContact() {
+  savedContact.value = {
+    phone: c.value?.orgPhone || '',
+    email: c.value?.orgEmail || '',
+    website: c.value?.orgWebsite || '',
+  }
+  contact.value = { ...savedContact.value }
+}
+const contactDirty = computed(() =>
+  contact.value.phone !== savedContact.value.phone ||
+  contact.value.email !== savedContact.value.email ||
+  contact.value.website !== savedContact.value.website)
+
+onMounted(seedContact)
+/*
+ * AND AGAIN WHEN THE CONFIG ARRIVES. On a cold load this screen mounts before
+ * whoami has answered, so seeding on mount alone fills the boxes from a config
+ * that is not there yet and they stay empty over real stored values — the
+ * organiser then sees three blank fields and concludes nothing was ever saved.
+ * Re-seeding is skipped once they have typed, or a slow reply would wipe what
+ * they are in the middle of writing.
+ */
+watch(() => [c.value?.orgPhone, c.value?.orgEmail, c.value?.orgWebsite].join('\u0000'),
+      () => { if (!contactDirty.value) seedContact() })
+
+async function saveContact() {
+  contactErr.value = ''
+  contactSaving.value = true
+  try {
+    // Sent as a set, always all three. The handler writes all three keys, so a
+    // partial payload would blank the two that were left out.
+    const r = await api('set_org_contact', {
+      phone: contact.value.phone.trim(),
+      email: contact.value.email.trim(),
+      website: contact.value.website.trim(),
+    })
+    if (r?.config) setConfig(r.config)
+    seedContact()
+    toast('Contact details saved', 'ok')
+  } catch (err) {
+    /*
+     * INLINE, NOT A TOAST. Every one of these refusals is a correction to
+     * something still on the screen, and a toast slides away while the person
+     * is still looking at the box it was about.
+     */
+    contactErr.value = err.message
+  } finally { contactSaving.value = false }
+}
 
 function revertBrand() {
   brand.value = c.value?.brandColor || ''
@@ -481,12 +569,21 @@ function details(d) {
 
 <template>
   <div>
-    <h1>Setup</h1>
     <!-- Where the person who would ever quote it can see it. Sellers never open
-         this screen, so it costs nobody else any room. -->
-    <p class="muted tiny" style="margin:-8px 0 16px">
-      Raffled v{{ appVersion }} · {{ appSha }}
-    </p>
+         this screen, so it costs nobody else any room. Beside the heading
+         rather than under it: it belongs to the screen, not to the first card,
+         and stacked under a h1 it read as a subtitle for "Setup".
+
+         The sha is set in --font-data because it is read character by
+         character — somebody types it into a bug report having compared it
+         against a deploy log, and 48ed3f8 against 48e6f38 is exactly the
+         comparison a proportional face makes hardest. -->
+    <div class="spread" style="margin-bottom:16px">
+      <h1 style="margin:0">Setup</h1>
+      <p class="muted tiny" style="margin:0">
+        {{ APP_NAME }} v{{ appVersion }} &middot; <span class="data">{{ appSha }}</span>
+      </p>
+    </div>
 
     <div class="card">
       <div class="spread"><h3 style="margin:0">Who can sign in</h3>
@@ -601,13 +698,21 @@ function details(d) {
       <div class="tablewrap">
         <table>
           <tbody>
-            <tr><td>Tickets in play</td><td>{{ live.toLocaleString() }} — {{ c.ticketPrefix }}{{ String(c.ticketStart).padStart(c.ticketDigits, '0') }} onwards</td></tr>
-            <tr v-if="waiting"><td>Printed and waiting</td><td>{{ waiting.toLocaleString() }}</td></tr>
-            <tr v-if="waiting"><td>Made altogether</td><td>{{ made.toLocaleString() }}</td></tr>
-            <tr v-if="c.ticketCeiling"><td>Planned total</td><td>{{ c.ticketCeiling.toLocaleString() }}</td></tr>
-            <tr><td>In each book</td><td>{{ c.ticketsPerBook }} — that makes {{ c.totalBooks }} books</td></tr>
-            <tr><td>Price</td><td>{{ money(c.ticketPrice, c.currency) }} each</td></tr>
-            <tr><td>If all sold</td><td>{{ money(live * c.ticketPrice, c.currency) }}<span v-if="waiting" class="muted small"> — of what is in play</span></td></tr>
+            <!--
+              COUNTS, SERIALS AND MONEY ARE SET IN --font-data. Every figure in
+              this table is read character by character rather than skimmed: a
+              serial is compared against a printed ticket, a count against an
+              invoice from the printer, a price against what a seller is
+              charging at a table. Tabular figures come with it, so the column
+              lines up on the digit instead of on the label.
+            -->
+            <tr><td>Tickets in play</td><td><span class="data">{{ live.toLocaleString() }}</span> &mdash; <span class="data">{{ c.ticketPrefix }}{{ String(c.ticketStart).padStart(c.ticketDigits, '0') }}</span> on</td></tr>
+            <tr v-if="waiting"><td>Printed and waiting</td><td><span class="data">{{ waiting.toLocaleString() }}</span></td></tr>
+            <tr v-if="waiting"><td>Made altogether</td><td><span class="data">{{ made.toLocaleString() }}</span></td></tr>
+            <tr v-if="c.ticketCeiling"><td>Planned total</td><td><span class="data">{{ c.ticketCeiling.toLocaleString() }}</span></td></tr>
+            <tr><td>In each book</td><td><span class="data">{{ c.ticketsPerBook }}</span> &middot; <span class="data">{{ c.totalBooks.toLocaleString() }}</span> books</td></tr>
+            <tr><td>Price</td><td><span class="data">{{ money(c.ticketPrice, c.currency) }}</span> each</td></tr>
+            <tr><td>If all sold</td><td><span class="data">{{ money(live * c.ticketPrice, c.currency) }}</span><span v-if="waiting" class="muted small"> &mdash; of what is in play</span></td></tr>
             <tr>
               <td>Everybody reports by</td>
               <td>
@@ -646,19 +751,170 @@ function details(d) {
       </p>
     </div>
 
+    <!--
+      ITS OWN CARD, AND NOT A BLOCK INSIDE THE ONE ABOVE. These are settings
+      about how the raffle is set up, which is where they belong in the chapter
+      — but the card above ends by saying that what it lists is changed
+      elsewhere, in the config table. Three editable boxes under that sentence
+      would contradict it in the same breath. They are also a different kind of
+      thing: the table above is the raffle's arithmetic, and this is how a
+      stranger reaches a human.
+    -->
+    <div class="card">
+      <h3>How people can reach you</h3>
+      <!--
+        WHAT THIS SAYS AND WHAT IT CAREFULLY DOES NOT.
+        It said "this is what that page can offer them instead", which was a
+        claim about today and was false: supabase/functions/verify/index.ts
+        reads none of these three. The card would have been telling an organiser
+        that saving a number changed what a stranger sees, and it does not.
+
+        The WARNING half is true whatever happens next and stays — the reason to
+        think before typing is that these are destined for a page nobody signs
+        in to, and that is as true the day before it is wired as the day after.
+        The PROMISE half moved into a note that says plainly where it has got to.
+
+        AND THE AUDIENCE IS EVERYONE, which the first wording understated. It
+        said "somebody checks a ticket and it does not match", which reads as a
+        warning about one unlucky visitor. Anybody can open that page and type
+        any code, so a failed check is reachable by a stranger with no ticket at
+        all — the moment these appear on any state of it they are public to
+        every visitor, crawlers included. A poster is the right mental model:
+        the risk is not that the wrong person might see it, it is that everyone
+        will. Put that way the advice gets STRONGER rather than more
+        frightening, because an organiser who understands it is a poster picks
+        the office line themselves.
+      -->
+      <p class="muted small">
+        Anyone who opens the public ticket-check page can see these, search engines
+        included. Put only what you would print on a poster &mdash; an office line
+        rather than a volunteer&rsquo;s mobile. Their job is to give somebody holding a
+        ticket that does not verify a person to contact.
+      </p>
+
+      <!--
+        ABSENT MACHINERY, NAMED. A control over a pipeline that does not exist
+        is the thing this rollout is meant not to ship, and the honest form is
+        not to withhold the control — the values are real config, stored and
+        audited from today — but to stop the screen implying an effect it does
+        not have.
+
+        THE TELEPHONE USED TO HAVE A SECOND REASON AND NO LONGER DOES. The
+        privacy guard on the public function forbade the bare word phone, which
+        refused the office number along with every buyer's. The organiser
+        narrowed it to official contacts on 2026-09-20, so all three fields are
+        allowed there now and only the wiring is outstanding — one reason, not
+        two. Written down because the opposite was true this morning, and the
+        note above reads differently depending on which it is.
+
+        WHEN TO DELETE THE NOTE, because this screen cannot work it out for
+        itself. The Edge Function and this bundle deploy by different routes — a
+        push to master ships the client alone — so the verify function reading
+        ORG_PHONE in the worktree does NOT mean a stranger can see it. The note
+        is a claim about what is DEPLOYED, and the trigger for removing it is
+        the deployed verify function returning these three, not the code landing
+        on master. Check the platform rather than the tree: a deploy record is a
+        record, not evidence.
+      -->
+      <p class="note tiny">
+        The public page does not read these yet. They are saved and audited from now,
+        so it has them the moment it does &mdash; but saving one today does not change
+        what a stranger sees.
+      </p>
+
+      <div class="field" style="margin-top:14px">
+        <label for="ophone">Office telephone</label>
+        <!-- Set in --font-data: a telephone number is read and repeated digit by
+             digit, which is the same reason a serial is. Stored exactly as it is
+             typed, so +60 3-1234 5678 keeps the spacing that makes it readable
+             rather than being flattened to a run of digits. -->
+        <input id="ophone" v-model="contact.phone" class="data"
+               type="tel" inputmode="tel" autocomplete="off"
+               placeholder="+60 3-1234 5678"
+               :disabled="!isAdmin || contactSaving"
+               :title="isAdmin ? 'The number the ticket-check page offers' : ADMIN_ONLY_WHY">
+      </div>
+
+      <div class="field">
+        <label for="oemail">Email address</label>
+        <input id="oemail" v-model="contact.email" type="email" autocomplete="off"
+               placeholder="raffle@example.org"
+               :disabled="!isAdmin || contactSaving"
+               :title="isAdmin ? 'Where somebody can write instead of ringing' : ADMIN_ONLY_WHY">
+      </div>
+
+      <div class="field">
+        <label for="oweb">Website</label>
+        <input id="oweb" v-model="contact.website" type="url" spellcheck="false"
+               autocomplete="off" placeholder="https://example.org"
+               :disabled="!isAdmin || contactSaving"
+               :title="isAdmin ? 'Shown as a link on the public ticket-check page' : ADMIN_ONLY_WHY">
+        <p class="hint">
+          It has to start with <span class="data">https://</span> &mdash; that is what
+          makes it a link somebody can safely follow from a page they reached without
+          signing in.
+        </p>
+      </div>
+
+      <!-- The server's refusal, where the boxes are. Each one says what to do
+           rather than only what is wrong, so it is shown as written. -->
+      <p v-if="contactErr" class="note bad tiny">{{ contactErr }}</p>
+
+      <div class="sub">
+        <span class="muted small grow">
+          All three are optional. Clearing one and saving takes it off the page.
+        </span>
+        <button class="btn sm ghost" :disabled="!contactDirty || contactSaving"
+                :title="contactDirty ? 'Put back what is saved' : 'Nothing has been changed'"
+                @click="seedContact">Undo</button>
+        <button class="btn sm primary" :disabled="!isAdmin || !contactDirty || contactSaving"
+                :title="isAdmin
+                  ? (contactDirty ? 'Save these three' : 'Nothing has been changed')
+                  : ADMIN_ONLY_WHY"
+                @click="saveContact">
+          {{ contactSaving ? 'Saving\u2026' : 'Save contact details' }}
+        </button>
+      </div>
+    </div>
+
     <div class="card">
       <h3>How this raffle looks</h3>
       <p class="muted small">
         Your own logo and colour, on every screen and on the receipt a seller hands over.
       </p>
 
+      <!--
+        THE NAME BELONGS BESIDE THE MARK, because that is how the two are
+        printed. A receipt is headed by a name and a logo together, and an
+        organiser judging "does this look like us" cannot do it from a picture
+        alone.
+
+        READ-ONLY, AND SAYING SO. Nothing in the app can set ORG_NAME — it is
+        a config-table value like the price and the event name, exactly as the
+        card above says. An editable box here would be a control over a pipeline
+        that does not exist; drawing nothing leaves an organiser unable to see
+        what their receipts are actually headed with.
+
+        Through orgNameOf, never the fallback spelled out again. It is one
+        decision, and this is the screen where somebody would most plausibly
+        write a second copy of it.
+      -->
       <div class="row wrap gap" style="align-items:flex-start;margin-top:12px">
         <div class="col" style="align-items:center;gap:8px">
           <Logo :size="76" big />
-          <span class="tiny muted">{{ c?.orgLogo ? 'Your logo' : 'Raffled\u2019s mark' }}</span>
+          <span class="tiny muted">
+            <template v-if="c?.orgLogo">Your logo</template>
+            <template v-else>{{ APP_NAME }}&rsquo;s mark</template>
+          </span>
         </div>
 
         <div class="col grow" style="gap:8px;min-width:220px">
+          <p style="margin:0">
+            <b>{{ orgNameOf(c) }}</b>
+            <span v-if="!c?.orgName" class="tiny muted">
+              &mdash; no name set, so the app&rsquo;s own is used on receipts and reports
+            </span>
+          </p>
           <button class="btn sm" :disabled="logoBusy" @click="logoInput?.click()">
             {{ logoBusy ? 'Uploading\u2026' : (c?.orgLogo ? 'Replace logo' : 'Upload a logo') }}
           </button>
@@ -666,7 +922,7 @@ function details(d) {
                  :disabled="logoBusy" @change="pickLogo" hidden>
           <p class="tiny muted">
             PNG, JPEG or WebP. It is shrunk on this device before it is sent, so a
-            large file is fine — and a small one reaches every volunteer\u2019s phone faster.
+            large file is fine — and a small one reaches every volunteer&rsquo;s phone faster.
           </p>
           <button v-if="c?.orgLogo" class="btn sm ghost" :disabled="logoBusy"
                   @click="removeLogo">Remove logo</button>
@@ -685,25 +941,59 @@ function details(d) {
           <!-- Typed as well as picked: a brand colour usually arrives as a
                string in an email from whoever made the logo, and a swatch alone
                makes somebody eyeball-match it. -->
-          <input v-model="brand" style="max-width:150px" placeholder="#0d7a6f"
+          <input v-model="brand" class="data" style="max-width:150px" placeholder="#0d7a6f"
                  spellcheck="false" aria-label="Colour code">
           <span v-if="brand && !inkFor(brand)" class="pill bad">not a colour</span>
         </div>
+        <!-- Said where the box is, not only in the footer. Somebody who wants
+             the default back looks at the thing holding the value. -->
+        <p class="hint">Clear it to go back to {{ APP_NAME }}&rsquo;s own colour.</p>
       </div>
 
-      <!-- The real button with its real words, not a colour square. What goes
-           wrong with a chosen colour is contrast on the control that says
-           "Count a book in", and a square cannot show that. -->
-      <p class="tiny muted" style="margin:12px 0 6px">This is how a button will read:</p>
-      <span class="btn primary"
-            :style="{ background: previewBrand, borderColor: previewBrand, color: previewInk }">
-        Count a book in
-      </span>
+      <!--
+        HOW IT WILL READ — real chrome, not a swatch.
+
+        FOUR EXAMPLES RATHER THAN ONE, because a brand colour fails in more
+        than one place and the primary button only proves the first of them.
+
+          1. "Count a book in"  — brand fill, ink chosen by inkFor(). This is
+             the pair the code already guarantees: luminance decides between
+             near-black and white, so this one is readable by construction.
+          2. "Give out books"   — an ordinary button, which is most of the app.
+             It shows how much of a screen the colour does NOT touch, and that
+             is worth seeing before somebody picks a colour expecting it to.
+          3. a "Sold" pill      — the SEMANTIC vocabulary, deliberately not
+             brand-coloured. A raffle choosing a green brand needs to see it
+             sitting next to the green that means "sold", because those two
+             greens being near-identical is a misreading nobody can be trained
+             out of.
+          4. a "Recorded" pill  — brand text on --brand-soft, which is a fixed
+             14% mix of the brand against the page. Nothing computes that pair
+             the way inkFor() computes the button's, so a pale brand makes this
+             pill unreadable while the button beside it stays perfect. This is
+             the example that earns its place: it is the failure the old
+             single-button preview could not show.
+
+        None of them carry inline colours. applyBrand() has already written
+        --brand, --brand-ink and --brand-soft onto the document as the colour is
+        typed, so these are the app's own classes reacting exactly as every
+        other screen will. A preview painted by hand is a preview that can
+        disagree with the thing it previews.
+      -->
+      <p class="tiny muted" style="margin:16px 0 8px">How it will read:</p>
+      <div class="row wrap gap preview">
+        <span class="btn primary">Count a book in</span>
+        <span class="btn">Give out books</span>
+        <span class="pill ok">Sold</span>
+        <span class="pill brand">Recorded</span>
+      </div>
 
       <div class="sub">
+        <!-- How to clear it is said once, under the box that holds it. It was
+             here as well, which put the same instruction on screen twice four
+             lines apart — and the second copy is the one nobody reads. -->
         <span class="muted small grow">
-          Previewed at once, saved when you say so. Clear the box and save to go
-          back to Raffled&rsquo;s own colour.
+          Previewed at once, saved when you say so.
         </span>
         <button class="btn sm ghost" :disabled="brandSaving" @click="revertBrand">Undo</button>
         <button class="btn sm primary" :disabled="brandSaving || (!!brand && !inkFor(brand))"
@@ -972,6 +1262,18 @@ function details(d) {
   width: 46px; height: 38px; padding: 2px;
   cursor: pointer; flex: 0 0 auto;
 }
+
+/*
+ * The examples are SPANS carrying button classes, so nothing here is focusable
+ * or pressable — but `.btn` still sets a pointer cursor and a hover border, and
+ * a control that lights up under the finger and then does nothing is a control
+ * somebody presses twice before concluding the screen is broken. This says
+ * "picture of a button" rather than "button".
+ */
+.preview { align-items: center; }
+.preview .btn { cursor: default; }
+.preview .btn:hover { border-color: var(--border); }
+.preview .btn.primary:hover { background: var(--brand); border-color: var(--brand); box-shadow: none; }
 
 .sub {
   display: flex; align-items: center; gap: 10px;

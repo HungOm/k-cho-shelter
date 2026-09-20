@@ -36,7 +36,7 @@ const WRITES = new Set([
   'record_winner', 'expand_tickets', 'set_active_tickets',
   'set_ticket_ceiling', 'roll_check_in', 'set_final_deadline', 'record_check_in',
   'set_check_in_date', 'set_sales_close',
-  'upload_logo', 'set_brand_color',
+  'upload_logo', 'set_brand_color', 'set_org_contact',
   /*
    * The ticket artwork. `list_templates` only reads, and is in here because the
    * server registers it as a write — the only way to say "no permissions row

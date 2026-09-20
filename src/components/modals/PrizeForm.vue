@@ -163,7 +163,7 @@ function explain(err) {
          @close="emit('close')">
 
     <div class="field">
-      <label for="pt">What kind of prize is it? <span class="req">*</span></label>
+      <label for="pt">What kind of prize? <span class="req">*</span></label>
       <input id="pt" v-model="tier" class="xl" list="prize-tiers"
              placeholder="e.g. Grand Prize" autocomplete="off">
       <datalist id="prize-tiers">
@@ -176,12 +176,26 @@ function explain(err) {
       <label for="pn">What is the prize? <span class="req">*</span></label>
       <input id="pn" v-model="name" class="xl" placeholder="e.g. Toyota Hilux"
              autocomplete="off">
-      <p class="hint">The thing itself. It appears as “{{ tier || 'Grand Prize' }} — {{ name || 'Toyota Hilux' }}”.</p>
+      <!--
+        "reads as", not "appears as", and "on the night" rather than nothing.
+        This string is the frozen label the award is recorded under — the prizes
+        suite pins `Grand Prize — Toyota Hilux` as what a winner row keeps for
+        ever, and renaming the prize afterwards does not rewrite it. So the
+        moment to get it right is here, and the sentence has to say that this is
+        the thing somebody will stand up and read out.
+      -->
+      <p class="hint">
+        The thing itself. It reads as
+        “<span class="data">{{ tier || 'Grand Prize' }} — {{ name || 'Toyota Hilux' }}</span>”
+        on the night.
+      </p>
     </div>
 
     <div class="field">
-      <label for="pq">How many of them? <span class="req">*</span></label>
-      <input id="pq" v-model="quantity" class="xl" type="number" :min="Math.max(1, awarded)">
+      <!-- No asterisk: it opens on 1 and cannot be emptied to nothing, so a
+           required-marker here marks a field that is never blank. -->
+      <label for="pq">How many?</label>
+      <input id="pq" v-model="quantity" class="xl data" type="number" :min="Math.max(1, awarded)">
       <p v-if="awarded" class="hint">
         {{ awarded }} of these {{ awarded === 1 ? 'has' : 'have' }} already been given out,
         so this cannot go below {{ awarded }}.
@@ -219,16 +233,22 @@ function explain(err) {
     </div>
 
     <!-- Three different questions, because they are three different things. -->
+    <!--
+      THE CURRENCY BELONGS IN THE LABEL, not in a hint under the box. It was
+      set as the placeholder as well, so an empty field read "RM" and looked
+      filled in. Asking "One is worth RM —" makes the unit part of the
+      question, which is how the question is asked out loud.
+    -->
     <div v-if="valuing === 'fixed'" class="field">
-      <label for="pv">What is one of them worth?</label>
-      <input id="pv" v-model="value" class="xl" type="number" min="0" step="0.01"
-             :placeholder="currency">
-      <p class="hint">In {{ currency || 'the raffle’s currency' }}. Used for the prize board and the totals.</p>
+      <label for="pv">One is worth <span class="data">{{ currency || 'the raffle’s currency' }}</span></label>
+      <input id="pv" v-model="value" class="xl data" type="number" min="0" step="0.01"
+             placeholder="—">
+      <p class="hint">Used for the prize board and the totals.</p>
     </div>
 
     <div v-else-if="valuing === 'percent'" class="field">
       <label for="pv">What share of the takings?</label>
-      <input id="pv" v-model="value" class="xl" type="number" min="0" max="100" step="1"
+      <input id="pv" v-model="value" class="xl data" type="number" min="0" max="100" step="1"
              placeholder="50">
       <p class="hint">
         A percentage. The prize is not known until the selling stops, so it is worked
@@ -243,7 +263,7 @@ function explain(err) {
 
     <div class="field">
       <label for="pr">Where does it come on the board?</label>
-      <input id="pr" v-model="rank" class="xl" type="number" min="1">
+      <input id="pr" v-model="rank" class="xl data" type="number" min="1">
       <p class="hint">
         1 is the Grand Prize. This is the order the board is read in — the draw itself
         usually runs the other way, consolation first, so the room is still there for

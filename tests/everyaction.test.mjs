@@ -195,6 +195,16 @@ const CALLS = {
   },
   set_brand_color: { color: '#0d7a6f' },
   /*
+   * All three sent together, because the handler writes all three keys — a
+   * partial payload blanks whatever was left out, which is the shape of a real
+   * mistake rather than a hypothetical one. The number keeps its spaces and
+   * dashes: it is stored exactly as typed, so a payload of bare digits would
+   * pass while proving nothing about the format anybody actually enters.
+   */
+  set_org_contact: {
+    phone: '+60 3-1234 5678', email: 'raffle@example.org', website: 'https://example.org',
+  },
+  /*
    * The ticket artwork. A PNG header declaring 1600 x 517 — the shape of a
    * raffle ticket, which is what the handler checks, and NOT a 1x1 like the
    * logo above: this one measures the picture and refuses anything that is not

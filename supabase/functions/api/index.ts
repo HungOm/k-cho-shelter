@@ -179,6 +179,14 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   set_sales_close: { group: 'Books', label: 'Set the day ticket sales close', danger: true },
   upload_logo: { group: 'Access', label: 'Change the raffle\'s logo' },
   set_brand_color: { group: 'Access', label: 'Change the raffle\'s colour' },
+  /*
+   * META IS OPTIONAL IN CODE AND NOT IN PRACTICE. list_permissions falls back
+   * to `group: 'Other'` and the raw action slug as the label, so an action
+   * registered without a line here appears on the Access grid as a row called
+   * `set_org_contact` filed under Other — which reads as a bug on the one
+   * screen an organiser opens to understand what the roles can do.
+   */
+  set_org_contact: { group: 'Access', label: 'Change the raffle\'s contact details' },
   upload_template: { group: 'Access', label: 'Change the ticket artwork', danger: true },
   list_templates: { group: 'Access', label: 'See the ticket artwork' },
   set_template_design: { group: 'Access', label: 'Move the number on the ticket' },
@@ -385,6 +393,13 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // what a buyer sees on a receipt; it is not a thing a desk volunteer changes.
   upload_logo: { roles: ADMIN_ONLY, kind: 'write', fn: branding.uploadLogo },
   set_brand_color: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setBrandColor },
+  /*
+   * The office number, address and website. ADMIN_ONLY for the same reason as
+   * the two above and one more: the website becomes a link on the public
+   * ticket-check page, which is the only thing in this file that a stranger who
+   * has not signed in can be sent to by somebody else's typing.
+   */
+  set_org_contact: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setOrgContact },
 
   /*
    * THE TICKET ARTWORK — organisers and the System Admin, and not grantable.

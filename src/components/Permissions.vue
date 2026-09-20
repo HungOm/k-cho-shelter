@@ -19,6 +19,13 @@ const data = ref(null)
 const role = ref('recorder')
 const saving = ref('')
 const wide = ref(false)
+/*
+ * "Show only those" — the banner counts what differs from the normal setting,
+ * and over thirty rows a count you cannot reach is a fact rather than a tool.
+ * Off by default: the whole grid is the answer to "what can a Helper do", and
+ * opening on a filtered view would answer a different question silently.
+ */
+const onlyChanged = ref(false)
 
 onMounted(async () => {
   wide.value = window.matchMedia('(min-width: 900px)').matches
@@ -38,6 +45,7 @@ const groups = computed(() => {
   if (!data.value) return []
   const out = []
   for (const a of data.value.actions) {
+    if (onlyChanged.value && !rowChanged(a)) continue
     let g = out.find(x => x.name === a.group)
     if (!g) { g = { name: a.group, actions: [] }; out.push(g) }
     g.actions.push(a)
@@ -54,6 +62,48 @@ function locked(a, r) {
 }
 function changed(a, r) {
   return !a.sup && a.current[r] !== a.defaults[r]
+}
+/** Does this row differ from the normal setting for ANY kind of user? */
+function rowChanged(a) {
+  return (data.value?.roles || []).some(r => changed(a, r))
+}
+
+/*
+ * WHY THIS SWITCH CANNOT BE PRESSED — the sentence, or '' when it can.
+ *
+ * `permissionui` is the rule: a control somebody cannot use is shown disabled
+ * with the reason on it, never hidden and never enabled-then-refused. This
+ * screen was the one place in the app that disabled a control and said nothing,
+ * which is the half-compliance that looks fine to whoever can press it. A
+ * viewer opening Access saw thirty dead switches and no statement anywhere that
+ * they were dead on purpose.
+ *
+ * The order matters and is not alphabetical. It answers the most specific
+ * question first: a locked action is locked for everybody including the System
+ * Admin, so telling an ordinary helper "only the System Admin can change this"
+ * would be false — the System Admin cannot change it either.
+ */
+function why(a, r) {
+  if (a.sup) return 'System Admin only — this one cannot be given to another kind of user'
+  if ((a.lockedFor || []).includes(r)) {
+    return `Always allowed for ${ROLE_WORDS[r] || r} — turning it off would lock them out of their own screen`
+  }
+  if (!isSuper.value) return 'Only the System Admin can change what people may do'
+  if (saving.value === a.action + ':' + r) return 'Saving\u2026'
+  return ''
+}
+
+/*
+ * And what it does when it CAN be pressed. A title that only appears on the
+ * dead switches teaches people that a tooltip means "no", so the working ones
+ * say what they would do — which the matrix needs anyway, because a bare switch
+ * in a grid of four columns has no label of its own.
+ */
+function switchTitle(a, r) {
+  const blocked = why(a, r)
+  if (blocked) return blocked
+  const verb = a.current[r] ? 'Turn off' : 'Turn on'
+  return `${verb}: ${a.label} \u2014 for ${ROLE_WORDS[r] || r}`
 }
 
 async function toggle(a, r) {
@@ -74,7 +124,11 @@ async function toggle(a, r) {
 </script>
 
 <template>
-  <div>
+  <!-- Dense: an organiser screen, read many rows at a time at a desk. The class
+       is half the switch; the other half is a >= 1024px media query in
+       style.css, so this is an ordinary 17px screen with 52px targets on a
+       phone. --tap is never overridden. -->
+  <div class="dense">
     <h1>Who can do what</h1>
     <p class="muted">
       Turn any feature on or off for each kind of user. Changes take effect within a minute.
@@ -87,9 +141,30 @@ async function toggle(a, r) {
     <div v-if="!data" class="card"><div class="skel" style="height:40px"></div></div>
 
     <template v-else-if="data.actions.length">
-      <div v-if="changedCount" class="note info">
-        <b>{{ changedCount }}</b> {{ changedCount === 1 ? 'feature has' : 'features have' }}
-        been changed from the normal setting. Those are marked below.
+      <!--
+        WHAT DIFFERS, AND A WAY TO REACH IT. The count alone was a fact nobody
+        could act on: thirty-odd rows across four columns, one of them changed,
+        and no way to find it but reading. The filter is the other half of the
+        sentence.
+
+        The bar down the left rather than another tinted box, per the alert
+        rule — this sits directly above a stack of cards and a fourth rounded
+        rectangle in that stack reads as one more equal thing.
+      -->
+      <div v-if="changedCount" class="note info bar">
+        <span class="grow">
+          <b>{{ changedCount }}</b>
+          {{ changedCount === 1 ? 'feature differs' : 'features differ' }}
+          from the normal setting &mdash; marked below.
+        </span>
+        <button class="btn sm ghost" :class="{ on: onlyChanged }"
+                :aria-pressed="onlyChanged"
+                :title="onlyChanged
+                  ? 'Show every feature again'
+                  : 'Hide everything that is still set the normal way'"
+                @click="onlyChanged = !onlyChanged">
+          {{ onlyChanged ? 'Show all' : 'Show only those' }}
+        </button>
       </div>
 
       <!-- phone: one role at a time -->
@@ -116,8 +191,10 @@ async function toggle(a, r) {
                 Always allowed — turning this off would lock everyone out
               </span>
             </div>
+            <!-- Disabled with the reason on it, never hidden. `permissionui`. -->
             <button :class="['sw', { on: a.current[role], locked: locked(a, role) }]"
                     :disabled="locked(a, role) || !isSuper || saving === a.action + ':' + role"
+                    :title="switchTitle(a, role)"
                     :aria-label="a.label" @click="toggle(a, role)">
               <i></i>
             </button>
@@ -143,10 +220,21 @@ async function toggle(a, r) {
                     {{ a.label }}
                     <span v-if="a.danger" class="pill bad">destroys data</span>
                     <span v-if="a.sup" class="pill">System Admin only</span>
+                    <!--
+                      THE MATRIX HAD THIS IN COLOUR ONLY. `.sw.moved` draws a
+                      blue outline round the switch and nothing else, so on this
+                      view "changed from the normal setting" was carried by a
+                      2px ring — invisible to anyone who cannot separate it from
+                      the teal, and invisible to everyone in a photograph of the
+                      screen. The phone view has had the word since it was
+                      written; this one is the copy that drifted.
+                    -->
+                    <span v-if="rowChanged(a)" class="pill info">changed</span>
                   </td>
                   <td v-for="r in data.roles" :key="r" class="rolecol">
                     <button :class="['sw', { on: a.current[r], locked: locked(a, r), moved: changed(a, r) }]"
                             :disabled="locked(a, r) || !isSuper || saving === a.action + ':' + r"
+                            :title="switchTitle(a, r)"
                             :aria-label="`${a.label} for ${ROLE_WORDS[r]}`" @click="toggle(a, r)">
                       <i></i>
                     </button>
@@ -162,6 +250,18 @@ async function toggle(a, r) {
     <Empty v-else art="🔑" title="Nothing to show">
       The list of features could not be loaded.
     </Empty>
+
+    <!--
+      A FILTER THAT HIDES EVERYTHING MUST SAY SO. `groups` is empty either
+      because nothing loaded or because "Show only those" is on and the one
+      changed row is in a group the eye has already scrolled past — and those
+      two look identical. This branch exists so the second one never reads as
+      the first.
+    -->
+    <p v-if="data && data.actions.length && onlyChanged && !groups.length" class="muted">
+      Nothing differs from the normal setting.
+      <button class="btn sm ghost" @click="onlyChanged = false">Show all</button>
+    </p>
   </div>
 </template>
 
@@ -203,4 +303,19 @@ async function toggle(a, r) {
 
 .rolecol { text-align: center; width: 120px; }
 .rolecol .sw { margin: 0 auto; }
+
+/*
+ * The alert as a bar rather than a fifth rounded box. Scoped here rather than
+ * added to `.note` in style.css, which another session is holding this round.
+ */
+.note.bar {
+  display: flex; align-items: center; gap: 12px;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  border-left: 3px solid currentColor;
+}
+/* The filter is a state, so it shows one — a ghost button that stays pressed
+   reads as a toggle rather than as something you clicked a moment ago. */
+.note.bar .btn.on {
+  background: var(--info-soft); border-color: currentColor; color: inherit; font-weight: 650;
+}
 </style>
