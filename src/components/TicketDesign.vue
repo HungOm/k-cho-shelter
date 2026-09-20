@@ -49,6 +49,10 @@ import Dim from './ui/Dim.vue'
 import SheetTab from './ticketdesign/SheetTab.vue'
 import Ink from './ui/Ink.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
+/* Across into the check page's own folder on purpose: the sample book and the
+ * page that answers a sample QR have to agree, and that page may not import
+ * from lib/. See src/verify/sample.js. */
+import { sampleBook, sampleVerifyUrl } from '../verify/sample.js'
 
 const templates = ref([])
 const activeId = ref('')
@@ -917,29 +921,55 @@ const artworkReport = computed(() => {
  */
 function printTest() {
   if (!design.value || !active.value) return
-  const c = state.cfg || {}
-  const prefix = String(c.ticketPrefix ?? '')
-  const digits = Number(c.ticketDigits ?? 5)
-  const numbers = [1, 2, 3, 4].map((n) => prefix + String(n).padStart(digits, '0'))
-  const html = sheetHTML(design.value, numbers, active.value.url, {
-    title: 'Ticket design — test page (not real tickets)',
-    /*
-     * IT SAYS "not real tickets" IN A BOX THAT DOES NOT PRINT. Everything
-     * that came out of here was four tickets carrying the raffle's own
-     * prefix and the next four numbers in sequence, with nothing on the paper
-     * to say otherwise — the one artefact in this app that looked exactly
-     * like stock and was not. The watermark is on the paper now, where the
-     * person holding it is.
-     */
+
+  /*
+   * SAMPLE NUMBERS AND REAL CODES, which is the opposite of what this did.
+   *
+   * It printed the raffle's own prefix and the next four numbers in sequence —
+   * KS-00001 to KS-00004, which are real tickets somebody may be holding — and
+   * it drew no QR at all. What came off the printer therefore had the artwork's
+   * OWN placeholder code on it, the one printed into the picture, which is not
+   * a code for anything and answers nothing when scanned.
+   *
+   * Both halves are fixed by the same change. The numbers come from the sample
+   * book, so no real ticket number reaches sample paper. And each ticket gets
+   * its own QR, encoded here at the real length, carrying that sample's marker
+   * — so scanning any of them lands on the check page and is told, in both
+   * languages, that it is a sample and not a ticket.
+   *
+   * A sample's code is derived rather than stored, so this works with no
+   * database and no request: on a laptop with no connection, from a sheet found
+   * in a drawer years later, the QR still answers.
+   *
+   * THE WATERMARK HAS TO GO IN THE LAYER, not only in the sheet. `layers`
+   * REPLACES a ticket's overlay rather than adding to it, so a layer built
+   * without it is a sample with no SAMPLE across it.
+   */
+  const per = Math.max(1, Math.min(Number(fit.value?.per ?? 4), 10))
+  const tickets = sampleBook().slice(0, per)
+
+  const layers = Object.fromEntries(tickets.map((t) => [t.number, elementLayerSVG(
+    design.value,
+    { 'ticket.number': t.number, 'book.number': t.book, code: t.code },
+    {
+      qrUrl: sampleVerifyUrl(sampleVerifyBase.value, t.number),
+      encode,
+      watermark: 'SAMPLE',
+    },
+  )]))
+
+  const html = sheetHTML(design.value, tickets.map((t) => t.number), active.value.url, {
+    title: 'Ticket design — a sheet of samples, not real tickets',
     watermark: 'SAMPLE',
-    // And it prints, rather than opening a page and waiting to be noticed.
     autoPrint: true,
+    layers,
   })
   const w = window.open('', '_blank')
   if (!w) { toast('Allow pop-ups to print a test page', 'bad'); return }
   w.document.write(html)
   w.document.close()
 }
+
 
 const kb = (n) => (n >= 1024 * 1024
   ? `${Math.round(n / 1024 / 1024 * 10) / 10} MB`
@@ -998,7 +1028,7 @@ const printedSize = computed(() => {
       </span>
 
       <button class="btn sm" :disabled="!active || !design"
-              :title="active ? 'Print four tickets on one sheet, through the real print path' : 'Upload some artwork first'"
+              :title="active ? 'Fill one sheet with sample tickets, each with its own working QR, through the real print path' : 'Upload some artwork first'"
               @click="printTest">Print a test page</button>
       <button class="btn sm primary"
               :disabled="savingDesign || !design || problems.length > 0"
