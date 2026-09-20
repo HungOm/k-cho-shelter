@@ -653,7 +653,23 @@ input[type=file] { padding: 10px }
   font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
 .stat .l { font-size: .86rem; color: var(--muted); font-weight: 600; margin-top: 3px; }
-.stat.accent { border-color: var(--brand); }
+/*
+ * A STAT THAT WANTS ATTENTION IS RINGED IN --warn, NOT IN --brand.
+ *
+ * All three users of this class mean the same thing and none of them means
+ * "this is our product": Draw rings the count of tickets sold with no way to
+ * contact the buyer, and Money rings a seller's outstanding balance and an
+ * unpaid tally. --brand is the colour of the primary action on every other
+ * screen, so ringing a shortfall with it said FEATURED where the number meant
+ * LOOK AT THIS — and on the draw screen the ring and the figure inside it
+ * disagreed, because the figure was already --bad.
+ *
+ * The class keeps its name. "accent" describes the drawing rather than the
+ * role, which is the thing name-tokens-for-the-role warns about, but renaming
+ * it reaches into Money.vue for a rename alone — and one token swap fixes all
+ * three sites without opening a file that has nothing else wrong with it.
+ */
+.stat.accent { border-color: var(--warn); }
 
 /* ---------- tables ---------- */
 .tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }

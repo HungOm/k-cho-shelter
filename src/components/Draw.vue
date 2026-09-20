@@ -262,8 +262,14 @@ async function exportEntries() {
     <div v-if="ready" class="stats" style="margin-bottom:16px">
       <div class="stat"><div class="n">{{ ready.totals.eligibleEntries.toLocaleString() }}</div><div class="l">In the draw</div></div>
       <div class="stat"><div class="n">{{ ready.totals.ticketsAvailable.toLocaleString() }}</div><div class="l">Not sold</div></div>
+      <!--
+        THE ONE STAT HERE THAT IS A FAULT RATHER THAN A FIGURE. A sold ticket
+        with no way to reach the buyer is a winner who cannot be told, so it is
+        the only one of the four that carries a colour at all — and it carries
+        it only when there are any.
+      -->
       <div class="stat" :class="{ accent: ready.totals.missingContact }">
-        <div class="n" :style="ready.totals.missingContact ? 'color:var(--bad)' : ''">
+        <div class="n" :class="{ bad: ready.totals.missingContact }">
           {{ ready.totals.missingContact }}
         </div>
         <div class="l">No phone number</div>

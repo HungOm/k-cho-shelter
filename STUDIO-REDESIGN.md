@@ -493,7 +493,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 4f | 1 Set up | Setup · brand colour previewed on real chrome | yes |
 | 4g | 1 Set up | Access — System Admin only, page says so, shows diffs | yes |
 | 9a | 2 Studio | Start a design — two routes, artboard set before you draw | yes (d5d82a6) |
-| **9b** | 2 Studio | **Studio from scratch, light — layers LEFT, artboard MIDDLE with rulers, inspector RIGHT** | **regressed by 6d4feb1; 72 rebuilding** |
+| 9b | 2 Studio | Studio from scratch, light — layers LEFT, artboard MIDDLE with rulers, inspector RIGHT | yes — regressed by 6d4feb1 (which built retired card 1b), **restored by 7fb288d**; verified in a render 2026-09-21 |
 | 9c | 2 Studio | The same studio in dark mode — chrome flips, ticket keeps its own colours | looked at; artboard fixed (5ba9bae), 3 gaps open |
 | 2a | 2 Studio | Artwork & paper — the verdict is the page | yes (72 confirmed) |
 | 7a | 2 Studio | Collapsed rail — Exit studio top left, hover or ⌘\ | yes (33dce6f, 008d630) |
@@ -509,9 +509,9 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 4d | 5 Money | Money — who owes what, running-balance statement | yes (a71a080) — Export added; "account since" unbacked |
 | 4h | 6 Control | Approvals — the waiting request first | yes |
 | 8a | 7 Buyer | Books → book → a ticket — the keepsake in the raffle's colour | yes (9d78cef) — Motto chip added at bdc639b |
-| 8b | 7 Buyer | Three treatments of the same ticket, one brand colour | ticket-printing (Certificate) |
+| 8b | 7 Buyer | Three treatments of the same ticket, one brand colour | yes — all three in `ticketart.js`; `tests/ranks` renders each by name |
 | 4i | 7 Buyer | Ticket check — the public page | ticket-printing — **ruled, see below** |
-| 4e | 8 Draw | The draw — readiness as a checklist, prize form beside it | no owner — **fully backed, see below** |
+| 4e | 8 Draw | The draw — readiness as a checklist, prize form beside it | **yes** — `Draw.vue`, `PrizeForm.vue`, `WinnerForm.vue`; rendered and read 2026-09-21. The section below is about the BACKING, and is still worth reading before touching it |
 
 ### 4e is fully backed — do not half-build it
 
@@ -601,8 +601,29 @@ covers the frame. I had that backwards and 72 caught it.
 
 **Open, and 72's to place when their user scopes the studio rebuild:**
 
-1. No sun/moon control in the studio header; 9c draws one.
-2. The info line itself is not on screen anywhere.
+1. No sun/moon control in the studio header; 9c draws one. **Put to the user
+   2026-09-21 and unanswered.** It is not a UI task: the app follows the
+   operating system, so a manual override means a stored preference and a
+   companion selector beside every `prefers-color-scheme` block in
+   `style.css` and `verify.css`. Whether theme selection belongs to the app or
+   to the OS is a product decision, not a gap to close quietly.
+2. ~~The info line itself is not on screen anywhere.~~ **Not a gap — closed
+   2026-09-21 after checking the other cards rather than this line.**
+
+   The document's info lines are two different things and only one of them is
+   copy. `4f`'s "Previewed at once, saved when you say so" is on screen, in
+   `Admin.vue`; `9a`'s and `2a`'s "held as shares, so the design survives a
+   redraw" is on screen, in the studio footer. Those are PRODUCT FACTS a user
+   needs. `2b`'s "changes here apply to this run" and `5c`'s are not on screen,
+   and neither is this one — they are the document describing its own drawing
+   to the person reading the document.
+
+   "Dark mode only changes the studio chrome — the ticket keeps its own
+   colours" is of the second kind: it explains why 9b and 9c differ. On screen
+   it would be a standing sentence explaining something the user can already
+   see, in a bar that just had two sentences taken out of it for being
+   sentences. The BEHAVIOUR it describes is real and is built — `5ba9bae` made
+   the artboard `--paper`, theme-free, and `tokens.test.mjs` holds it.
 3. ~~The stage bar is captioned checkboxes~~ — **done 2026-09-21, `e40123b`.**
    Three icon tools now, which is 9b's drawing: `[magnet] Snap`,
    `[grid] Grid 2 mm`, `[Aa] Longest entry`, lit when on and muted when off.
