@@ -49,7 +49,7 @@ const set = (v) => emit('update:modelValue', String(v).toUpperCase())
          of hex values is not a thing anybody can choose between. -->
     <div v-if="swatches.length" class="from">
       <button
-        v-for="c in swatches" :key="c" type="button" class="chip"
+        v-for="c in swatches" :key="c" type="button" class="swatch"
         :class="{ on: String(modelValue).toUpperCase() === c }"
         :style="{ background: c }" :title="c"
         :aria-label="`Use ${c}, from the artwork`" @click="set(c)"></button>
@@ -77,10 +77,30 @@ const set = (v) => emit('update:modelValue', String(v).toUpperCase())
 .drop:hover { color: var(--brand); border-color: var(--brand) }
 
 .from { display: flex; align-items: center; gap: 4px; margin-top: 5px; flex-wrap: wrap }
-.chip {
+/*
+ * `.swatch`, NOT `.chip`, and the component's own prop is already called
+ * `swatches`.
+ *
+ * `.chip` is a GLOBAL utility in style.css — a 44px-tall rounded pill with a
+ * border and a hover, used for the search screen's "Try:" suggestions and for
+ * filter chips across the app. This is a 20×20 square of colour. Two unrelated
+ * things under one name, and only the scoping keeps them apart.
+ *
+ * That is thinner protection than it looks, because this repository keeps
+ * MOVING scoped rules into style.css when a second component needs them —
+ * `.seg`/`.segbtn` and `.hint.warnish` both went that way. The day this one
+ * followed, every "Try:" chip in Find would have become a 20-pixel square with
+ * its label wrapped inside it, and the commit doing the moving would have
+ * looked like a tidy-up.
+ *
+ * Named for the role rather than the drawing — see name-tokens-for-the-role and
+ * global-class-names-leak-colour, which is the same failure with the arrow
+ * pointing the other way.
+ */
+.swatch {
   width: 20px; height: 20px; padding: 0; cursor: pointer;
   border: 1px solid var(--border); border-radius: 3px;
 }
-.chip.on { box-shadow: 0 0 0 2px var(--brand); border-color: var(--brand) }
+.swatch.on { box-shadow: 0 0 0 2px var(--brand); border-color: var(--brand) }
 .note { font-size: .7rem; color: var(--muted) }
 </style>

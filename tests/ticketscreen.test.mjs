@@ -405,9 +405,17 @@ console.log('a colour can be taken from the artwork, pointed at, or typed')
   ok(/type="text"/.test(html) && /#0F490E/.test(html), 'the hex, visible and editable')
   ok(/Pick Ink off the ticket/.test(html), 'and a dropper, named for what it does')
 
-  // The colours found in the picture are offered AS colours. A list of hex
-  // strings is not something anybody can choose between.
-  ok((html.match(/class="chip"/g) ?? []).length === 3, 'each detected colour is a swatch')
+  /*
+   * The colours found in the picture are offered AS colours. A list of hex
+   * strings is not something anybody can choose between.
+   *
+   * `class="swatch"`, and this assertion's own wording is why it was renamed:
+   * it has always said "each detected colour is a swatch" while matching
+   * `.chip`, which in style.css is a 44px rounded pill used for the search
+   * screen's suggestions and for filter chips. Two unrelated objects under one
+   * name, kept apart only by scoping.
+   */
+  ok((html.match(/class="swatch"/g) ?? []).length === 3, 'each detected colour is a swatch')
   ok(/background:\s*#36C08F/i.test(html), 'shown as itself, not as its name')
   ok(/aria-label="Use #36C08F, from the artwork"/.test(html), 'and reachable without sight of it')
 }
