@@ -122,6 +122,36 @@
   src: url('../fonts/inter-latin.woff2') format('woff2');
   font-weight: 100 900; font-style: normal; font-display: swap;
 }
+
+/*
+ * PADAUK, BUNDLED — the page's Burmese, served from the same origin as the page.
+ *
+ * v/index.html used to fetch this from fonts.googleapis.com, two lines under a
+ * `no-referrer` meta tag that exists because the visitor is a stranger who
+ * scanned a stranger's ticket. Every scan told Google who was looking.
+ *
+ * THE SUBSET IS THE WHOLE MYANMAR BLOCK, not the glyphs strings.js happens to
+ * use. The Burmese on this page is not all fixed — an organiser writes their own
+ * sentence in Setup — so a subset cut to today's characters would render the
+ * first one they typed as boxes, and it would be their sentence, on the page
+ * their buyers are looking at. 160 of 160 codepoints in U+1000-109F, 37 KB,
+ * which is less than the Latin face already shipped beside it.
+ *
+ * `unicode-range` is the same list Google served it under, so a browser fetches
+ * this only when it meets Burmese — a Latin-only ticket never pays for it.
+ *
+ * Path relative for the reason given above: the bundle lands in assets/, so
+ * ../fonts/ resolves to dist/fonts/ and survives a project subpath.
+ */
+@font-face {
+  font-family: 'Padauk';
+  src: url('../fonts/padauk-myanmar.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+1000-109F, U+200C-200D, U+25CC, U+A92E, U+A9E0-A9FE,
+                 U+AA60-AA7F, U+116D0-116E3;
+}
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 16px/1.5 'Inter Variable', system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -157,7 +187,25 @@ h1, .note, .state, .stamp, .about, .my, .en,
   background: var(--seal); border: 2px solid var(--surface);
   box-shadow: 0 0 0 1px var(--seal);
 }
-.brand { min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.25 }
+/* The two lines stack; the row still centres on the mark beside them. */
+.brandwrap { display: flex; flex-direction: column; min-width: 0; gap: 1px }
+.brand { min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.25 }
+.service { font-size: 12px; color: var(--muted); line-height: 1.25 }
+
+/*
+ * The link that was scanned, on a failure. Monospace and left alone: this is
+ * read out down a telephone, so it must break where the characters are rather
+ * than where the words would be, and `break-all` is deliberate for that.
+ */
+.scanned { margin: 14px 0 0; padding: 10px 12px; background: var(--bg); border-radius: var(--r-sm) }
+.scannedcap {
+  margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600;
+}
+.scannedval {
+  margin: 0; font-family: var(--font-data, ui-monospace, Menlo, monospace);
+  font-size: 13px; line-height: 1.4; word-break: break-all; color: var(--text);
+}
 .brand .en { font-weight: 500; color: var(--muted); font-size: 11px }
 .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);

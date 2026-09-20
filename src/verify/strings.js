@@ -116,6 +116,31 @@ export const S = {
    * on the others' tickets. `whatThisIs` below says what kind of thing this is
    * without claiming to be a particular body, which is the same reasoning.
    */
+  /*
+   * THE SECOND LINE OF THE HEADER — a description of the SERVICE, never a claim
+   * to be a particular charity.
+   *
+   * The distinction is the one brandCheck below already rests on: several
+   * raffles run off one deployment, so a page that named a body would be lying
+   * on everybody else's tickets. "Official verification service" says what this
+   * page IS without saying whose. The organisation's own name sits beside it
+   * only when config carries one, and nothing at all when it does not.
+   *
+   * UNREVIEWED, like every Burmese string on this page. The English is the
+   * sentence that was meant; correct the Burmese against it.
+   */
+  officialService: { en: 'Official verification service', my: 'တရားဝင် စစ်ဆေးရေး ဝန်ဆောင်မှု' },
+
+  /*
+   * What was actually scanned, shown back on the failure page.
+   *
+   * This is what somebody reads down a telephone to the office, so it must be
+   * the raw thing — a tidied version would let a wrong number look right, which
+   * is the reasoning params() already carries for not canonicalising before the
+   * lookup. The same rule applies to showing it.
+   */
+  linkScanned: { en: 'Link scanned', my: 'စကင်ဖတ်ထားသော လင့်ခ်' },
+
   brandCheck: { en: 'Ticket check', my: 'လက်မှတ် စစ်ဆေးရန်' },
 
   /*

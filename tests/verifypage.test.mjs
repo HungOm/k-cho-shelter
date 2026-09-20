@@ -15,7 +15,7 @@
  *
  * Nothing about that shows up in a screenshot, which is why it is a test.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -331,6 +331,64 @@ console.log('the refusal tells somebody not to pay before it tells them anything
   ok(/Do not pay for this ticket/.test(strings), 'the refusal leads with not paying')
   ok(!/CEAM|Raffled/.test(strings),
      'and names no organisation, because the sentence belongs to every raffle that runs this')
+}
+
+/*
+ * THE PAGE FETCHES NOTHING FROM ANYBODY ELSE.
+ *
+ * It sets `no-referrer` and `noindex` because the visitor is a stranger in a
+ * hall who scanned a stranger's ticket and has not asked to be known to anyone.
+ * It then fetched a font from Google on every scan, which told Google exactly
+ * that. src/style.css states the rule the rest of the app keeps — "no external
+ * dependency of any kind at runtime — no CDN, no Google Fonts" — and this page
+ * was the one exception.
+ */
+console.log('nothing on this page is fetched from a third party')
+{
+  const html = readFileSync(join(ROOT, 'v/index.html'), 'utf8')
+  for (const host of ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.', 'unpkg', 'jsdelivr']) {
+    ok(!html.includes(host), `the page does not reach out to ${host}`)
+  }
+  ok(/no-referrer/.test(html), 'and still asks not to leak a referrer')
+
+  /*
+   * DELETING THE LINK WOULD HAVE PASSED THE ASSERTIONS ABOVE AND BROKEN THE
+   * PAGE. Padauk is what renders Burmese; without a face the strings become
+   * boxes for exactly the readers this page is for. So the font must be
+   * present, self-hosted, and covering more than today's glyphs.
+   */
+  const css = readFileSync(join(ROOT, 'src/verify/verify.css'), 'utf8')
+  ok(/@font-face[\s\S]*?Padauk/.test(css), 'Padauk is declared as a face, not merely named')
+  ok(/padauk[^'"]*\.woff2/.test(css), 'and served from a file in this repo')
+  ok(existsSync(join(ROOT, 'public/fonts/padauk-myanmar.woff2')), 'which is actually present')
+
+  // SIL OFL 1.1 permits redistribution and requires the licence to travel with
+  // the font. Shipping the file without it is the licence breach, not the font.
+  ok(existsSync(join(ROOT, 'public/fonts/padauk-OFL.txt')), 'with its licence beside it')
+
+  /*
+   * THE SUBSET COVERS THE BLOCK, NOT THE STRINGS. An organiser writes their own
+   * Burmese in Setup, so a subset cut to the glyphs strings.js uses today would
+   * render the first sentence they typed as boxes — on the page their buyers
+   * are looking at.
+   */
+  ok(/U\+1000-109F/i.test(css), 'and the whole Myanmar block is in its unicode-range')
+}
+
+console.log('a failure shows what was actually scanned')
+{
+  const src = readFileSync(join(ROOT, 'src/verify/main.js'), 'utf8')
+  ok(/function linkScanned/.test(src), 'the failure page can show the scanned link')
+
+  /*
+   * IT IS THE ONLY PLACE THIS PAGE ECHOES SOMETHING A STRANGER CONTROLS, so it
+   * is escaped. A verify page that could be made to render markup by the
+   * contents of a QR code would be a phishing kit with a teal tick on it.
+   */
+  const fn = src.slice(src.indexOf('function linkScanned'), src.indexOf('function whyOneAnswer'))
+  ok(/escapeHtml\(/.test(fn), 'and escapes it, because a QR code is attacker-controlled')
+  ok(!/canonical|toUpperCase|padStart|replace\(\/\[\^/.test(fn),
+    'and shows it raw — a tidied link could make a wrong number look right')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

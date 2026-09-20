@@ -70,10 +70,29 @@ function render(html) {
  * heading, not a banner — because the verdict underneath is the thing somebody
  * came for.
  */
+/*
+ * TWO LINES, AND THE SECOND ONE IS NOT A CLAIM ABOUT WHO WE ARE.
+ *
+ * "Ticket check" alone left a stranger unsure what they had landed on. The
+ * second line says what the SERVICE is, which is sayable without naming a
+ * charity — and naming one would be wrong on every other raffle's tickets,
+ * since several run off this one deployment. strings.js carries that reasoning
+ * at length and it is the reason brandCheck has never said CEAM.
+ *
+ * The organisation's name appears only when config carries one. Unset, the line
+ * is simply absent: no placeholder, and not the app's own name either, because
+ * telling a stranger checking a charity's ticket the name of the software says
+ * the wrong thing. supabase/functions/verify/index.ts makes the same argument
+ * where the value is read.
+ */
 function topbar() {
+  const named = String(orgContact.name || '').trim()
   return `<header class="topbar">
     <span class="logo" aria-hidden="true"></span>
-    <span class="brand">${say('brandCheck')}</span>
+    <span class="brandwrap">
+      <span class="brand">${named ? escapeHtml(named) + ' ' : ''}${say('brandCheck')}</span>
+      <span class="service">${say('officialService')}</span>
+    </span>
   </header>`
 }
 
@@ -273,6 +292,32 @@ async function loadAbout() {
  * raffle. Unexplained that reads as a page that does not know much; explained,
  * it reads as a page refusing to help somebody forging tickets.
  */
+/*
+ * WHAT WAS ACTUALLY SCANNED, shown back on a failure.
+ *
+ * This is the line somebody reads down a telephone to the office, and it is the
+ * only place this page echoes anything a stranger controls — so it goes through
+ * escapeHtml, and it shows the RAW thing rather than a tidied one.
+ *
+ * params() already refuses to canonicalise before the lookup, on the grounds
+ * that "a page that tidied the number first would be a page that could make a
+ * wrong number look right". Displaying it is the same argument: a ticket whose
+ * code is one character off must look one character off here, because that
+ * single character is the whole reason the answer was no.
+ *
+ * Only on failure. On a genuine ticket the number is already shown, larger and
+ * in its own right; repeating the URL underneath would be noise.
+ */
+function linkScanned() {
+  const raw = String(window.location.search || '').replace(/^\?/, '')
+  if (!raw) return ''
+  const shown = window.location.pathname + '?' + raw
+  return `<section class="scanned">
+    <p class="scannedcap">${say('linkScanned')}</p>
+    <p class="scannedval">${escapeHtml(shown)}</p>
+  </section>`
+}
+
 function whyOneAnswer() {
   return `<section class="why">
     <h2>${say('whyOneAnswer')}</h2>
@@ -369,7 +414,7 @@ async function run() {
 
   const p = params()
   if (!p) {
-    render(panel('bad', 'notGenuine', 'malformedNote') + whyOneAnswer())
+    render(panel('bad', 'notGenuine', 'malformedNote') + linkScanned() + whyOneAnswer())
     return
   }
 
@@ -391,7 +436,7 @@ async function run() {
      * page. From where the person is standing those are the same thing, and the
      * distinction would only be useful to somebody probing the endpoint.
      */
-    if (res.status === 400) { render(panel('bad', 'notGenuine', 'malformedNote') + whyOneAnswer()); return }
+    if (res.status === 400) { render(panel('bad', 'notGenuine', 'malformedNote') + linkScanned() + whyOneAnswer()); return }
     if (!res.ok || !body || body.ok !== true) { render(panel('warn', 'cannotCheck', 'cannotCheckNote')); return }
   } catch {
     // No signal, or the function is down. Not the same as a forged ticket, and
@@ -415,7 +460,7 @@ async function run() {
      * does not reflow under somebody reading a verdict.
      */
     const todo = `<p class="todo">${say('showSeller')}</p>`
-    render(panel('bad', 'notGenuine', 'notGenuineNote')
+    render(panel('bad', 'notGenuine', 'notGenuineNote') + linkScanned()
       + todo
       + `<div class="acts-slot">${actions()}</div>`
       + whyOneAnswer()

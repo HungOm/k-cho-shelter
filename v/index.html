@@ -11,9 +11,28 @@
   -->
   <meta name="robots" content="noindex">
   <meta name="referrer" content="no-referrer">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Padauk&display=swap" rel="stylesheet">
+    <!--
+      PADAUK IS SERVED FROM HERE, and the three lines this replaces were the
+      loudest contradiction on the page.
+
+      Two lines above this set `no-referrer` and `noindex` — deliberate, because
+      the visitor is a stranger in a hall who scanned a stranger's ticket and has
+      not asked to be known to anybody. The page then handed Google the IP of
+      every one of them, on every scan, to fetch a font. src/style.css states the
+      app has "no external dependency of any kind at runtime — no CDN, no Google
+      Fonts"; this page was the exception nobody had noticed.
+
+      DELETING THE LINK WAS NOT THE FIX. Padauk was self-hosted nowhere in this
+      repo, so removing it renders every Burmese string as boxes on any phone
+      without the face — which is most of them, and they are the readers who most
+      need this page. The font is bundled instead: the same Myanmar subset Google
+      was serving, 37 KB, covering U+1000-109F entire rather than only the glyphs
+      in strings.js today, so an organiser who writes their own Burmese sentence
+      gets letters rather than boxes.
+
+      SIL Open Font License 1.1, which permits this and requires the licence to
+      travel with the font: public/fonts/padauk-OFL.txt.
+    -->
   <link rel="stylesheet" href="../src/verify/verify.css">
 </head>
 <body>
