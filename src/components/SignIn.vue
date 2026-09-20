@@ -1,5 +1,5 @@
 <script setup>
-import { orgNameOf } from '../lib/format.js'
+import { orgNameOf, APP_NAME } from '../lib/format.js'
 /**
  * The way in.
  *
@@ -72,12 +72,32 @@ onMounted(async () => {
            deployment. Nothing is the honest answer: a blank space says nothing,
            and a name says something untrue about who is asking for the money. -->
       <!--
-        ALWAYS A NAME, because a sign-in page with nothing under it reads as an
-        app that has not loaded. A raffle that has not said who is running it
-        gets the product's own name rather than a blank — which is also the
-        truth at that moment: nobody has claimed this raffle yet.
+        THE ORGANISATION, WHEN THERE IS ONE TO NAME — and nothing when there is
+        not, which is not the same as a blank.
+        
+        The rule here used to be "always a name", on the argument that a
+        sign-in page with nothing under it reads as an app that has not loaded.
+        That argument is sound and it was never checked against what the line
+        actually SAID in the case it was written for. `state.cfg` is null on
+        this screen — whoami has not run when it paints, which the note below
+        says was "not the edge case, it was every load" — so orgNameOf fell back
+        to APP_NAME and the card read:
+        
+            Raffled                                   <- the h1
+            Raffle ticket books, sellers and money
+            Raffled                                   <- this line
+        
+        The same word twice, three lines apart, the second time in grey at
+        .82rem. Nothing was missing from that card; the product's name was
+        simply printed on it twice, and the smaller one looked like the
+        charity's.
+        
+        So the line appears only when it has something the h1 does not already
+        say. The "reads as unloaded" worry does not apply to the fallback case:
+        the h1 IS the name then, and a card carrying a logo, a name, a purpose
+        and a button does not look like a page that failed to load.
       -->
-      <p class="tiny muted credit">
+      <p v-if="orgNameOf(state.cfg) !== APP_NAME" class="tiny muted credit">
         {{ orgNameOf(state.cfg) }}
       </p>
 
