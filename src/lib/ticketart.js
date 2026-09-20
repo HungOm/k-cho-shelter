@@ -1090,6 +1090,134 @@ export const CARD_STUB = { width: 1080, height: 1920 }
  * Shares the Grand card's values and its gold; differs in shape and in what it
  * leads with. No foil rule: 8b gives that to Grand alone.
  */
+/*
+ * CARD 8b, THE CERTIFICATE — the third treatment, and the only one printed.
+ *
+ * Grand and Stub are screens: they put light ink on the brand colour, which is
+ * how a phone shows something. A certificate is paper somebody keeps, and paper
+ * is not a dark rectangle — a treatment that filled an A4 sheet with solid
+ * colour would be an ink cartridge and a curled page. So this one inverts: pale
+ * stock, the brand as a tinted border and a seal, and the type dark enough to
+ * read after a photocopier has had it.
+ *
+ * TWO DIFFERENCES FROM ITS SIBLINGS ARE IN THE CARD ITSELF and neither is mine
+ * to smooth over. It carries no SOLD chip — a certificate is not a status
+ * badge, it is a record of one — and it spells out "Issued to" where Grand and
+ * Stub run the name into a facts line. Both are how the card distinguishes a
+ * keepsake from a receipt.
+ */
+export const CARD_CERT = { width: 1200, height: 850 }
+
+/* A pale wash of the brand for the stock, and a deeper one for rules. Computed
+ * rather than configured: an organisation choosing a colour has not chosen a
+ * tint of it, and asking them to would be asking the wrong question. */
+function mixHex(hex, towards, amount) {
+  const h = String(hex).replace('#', '')
+  const n = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const to = String(towards).replace('#', '')
+  const p = (v, i) => parseInt(v.slice(i * 2, i * 2 + 2), 16)
+  const out = [0, 1, 2].map((i) => Math.round(p(n, i) + (p(to, i) - p(n, i)) * amount))
+  return '#' + out.map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('')
+}
+
+/** Relative luminance, the sRGB way — the same test brand.js uses for ink. */
+function lumOf(hex) {
+  const h = String(hex).replace('#', '')
+  const n = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const ch = [0, 1, 2].map((i) => {
+    const v = parseInt(n.slice(i * 2, i * 2 + 2), 16) / 255
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+}
+
+export function certificateCardSVG(design, values = {}, opts = {}) {
+  const { width: W, height: H } = CARD_CERT
+  const brand = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
+
+  /*
+   * The stock is nearly white — a 6% wash, enough that it is not a browser
+   * default and not so much that a printer spends ink on it.
+   */
+  const stock = mixHex(brand, '#ffffff', 0.94)
+  /*
+   * THE INK IS DARKENED UNTIL IT MEASURES, not until a threshold says so.
+   *
+   * A luminance cutoff was the obvious way and it was wrong twice out of seven:
+   * a mid green at 3.3:1 and a mid blue at 4.0:1 both sat under the bar while
+   * passing the test, because "is this colour light" is not the question. The
+   * question is whether THIS ink on THIS stock clears 4.5:1, and that is
+   * measurable, so it is measured — step the brand toward black until it does.
+   *
+   * It matters more here than on the other two treatments because this is the
+   * one that gets printed, photocopied, and read in a hall by somebody who has
+   * kept it in a pocket.
+   */
+  const ratio = (a, b) => {
+    const [hi, lo] = [lumOf(a), lumOf(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+  let ink = brand
+  for (let step = 0; step < 20 && ratio(ink, stock) < 4.5; step += 1) {
+    ink = mixHex(brand, '#000000', (step + 1) * 0.05)
+  }
+  const quiet = mixHex(ink, stock, 0.42)
+  const rule = mixHex(ink, stock, 0.62)
+
+  const s = (v) => String(v ?? '').trim()
+  const t = (str, x, y, size, fill, family, extra = '') => (str
+    ? `<text x="${round(x)}" y="${round(y)}" font-family='${family}' font-size="${round(size)}" `
+      + `fill="${fill}" ${extra} xml:space="preserve">${esc(str)}</text>`
+    : '')
+  const mid = (str, y, size, fill, family, extra = '') =>
+    t(str, W / 2, y, size, fill, family, `text-anchor="middle" ${extra}`)
+
+  const org = s(values.org)
+  const number = s(values.number)
+  const name = s(values.name)
+  const price = s(values.price)
+  const motto = s(values.motto)
+  const logo = s(values.logo)
+  const initial = (org || '?').charAt(0).toUpperCase()
+
+  /* A double rule inset from the trim, which is what says "certificate" before
+   * a word has been read. The inner one is hairline so the pair reads as one
+   * border rather than as two boxes. */
+  const border =
+    `<rect x="46" y="46" width="${W - 92}" height="${H - 92}" fill="none" stroke="${rule}" stroke-width="3"/>`
+    + `<rect x="60" y="60" width="${W - 120}" height="${H - 120}" fill="none" stroke="${rule}" stroke-width="1"/>`
+
+  /*
+   * THE SEAL, bottom right, where a signature and a stamp go on anything
+   * official. It is the logo when there is one and the initial when there is
+   * not — the same fallback the other two use, so a raffle with no logo gets a
+   * mark rather than a hole.
+   */
+  const seal = `<circle cx="${W - 190}" cy="${H - 178}" r="76" fill="none" stroke="${rule}" stroke-width="2"/>`
+    + `<circle cx="${W - 190}" cy="${H - 178}" r="64" fill="none" stroke="${rule}" stroke-width="1"/>`
+    + (logo
+      ? `<image href="${esc(logo)}" x="${W - 234}" y="${H - 222}" width="88" height="88" preserveAspectRatio="xMidYMid meet"/>`
+      : t(initial, W - 190, H - 156, 52, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"'))
+
+  const qr = { enabled: true, x: 96, y: H - 268, size: 172, ecc: 'M', backing: false }
+  const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <rect width="${W}" height="${H}" fill="${stock}"/>
+    ${border}
+    ${mid(org, 152, 30, quiet, TEXT_FAMILY, 'letter-spacing="6"')}
+    ${mid('TICKET', 214, 22, quiet, TEXT_FAMILY, 'letter-spacing="8"')}
+    ${mid(number, 318, 92, ink, FONT.family, 'font-weight="700" letter-spacing="4"')}
+    <line x1="${W / 2 - 150}" y1="360" x2="${W / 2 + 150}" y2="360" stroke="${rule}" stroke-width="1"/>
+    ${mid('Issued to', 418, 22, quiet, TEXT_FAMILY, 'letter-spacing="3"')}
+    ${mid(name, 478, 46, ink, TEXT_FAMILY)}
+    ${mid(price, 534, 26, quiet, FONT.family)}
+    ${motto ? mid(motto, 622, 24, quiet, TEXT_FAMILY, 'font-style="italic"') : ''}
+    ${code}
+    ${seal}
+  </svg>`
+}
+
 export function stubCardSVG(design, values = {}, opts = {}) {
   const { width: W, height: H } = CARD_STUB
   const paper = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'

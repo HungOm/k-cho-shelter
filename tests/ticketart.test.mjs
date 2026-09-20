@@ -26,6 +26,7 @@ import {
   FONT, SPACING, advanceOf, checkSerial, place, placeFitted, placeBoth, numberLayerSVG, qrModuleMM,
   placeBook, placeBuyer, measurable, TEXT_FAMILY,
   stubCardSVG, CARD_STUB,
+  certificateCardSVG, CARD_CERT,
 } from '../src/lib/ticketart.js'
 import { sheetHTML, pageFit, PAGE } from '../src/lib/ticketsheet.js'
 
@@ -747,6 +748,79 @@ console.log('the stub treatment is portrait and leads with the number')
   const ruleY = Number((svg.match(/<line x1="72" y1="(\d+)"/) || [])[1])
   ok(ruleY > qrBottom, `the rule sits clear of the QR (${ruleY} against ${qrBottom})`)
   ok(ruleY < CARD_STUB.height, 'and inside the card')
+}
+
+/*
+ * CARD 8b's THIRD TREATMENT — "Certificate: light stock, tinted border, seal".
+ *
+ * The one that gets printed, which is why it inverts the other two. Grand and
+ * Stub put light ink on the brand colour, because that is how a phone shows
+ * something. Paper is not a dark rectangle: a treatment that filled a sheet
+ * with solid colour would be an ink cartridge and a curled page.
+ */
+console.log('the certificate treatment prints on light stock and measures its own ink')
+{
+  const lum = (hex) => {
+    const h = hex.replace('#', '')
+    const c = [0, 1, 2].map((i) => {
+      const v = parseInt(h.slice(i * 2, i * 2 + 2), 16) / 255
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+  }
+  const ratio = (a, b) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+  const draw = (brand) => certificateCardSVG(null, {
+    brand, org: 'Fundraising Raffle', number: 'KS-00031', name: 'John Kui',
+    price: 'RM 10.00', motto: 'Love is patient, love is kind',
+  }, {})
+
+  const svg = draw('#0d7a6f')
+  ok(svg.includes(`viewBox="0 0 ${CARD_CERT.width} ${CARD_CERT.height}"`), 'it is the certificate size')
+  ok(/Issued to/.test(svg), 'and spells out "Issued to", where Grand and Stub run the name into a facts line')
+
+  /*
+   * NO SOLD CHIP, and it is in the card rather than in my reading of it: a
+   * certificate is not a status badge, it is a record of one. If this ever goes
+   * green with SOLD present, the treatments have collapsed into each other.
+   */
+  ok(!/SOLD/.test(svg), 'and carries no SOLD chip')
+
+  /*
+   * THE CONTRAST IS THE ASSERTION THAT MATTERS, because this one is printed,
+   * photocopied and read in a hall out of somebody's pocket.
+   *
+   * A luminance threshold was the obvious implementation and it was wrong twice
+   * in seven brands — a mid green landed at 3.3:1 and a mid blue at 4.0:1, both
+   * passing a cutoff while failing a reader. "Is this colour light" is not the
+   * question; whether THIS ink on THIS stock clears 4.5:1 is, and it is
+   * measurable. White is in the list because a raffle whose brand is white would
+   * otherwise print nothing at all.
+   */
+  for (const brand of ['#0d7a6f', '#0806A3', '#FFE9A3', '#C00000', '#249C67',
+                       '#3C78D8', '#e8e8e8', '#ffffff']) {
+    const out = draw(brand)
+    const stock = out.match(/<rect width="\d+" height="\d+" fill="(#[0-9a-fA-F]{6})"/)[1]
+    const ink = out.split('\n').find((l) => l.includes('KS-00031'))
+      .match(/fill="(#[0-9a-fA-F]{6})"/)[1]
+    const r = ratio(ink, stock)
+    ok(r >= 4.5, `${brand} prints readable: ${r.toFixed(1)}:1 against its stock`)
+    ok(lum(stock) > 0.8, `${brand} prints on light stock, not a filled sheet`)
+  }
+
+  /* A raffle with no logo gets its initial in the seal rather than a hole. */
+  ok(/text-anchor="middle" font-weight="700"/.test(draw('#0d7a6f')), 'the seal falls back to an initial')
+
+  /*
+   * The motto is drawn when there is one and omitted when there is not. Nothing
+   * in the product sets a motto yet — no Setup field, no API field, no column —
+   * so today it is always absent, and the card must not leave a gap where it
+   * would go.
+   */
+  const noMotto = certificateCardSVG(null, { brand: '#0d7a6f', number: 'KS-1', name: 'A' }, {})
+  ok(!/font-style="italic"/.test(noMotto), 'and no empty line where an unset motto would be')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
