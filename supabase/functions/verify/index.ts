@@ -61,6 +61,34 @@ async function numbering(ctx: Ctx) {
   const value = {
     prefix: map.TICKET_PREFIX ?? '',
     digits: Number(map.TICKET_DIGITS ?? 5) || 5,
+    /*
+     * WHO TO TELL, when the answer on this page is "no".
+     *
+     * A stranger holding a ticket that does not verify is the one visitor here
+     * with something to report and nobody to report it to. These give them
+     * somewhere to go, and they are the organiser's own published details — the
+     * opposite of the buyer data this endpoint exists to keep out. tests/verify
+     * names ORG_PHONE as the only telephone identifier this file may carry, so
+     * a buyer's or a seller's number cannot appear here even by accident.
+     *
+     * NO FALLBACK ON THE NAME, deliberately. The app's own name is declared
+     * once in src/lib/format.js, orgidentity refuses a second copy of it
+     * anywhere in src/, and verifypage refuses this page any import from lib/
+     * at all. Rather than write the default down a third time, an unset name is
+     * sent empty and the page does not attribute. That is also the better
+     * answer: telling a stranger checking a charity's ticket the name of the
+     * software would be a worse sentence than saying nothing.
+     *
+     * Blank is a real answer throughout — nothing here is defaulted, because a
+     * wrong number on a page somebody reaches after being handed a forgery
+     * sends them to the wrong charity.
+     */
+    org: {
+      name: (map.ORG_NAME ?? '').trim(),
+      tel: (map.ORG_PHONE ?? '').trim(),
+      email: (map.ORG_EMAIL ?? '').trim(),
+      site: (map.ORG_WEBSITE ?? '').trim(),
+    },
   }
   cfgCache = { at: Date.now(), value }
   return value
@@ -95,6 +123,32 @@ export default {
     }
 
     const url = new URL(req.url)
+
+    /*
+     * ?about — WHO TO CONTACT, ASKED SEPARATELY AND ON PURPOSE.
+     *
+     * The office telephone, email and site are not facts about a ticket, and
+     * verify.test pins a ticket's answer to exactly ok, genuine, number, state
+     * and checkedAt with the note that anything else is a field somebody added
+     * without thinking. That guard is right: hanging a contact block off the
+     * ticket reply would make every verification carry furniture, and would tie
+     * the one thing a stranger needs most to the one request most likely to
+     * have failed.
+     *
+     * Which is the real argument for a second call rather than a wider first
+     * one. Somebody whose ticket did not verify, or whose lookup errored, still
+     * gets somewhere to report it — the contact block does not share a fate
+     * with the answer it sits under.
+     *
+     * It reads config and nothing else: no ticket, no code, no row of
+     * anybody's. Every value is the organiser's own published detail, and each
+     * may be blank — a real answer meaning "not given" rather than a default
+     * somebody would dial by mistake.
+     */
+    if (url.searchParams.has('about')) {
+      const cfg = await numbering(ctx)
+      return reply({ ok: true, org: cfg.org })
+    }
 
     /*
      * Two spellings, one meaning.

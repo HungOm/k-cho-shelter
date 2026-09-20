@@ -43,9 +43,9 @@ const GOOD = 'ABCDEFGH01234567'
  * A raffle with four tickets in known states, and buyer details on them — which
  * are there precisely so that a leak has something to leak.
  */
-function world() {
+function world(cfg = {}) {
   return fakeDb({
-    config: baseConfig({ TICKET_PREFIX: 'KS-', TICKET_DIGITS: '5' }),
+    config: baseConfig({ TICKET_PREFIX: 'KS-', TICKET_DIGITS: '5', ...cfg }),
     tickets: [
       { idx: 1, number: 'KS-00001', book_idx: 1, status: 'Sold', version: 1,
         buyer_name: 'Daw Hla', buyer_phone: '0125550001', buyer_zone: 'Klang', notes: 'paid cash' },
@@ -68,6 +68,50 @@ function world() {
 const call = async (w, query, init) => {
   const res = await verify.fetch(new Request('https://x.functions.supabase.co/verify' + query, init), w.ctx)
   return { res, body: await res.json() }
+}
+
+/*
+ * ?about — SOMEWHERE TO REPORT A FORGERY, ASKED FOR SEPARATELY.
+ *
+ * A stranger whose ticket does not verify is the one visitor to this endpoint
+ * with something to report and nobody to report it to. The organiser's own
+ * published contacts answer that, and they are asked for on their own rather
+ * than hung off a ticket's reply — which is what keeps the assertion above,
+ * that a ticket carries exactly four facts plus ok, true.
+ *
+ * The separation earns its keep in the failure case: somebody whose lookup
+ * errored still gets the contact block, because it does not share a fate with
+ * the answer it sits under.
+ *
+ * THIS BLOCK RUNS FIRST ON PURPOSE. numbering() caches config in a module-level
+ * variable for thirty seconds, so whichever call reaches it first decides what
+ * every later call in this process sees. Placed lower down, this read the blank
+ * config the ticket cases had already warmed and failed on four assertions that
+ * were describing the cache rather than the code.
+ */
+console.log('the office contacts are asked for on their own')
+{
+  const w = world({ ORG_NAME: 'CEAM Malaysia', ORG_PHONE: '03-1234 5678',
+                    ORG_EMAIL: 'office@example.org', ORG_WEBSITE: 'https://example.org' })
+  const r = await call(w, '?about')
+  eq(r.res.status, 200, 'it answers')
+  eq(r.body.ok, true, 'and says so')
+  eq(r.body.org?.name, 'CEAM Malaysia', 'the raffle names itself')
+  eq(r.body.org?.tel, '03-1234 5678', 'the office number')
+  eq(r.body.org?.email, 'office@example.org', 'the office email')
+  eq(r.body.org?.site, 'https://example.org', 'and the site')
+
+  /*
+   * THE POINT OF A SEPARATE CALL. This reply must carry nothing about any
+   * ticket — not a number, not a verdict, not a state. If it ever did, the
+   * contact block would become a second route to the thing the rest of this
+   * file exists to keep narrow.
+   */
+  eq(Object.keys(r.body).sort().join(), 'ok,org',
+     'and nothing else at all — no ticket, no verdict, no state')
+  for (const secret of ['KS-00001', 'genuine', 'state', 'Daw Hla', '0125550001']) {
+    ok(!JSON.stringify(r.body).includes(secret), `no ${secret} on the about reply`)
+  }
 }
 
 console.log('a genuine ticket verifies, and says what the raffle knows about it')
@@ -256,6 +300,21 @@ console.log('it is deployed as the one function with the platform check off')
   ok(/\[functions\.api\][\s\S]*?verify_jwt = true/.test(toml),
     'and leaves it ON for the api function, which is the one holding the phone numbers')
 }
+
+/*
+ * BLANK CONTACTS ARE NOT TESTED HERE, and the reason is worth writing down so
+ * nobody adds the case and watches it pass for the wrong reason. numbering()
+ * caches config for CFG_TTL, 30 seconds, in a module-level variable — so a
+ * second world() with a different config inside one test run is answered from
+ * the first one's cache. A "blank" assertion placed after the filled one above
+ * would read the filled values and fail; placed before it, it would pass and
+ * then poison the filled case.
+ *
+ * The blank case belongs to the page anyway. `?? ''` here is trivially right;
+ * what actually matters is whether a page given nothing renders a heading with
+ * empty space under it, which reads as a page that failed to load rather than a
+ * raffle that has not filled its details in. tests/verifypage owns that.
+ */
 
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
