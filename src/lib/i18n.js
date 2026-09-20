@@ -274,6 +274,11 @@ export const MY_ERRORS = {
   BAD_PHONE: 'ဖုန်းနံပါတ် မမှန်ကန်ပါ',
   BAD_EMAIL: 'အီးမေးလ်လိပ်စာ မမှန်ကန်ပါ',
   BAD_WEBSITE: 'ဝဘ်ဆိုက်လိပ်စာ မမှန်ကန်ပါ',
+  /* The description an organiser writes for the public check page. Burmese
+   * unreviewed, same as the reset and seed groups above — I added these two
+   * without marking them, which is the omission this convention exists to
+   * prevent: an unmarked line is indistinguishable from a reviewed one, and
+   * the file's own count of what is outstanding then runs short. */
   ABOUT_TOO_LONG: 'ဖော်ပြချက် စာလုံးအရေအတွက် ကန့်သတ်ချက်ထက် ကျော်လွန်နေပါသည်',
   ABOUT_MARKUP: 'ဖော်ပြချက်တွင် < သို့မဟုတ် > ပါဝင်၍ မရပါ',
   BOOK_NOT_FOUND: 'ဤစာအုပ်ကို ရှာမတွေ့ပါ',
