@@ -75,6 +75,25 @@ defineProps({
 .verdict.ok { border-left: 3px solid var(--ok) }
 .verdict.warn { border-left: 3px solid var(--warn) }
 .vhead { display: flex; align-items: center; gap: 7px; margin: 0 0 10px }
+/*
+ * THESE THREE CAME BACK FROM THE PARENT, where they were stranded by a7fe5c9.
+ *
+ * TicketDesign.vue still carried `.vhead .dot`, `.verdict.ok .vhead .dot` and
+ * `.vgrid p` in its own scoped block after this component took the markup with
+ * it -- and a child's markup does not inherit a parent's scoped styles: only
+ * the child's ROOT element carries the parent's scope, and the dot is a span
+ * three levels inside. studio.css says exactly this at the top of the file, and
+ * it happened anyway, one extraction later.
+ *
+ * So the status dot has been an unstyled empty <span> -- no size, no colour,
+ * invisible -- and every <p> in the grid has been keeping its default margin,
+ * which is the loose spacing the card was not drawn with. Neither shows up in
+ * source review or in any assertion: the markup is right, the rules are right,
+ * and they are in different scopes. Only a picture shows it.
+ */
+.vhead .dot { width: 9px; height: 9px; border-radius: 2px; background: var(--warn) }
+.verdict.ok .vhead .dot { background: var(--ok) }
+.vgrid p { margin: 0 }
 .vgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px }
 .okt { color: var(--ok) }
 .badt { color: var(--bad) }

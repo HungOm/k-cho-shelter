@@ -1885,9 +1885,6 @@ const printedSize = computed(() => {
 .tlist p { margin: 0 }
 
 /* ---- the artwork verdict ---- */
-.vhead .dot { width: 9px; height: 9px; border-radius: 2px; background: var(--warn) }
-.verdict.ok .vhead .dot { background: var(--ok) }
-.vgrid p { margin: 0 }
 /* The magnitude before the precision: the figure is what the eye lands on and
  * the sentence under it is what makes it mean something. */
 .big { font-size: 1.3rem; font-weight: 600; margin: 3px 0 !important }
