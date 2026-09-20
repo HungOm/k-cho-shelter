@@ -60,8 +60,20 @@ const styleFiles = (dir, acc = []) => {
  * audit reported `--line` as a live reference in verify.css — from the comment
  * explaining that `--line` had been retired. A check that reads prose as code
  * cries wolf about the very fix that removed the bug.
+ *
+ * EACH COMMENT LEAVES ITS NEWLINES BEHIND, so the line numbers this reports are
+ * line numbers in the FILE. Deleting comments outright shifts everything after
+ * them: the first version of this told ticket-printing-qr-integration that
+ * verify.css:95 used --ink when the only such reference was at 207, and line 95
+ * was the middle of a comment. They checked with grep -n before touching
+ * anything, which is the only reason it cost minutes rather than an hour.
+ *
+ * A check whose whole value is finding the one line nobody can see by looking
+ * has to point at the right line. A wrong one sends the reader somewhere that
+ * looks fine, and the natural conclusion is that the test is broken.
  */
-const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
+const stripComments = (s) =>
+  s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ''))
 
 const files = styleFiles(ROOT + 'src')
 
