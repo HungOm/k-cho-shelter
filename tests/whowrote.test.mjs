@@ -303,5 +303,31 @@ console.log('9. the top role is not announced on a ticket row')
      'every tag is lowercase')
 }
 
+console.log('a name and the role after it are not run together')
+{
+  /*
+   * Reported from a real screen as "Hung OMMorganiser". RoleTag separated
+   * itself with a leading space inside its own span, and Vue's whitespace
+   * condensing strips that — so the separation has to be a margin, which
+   * cannot be condensed away. Three call sites had it; the fix is in the one
+   * component they share.
+   */
+  const tag = read('src/components/ui/RoleTag.vue')
+  ok(/\.roletag\s*\{[^}]*margin-left/.test(tag),
+     'the gap before the role is a margin, not template whitespace')
+  ok(!/class="roletag">\s+\{\{/.test(tag),
+     'and no leading space is left in the template implying it does the job')
+
+  /* Every screen that puts a role straight after a name relies on that one
+     rule, so none of them may hand-roll their own spacing either. */
+  const users = ['src/components/ui/Who.vue',
+                 'src/components/SellTicket.vue',
+                 'src/components/modals/BookDetail.vue']
+  for (const f of users) {
+    const src = read(f)
+    ok(/<RoleTag/.test(src), `${f.split('/').pop()} still shows a role after a name`)
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

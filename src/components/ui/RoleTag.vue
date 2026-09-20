@@ -29,14 +29,15 @@ const word = computed(() => (props.seller ? SELLER_TAG : ROLE_TAG[props.role] ||
 </script>
 
 <template>
-  <span v-if="word" class="roletag"> {{ word }}</span>
+  <span v-if="word" class="roletag">{{ word }}</span>
 </template>
 
 <style scoped>
 /*
- * Quiet and lighter than the name: it qualifies the name rather than competing
- * with it, and it sits inside the same bold run so it wraps with the name
- * instead of stranding itself on a line of its own.
+ * Quiet and lighter than the name, and inside the same bold run so it wraps
+ * with it. The gap is a MARGIN: it was a leading space in the template, which
+ * Vue's whitespace condensing removes, so all three call sites rendered
+ * "Hung OMMorganiser".
  */
-.roletag { font-weight: 500; font-size: .78rem; color: var(--muted); }
+.roletag { margin-left: .45em; font-weight: 500; font-size: .78rem; color: var(--muted); }
 </style>

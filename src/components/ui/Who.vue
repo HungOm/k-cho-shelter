@@ -50,6 +50,12 @@ const line = computed(() => {
  * horizontal space is already spoken for, and an address run on after a name
  * pushes the value it belongs to off the edge on a phone.
  */
-.person { display: inline-flex; flex-direction: column; line-height: 1.25; }
-.em { font-size: .74rem; color: var(--muted); word-break: break-all; }
+.person { display: inline-flex; flex-direction: column; gap: 2px; line-height: 1.3; }
+/*
+ * `break-all` broke an address at whatever character hit the edge, mid-word,
+ * even when it would have fitted on the next line. `anywhere` breaks only when
+ * there is no other way, so hungom.oct19@gmail.com stays readable until it
+ * genuinely cannot.
+ */
+.em { font-size: .74rem; color: var(--muted); overflow-wrap: anywhere; }
 </style>
