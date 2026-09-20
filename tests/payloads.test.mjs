@@ -150,9 +150,28 @@ console.log('report_draw_ready carries what the home screen computes its overvie
   ok(d.booksByStatus && typeof d.booksByStatus === 'object', 'booksByStatus is an object')
   ok(d.booksByStatus.Out === 1, 'and counts the book that is out')
 
-  // Draw.vue renders ready.blockers as a list of strings.
+  /*
+   * BOTH SHAPES, AND THE SCREEN PREFERS THE SECOND.
+   *
+   * `blockers` is the flattened sentence this has always returned. Draw.vue no
+   * longer leads with it — it renders `problems`, which carries each blocker's
+   * count, the REASON it blocks and `where` the fix is — and falls back to
+   * these strings when `problems` is absent.
+   *
+   * That fallback is not defensive habit: the Edge Function and the browser
+   * bundle deploy by different routes on different days, so a client newer than
+   * the function must not show an empty readiness card. "Nothing is wrong" is
+   * the most expensive wrong answer that screen has. So both are asserted —
+   * dropping either one breaks a real deployment ordering.
+   */
   ok(Array.isArray(d.blockers), 'blockers is an array')
-  ok(d.blockers.every((b) => typeof b === 'string'), 'of strings, which is what Draw.vue prints')
+  ok(d.blockers.every((b) => typeof b === 'string'), 'of strings, which is the fallback Draw.vue prints')
+  ok(Array.isArray(d.problems), 'problems is an array too — the shape the screen prefers')
+  for (const b of d.problems) {
+    ok(typeof b.what === 'string' && b.what, 'every problem says what it is')
+    ok(!b.where || typeof b.where === 'string',
+       'and names the screen that fixes it, or nothing at all')
+  }
 
   carries(d, ['ready', 'currency', 'drawDate', 'checkInDate', 'finalDeadline', 'finalPassed'],
     'report_draw_ready')

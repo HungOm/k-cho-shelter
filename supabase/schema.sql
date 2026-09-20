@@ -1504,6 +1504,15 @@ insert into config (key, value, notes) values
   ('ORG_NAME', '', 'Who is running the raffle. Shown on receipts. Set this before selling.'),
   ('ORG_LOGO', '', 'URL of your logo, shown on screen and on receipts. Blank shows no logo — it will NEVER show somebody else''s.'),
   ('ORG_LOGO_SMALL', '', 'Optional smaller version of the same logo, for phones on mobile data. Blank uses ORG_LOGO.'),
+  -- How to reach the organisers. These are the only contact details the raffle
+  -- holds, and the public ticket-check page is what needs them: a stranger with
+  -- a ticket that does not verify is offered "call the office" and it has to
+  -- ring somebody. Blank means no such control is shown, never a placeholder —
+  -- a wrong number on that page reaches somebody who has just been sold a
+  -- forgery, and sends them to the wrong charity.
+  ('ORG_PHONE', '', 'Office telephone, as you would write it on a poster. Shown on the public ticket-check page. Blank shows no number.'),
+  ('ORG_EMAIL', '', 'Office email. Shown on the public ticket-check page. Blank shows no address.'),
+  ('ORG_WEBSITE', '', 'Your website, starting with https://. Shown on the public ticket-check page. Blank shows no link. Only http and https are accepted — nothing else reaches a link on a page anybody can open.'),
   ('BRAND_COLOR', '', 'Your main colour, as a hex code like #0B7285. Buttons, tabs and the default mark follow it. Blank keeps the standard colour. The text colour on top is worked out for readability and is not set here.'),
   ('PROJECT_CODE', '', 'Short code for this raffle, e.g. CS-2026. Shown on receipts and reports. NOT part of ticket numbers, so it is safe to change at any time.'),
   ('ACTIVE_TICKETS', '', 'How many of the generated tickets are IN PLAY, counting from the first. Blank means all of them. Lower than TOTAL_TICKETS holds the rest back: they are not loaded, not sellable, and their books cannot be given out until released. Must be a whole number of books. Change it on the "Tickets in play" screen, not by hand.'),

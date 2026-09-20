@@ -56,6 +56,23 @@ export function configPayload(cfg: Record<string, string>) {
     // else's — see Logo.vue. Small is optional and only ever a size choice.
     orgLogo: cfg.ORG_LOGO ?? '',
     orgLogoSmall: cfg.ORG_LOGO_SMALL ?? '',
+    /*
+     * HOW TO REACH THE ORGANISERS — and the only reason these exist.
+     *
+     * The public check page offers a stranger who has scanned a ticket that
+     * does not verify three things to do: call the office, contact us, report
+     * it. None of them had anywhere to point: there was no phone, email or
+     * address for the organisation anywhere in config or schema. A dial button
+     * that dials nothing is worse than no button on that page, because it
+     * spends the one moment somebody was willing to act in.
+     *
+     * Blank is a real answer and means "we have not given one" — the page shows
+     * text instead of a dead control. Never a default, never a placeholder:
+     * a wrong number on a fraud-report page reaches a stranger.
+     */
+    orgPhone: cfg.ORG_PHONE ?? '',
+    orgEmail: cfg.ORG_EMAIL ?? '',
+    orgWebsite: cfg.ORG_WEBSITE ?? '',
     // One colour; the stylesheet derives the rest. Blank is a real no-op —
     // applyBrand removes the tokens and the stylesheet's own colour stands,
     // rather than half a theme being applied over it.

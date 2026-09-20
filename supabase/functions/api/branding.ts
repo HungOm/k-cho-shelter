@@ -218,3 +218,83 @@ export async function setBrandColor(p: Record<string, unknown>, user: AppUser, c
     .insert({ action: 'BRAND_COLOR', details: { colour: hex }, email: user.email })
   return { config: configPayload(await currentConfig(ctx)) }
 }
+
+/**
+ * HOW TO REACH THE ORGANISERS — phone, email, website.
+ *
+ * WHY THIS EXISTS. The public check page offers a stranger holding a ticket
+ * that does not verify three actions — call the office, contact us, report it —
+ * and until now none of them had anywhere to point. There is no phone, email or
+ * address for the organisation anywhere in config or schema. A dial button that
+ * dials nothing is worse than no button on that page: it spends the one moment
+ * somebody was willing to act in, and the person it fails is the one who has
+ * just been sold a forgery.
+ *
+ * ALL THREE ARE OPTIONAL AND BLANK IS A REAL ANSWER. An organiser who has not
+ * given a website gets no website link, not a broken one. Nothing here is ever
+ * defaulted or guessed: a wrong number on a fraud-report page reaches a
+ * stranger who is already suspicious, and the wrong charity gets the call.
+ *
+ * THE WEBSITE IS THE ONE THAT NEEDS GUARDING. It is the only field here that
+ * becomes an href on a page anybody can reach without signing in, so the scheme
+ * is checked rather than the shape: http and https only, and nothing else gets
+ * near an anchor. `javascript:` and `data:` are the reason — a settings field
+ * that reaches an unauthenticated page is a stored-XSS hole if it is trusted,
+ * and the organiser who types it is not necessarily the person who owns the
+ * raffle a week later.
+ *
+ * The phone is stored AS TYPED. It is dialled by a human reading it as much as
+ * by a tel: link, and the shapes are genuinely various — +60 3-1234 5678,
+ * 03-1234 5678, extensions. Stripping it to digits would lose what makes it
+ * readable and would not make it more correct.
+ */
+export async function setOrgContact(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const phone = String(p.phone ?? '').trim()
+  const email = String(p.email ?? '').trim()
+  const website = String(p.website ?? '').trim()
+
+  if (phone && !/^[+\d][\d\s()\-.]{4,24}$/.test(phone)) {
+    throw new ApiError('BAD_PHONE',
+      `"${phone}" does not look like a telephone number. Digits, spaces, ` +
+      'brackets and dashes, starting with a number or +. Leave it empty if ' +
+      'there is no office number to give.')
+  }
+  if (email && !/^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(email)) {
+    throw new ApiError('BAD_EMAIL',
+      `"${email}" does not look like an email address. Leave it empty if there ` +
+      'is no address to give.')
+  }
+  if (website) {
+    /*
+     * Scheme first, because that is the security question, and the message says
+     * what to do rather than only what is wrong — somebody typing their own
+     * charity's address will most often have left the https:// off.
+     */
+    if (!/^https?:\/\//i.test(website)) {
+      throw new ApiError('BAD_WEBSITE',
+        `"${website}" is not a web address this can use. It has to start with ` +
+        'https:// — that is what makes it a link somebody can safely follow ' +
+        'from the public ticket-check page.')
+    }
+    if (/\s/.test(website)) {
+      throw new ApiError('BAD_WEBSITE', 'A web address cannot contain a space.')
+    }
+  }
+
+  await writeConfig(ctx, {
+    ORG_PHONE: phone,
+    ORG_EMAIL: email,
+    ORG_WEBSITE: website,
+  })
+  /*
+   * Audited by WHICH FIELDS CHANGED, not by their values. The audit log is read
+   * by more people than the settings screen, and an office number is not a
+   * secret but it is not something to scatter through a log either.
+   */
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'ORG_CONTACT',
+    details: { phone: !!phone, email: !!email, website: !!website },
+    email: user.email,
+  })
+  return { config: configPayload(await currentConfig(ctx)) }
+}

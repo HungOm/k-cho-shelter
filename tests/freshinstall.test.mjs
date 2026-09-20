@@ -57,7 +57,31 @@ const seed = (() => {
 })()
 
 ok(!!seed, 'the config seed block was found in schema.sql')
-ok(Object.keys(seed ?? {}).length === 29, `29 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
+/*
+ * THE COUNT IS A TRIPWIRE, not the point. It fails when the seed block loses a
+ * key and when the regex above stops matching — the second being the reason it
+ * is exact rather than a lower bound, since a broken parse returns zero and a
+ * `>=` would let that through as "no keys lost".
+ *
+ * 32: the 29 that were here plus ORG_PHONE, ORG_EMAIL and ORG_WEBSITE, added
+ * when the public check page needed somewhere for "call the office" to point.
+ */
+ok(Object.keys(seed ?? {}).length === 32, `32 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
+
+/*
+ * AND THE KEYS THE SERVER ACTUALLY READS ARE ALL THERE — which a count cannot
+ * say. A key renamed on one side of the wall keeps the count identical and
+ * gives every install a silently empty setting; this compares the two lists
+ * rather than their lengths.
+ */
+{
+  const payload = readFileSync(ROOT + 'supabase/functions/api/config.ts', 'utf8')
+  const read = [...payload.matchAll(/cfg\.([A-Z_]+)/g)].map((m) => m[1])
+  ok(read.length > 15, `configPayload reads ${read.length} keys out of config`)
+  for (const k of new Set(read)) {
+    ok(k in (seed ?? {}), `${k} is read by configPayload and seeded by schema.sql`)
+  }
+}
 
 /*
  * The three the ticket artwork added. Blank is the right starting value for all
