@@ -90,7 +90,9 @@ same file, they are the same task and one person does both.
 | 4 | Toolbar + advanced | the shell, `studio.css` | after 1c |
 | 5 | Preview mode | `ticketdesign/PreviewTab.vue`, `ui/SheetPreview.vue` | **offered → ticket-printing-qr-integration** |
 | 6 | Layers | `Inspector.vue` | after 2 |
-| — | Icon set | `ui/Icon.vue` | **offered → kcho-shelter-e3** |
+| — | Icon set | `ui/Icon.vue` | **built by kcho-shelter-e3**, uncommitted |
+| — | Wire the icons in | the studio files | after the icon set is committed |
+| — | `key` and `phoneOff` read as blobs | `ui/Icon.vue` | **unowned** — in the sidebar, nobody's |
 | — | Token audit | `src/style.css`, `studio.css` | **offered → kcho-shelter-72** |
 
 **The three 1a→1b→1c rows are one worker's job, in order.** They all edit the
@@ -110,6 +112,18 @@ stylesheets nobody is in.
 that edits a selection, a canvas that changes it, and a layer list that
 reorders it are three views of one piece of state. Distributing them produces
 three answers to "what is selected".
+
+### Depending on work that is not committed yet
+
+Wait for it. A commit that references a peer's uncommitted file is green in
+this worktree and red the moment it is archived — the disk has their work on
+it and the commit does not. That has happened once already: a component
+importing `stubShare` from a module a peer had written but not committed
+passed every local run and failed on the first archive.
+
+So the icon wiring waits for the icon commit, and anything else that leans on
+a neighbour's file waits the same way. Nothing is lost by waiting; the next
+task in the list is always one that stands alone.
 
 ### Handing a task over
 
