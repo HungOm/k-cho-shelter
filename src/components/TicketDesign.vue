@@ -45,6 +45,7 @@ import {
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
+import { blankArtboardFile } from '../lib/blankticket.js'
 import Dim from './ui/Dim.vue'
 import SheetTab from './ticketdesign/SheetTab.vue'
 import ShapesPanel from './ticketdesign/ShapesPanel.vue'
@@ -687,6 +688,37 @@ async function pickFile(ev) {
   const file = ev.target.files?.[0]
   ev.target.value = ''
   if (!file) return
+  await useFile(file)
+}
+
+/*
+ * STARTING FROM A BLANK TICKET, which is the second route into a design.
+ *
+ * It draws a real PNG at the chosen size — trim edge, stub perforation, white
+ * paper — and hands it to the SAME function an uploaded file goes through. That
+ * is the whole point: nothing downstream learns that this artwork was
+ * generated, so placement, the print sheet and the QR work unchanged, and real
+ * artwork can replace it later without anything being unpicked.
+ *
+ * The size comes from the raffle's own accepted shapes, so the picture cannot
+ * be drawn at a size the uploader would then refuse.
+ */
+async function startBlank(sz) {
+  uploadErr.value = ''
+  uploadNote.value = ''
+  busy.value = true
+  try {
+    const file = await blankArtboardFile(
+      sz.widthMM, sz.heightMM, stubShare(design.value), 300, sz.label || 'Blank ticket')
+    busy.value = false
+    await useFile(file)
+  } catch (err) {
+    busy.value = false
+    uploadErr.value = err.message
+  }
+}
+
+async function useFile(file) {
   uploadErr.value = ''
   uploadNote.value = ''
   const why = rejectFile(file)
@@ -1313,7 +1345,8 @@ const printedSize = computed(() => {
         -->
         <TemplateRail :templates="templates" :active-id="activeId" :busy="busy"
                       :error="uploadErr" :note="uploadNote"
-                      @choose="choose" @remove="remove" @file="pickFile" />
+                      :sizes="sizes"
+                      @choose="choose" @remove="remove" @file="pickFile" @blank="startBlank" />
 
         <div class="stagewrap">
           <template v-if="active && design">

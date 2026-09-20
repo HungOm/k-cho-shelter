@@ -25,8 +25,15 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
   error: { type: String, default: '' },
   note: { type: String, default: '' },
+  /*
+   * The ticket shapes this raffle accepts. They are already the list an upload
+   * is validated against, so they are exactly the sizes a blank ticket may be
+   * started at — offering anything else would produce a picture the uploader
+   * then refuses.
+   */
+  sizes: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['choose', 'remove', 'file'])
+const emit = defineEmits(['choose', 'remove', 'file', 'blank'])
 
 /* The hidden input the button opens. It moved here with the markup that uses
  * it — a ref to a node the parent no longer renders is a handle to somebody
@@ -84,6 +91,32 @@ function onPick(e) {
     </button>
     <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp"
            :disabled="busy" @change="onPick" hidden>
+    <!--
+      THE SECOND ROUTE IN, and the one that was missing entirely.
+
+      The studio places fields onto a picture, so a raffle whose artwork has not
+      arrived could not begin: this panel offered an upload and nothing else,
+      and the rest of the screen waits on a template existing. "Draw the ticket
+      now, get the artwork later" was not a route the product had.
+
+      What it makes is a REAL PNG at the chosen size, with a trim edge and the
+      stub's perforation on it, sent through the same upload as any other
+      picture — so nothing downstream knows it was generated, and artwork can
+      replace it later without anything being unpicked.
+
+      Only the sizes this raffle accepts are offered. Anything else would be
+      drawn and then refused by the same check that guards an upload.
+    -->
+    <div v-if="sizes.length" class="blankstart">
+      <p class="tiny muted">or start from a blank ticket and place the fields now</p>
+      <button v-for="(sz, i) in sizes" :key="i" type="button"
+              class="btn sm" :disabled="busy"
+              :title="`A blank ${sz.label} ticket, with the trim edge and the stub's perforation drawn on it`"
+              @click="emit('blank', sz)">
+        {{ sz.label }}
+      </button>
+    </div>
+
     <p class="tiny muted"
        title="One blank ticket with its stub. SVG is refused, and the size is read from the file's own header — renaming a file will not get it past.">
       PNG, JPEG or WebP · up to 4 MB
@@ -97,6 +130,10 @@ function onPick(e) {
 <style scoped src="./studio.css"></style>
 
 <style scoped>
+/* The second route sits under the first and reads as an alternative to it, not
+   as a row of settings: one quiet sentence, then the sizes as things to press. */
+.blankstart { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.blankstart p { width: 100%; margin: 0 0 2px; }
 .tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px }
 .tlist li { border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 3px }
 .tlist li.on { border-color: var(--brand); background: var(--brand-soft) }

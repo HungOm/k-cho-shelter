@@ -402,3 +402,43 @@ imagination. Every assignment carries:
 A peer's user outranks this plan. A handout is a request, not an instruction:
 any session may decline, and a session that is mid-flight on its own user's
 work is not blocked by anything written here.
+
+---
+
+## 12. Chapter 2, measured — 2026-09-20 16:45
+
+Measured against the source rather than read off the cards, after two sessions
+independently found that the document describes work already done.
+
+| Card | State |
+|---|---|
+| 9b layers, grouped by half | **built** (this round) |
+| 9b artboard toggles, ruler, status bar | **built** |
+| 9b dimensions line with dpi | **built** (this round) |
+| 2a artwork verdict | **built** — `ArtworkVerdict.vue` |
+| 2b print sheet | **built in full** — all five papers, orientation, three controls, cut lines, and the chosen size in mono |
+| 8c digital ticket | **built** |
+| 9a artboard presets | **built** — `ShapesPanel.vue` is that, under another name |
+| **9a "Draw it from scratch"** | **absent machinery — a product decision, not a UI task** |
+| **7a Exit studio / collapsed rail** | **absent — a real interaction, unbuilt** |
+
+### The one that matters: "Draw it from scratch"
+
+The card offers two routes into a design and describes the second as "a blank
+artboard in the raffle's colours. Add panels, rules, text and fields."
+
+The studio cannot do that. It places **fields, codes and text onto artwork** —
+the palette is exactly "A field · A code · Own words" — and every position is
+held as a share of an uploaded image. There are no panels, no rules, no
+drawing. Offering that route would promise an editor the product does not have,
+and the first organiser to choose it would find an empty screen.
+
+This is the third time the document has drawn a control over absent machinery:
+bleed and safe area (chapter 2), selection on Books (chapter 3), and this. The
+pattern is worth naming — **a mockup cannot tell you whether the thing behind
+the control exists**, and the document is good enough that its drawings are
+persuasive. Measure, then build.
+
+Either the studio grows a drawing mode — a real piece of work, and a different
+product from a placement tool — or 9a offers one honest route and says what the
+other would require. That is the user's call.
