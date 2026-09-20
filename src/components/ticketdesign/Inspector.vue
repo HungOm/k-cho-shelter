@@ -237,4 +237,29 @@ const emit = defineEmits(['remove', 'pick-colour'])
 
 <style scoped>
 .panelhead { display: flex; align-items: flex-start; gap: 8px }
+/*
+ * THESE CAME BACK FROM TicketDesign.vue, stranded when this file took the
+ * markup. A child's markup does not inherit a parent's scoped styles -- only
+ * the child's ROOT element carries the parent's scope -- so every one of these
+ * has been inert since the extraction while looking perfectly correct in the
+ * parent's stylesheet. Same cause as the artwork verdict's status dot (3a70895)
+ * and as <Ink> never being imported: something did not follow its markup out.
+ *
+ * The dead copies are still in TicketDesign.vue and are somebody else's file to
+ * clean while they hold it. Adding them here is safe either way -- the parent's
+ * are inert, so this is the only copy that does anything.
+ */
+.panelhead h3 { margin: 2px 0 0; font-size: .95rem }
+/* Lettering and Bold are ONE row: the checkbox belongs beside the select it
+   qualifies, not under it. Unstyled, they stacked and the panel grew 33px. */
+.sitrow { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: end }
+.choice.bold { padding-bottom: 6px }
+.saving { color: var(--muted) }
+/* What happens to this text at its longest -- the whole point of the overflow
+   group. Unstyled it was a bare sentence with no tone and no box at all. */
+.report { border-radius: 8px; padding: 8px 10px; font-size: .76rem }
+.report p { margin: 3px 0 0 }
+.report.ok { background: var(--ok-soft); color: var(--ok) }
+.report.warn { background: var(--warn-soft); color: var(--warn) }
+.report.info { background: var(--info-soft); color: var(--info) }
 </style>

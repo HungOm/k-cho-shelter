@@ -108,4 +108,14 @@ const emit = defineEmits(['add', 'save', 'remove'])
 .sname { flex: 1; min-width: 0; min-height: 30px; padding: 3px 6px; font-size: .84rem; font-weight: 500 }
 .sgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px }
 .unit { font-size: .74rem; color: var(--muted) }
+/* Stranded in TicketDesign.vue when this file took the markup: a child's
+ * markup does not inherit a parent's scoped styles, so these have been inert
+ * since the extraction. Same cause as the verdict's status dot (3a70895). The
+ * dead copies remain in the parent for whoever holds it next. */
+.prow { display: flex; gap: 6px; flex-wrap: wrap }
+.sgrid input {
+  min-height: 30px; padding: 3px 6px; text-align: right; font-size: 12px;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
+}
+.sgrid .unit { font-size: .66rem }
 </style>

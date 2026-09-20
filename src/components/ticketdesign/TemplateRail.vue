@@ -135,6 +135,11 @@ function onPick(e) {
 .blankstart { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 .blankstart p { width: 100%; margin: 0 0 2px; }
 .tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px }
+/* Stranded in TicketDesign.vue when this file took the markup: a child's
+ * markup does not inherit a parent's scoped styles, so these have been inert
+ * since the extraction. Same cause as the verdict's status dot (3a70895). The
+ * dead copies remain in the parent for whoever holds it next. */
+.tlist p { margin: 0 }
 .tlist li { border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 3px }
 .tlist li.on { border-color: var(--brand); background: var(--brand-soft) }
 .tthumb {
