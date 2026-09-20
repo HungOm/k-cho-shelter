@@ -29,8 +29,11 @@ import { toasts } from '../../lib/store.js'
   padding: 14px 20px; border-radius: 999px;
   font-size: .95rem; font-weight: 650; box-shadow: var(--shadow-lg);
 }
-.toast.bad { background: var(--bad); color: #fff; }
-.toast.ok  { background: var(--ok);  color: #fff; }
+/* The base .toast above already flips correctly — var(--text) on var(--bg).
+   These two did not: white on a colour that is LIGHT in dark mode, so every
+   refusal was 1.90:1 and every confirmation 1.54:1 on a dark phone. */
+.toast.bad { background: var(--bad); color: var(--bad-ink); }
+.toast.ok  { background: var(--ok);  color: var(--ok-ink); }
 .toast .ic { font-size: 1.1rem; }
 .toast .my {
   display: block;

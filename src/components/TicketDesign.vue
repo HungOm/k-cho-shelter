@@ -1838,7 +1838,7 @@ const printedSize = computed(() => {
 .stubline.still { cursor: default }
 .stubgrip {
   position: absolute; top: 50%; left: -21px; transform: translateY(-50%);
-  background: var(--info); color: #fff; font-size: .58rem; padding: 2px 3px;
+  background: var(--info); color: var(--info-ink); font-size: .58rem; padding: 2px 3px;
   border-radius: 3px; font-family: var(--font-data);
   writing-mode: vertical-rl;
 }

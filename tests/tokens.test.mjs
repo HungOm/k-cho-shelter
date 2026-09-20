@@ -142,5 +142,57 @@ console.log('and every token that varies by theme has a dark value')
   ok(stale.length === 0, 'the theme-free list names only tokens that exist')
 }
 
+console.log('and nothing writes hard-coded text onto a semantic fill')
+{
+  /*
+   * THE THIRD INSTANCE OF ONE MISTAKE, and the reason this is a rule rather
+   * than three fixes.
+   *
+   *   .toast.bad { background: var(--bad); color: #fff }
+   *   .toast.ok  { background: var(--ok);  color: #fff }
+   *
+   * --ok, --bad, --warn, --info and --brand are FOREGROUND values: tuned to
+   * stay legible as text on --surface, which means that in dark mode they are
+   * LIGHT. --ok is #6ee7a0 there. So white text on a fill of one of them was
+   * 1.54:1 for every confirmation this app has ever shown and 1.90:1 for every
+   * refusal, on every phone in dark mode. .btn.danger and a badge in the studio
+   * had it too, and the verify page's action button had it this afternoon.
+   *
+   * WHY NOTHING ELSE SEES IT. The literal is correct in whichever theme the
+   * author happens to have open — #fff on #b3261e is 6.54:1 and perfectly
+   * fine — so it cannot be caught by reading the rule or by looking at the
+   * screen you are already looking at. It needs the ratio computed, or the
+   * token present so that reaching for it is easier than typing #fff.
+   *
+   * The base .toast rule got it right by using var(--text) on var(--bg), which
+   * is what makes the two variants beneath it so easy to miss.
+   */
+  const SEMANTIC = ['--brand', '--ok', '--bad', '--warn', '--info']
+  let filled = 0
+  const bare = []
+
+  for (const f of files) {
+    const src = stripComments(readFileSync(f, 'utf8'))
+    for (const m of src.matchAll(/\{([^{}]*)\}/g)) {
+      const body = m[1]
+      const bg = body.match(/background(?:-color)?:\s*([^;]+)/)
+      if (!bg) continue
+      const sem = SEMANTIC.find((t) => bg[1].includes(`var(${t})`))
+      if (!sem) continue
+      filled++
+      const col = body.match(/(?:^|;)\s*color:\s*([^;]+)/)
+      if (!col) continue                       // inherits, or set in another rule
+      const v = col[1].trim()
+      if (/^var\(/.test(v)) continue            // a token: --*-ink, --surface, --bg
+      bare.push(`${f.replace(ROOT, '')} fills with ${sem} and writes color: ${v}`)
+    }
+  }
+
+  ok(filled > 8, `found the rules that fill with a semantic colour (${filled})`)
+  for (const b of bare) console.log('  FAIL ' + b)
+  fail += bare.length
+  ok(bare.length === 0, `each of them takes its text colour from a token (${bare.length} do not)`)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -1404,7 +1404,7 @@ function details(d) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word;
 }
 .phrasein { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
-.btn.danger { background: var(--bad); color: #fff; border-color: var(--bad) }
+.btn.danger { background: var(--bad); color: var(--bad-ink); border-color: var(--bad) }
 .btn.danger:disabled { opacity: .5 }
 .wide { width: 100%; margin-top: 10px }
 </style>

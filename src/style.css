@@ -74,6 +74,28 @@
   --warn: #9a5b06;    --warn-soft: #fdf0d5;
   --bad: #b3261e;     --bad-soft: #fde8e6;
   --info: #1d4ed8;    --info-soft: #e4ecfd;
+  /*
+   * TEXT ON A SEMANTIC FILL, and the family exists because the colours above
+   * are FOREGROUND values. They are tuned to stay legible as text on --surface,
+   * which means that in dark mode they are LIGHT — --ok is #6ee7a0 there. The
+   * moment one of them is used as a BACKGROUND, white text on it collapses:
+   * every toast in this app was #fff on --ok or --bad, which is 5.4:1 and
+   * 6.5:1 in light and 1.54:1 and 1.90:1 in dark. Every confirmation and every
+   * refusal, unreadable on a phone in dark mode.
+   *
+   * What makes it invisible is that the literal is correct in whichever theme
+   * the author has open, so it cannot be caught by looking — only by computing
+   * the ratio, or by having the token here to reach for. --brand-ink has
+   * existed for exactly this since .btn.primary; these four are its siblings
+   * and should have been written at the same time.
+   *
+   * TicketsInPlay.vue reached for `var(--warn-ink, …)` before this block
+   * existed, which is evidence the family was always the intended shape.
+   */
+  --ok-ink: #ffffff;
+  --warn-ink: #ffffff;
+  --bad-ink: #ffffff;
+  --info-ink: #ffffff;
 
   /*
    * THE TICKET'S OWN COLOUR, which is not a UI colour and must never become
@@ -181,6 +203,13 @@
     --warn: #fbbf50;    --warn-soft: #362a10;
     --bad: #fca5a0;     --bad-soft: #3a1b19;
     --info: #93b4fd;    --info-soft: #16233f;
+    /* The page's own background, so a filled pill reads as a hole punched in
+       the page rather than as a fifth colour. 9.16:1 on --info at worst and
+       12.23:1 on --ok at best; white was 1.54 to 2.06. */
+    --ok-ink: #0d1211;
+    --warn-ink: #0d1211;
+    --bad-ink: #0d1211;
+    --info-ink: #0d1211;
 
     --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 20px rgba(0,0,0,.3);
     --shadow-lg: 0 10px 40px rgba(0,0,0,.5);
