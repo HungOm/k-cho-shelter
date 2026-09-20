@@ -20,6 +20,21 @@
  * handing them down would be a parent claiming to own them.
  */
 import { SOURCES, SOURCE, FAMILIES, ALIGN, OVERFLOW, nameOf } from '../../lib/ticketelements.js'
+/*
+ * THE COLOUR CONTROL, IMPORTED HERE RATHER THAN IN THE PARENT.
+ *
+ * <Ink> has been in this template since e6db02e, the commit that extracted this
+ * file, and has never been imported into it -- the import stayed behind in
+ * TicketDesign.vue, where nothing used it. A component in <script setup> that is
+ * neither imported nor globally registered does not resolve, and Vue renders an
+ * unresolved component as nothing at all rather than as an error. So a text
+ * element on a ticket has had no colour control for as long as this file has
+ * existed, silently.
+ *
+ * vue/no-undef-components does not catch it: the rule flags <Inkk>, <Link> and
+ * <Logo> in the same file and skips <Ink> by name.
+ */
+import Ink from '../ui/Ink.vue'
 
 defineProps({
   /** The selected element, edited in place. Null when nothing is selected. */
@@ -30,16 +45,43 @@ defineProps({
   sheetWidthMM: { type: Number, default: 190 },
   /** How small a QR module lands at that width, when a code is selected. */
   qrDensity: { type: Object, default: null },
+  /*
+   * WHERE THE BOX ACTUALLY LANDED, in the template's own pixels, and the
+   * millimetres each of those is worth. Both came across in the extraction as
+   * template references with nothing behind them, so `v-if="inPixels"` has been
+   * permanently false and the printed-size line under the box has never once
+   * rendered. They are the parent's to compute -- only it knows the artwork's
+   * dimensions -- so they arrive as props.
+   */
+  inPixels: { type: Object, default: null },
+  mmPer: { type: Number, default: 0 },
+  /** Colours read off this artwork, offered under the picker. */
+  swatches: { type: Array, default: () => [] },
+  /** Whether this browser has an EyeDropper to offer at all. */
+  canDrop: { type: Boolean, default: false },
+  /** Which half of the ticket the box sits on, in the words the list uses. */
+  half: { type: String, default: '' },
 })
-const emit = defineEmits(['remove'])
+/*
+ * `pick-colour` carries the callback rather than a colour, because the parent
+ * owns the EyeDropper and this panel owns the element being edited. The parent
+ * opens the dropper and calls back with what was picked.
+ */
+const emit = defineEmits(['remove', 'pick-colour'])
 </script>
 
 <template>
-<aside class="panel">
+<!--
+  NO LONGER THE PANEL ITSELF. The parent draws `.panel` and the tab strip; this
+  is what sits under the "Selected" tab, so it is a body rather than a box. The
+  rubric that said "Selected" went with it -- the tab says that now, and a panel
+  whose tab and whose first line say the same word is one of them wasted.
+-->
+<div class="panelbody">
   <template v-if="element">
     <div class="panelhead">
       <div>
-        <p class="rubric">Selected</p>
+        <p v-if="half" class="rubric">{{ half }}</p>
         <h3>{{ nameOf(element) }}</h3>
       </div>
       <button class="btn sm danger" :title="`Take ${nameOf(element)} off the ticket`"
@@ -123,7 +165,7 @@ const emit = defineEmits(['remove'])
       <!-- A colour needs the swatch, the hex and the dropper side by side;
            squeezed into half a 300px column the hex was truncated. -->
       <Ink v-model="element.ink" label="Colour" :swatches="swatches"
-           :can-drop="canDrop" @pick="dropper((c) => { element.ink = c })" />
+           :can-drop="canDrop" @pick="emit('pick-colour', (c) => { element.ink = c })" />
       <div class="sitrow">
         <label class="formrow"><span class="cap">Lettering</span>
           <span class="wrap">
@@ -188,7 +230,7 @@ const emit = defineEmits(['remove'])
       and where it sits.
     </p>
   </div>
-</aside>
+</div>
 </template>
 
 <style scoped src="./studio.css"></style>
