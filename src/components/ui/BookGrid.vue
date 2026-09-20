@@ -33,22 +33,11 @@ import Bi from './Bi.vue'
 const props = defineProps({
   books: { type: Array, default: () => [] },
   limit: Number,
-  /*
-   * SELECTION IS OPT-IN, and that is what makes it safe to add.
-   *
-   * Left alone, a click opens the book exactly as it always has — which is what
-   * Home wants, because a tile there is a shortcut into one book and nothing
-   * else. The Books screen turns it on: a click there PICKS the book and raises
-   * a bar naming it, so the things you can do to a book sit next to the book
-   * rather than in a card of six buttons that has no idea which one you meant.
-   *
-   * Two emits rather than one flag on a shared emit, so a listener cannot be
-   * wired to the wrong intention by accident.
-   */
-  selectable: Boolean,
-  selected: { type: String, default: '' },
 })
-const emit = defineEmits(['pick', 'more', 'select'])
+/* A click opens the book. There was a selection mode here, for a bar under the
+ * Books grid that named the picked book; the bar is gone and nothing listened
+ * for `select` any more — see emits.test.mjs, which is what caught it. */
+const emit = defineEmits(['pick', 'more'])
 
 const shown = computed(() => props.limit ? props.books.slice(0, props.limit) : props.books)
 const remaining = computed(() => props.limit ? Math.max(0, props.books.length - props.limit) : 0)
@@ -98,10 +87,9 @@ function sales(b) {
     <div class="grid">
       <button v-for="b in shown" :key="b.book"
               :class="['bk', 's-' + b.status, sales(b) && 'sold-' + sales(b),
-                       { late: b.daysOverdue > 0, on: selectable && selected === b.book }]"
-              :aria-pressed="selectable ? String(selected === b.book) : undefined"
+                       { late: b.daysOverdue > 0 }]"
               :title="label(b)"
-              @click="emit(selectable ? 'select' : 'pick', b)">
+              @click="emit('pick', b)">
         {{ bookShort(b.book) }}
       </button>
       <button v-if="remaining" class="bk more" @click="emit('more')" :title="remaining + ' more'">
@@ -131,7 +119,6 @@ function sales(b) {
  * outline sits in the gap between tiles and reads at a glance without touching
  * what the square already means.
  */
-.bk.on { outline: 3px solid var(--text); outline-offset: 2px; z-index: 1; }
 .bk {
   aspect-ratio: 1; border: 0; border-radius: 7px; padding: 0;
   position: relative; --seal: 13px;

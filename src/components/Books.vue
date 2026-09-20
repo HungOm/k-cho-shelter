@@ -18,37 +18,15 @@ const emit = defineEmits(['issue', 'transfer', 'return-books', 'restock', 'mark'
 const showHistory = ref(null)
 
 /*
- * THE CHOSEN BOOK, and the bar that appears beside it.
+ * A TILE OPENS ITS BOOK, which is the same thing it does on Home.
  *
- * Clicking a tile used to open the book's sheet immediately. That is one of the
- * three things somebody wants from a tile, and it was the only one reachable:
- * "give this book out" and "print this book's tickets" lived in a card of six
- * buttons at the bottom of the screen which had no idea a book was in mind, so
- * both began by asking the organiser to type a number they had just clicked on.
- *
- * Selecting instead of opening keeps the sheet one press away and puts the
- * other two next to the square. Pressing the same tile again clears it, so
- * there is always a way back to nothing selected.
+ * There was a selection step here, and a bar that appeared under the grid
+ * carrying "give this book out" and "print this book's tickets" with the book
+ * already filled in. The bar is gone, so selecting has nothing left to feed and
+ * a square that only highlights answers nothing. Those two actions are back
+ * where they were before it: "Give out books" at the top and "Print tickets"
+ * under "Other things you can do", each starting by asking which book.
  */
-const picked = ref(null)
-function pick(b) {
-  picked.value = picked.value?.book === b.book ? null : b
-}
-
-/*
- * WHAT THE BAR CAN HONESTLY SAY. The book row carries its custody and its
- * seller; it does not carry its ticket range, so that is worked out from the
- * tickets already loaded — and OMITTED rather than guessed at when none are
- * loaded yet. A range invented from a book number would be wrong for any raffle
- * whose books are not a uniform ten.
- */
-const pickedRange = computed(() => {
-  const b = picked.value
-  if (!b) return ''
-  const ns = (state.tickets || []).filter(t => t.book === b.book).map(t => t.number).sort()
-  return ns.length ? (ns.length === 1 ? ns[0] : `${ns[0]} — ${ns[ns.length - 1]}`) : ''
-})
-
 const status = ref('')
 const agent = ref('')
 
@@ -91,27 +69,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
           <option v-for="a in state.agents" :key="a.id" :value="a.id">{{ a.name }}</option>
         </select>
       </div>
-      <BookGrid :books="shown" selectable :selected="picked?.book || ''" @select="pick" />
-
-      <!--
-        THE BAR ONLY EXISTS WHEN A BOOK DOES. An action bar that is always on
-        screen with its buttons greyed out is furniture: it takes the space of a
-        decision without ever being one. This says which book, where it is, and
-        which tickets are in it — then offers the three things that are only
-        answerable once a book is named.
-      -->
-      <div v-if="picked" class="pickbar">
-        <span class="what">
-          <b>{{ picked.book }}</b> selected
-          <template v-if="pickedRange"> · <span class="data">{{ pickedRange }}</span></template>
-          · {{ (BOOK_WORDS[picked.status] || picked.status || '').toLowerCase() }}
-        </span>
-        <span class="row wrap">
-          <button v-if="isAdmin" class="btn sm" @click="emit('issue', picked)">Give to a seller</button>
-          <button class="btn sm" @click="emit('open-book', picked)">Open the book</button>
-          <button class="btn sm" @click="emit('print-range', { book: picked.book })">Print tickets</button>
-        </span>
-      </div>
+      <BookGrid :books="shown" @pick="b => emit('open-book', b)" />
     </div>
 
     <div v-if="isAdmin" class="card">
@@ -164,20 +122,6 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
 </template>
 
 <style scoped>
-/*
- * Sticks to the bottom of the viewport so the bar stays reachable while the
- * grid is scrolled — six hundred squares is taller than a screen, and a bar
- * that scrolls away from the tile you just pressed is a bar you have to hunt.
- */
-.pickbar {
-  position: sticky; bottom: 10px; z-index: 2;
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-  gap: 10px; margin-top: 12px; padding: 10px 14px;
-  background: var(--surface); border: 1.5px solid var(--brand-line);
-  border-radius: var(--r-sm); box-shadow: var(--shadow);
-}
-.pickbar .what { font-size: .92em; color: var(--muted); }
-.pickbar .what b { color: var(--text); font-family: var(--font-data); }
 .stat.tap { cursor: pointer; text-align: left; transition: border-color .14s, transform .12s; }
 .stat.tap:hover { border-color: var(--brand); transform: translateY(-2px); }
 .stat.tap.on { border-color: var(--brand); background: var(--brand-soft); }
