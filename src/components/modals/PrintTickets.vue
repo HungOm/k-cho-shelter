@@ -114,7 +114,7 @@ const missing = computed(() => result.value?.notGenerated ?? [])
  *
  * Held here rather than written back to the template, because a margin is a
  * fact about the printer somebody is standing at, not about the ticket. The
- * template's own numbers are the starting point and the Ticket design screen is
+ * template's own numbers are the starting point and the Ticket Studio screen is
  * where a lasting change belongs; this is the knob you turn when the office
  * printer eats 12 mm instead of 10.
  */
@@ -472,7 +472,7 @@ async function printThem() {
          wide @close="emit('close')">
     <p v-if="!hasArtwork" class="note bad">
       There is no ticket artwork yet, so nothing can be printed. Upload it on the
-      Ticket design screen first.
+      Ticket Studio screen first.
     </p>
 
     <template v-else>
@@ -552,7 +552,7 @@ async function printThem() {
                 <label class="choice"><input v-model="runSheet.cutlines" type="checkbox"> Cut lines</label>
               </div>
               <p class="tiny mono" :class="fit.fits ? 'muted' : 'bad'">{{ pageSum }}</p>
-              <p class="tiny muted">This run only. The template's own setup is on Ticket design.</p>
+              <p class="tiny muted">This run only. The template's own setup is on Ticket Studio.</p>
             </div>
           </template>
 
