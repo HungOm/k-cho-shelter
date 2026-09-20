@@ -90,8 +90,11 @@ function build(componentPath, storeStub, withTemplate, real = []) {
    * has no idea what a .vue file is — leaving the import pointing at one fails
    * the bundle with a parse error rather than rendering anything. So a kept
    * child is compiled to a probe beside itself, exactly the way the parent is,
-   * and the import is pointed at that. Its own children are stubbed: one level
-   * is what a split screen needs, and deeper is a different test.
+   * and the import is pointed at that. IT RECURSES, because one level turned
+   * out not to be enough the first time it was used: the print sheet tab is a
+   * child of the designer and mounts the page as a child of its own, so the
+   * page came back stubbed and the assertion failed on a screen that was
+   * correct. A `compiled` set stops a cycle repeating.
    */
   const compiled = new Set()
   const compileChild = (fromDir, spec) => {
@@ -107,10 +110,10 @@ function build(componentPath, storeStub, withTemplate, real = []) {
       source: cd.template.content, id: 'c', filename: rel,
       compilerOptions: { bindingMetadata: cs.bindings },
     })
-    const plain = (code) => code.replace(/from '(.*)\.vue'/g, "from './__stubvue.js'")
+    const childDir = join(fromDir, rel.slice(0, rel.lastIndexOf('/') + 1))
     writeFileSync(join(dir, fromDir, outRel),
-      plain(cs.content).replace('export default', 'const __c =') + '\n' +
-      plain(ct.code) + '\nexport default { ...__c, render }\n')
+      stub(cs.content, childDir).replace('export default', 'const __c =') + '\n' +
+      stub(ct.code, childDir) + '\nexport default { ...__c, render }\n')
     return `./${outRel}`
   }
 

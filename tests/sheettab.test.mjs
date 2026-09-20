@@ -117,7 +117,7 @@ console.log('and the tab really does mount it, not just intend to')
    * blanks every assertion about its contents while the screen is fine.
    */
   const html = await renderScreen('src/components/TicketDesign.vue', store(ONE), {
-    drive: onSheetTab, renderReal: ['SheetPreview.vue'],
+    drive: onSheetTab, renderReal: ['SheetTab.vue', 'SheetPreview.vue'],
   })
   ok(/class="a4"/.test(html), 'the page is drawn inside the tab, not merely referenced')
   const slots = (html.match(/class="slot"/g) || []).length
@@ -157,10 +157,10 @@ console.log('the paper is named, chosen, and obeyed')
   ok(!a5.fits, 'and is not reported as fitting')
   ok(on('a4', false).fits && !on('a4', false).tooWide, 'while a real fit still fits')
 
-  const design = read('src/components/TicketDesign.vue')
-  ok(/PAPERS/.test(design), 'the tab offers the papers rather than assuming one')
-  ok(/design\.sheet\.landscape = true/.test(design), 'and the orientation is a control')
-  ok(/wider than \{\{ fit\.paper\.label \}\}/.test(design), 'the too-wide case is said in the interface')
+  const tab = read('src/components/ticketdesign/SheetTab.vue')
+  ok(/PAPERS/.test(tab), 'the tab offers the papers rather than assuming one')
+  ok(/design\.sheet\.landscape = true/.test(tab), 'and the orientation is a control')
+  ok(/wider than \{\{ fit\.paper\.label \}\}/.test(tab), 'the too-wide case is said in the interface')
 }
 
 console.log('and it reuses the screen\'s own controls rather than inventing them')
@@ -177,7 +177,7 @@ console.log('and it reuses the screen\'s own controls rather than inventing them
    * So: one rule per class name in this file, checked, because a duplicate
    * class is invisible in a diff and global in effect.
    */
-  const style = read('src/components/TicketDesign.vue')
+  const style = read('src/components/ticketdesign/SheetTab.vue')
   const style_block = style.slice(style.indexOf('<style'))
   const names = [...style_block.matchAll(/^\.([a-zA-Z][\w-]*) *\{/gm)].map((m) => m[1])
   const twice = names.filter((n, i) => names.indexOf(n) !== i)
@@ -189,7 +189,7 @@ console.log('and it reuses the screen\'s own controls rather than inventing them
 
 console.log('it is the same shell as the tabs beside it')
 {
-  const html = await renderScreen('src/components/TicketDesign.vue', store(ONE), { drive: onSheetTab })
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ONE), { drive: onSheetTab, renderReal: ['SheetTab.vue'] })
   for (const part of ['rail', 'stagewrap', 'panel']) {
     ok(new RegExp(`class="[^"]*\\b${part}\\b`).test(html), `the ${part} column is there`)
   }
@@ -198,7 +198,7 @@ console.log('it is the same shell as the tabs beside it')
    * cause of the empty window: a shell built for three columns, told to use
    * one, holding about four hundred pixels of controls.
    */
-  ok(!/sheettab/.test(read('src/components/TicketDesign.vue')),
+  ok(!/sheettab/.test(read('src/components/ticketdesign/SheetTab.vue')),
     'and the one-column override that emptied the window is gone')
 }
 
@@ -210,12 +210,12 @@ console.log('one drawing, shared, so the two screens cannot drift')
   eq(drawers.length, 1, `exactly one component draws the page (${drawers.join(', ') || 'none'})`)
   eq(drawers[0], 'ui/SheetPreview.vue', 'and it is the shared one')
 
-  for (const f of ['src/components/TicketDesign.vue', 'src/components/modals/PrintTickets.vue']) {
+  for (const f of ['src/components/ticketdesign/SheetTab.vue', 'src/components/modals/PrintTickets.vue']) {
     ok(/SheetPreview/.test(read(f)), `${f} uses it rather than its own copy`)
   }
   // Both hand it the same geometry. A preview fed anything else is a preview
   // that can disagree with the number printed beside it.
-  for (const f of ['src/components/TicketDesign.vue', 'src/components/modals/PrintTickets.vue']) {
+  for (const f of ['src/components/ticketdesign/SheetTab.vue', 'src/components/modals/PrintTickets.vue']) {
     ok(/:fit="fit"/.test(read(f)), `${f} feeds it the same pageFit result`)
   }
 }

@@ -43,10 +43,10 @@ import {
   SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, normalElement, nextId, legacyFromElements,
 } from '../lib/ticketelements.js'
 import { encode } from '../lib/qrcodegen.js'
-import { sheetHTML, pageFit, PAPERS } from '../lib/ticketsheet.js'
-import SheetPreview from './ui/SheetPreview.vue'
+import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
 import Dim from './ui/Dim.vue'
+import SheetTab from './ticketdesign/SheetTab.vue'
 import Ink from './ui/Ink.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 
@@ -1519,133 +1519,13 @@ const printedSize = computed(() => {
         </aside>
       </div>
 
-      <!-- ================= PRINT SHEET =================
-        THE PAGE IS THE SUBJECT, so the page is on the screen.
-        This tab used to be a single full-width column of sliders and a line of
-        arithmetic, while its two sibling tabs were three-column studios — so it
-        did not look like part of the same screen, and sixty per cent of the
-        window was empty. Worse, the one thing somebody dragging a margin wants
-        to know — does the last ticket still fit — was available only as a sum
-        they had to check against a sheet of A4 in their head. The drawing
-        already existed in the printing modal. It is shared now.
+      <!--
+        THE PRINT SHEET IS ITS OWN COMPONENT. First of the three to move out —
+        smallest, and the one whose contents were rebuilt most recently. The
+        design object goes in by reference and the tab edits it, which is what
+        every control on this screen already did when they shared a file.
       -->
-      <div v-else class="studio">
-        <div class="rail">
-          <template v-if="active && design">
-            <!--
-              WHAT PAPER, ANSWERED BEFORE ANYTHING ELSE. The sheet was A4 by
-              assumption and nothing on the screen said so, which left the one
-              question somebody actually has — what goes in the tray — to be
-              inferred from a number inside a sum.
-            -->
-            <div class="pgroup">
-              <h4 class="rubric">Paper</h4>
-              <div class="papers">
-                <button v-for="pp in PAPERS" :key="pp.id" type="button" class="paper"
-                        :class="{ on: (design.sheet.paper || 'a4') === pp.id }"
-                        :title="`${pp.label} · ${pp.widthMM} × ${pp.heightMM} mm`"
-                        @click="design.sheet.paper = pp.id">
-                  <span class="pshape"
-                        :style="{ aspectRatio: `${pp.widthMM} / ${pp.heightMM}` }"></span>
-                  <b>{{ pp.label }}</b>
-                </button>
-              </div>
-              <p class="tiny muted mono">{{ fit ? `${fit.paper.widthMM} × ${fit.paper.heightMM} mm` : '' }}</p>
-              <div class="seg orient">
-                <button type="button" class="segbtn" :class="{ on: !design.sheet.landscape }"
-                        @click="design.sheet.landscape = false">Portrait</button>
-                <button type="button" class="segbtn" :class="{ on: !!design.sheet.landscape }"
-                        @click="design.sheet.landscape = true">Landscape</button>
-              </div>
-            </div>
-
-            <div class="pgroup">
-              <h4 class="rubric">How they sit on the page</h4>
-              <div class="quad one">
-                <Dim v-model="design.sheet.widthMM" label="Ticket width" :min="40" :max="210" unit="mm" />
-                <Dim v-model="design.sheet.gapMM" label="Gap between" :min="0" :max="30" unit="mm" />
-                <Dim v-model="design.sheet.marginMM" label="Page margin" :min="0" :max="30" unit="mm" />
-              </div>
-              <label class="choice">
-                <input v-model="design.sheet.cutlines" type="checkbox"> Dashed line to cut along
-              </label>
-            </div>
-          </template>
-        </div>
-
-        <div class="stagewrap">
-          <SheetPreview v-if="active && design && fit" :fit="fit" :art="active.url"
-                        :cutlines="!!design.sheet.cutlines" />
-          <p v-else class="note">Upload some artwork before setting up the sheet.</p>
-        </div>
-
-        <div class="panel">
-          <template v-if="active && design">
-
-            <!--
-              HOW MANY FIT IS SHOWN, NOT ASKED FOR.
-              This was a slider from one to twelve called "Tickets to a page",
-              and nothing read it — the tickets flowed down the page and the
-              browser broke it wherever it ran out of paper. A ticket is as tall
-              as its width and the artwork's shape make it, so the count has no
-              free variable in it. The sum is given because that is the only form
-              in which the answer can be checked against a sheet of A4.
-            -->
-            <div v-if="fit" class="pgroup">
-              <h4 class="rubric">What that comes to</h4>
-              <p class="fitline">
-                <b class="big">{{ fit.per }}</b>
-                <span>ticket{{ fit.per === 1 ? '' : 's' }} to a sheet of {{ fit.paper.label }}</span>
-              </p>
-              <!--
-                TOO WIDE WAS COUNTED AS A FIT. The old arithmetic was about
-                height alone, so a 190mm ticket on A5 answered "2 per page" and
-                printed off the side of the paper.
-              -->
-              <p v-if="fit.tooWide" class="note bad tiny">
-                The ticket is wider than {{ fit.paper.label }}. Reduce the width or the margin.
-              </p>
-              <!--
-                THE SUM IS THE WORKING, NOT THE ANSWER. It was the only thing
-                here and it is how you CHECK the answer, not how you read it —
-                so the answer is the bar and the figure, and the arithmetic is
-                underneath for whoever wants to satisfy themselves.
-              -->
-              <p class="usedline" :class="fit.fits ? '' : 'over'">
-                <span class="usedbar" aria-hidden="true">
-                  <span :style="{ width: Math.min(100, (fit.used / fit.pageHeightMM) * 100) + '%' }"></span>
-                </span>
-                <span class="tiny">
-                  <b>{{ fit.used.toFixed(0) }}</b> of {{ fit.pageHeightMM.toFixed(0) }} mm used
-                </span>
-              </p>
-              <p class="tiny mono working" :class="fit.fits ? 'muted' : 'bad'">
-                {{ fit.per }} × {{ fit.heightMM.toFixed(1) }} +
-                {{ fit.per - 1 }} × {{ fit.gapMM.toFixed(1) }} +
-                2 × {{ fit.marginMM.toFixed(1) }} =
-                {{ fit.used.toFixed(1) }} of {{ fit.pageHeightMM.toFixed(1) }} mm
-              </p>
-              <p class="tiny muted">
-                At {{ design.sheet.widthMM }} mm the ticket is
-                {{ fit.heightMM.toFixed(1) }} mm tall, which is the artwork's own shape.
-                Print at 100% scale with background graphics turned on.
-              </p>
-              <p v-if="dpi" class="tiny" :class="dpi.soft ? 'bad' : (dpi.ok ? 'muted' : 'warn')">
-                <b>{{ dpi.v }} dots per inch</b> at this size —
-                <template v-if="dpi.ok">sharp enough for a print shop.</template>
-                <template v-else-if="dpi.soft">
-                  soft enough to see. Re-export the artwork at
-                  {{ Math.ceil((300 * design.sheet.widthMM) / 25.4) }} px wide or more.
-                </template>
-                <template v-else>
-                  fine on an office printer, under the 300 a press usually asks for.
-                  {{ Math.ceil((300 * design.sheet.widthMM) / 25.4) }} px wide would reach it.
-                </template>
-              </p>
-            </div>
-          </template>
-        </div>
-      </div>
+      <SheetTab v-else :design="design" :active="active" :dpi="dpi" />
 
       <!--
         THE FOOTER SAYS WHAT THE MODEL IS. It is one sentence and it is the
@@ -1670,11 +1550,12 @@ const printedSize = computed(() => {
   </section>
 </template>
 
+<style scoped src="./ticketdesign/studio.css"></style>
+
 <style scoped>
 .designer { display: flex; flex-direction: column; gap: 12px; min-height: 0 }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%) }
 .grow { flex: 1; min-width: 0 }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
 
 /* ---- the bar ---- */
 .bar {
@@ -1695,16 +1576,6 @@ const printedSize = computed(() => {
 .statetxt.unsaved { color: var(--warn); font-weight: 500 }
 
 /* ---- three columns: list, ticket, one thing's settings ---- */
-.studio {
-  display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px;
-  gap: 14px; align-items: start;
-}
-.rail, .panel {
-  display: flex; flex-direction: column; gap: 12px;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  padding: 12px; background: var(--surface); min-width: 0;
-}
-.rail { max-height: calc(100vh - 170px); overflow: auto }
 .panel { max-height: calc(100vh - 170px); overflow: auto }
 .block { display: flex; flex-direction: column; gap: 8px }
 
@@ -1713,21 +1584,9 @@ const printedSize = computed(() => {
  * must not compete with the screen's own title — small, spaced, and in the
  * muted colour, so the eye reads the ticket first and the labels second.
  */
-.rubric {
-  margin: 0; font-size: .68rem; font-weight: 600; letter-spacing: .07em;
-  text-transform: uppercase; color: var(--muted);
-}
 .count { float: right; font-variant-numeric: tabular-nums; letter-spacing: 0 }
 
 /* ---- segmented buttons: one of these, not many of those ---- */
-.seg { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: 9px }
-.segbtn {
-  flex: 1; border: 0; background: none; cursor: pointer; padding: 7px 6px;
-  border-radius: 7px; font-size: .8rem; color: var(--text); font-weight: 500;
-  white-space: nowrap;
-}
-.segbtn.on { background: var(--brand); color: var(--brand-ink) }
-.segbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
 
 /* ---- the element list: a register, not a stack of cards ---- */
 .ellist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column }
@@ -1768,7 +1627,6 @@ const printedSize = computed(() => {
 .unit { font-size: .74rem; color: var(--muted) }
 
 /* ---- the stage ---- */
-.stagewrap { display: flex; flex-direction: column; gap: 8px; min-width: 0 }
 .stagebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap }
 .zoom { display: flex; align-items: center; gap: 4px }
 .zbtn {
@@ -1871,28 +1729,13 @@ const printedSize = computed(() => {
 /* ---- the panel ---- */
 .panelhead { display: flex; align-items: flex-start; gap: 8px }
 .panelhead h3 { margin: 2px 0 0; font-size: .95rem }
-.pgroup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border) }
-.pgroup:first-of-type { border-top: 0; padding-top: 0 }
-.quad { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px }
-.quad.one { grid-template-columns: 1fr }
 /* Paper is chosen by its shape, so the shapes are the control. */
-.papers { display: flex; gap: 6px; flex-wrap: wrap }
-.paper {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 6px 8px; min-width: 52px; cursor: pointer; color: var(--text);
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
-}
-.paper.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-ink) }
-.paper .pshape { display: block; width: 18px; background: currentColor; opacity: .38; border-radius: 1px }
-.paper.on .pshape { opacity: .7 }
-.paper b { font-size: .76rem; font-weight: 600 }
 /*
  * Orientation uses the segmented control this screen already has — .seg with
  * .segbtn children, the same one the field/code/words switch and the
  * alignment and overflow rows use. A second `.seg` rule was defined here for
  * a day and overrode all three of them with a border and a margin.
  */
-.orient { margin-top: 6px }
 /* A template is recognised by its picture, so the picture is the control. */
 .tthumb {
   position: relative; display: block; width: 100%; aspect-ratio: 1600 / 517;
@@ -1965,18 +1808,7 @@ const printedSize = computed(() => {
 .sgrid .wrap input[type=number] { padding-right: 30px }
 .sgrid .unit { font-size: .66rem }
 
-.fitline { display: flex; align-items: baseline; gap: 8px; margin: 0 }
-.usedline { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0 }
-.usedbar {
-  display: block; height: 6px; border-radius: 999px;
-  background: var(--surface-2); overflow: hidden;
-}
-.usedbar > span { display: block; height: 100%; background: var(--brand); border-radius: 999px }
-.usedline.over .usedbar > span { background: var(--bad) }
-.usedline b { font-variant-numeric: tabular-nums }
 /* The arithmetic is how you check the answer, so it sits under it and quiet. */
-.working { margin: 2px 0 0; opacity: .75 }
-.fitline span { font-size: .84rem; color: var(--muted) }
 
 .footbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

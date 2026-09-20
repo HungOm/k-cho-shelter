@@ -1,0 +1,40 @@
+/*
+ * THE SHELL THE THREE TABS SHARE.
+ *
+ * Lifted out of TicketDesign.vue when the tabs began moving into components of
+ * their own. A child's markup does not inherit its parent's scoped styles —
+ * only the child's ROOT element carries the parent's scope — so a tab that
+ * moves out of that file loses .rail, .panel and .studio the moment it goes.
+ *
+ * Both sides include this with `<style scoped src>`, which scopes the same
+ * rules separately to each component rather than making them global. One
+ * source, no duplication, and nothing leaks into the rest of the app.
+ */
+.studio {
+  display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px;
+  gap: 14px; align-items: start;
+}
+.rail, .panel {
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 12px; background: var(--surface); min-width: 0;
+}
+.rail { max-height: calc(100vh - 170px); overflow: auto }
+.stagewrap { display: flex; flex-direction: column; gap: 8px; min-width: 0 }
+.pgroup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border) }
+.pgroup:first-of-type { border-top: 0; padding-top: 0 }
+.rubric {
+  margin: 0; font-size: .68rem; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted);
+}
+.quad { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px }
+.quad.one { grid-template-columns: 1fr }
+.seg { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: 9px }
+.segbtn {
+  flex: 1; border: 0; background: none; cursor: pointer; padding: 7px 6px;
+  border-radius: 7px; font-size: .8rem; color: var(--text); font-weight: 500;
+  white-space: nowrap;
+}
+.segbtn.on { background: var(--brand); color: var(--brand-ink) }
+.segbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
