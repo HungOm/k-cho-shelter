@@ -13,7 +13,7 @@
  * listed by number instead, with the reason.
  */
 import { ref, computed, watch, onMounted } from 'vue'
-import { state, api, toast, go } from '../../lib/store.js'
+import { state, api, toast, go, goStudio } from '../../lib/store.js'
 import { designFor, stubShare } from '../../lib/ticketdesign.js'
 import { numberLayerSVG, ticketVerifyUrl, cardSVG, CARD_DESIGNS, CARD } from '../../lib/ticketart.js'
 import { encode } from '../../lib/qrcodegen.js'
@@ -222,18 +222,34 @@ function toSetup() {
   go('admin')
 }
 
+/* Straight to the tab that owns this, not to the studio's front door: a link
+   naming a workspace should arrive in it. */
+function toCardStudio() {
+  emit('close')
+  goStudio('digital')
+}
+
 /*
- * WHICH OF THE THREE. Card 8b shipped Grand, Certificate and Stub and only
- * Grand was ever reachable. The raffle's stored choice is the default; this
- * lets an organiser look at the other two against a real ticket before it is
- * settled, which is the only way anybody can actually choose.
+ * WHICH OF THE THREE — READ, NOT CHOSEN. This was a three-button picker, and
+ * the comment it replaces said why: Card 8b shipped Grand, Certificate and
+ * Stub and only Grand was ever reachable, so a per-view toggle here was the
+ * only way anybody could look at the other two.
  *
- * Per-view, not saved: the raffle-wide setting belongs with the rest of the
- * branding config and is somebody's to add there. A picker here that quietly
- * persisted would be this modal deciding the raffle's appearance, which is the
- * thing the Look block's own comment says it must not do.
+ * That place now exists — Ticket Studio · Digital ticket — and the organiser's
+ * instruction was that the treatment is "set once there". So the picker is
+ * gone. Three buttons that changed this one preview and nothing a buyer would
+ * ever receive were a choice in appearance only: press Stub, send the ticket,
+ * and the buyer gets Grand.
  */
-const cardStyle = ref(CARD_DESIGNS.find(d => d.id === state.cfg?.cardDesign)?.id || 'grand')
+const cardStyle = computed(
+  () => CARD_DESIGNS.find(d => d.id === state.cfg?.cardDesign)?.id || 'grand',
+)
+const cardName = computed(
+  () => CARD_DESIGNS.find(d => d.id === cardStyle.value)?.name || 'Grand',
+)
+const cardNote = computed(
+  () => CARD_DESIGNS.find(d => d.id === cardStyle.value)?.note || '',
+)
 
 const cardFor = (t) => cardSVG(cardStyle.value, cardValues(t), {
   qrUrl: ticketVerifyUrl(verifyBase.value, t.number, t.code),
@@ -510,12 +526,12 @@ onMounted(async () => {
             is not the place that owns the raffle's appearance, so the chips
             read and the links travel.
 
-            THE MOCKUP'S THIRD CHIP IS "Motto on", AND IT IS NOT DRAWN HERE.
-            `digitalCardSVG` does render `values.motto`, and `cardValues` does
-            pass `state.cfg.motto` — but nothing anywhere SETS it: no Setup
-            field, no branding API field, no column. A chip reading "Motto off"
-            beside a link to a page with no motto field is a dead end wearing
-            the costume of state. The field is handed out as its own piece.
+            THE MOCKUP'S THIRD CHIP IS "Motto on", and it is drawn now. It was
+            held back because nothing anywhere SET the motto — no Setup field,
+            no branding API field — so a chip reading "Motto off" beside a link
+            to a page with no motto field was a dead end wearing the costume of
+            state. Ticket Studio · Digital ticket writes it, and the link below
+            goes there, so the chip reports something a reader can act on.
           -->
           <section class="look">
             <p class="rubric">Look</p>
@@ -525,23 +541,29 @@ onMounted(async () => {
                 Raffle colour
               </li>
               <li class="chip" :class="{ off: !state.cfg?.logo }">{{ state.cfg?.logo ? 'Logo' : 'No logo' }}</li>
-            </ul>
-
-            <!-- Buttons, not chips: the row above reports what the raffle is
-                 wearing, this one changes what you are looking at. Same shape
-                 for two different jobs would be the worse choice. -->
-            <p class="rubric sub">Design</p>
-            <ul class="chips">
-              <li v-for="d in CARD_DESIGNS" :key="d.id">
-                <button type="button" class="chip pick" :class="{ on: cardStyle === d.id }"
-                        :title="d.note" :aria-pressed="String(cardStyle === d.id)"
-                        @click="cardStyle = d.id">{{ d.name }}</button>
+              <li class="chip" :class="{ off: !state.cfg?.motto }"
+                  :title="state.cfg?.motto || 'No motto is printed on the card'">
+                {{ state.cfg?.motto ? 'Motto on' : 'No motto' }}
               </li>
+              <!-- IN THE SAME ROW, not under a DESIGN rubric of its own. It
+                   was three buttons and it is one reading now, so it is the
+                   same job as the chips beside it — and a rubric plus a row
+                   holding one word spent two lines saying "Grand". It reads
+                   "Grand card" rather than "Grand" because a bare treatment
+                   name in a row of statements does not say what it is naming. -->
+              <li class="chip" :title="cardNote">{{ cardName }} card</li>
             </ul>
-            <!-- The sentence that used to wrap this link is gone: the link says
-                 where it goes, and a caption explaining a link is furniture. -->
-            <button type="button" class="linky" title="Change the raffle's colour and logo"
-                    @click="toSetup">Change it in Setup &rarr;</button>
+            <!-- TWO LINKS, BECAUSE THEY GO TO TWO PLACES. Colour and logo are
+                 the raffle's, and live in Setup; the treatment and the motto
+                 are this card's, and live in the studio. One link covering
+                 both would be right about half the time. -->
+            <p class="links">
+              <button type="button" class="linky"
+                      title="Choose the treatment and the motto for the card a buyer receives"
+                      @click="toCardStudio">Ticket Studio &middot; Digital ticket &rarr;</button>
+              <button type="button" class="linky" title="Change the raffle's colour and logo"
+                      @click="toSetup">Colour and logo in Setup &rarr;</button>
+            </p>
           </section>
 
           <!--
@@ -625,10 +647,9 @@ onMounted(async () => {
 }
 /* Absent, not broken — the raffle simply has no logo yet. */
 .chip.off { color: var(--muted); background: none }
-.chip.pick { cursor: pointer; font: inherit; font-size: .8rem }
-.chip.pick.on { border-color: var(--brand); background: var(--brand-soft); color: var(--text) }
-.chip.pick:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px }
-.rubric.sub { margin-top: 10px }
+/* Two links, stacked, not a wrapped row: side by side they read as one
+   sentence broken in the middle, and at modal width the second wraps anyway. */
+.links { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 }
 .swatch { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18) }
 
 /* A link that is a button because it navigates the app rather than an href. */

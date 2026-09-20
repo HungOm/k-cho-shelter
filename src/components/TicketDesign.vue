@@ -38,7 +38,9 @@ import { state, api, setConfig, toast, isAdmin, setFocus, go, NO_ROOM_WHY } from
 import { designFor, validateDesign, stubShare } from '../lib/ticketdesign.js'
 import {
   elementLayerSVG, placeElements, qrModuleMM, ticketVerifyUrl,
+  cardSVG, CARD_DESIGNS, CARD,
 } from '../lib/ticketart.js'
+import { inkFor } from '../lib/brand.js'
 import {
   SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, lockAxis, keepRatio, nameOf, normalElement, nextId, legacyFromElements,
 } from '../lib/ticketelements.js'
@@ -78,10 +80,70 @@ const savingDesign = ref(false)
 
 const TABS = [
   { id: 'place', name: 'Place' },
-  { id: 'artwork', name: 'Artwork & paper' },
+  /* "Artwork", not "Artwork & paper". The mockup titles the CARD "Artwork &
+     paper" and labels the TAB "Artwork" — 2a, 2b, 7a and 8c all draw it that
+     way — and the longer label was never anybody's decision (git log -S puts it
+     in adf1fca, a commit about element storage). It also costs the bar about
+     fifty pixels it does not have now there are four tabs. */
+  { id: 'artwork', name: 'Artwork' },
   { id: 'sheet', name: 'Print sheet' },
+  /* Card 8c. The other three tabs are about the PRINTED ticket — artwork, where
+     the fields sit on it, how it lands on paper. This one is the picture a buyer
+     is sent, which shares the raffle's colour and nothing else: no artwork, no
+     coordinates, no paper. It belongs here because it is still "what a ticket
+     looks like", and an organiser who has just chosen a colour should not be
+     sent to a different screen to see what it did to the thing they hand out. */
+  { id: 'digital', name: 'Digital ticket' },
 ]
 const tab = ref('place')
+
+/* ---------- card 8c: the digital ticket ---------- */
+const MOTTO_MAX = 48
+const card = ref({ design: 'grand', motto: '' })
+const cardSaving = ref(false)
+const mottoLeft = computed(() => MOTTO_MAX - (card.value.motto || '').length)
+const mottoOver = computed(() => mottoLeft.value < 0)
+const cardSize = computed(
+  () => CARD_DESIGNS.find(d => d.id === card.value.design)?.size || CARD,
+)
+
+function loadCard() {
+  card.value = {
+    design: state.cfg?.cardDesign || 'grand',
+    motto: state.cfg?.motto || '',
+  }
+}
+watch(() => state.cfg, loadCard, { immediate: true, deep: true })
+
+/* The real card, drawn from the raffle's own colour and a specimen ticket, so
+   what is on screen is the thing a buyer receives rather than a mock of it. */
+const cardPreview = computed(() => {
+  const c = state.cfg || {}
+  const brand = String(c.brandColor || '').trim()
+  return cardSVG(card.value.design, {
+    number: (c.ticketPrefix || '') + '1'.padStart(c.ticketDigits || 5, '0'),
+    name: 'A buyer', org: c.orgName || '', event: c.eventName || '',
+    price: c.ticketPrice ? `${c.currency ?? ''} ${c.ticketPrice}`.trim() : '',
+    book: (c.bookPrefix || 'Book-') + '1'.padStart(c.bookDigits || 4, '0'),
+    sold: true, motto: card.value.motto, brand,
+    ink: inkFor(brand) || '#ffffff',
+    thanks: 'Thank you — this keeps the shelter open.',
+  }, {})
+})
+
+async function saveCard() {
+  if (mottoOver.value) return toast(`The motto is ${-mottoLeft.value} characters over`, 'bad')
+  cardSaving.value = true
+  try {
+    const r = await api('set_card_design', { cardDesign: card.value.design, motto: card.value.motto })
+    if (r?.config) setConfig(r.config)
+    loadCard()
+    toast('Digital ticket saved', 'ok')
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+    loadCard()
+  } finally { cardSaving.value = false }
+}
 
 const active = computed(() => templates.value.find((t) => t.id === activeId.value) || null)
 const elements = computed(() => design.value?.elements ?? [])
@@ -722,6 +784,13 @@ onActivated(() => {
   /* Not on a screen about to say it needs a bigger one. */
   if (state.roomy) setFocus(true)
   window.addEventListener('keydown', onFocusKey)
+  /* A caller asked for a particular tab — see goStudio. Read once and cleared,
+     because the request belongs to that one arrival: leaving it set would send
+     every later visit to the studio to whichever tab somebody last linked to. */
+  if (state.studioTab) {
+    if (TABS.some(t => t.id === state.studioTab)) tab.value = state.studioTab
+    state.studioTab = ''
+  }
 })
 
 onDeactivated(() => {
@@ -1263,15 +1332,38 @@ const printedSize = computed(() => {
         <template v-else-if="saved">saved</template>
       </span>
 
-      <button class="btn sm" :disabled="!active || !design"
-              :title="active ? 'Fill one sheet with sample tickets, each with its own working QR, through the real print path' : 'Upload some artwork first'"
-              @click="printTest">Print a test page</button>
-      <button class="btn sm primary"
-              :disabled="savingDesign || !design || problems.length > 0"
-              :title="problems.length ? problems[0] : 'Write this design onto the template'"
-              @click="saveDesign">
-        {{ savingDesign ? 'Saving…' : changeCount ? `Save · ${changeCount}` : 'Save the design' }}
-      </button>
+      <!--
+        TWO SAVES ON ONE SCREEN THAT SAVED DIFFERENT THINGS. The card's own
+        Save lived down in its panel while this bar still offered "Save the
+        design", and the two wrote unrelated records: one the card's treatment
+        and motto, the other the template's geometry. Same word, same screen,
+        eighteen inches apart, and no way to tell which one had kept your work.
+
+        So the bar carries whichever save belongs to the tab you are on, in the
+        one place every tab puts it. "Print a test page" goes with it on the
+        digital tab: it fills a sheet of PAPER tickets, which is not a test of
+        the picture a buyer is sent. It is not disabled-with-a-reason here — a
+        disabled control says "not for you", and this one is simply not part of
+        this tab, the way Place's rulers are not.
+      -->
+      <template v-if="tab === 'digital'">
+        <button class="btn sm primary" :disabled="cardSaving || mottoOver"
+                :title="mottoOver ? 'The motto is over 48 characters' : 'Write the treatment and the motto onto the raffle'"
+                @click="saveCard">
+          {{ cardSaving ? 'Saving…' : 'Save the card' }}
+        </button>
+      </template>
+      <template v-else>
+        <button class="btn sm" :disabled="!active || !design"
+                :title="active ? 'Fill one sheet with sample tickets, each with its own working QR, through the real print path' : 'Upload some artwork first'"
+                @click="printTest">Print a test page</button>
+        <button class="btn sm primary"
+                :disabled="savingDesign || !design || problems.length > 0"
+                :title="problems.length ? problems[0] : 'Write this design onto the template'"
+                @click="saveDesign">
+          {{ savingDesign ? 'Saving…' : changeCount ? `Save · ${changeCount}` : 'Save the design' }}
+        </button>
+      </template>
     </header>
 
     <p v-if="loadErr" class="note bad">{{ loadErr }}</p>
@@ -1602,7 +1694,68 @@ const printedSize = computed(() => {
         design object goes in by reference and the tab edits it, which is what
         every control on this screen already did when they shared a file.
       -->
-      <SheetTab v-else :design="design" :active="active" :dpi="dpi" />
+      <SheetTab v-else-if="tab === 'sheet'" :design="design" :active="active" :dpi="dpi" />
+
+      <!--
+        CARD 8c — THE DIGITAL TICKET. Two columns like the rest of the studio:
+        what you can change on the left, the thing itself on the right, drawn
+        from the raffle's own colour and a specimen number so it is the card a
+        buyer receives rather than a picture of one.
+
+        NOT BUILT HERE, and named rather than left to be discovered: 8c also
+        draws a watermark picker with a strength slider, three toggles for the
+        price, the check link and the seller's name, and a "Send a test" button.
+        None of those has anything behind it — the cards read no such values —
+        so they would be controls that change nothing.
+      -->
+      <div v-else class="studio digital">
+        <aside class="panel dpanel">
+          <p class="rubric">Treatment</p>
+          <div class="seg">
+            <button v-for="d in CARD_DESIGNS" :key="d.id" type="button" class="segbtn"
+                    :class="{ on: card.design === d.id }" :title="d.note"
+                    @click="card.design = d.id">{{ d.name }}</button>
+          </div>
+
+          <p class="rubric mt">Colour</p>
+          <p class="tiny muted">
+            <b class="data">{{ state.cfg?.brandColor || 'the standard colour' }}</b> —
+            taken from the raffle's theme. Change it in Setup and every ticket follows.
+          </p>
+
+          <div class="spread mt">
+            <label for="mtt" class="rubric" style="margin:0">Motto</label>
+            <span class="tiny" :class="mottoOver ? 'bad' : 'muted'">
+              {{ (card.motto || '').length }} / 48
+            </span>
+          </div>
+          <input id="mtt" v-model="card.motto" autocomplete="off"
+                 placeholder="e.g. Love is patient, love is kind">
+          <p class="tiny muted">
+            48 characters keeps it on one line at every size. Longer is refused,
+            not shrunk — shrinking changes the design where you cannot see it.
+          </p>
+
+          <!-- The save is in the bar with every other tab's, not down here. -->
+          <p class="tiny muted mt">
+            Sent as a picture on WhatsApp, and a check link if the phone cannot
+            make one. Never before the sale is recorded.
+          </p>
+        </aside>
+
+        <div class="stagewrap">
+          <div class="stagebar">
+            <span class="tiny muted">what the buyer receives</span>
+            <!-- The real size, read off the treatment being previewed, not the
+                 1080 × 1350 the mockup drew: these cards are landscape, and a
+                 number that does not describe the file is worse than none. -->
+            <span class="specs">{{ cardSize.width }} &times; {{ cardSize.height }} px</span>
+          </div>
+          <div class="dstage">
+            <div class="dcard" v-html="cardPreview"></div>
+          </div>
+        </div>
+      </div>
 
       <!--
         THE FOOTER SAYS WHAT THE MODEL IS. It is one sentence and it is the
@@ -1610,7 +1763,16 @@ const printedSize = computed(() => {
         run: what they are moving is a proportion of the ticket, not a pixel on
         one particular file.
       -->
-      <footer class="footbar">
+      <!--
+        SAME REASONING AS THE BAR'S BUTTONS, one line down. Undo, "Back to
+        saved" and "Back to standard" all act on the template's GEOMETRY, and
+        the sentence beside them is about placements being held as shares. On
+        the digital tab there is no geometry and nothing placed: pressing Undo
+        there takes back a change to a drawing you are not looking at, silently,
+        and "Back to standard" discards the whole design from a tab that does
+        not show it. The mockup draws no footer on 8c either.
+      -->
+      <footer v-if="tab !== 'digital'" class="footbar">
         <span class="tiny muted grow">
           Held as shares of the template, so the same design survives a redraw at any size —
           and a different charity's artwork starts from its own.
@@ -1640,6 +1802,33 @@ const printedSize = computed(() => {
   </section>
 </template>
 
+<style scoped>
+/* 8c is two columns like the rest of the studio, but the right-hand side is a
+   card rather than an artboard: no rulers, no boxes, nothing to drag. */
+/* `.studio.digital`, NOT `.digital`. Both are one class, so `.studio`'s
+   `align-items: stretch` and `min-height: calc(100vh - 150px)` win on source
+   order — studio.css is imported in a later <style> block. The panel then grew
+   to most of the viewport and the card sat in a tall black void, which is the
+   exact bug this rule was written to fix and did not. Two classes outrank one
+   wherever the file sits. */
+.studio.digital {
+  display: grid; gap: 16px; grid-template-columns: 1fr;
+  align-items: start; min-height: 0;
+}
+@media (min-width: 1024px) { .studio.digital { grid-template-columns: 320px 1fr } }
+.dpanel { padding: 16px; overflow: visible }
+/* Its own box rather than the studio's `.stage`: that one is sized for an
+   artboard you scroll and zoom, and a card is neither — it just needs to sit on
+   something and be the size it is. */
+.dstage {
+  display: flex; justify-content: center; padding: 22px;
+  background: var(--stage); border-radius: var(--r-sm);
+}
+.dcard { width: min(420px, 100%) }
+.dcard :deep(svg) { width: 100%; height: auto; display: block; border-radius: 10px }
+.mt { margin-top: 14px }
+</style>
+
 <style scoped src="./ticketdesign/studio.css"></style>
 
 <style scoped>
@@ -1664,8 +1853,21 @@ const printedSize = computed(() => {
  * The two that give way are the template name and the dimensions: a name can
  * ellipsize and still be recognised, and the measurements are a reference
  * somebody reads once rather than scans. Nothing that can be PRESSED shrinks.
+ *
+ * 1200, NOT 1024. A fourth tab arrived — "Digital ticket" — and the row stopped
+ * fitting at the low end of the range this covered. Held on one line anyway, it
+ * did not overflow visibly, which is why it survived: the H2 shrank, wrapped to
+ * "Ticket / Studio" and rendered straight across the template picker, and the
+ * status truncated to the single letter "s". Both look like design.
+ *
+ * The number is measured, not guessed: the bar was rendered at seven container
+ * widths from 1000 to 1240 with wrapping forced off, and its contents first sat
+ * inside the box at about 1200. 1024 never fitted — even with three tabs it was
+ * roughly 1120 — so this rule has been quietly squeezing the bar since it was
+ * written. Below 1200 the bar wraps to two lines, which is the honest failure
+ * and what it already does on a phone.
  */
-@media (min-width: 1024px) {
+@media (min-width: 1200px) {
   .bar { flex-wrap: nowrap; }
   .bar .picker { min-width: 0; flex: 0 1 auto; }
   /*
@@ -1691,7 +1893,10 @@ const printedSize = computed(() => {
 .noroom h3 { margin: 0; }
 .noroom p { margin: 0; }
 .noroom .btn { margin-top: 8px; }
-.bar h2 { margin: 0; font-size: 1.05rem }
+/* NOT A FLEX ITEM THAT GIVES. The title has no shorter form: shrunk, it wraps
+   to two lines inside a row sized for one and lands on the control beside it.
+   The picker and the `.grow` spacer are the slack in this bar. */
+.bar h2 { margin: 0; font-size: 1.05rem; flex: none; white-space: nowrap }
 .picker select { min-height: 34px; padding: 4px 8px; width: auto; max-width: 220px }
 .specs { font-family: var(--font-data); font-size: .72rem; color: var(--muted) }
 .tabs { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: var(--r-sm) }
@@ -1720,6 +1925,10 @@ const printedSize = computed(() => {
 .statetxt {
   font-size: .74rem; color: var(--muted);
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* It may ellipsize a long sentence; it may not be squeezed down to one
+     character. "s" where "saved" belongs is not a shortened status, it is a
+     glyph wearing one. Its longest content is "edited 12:04". */
+  flex: none;
 }
 .statetxt.unsaved { color: var(--warn); font-weight: 500 }
 

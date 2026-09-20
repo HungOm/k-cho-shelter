@@ -120,7 +120,12 @@ console.log('with artwork, the designer renders')
   })
   const text = visibleText(html)
 
-  for (const t of ['Place', 'Artwork & paper', 'Print sheet']) {
+  /*
+   * "Artwork", not "Artwork & paper", and four of them now. The mockup titles
+   * the card "Artwork & paper" and labels the tab "Artwork" — 2a, 2b, 7a and
+   * 8c all draw it that way — and "Digital ticket" is card 8c's own tab.
+   */
+  for (const t of ['Place', 'Artwork', 'Print sheet', 'Digital ticket']) {
     ok(text.includes(t), `the ${t} tab is offered`)
   }
   ok(/Put something on the ticket/.test(text), 'the rail offers to put something on it')

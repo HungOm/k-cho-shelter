@@ -84,6 +84,11 @@ export function configPayload(cfg: Record<string, string>) {
     // applyBrand removes the tokens and the stylesheet's own colour stands,
     // rather than half a theme being applied over it.
     brandColor: cfg.BRAND_COLOR ?? '',
+    /* Card 8c. ViewTicket has read `cardDesign` since the treatments became
+       reachable and nothing ever filled it, so every raffle fell back to Grand;
+       `motto` is drawn by all three cards and could be set nowhere at all. */
+    cardDesign: cfg.CARD_DESIGN ?? '',
+    motto: cfg.MOTTO ?? '',
     projectCode: cfg.PROJECT_CODE ?? '',
     /*
      * Whether this raffle has artwork to print tickets from — a yes or no, not

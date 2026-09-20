@@ -366,6 +366,10 @@ export const MY_ERRORS = {
   /* Composed, not written by a Burmese reader, like the rest of this file.
      "Tickets already exist — the numbering cannot be changed." and
      "The prefix cannot be used." */
+  /* Composed, like the rest of this file. "The motto is too long." and
+     "This motto cannot be used." */
+  MOTTO_TOO_LONG: 'ဆောင်ပုဒ် ရှည်လွန်းပါသည်',
+  BAD_MOTTO: 'ဤဆောင်ပုဒ်ကို မသုံးနိုင်ပါ',
   NUMBERING_LOCKED: 'လက်မှတ်များ ရှိပြီးဖြစ်၍ နံပါတ်စနစ် ပြောင်း၍ မရပါ',
   BAD_PREFIX: 'ရှေ့ဆက်စာလုံး မသုံးနိုင်ပါ',
   NO_TEMPLATE_CHOSEN: 'လက်မှတ်ပုံ အများရှိသည် — မည်သည့်ပုံကို သုံးမည် ရွေးပါ',

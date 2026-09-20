@@ -1522,7 +1522,12 @@ insert into config (key, value, notes) values
   ('DRAW_DATE', '', 'Draw date, e.g. 2026-12-20.'),
   ('TICKET_ARTWORK_ID', '', 'Which uploaded ticket artwork is printed from. Set on the "Ticket design" screen. Blank means there is none yet and printing is refused.'),
   ('TICKET_SIZES', '', 'The shapes of paper this raffle prints, as JSON. Blank means the built-in list, which is the 190 x 61 mm ticket. An upload whose shape is not on the list is refused, because a picture of the wrong shape is either stretched or cropped on every ticket and neither can be fixed afterwards.'),
-  ('VERIFY_URL', '', 'Where the QR code on a printed ticket points. Blank means this site. Printed codes outlive the raffle, so an organiser has to be able to point them at an address they will still control.')
+  ('VERIFY_URL', '', 'Where the QR code on a printed ticket points. Blank means this site. Printed codes outlive the raffle, so an organiser has to be able to point them at an address they will still control.'),
+  -- The card a buyer is SENT, which is not the ticket that is printed: no
+  -- artwork, no placements, no paper. Both blank on a fresh install, and blank
+  -- means something specific in each case rather than "unset".
+  ('CARD_DESIGN', '', 'Which of the three treatments the digital ticket is drawn in — grand, certificate or stub. Set in Ticket Studio on the "Digital ticket" tab. Blank means Grand, which is what a raffle that has never opened that tab gets.'),
+  ('MOTTO', '', 'One line printed on the digital ticket, under the buyer''s name. Blank prints no line at all. 48 characters is the limit and a longer one is refused rather than shrunk, because shrinking changes the card where nobody is looking.')
 on conflict (key) do nothing;
 
 /*

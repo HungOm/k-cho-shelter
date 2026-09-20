@@ -177,6 +177,7 @@ const CALLS = {
      locks the moment the first one exists. Exercising it proves the refusal is
      reachable, which is the half that matters — the permissive path only exists
      on an empty raffle. */
+  set_card_design: { cardDesign: 'stub', motto: 'Love is patient, love is kind' },
   set_numbering: { ticketPrefix: 'KS-', ticketDigits: 5, ticketStart: 1,
                    ticketsPerBook: 10, bookPrefix: 'Book-', bookDigits: 4 },
   roll_check_in: {}, set_final_deadline: { date: '2027-01-01' },

@@ -86,6 +86,11 @@ export const state = reactive({
 
   // ui
   screen: 'home',
+  /* WHICH STUDIO TAB TO LAND ON. A link that says "Ticket Studio · Digital
+     ticket" and arrives on Place has not gone where it said. Set by goStudio,
+     read and cleared once by the studio on mount, so a later plain visit to the
+     studio opens where it always did. */
+  studioTab: '',
   /* The chrome is out of the way — see setFocus. Never persisted: a mode that
      survives a reload is a mode somebody wakes up trapped in. */
   focus: false,
@@ -946,6 +951,17 @@ export async function optimistic(ticketNumber, patch, action, payload) {
 export function setSellMode(mode) {
   state.sellMode = mode
   try { localStorage.setItem(LS.mode, mode) } catch { /* private window */ }
+}
+
+/*
+ * OPEN THE STUDIO ON A NAMED TAB. Separate from `go` because the tab is not
+ * part of the route: nothing else in the app has a sub-screen, and putting one
+ * in `go`'s signature would invite every caller to pass a second argument that
+ * only one screen reads.
+ */
+export function goStudio(tab = '') {
+  state.studioTab = tab
+  go('ticketdesign')
 }
 
 export function go(screen) {

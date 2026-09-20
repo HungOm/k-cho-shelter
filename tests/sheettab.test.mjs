@@ -183,7 +183,16 @@ console.log('the action you cannot take back does not look like the one you can'
    * here are about disabled reasons and role words, not about weight.
    */
   const src = read('src/components/TicketDesign.vue')
-  const foot = src.slice(src.indexOf('<footer class="footbar">'), src.indexOf('</footer>'))
+  /*
+   * MATCHED BY TAG AND CLASS, not by one exact opening string. The literal
+   * '<footer class="footbar">' stopped matching the day the footer grew a
+   * `v-if` — the tab with no geometry has nothing for Undo to undo — and
+   * indexOf returned -1, so `slice(-1, …)` handed every assertion below an
+   * empty string. "three actions found ()" is what this looks like: not a
+   * missing footer, a search that moved off it.
+   */
+  const foot = (src.match(/<footer\b[^>]*class="footbar"[\s\S]*?<\/footer>/) || [''])[0]
+  ok(foot.length > 0, 'the footer is found')
   ok(/Back to standard/.test(foot) && /Back to saved/.test(foot) && /Undo/.test(foot),
     'all three actions are still offered')
   /*

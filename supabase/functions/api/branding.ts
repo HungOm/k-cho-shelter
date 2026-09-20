@@ -120,6 +120,51 @@ function checkImage(b64: unknown, declared: string, which: string): Uint8Array {
   return bytes
 }
 
+/*
+ * CARD 8c — WHAT THE BUYER RECEIVES.
+ *
+ * The three treatments were drawable and pickable and nothing could SAVE a
+ * choice: ViewTicket read `cardDesign` off the config and no key of that name
+ * was ever written, so every raffle quietly used Grand. The motto is worse —
+ * all three cards draw `values.motto`, cardValues passes `state.cfg.motto`, and
+ * there was no field anywhere in the product that set it. A drawn element with
+ * no way to fill it is a feature that exists only in the source.
+ *
+ * FORTY-EIGHT CHARACTERS, REFUSED RATHER THAN SHRUNK, which is 8c's own rule.
+ * The motto is drawn at one size on a card whose width is fixed, so a longer
+ * line either overflows the card or has to be scaled down until it is a
+ * different typographic decision from the one that was designed. Refusing says
+ * so while somebody can still edit it; shrinking hides it until it prints.
+ */
+export async function setCardDesign(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const ALLOWED = ['grand', 'certificate', 'stub']
+  const design = String(p.cardDesign ?? '').trim().toLowerCase()
+  if (design && !ALLOWED.includes(design)) {
+    throw new ApiError('BAD_DESIGN',
+      `${design} is not one of the ticket treatments (${ALLOWED.join(', ')}).`)
+  }
+
+  const motto = String(p.motto ?? '').replace(/\s+/g, ' ').trim()
+  if (motto.length > 48) {
+    throw new ApiError('MOTTO_TOO_LONG',
+      `The motto is ${motto.length} characters and the card holds 48. ` +
+      'A longer line is refused rather than shrunk, because shrinking it changes ' +
+      'the design silently and you would not see it until it printed.',
+      { length: motto.length, max: 48 })
+  }
+  /* The only free text on a card a buyer is sent. Angle brackets go for the
+     same reason they go from the about text — this ends up inside an SVG. */
+  if (/[<>]/.test(motto)) {
+    throw new ApiError('BAD_MOTTO', 'The motto cannot contain < or >.')
+  }
+
+  await writeConfig(ctx, { CARD_DESIGN: design, MOTTO: motto })
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SET_CARD_DESIGN', details: { design, motto }, email: user.email,
+  })
+  return { config: configPayload(await currentConfig(ctx)) }
+}
+
 async function writeConfig(ctx: Ctx, rows: Record<string, string>) {
   const payload = Object.entries(rows).map(([key, value]) => ({ key, value }))
   const { error } = await ctx.supabaseAdmin
