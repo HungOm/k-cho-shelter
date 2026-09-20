@@ -85,6 +85,15 @@ const batch = ref(1)
 const doneAll = ref(true)
 
 /*
+ * HOW BIG THE SERVER'S WINDOW TURNED OUT TO BE, learned from the first batch
+ * rather than written down here. printing.ts caps a batch at MAX_PER_PRINT and
+ * that number is the server's to change; a copy of it on this side would go on
+ * dividing by 200 long after the server stopped using it, and the only symptom
+ * would be a batch count that is quietly wrong.
+ */
+const windowSize = ref(0)
+
+/*
  * Fill the stub's ruled lines in for tickets that are already sold.
  *
  * Off by default, and deliberately: a blank book going out to a seller must
@@ -299,6 +308,66 @@ const bookRows = computed(() => {
  * ones in the first and names the rest in the second, so the batch is their sum
  * and the ones with codes are simply the first.
  */
+/*
+ * WHICH BATCH THIS IS, OUT OF HOW MANY.
+ *
+ * Nothing on the wire says how many batches there are. render_tickets returns a
+ * window, a cursor and `done`, and resolveScope knows the total only as a LIMIT
+ * it stopped at — so the count is worked out here or not shown.
+ *
+ * WHEN IT IS EXACT: `done` means this window is the last, so the total simply
+ * IS the batch on screen. No arithmetic, and it covers the ordinary case of one
+ * book in one batch.
+ *
+ * WHEN IT IS DERIVED: tickets in the chosen scope, divided by the window the
+ * server actually used. The scope size comes from the configured book size —
+ * the same number isFreeToIssue already trusts when it compares a book's
+ * `available` against it — so a raffle whose books are not uniform is the case
+ * this gets wrong, and the guard below is what catches it.
+ *
+ * WHEN IT REFUSES: no configured size, no window measured yet, or arithmetic
+ * that says the total is not greater than the batch on screen while the server
+ * is still offering another one. Those disagree, and when a derived number
+ * disagrees with something the server actually said, the server wins and the
+ * total is dropped. "Batch 3" is honest. "Batch 3 of 3" above a live Next batch
+ * button is a number somebody stops printing at.
+ */
+const scopeTickets = computed(() => {
+  const c = state.cfg || {}
+  const per = Number(c.ticketsPerBook || 0)
+  if (mode.value === 'sample') return tickets.value.length || null
+  if (mode.value === 'numbers') {
+    const n = scope.value?.numbers
+    return Array.isArray(n) && n.length ? n.length : null
+  }
+  if (mode.value === 'all') return Number(c.totalTickets) || null
+  if (!per) return null
+  if (mode.value === 'book') return scope.value?.book ? per : null
+  const lo = numOf(scope.value?.fromBook), hi = numOf(scope.value?.toBook)
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return null
+  return (hi - lo + 1) * per
+})
+
+const totalBatches = computed(() => {
+  if (!result.value) return null
+  if (doneAll.value) return batch.value
+  const n = scopeTickets.value
+  const w = windowSize.value
+  if (!n || !w) return null
+  const t = Math.ceil(n / w)
+  return t > batch.value ? t : null
+})
+
+/* One batch start to finish is not a batch anybody is counting, so it says
+ * nothing rather than "Batch 1 of 1". */
+const manyBatches = computed(() => !!result.value && !(doneAll.value && batch.value === 1))
+
+const batchLabel = computed(() => {
+  if (!manyBatches.value) return ''
+  const t = totalBatches.value
+  return t ? `Batch ${batch.value} of ${t}` : `Batch ${batch.value}`
+})
+
 const withCodes = computed(() => tickets.value.length)
 const inBatch = computed(() => tickets.value.length + missing.value.length)
 
@@ -315,6 +384,9 @@ async function load(from) {
     cursor.value = r.after ?? from
     doneAll.value = !!r.done
     pageNo.value = 0
+    // The first window is the only honest measure of the window, because every
+    // later one may be the short last batch.
+    if (from === 0 && !r.done) windowSize.value = (r.tickets?.length ?? 0) + (r.notGenerated?.length ?? 0)
   } catch (e) {
     err.value = e.message
     result.value = null
@@ -360,7 +432,7 @@ async function loadSample() {
   }
 }
 
-function look() { batch.value = 1; load(0) }
+function look() { batch.value = 1; windowSize.value = 0; load(0) }
 function nextBatch() { batch.value += 1; load(cursor.value) }
 
 /*
@@ -468,7 +540,9 @@ async function printThem() {
 
 <template>
   <Sheet title="Printing tickets"
-         :subtitle="tickets.length ? `${tickets[0].number} — ${tickets[tickets.length - 1].number}` : 'a book, a run of books, the whole raffle, or ten samples'"
+         :subtitle="tickets.length
+           ? (batchLabel ? `${batchLabel} · ` : '') + `${tickets[0].number} — ${tickets[tickets.length - 1].number}`
+           : 'a book, a run of books, the whole raffle, or ten samples'"
          wide @close="emit('close')">
     <p v-if="!hasArtwork" class="note bad">
       There is no ticket artwork yet, so nothing can be printed. Upload it on the
@@ -498,6 +572,12 @@ async function printThem() {
               <button class="btn sm ghost" :disabled="pageNo === 0"
                       title="The sheet before this one" @click="pageNo -= 1">&lsaquo;</button>
               <b class="tiny">Sheet {{ pageNo + 1 }} of {{ pages.length }}</b>
+              <!-- Two counters side by side, and they count different things:
+                   sheets WITHIN this batch, batches within the run. Labelled in
+                   full rather than abbreviated, because "3/50 · 1/50" beside
+                   itself is unreadable and this run really can have the same
+                   number twice. -->
+              <b v-if="batchLabel" class="tiny batchnow">{{ batchLabel }}</b>
               <button class="btn sm ghost" :disabled="pageNo >= pages.length - 1"
                       title="The next sheet" @click="pageNo += 1">&rsaquo;</button>
               <span class="grow"></span>
@@ -681,8 +761,12 @@ async function printThem() {
                 {{ isSample ? 'Print or save as PDF' : 'Open without marking printed' }}
               </button>
               <button v-if="!doneAll" class="btn sm wide" :disabled="busy" @click="nextBatch">
-                Next batch &rarr;
+                Next batch<template v-if="totalBatches"> ({{ batch + 1 }} of {{ totalBatches }})</template> &rarr;
               </button>
+              <p v-if="manyBatches" class="tiny muted">
+                {{ batchLabel }}<template v-if="!doneAll">. The run is not finished.</template>
+                <template v-else>. This is the last one.</template>
+              </p>
               <p class="tiny muted">Print at 100%.</p>
             </div>
 
@@ -772,6 +856,7 @@ async function printThem() {
 .tworow .sub-in { margin: 0; width: 100% }
 
 .pager { display: flex; align-items: center; gap: 6px }
+.batchnow { color: var(--brand); }
 .nodraw {
   display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
   min-height: 220px; padding: 20px; gap: 6px;

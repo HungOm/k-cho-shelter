@@ -460,5 +460,107 @@ ok(noArtText.includes('There is no ticket artwork yet'),
 ok(!noArtText.includes('What to print'),
    'and does not also offer controls that cannot print anything')
 
+/* ---------- which batch of how many ---------- */
+
+/*
+ * A run of a thousand books is fifty trips through this modal, and until now
+ * the screen said "Sheet 1 of 50" both times — sheets WITHIN a batch, with
+ * nothing anywhere saying which batch. An organiser pressing Next batch had no
+ * way to know how far through they were or when to stop.
+ *
+ * Nothing on the wire carries a total: render_tickets returns a window, a
+ * cursor and `done`. So the count is derived, and the cases that matter are the
+ * ones where it must REFUSE to derive — a wrong total is worse than none,
+ * because somebody stops printing at it.
+ *
+ * Driven and then RENDERED rather than read off the bindings. The arithmetic
+ * being right and the number reaching the screen are different claims, and this
+ * file exists because the second one is the one that has failed here before.
+ */
+const batchStore = (cfg, per) => `
+import { reactive, computed } from 'vue'
+export const state = reactive({
+  cfg: { ticketArtwork: '/artwork.png', ticketPrefix: 'KS-', ${cfg} },
+  books: Array.from({ length: 1000 }, (_, i) => ({ book: 'Book-' + String(i+1).padStart(3,'0') })),
+  booksAllLoaded: true, user: { role: 'admin' }, tickets: [], agents: [],
+})
+// Honours the scope it is given. A fake server that returns a full window
+// whatever it is asked for makes every run look like a long one.
+export const api = async (action, p) => {
+  const total = p.all ? 10000 : p.book ? ${per} : (p.numbers ? p.numbers.length
+    : (Number(String(p.toBook).replace(/\\D/g,'')) - Number(String(p.fromBook).replace(/\\D/g,'')) + 1) * ${per})
+  const from = Number(p.after || 0)
+  const n = Math.max(0, Math.min(200, total - from))
+  return {
+    template: { url: '/artwork.png', design: null }, verifyBase: '',
+    tickets: Array.from({ length: n }, (_, i) => ({
+      number: 'KS-' + String(from + i + 1).padStart(5, '0'), code: 'c',
+      book: 'Book-001', status: 'Available',
+    })),
+    notGenerated: [], after: from + n, done: from + n >= total,
+  }
+}
+export const toast = () => {}
+export const canWrite = computed(() => true)
+export const isAdmin = computed(() => true)
+export const isSuper = computed(() => true)
+export const go = () => {}
+export const agentMap = computed(() => ({}))
+`
+
+/*
+ * Server rendering never runs watchers, so the one that copies the template's
+ * page setup into this run has not fired and `runSheet` is still null — which
+ * the sheet then reads, and the render dies somewhere that looks nothing like
+ * the cause. Do here what the watcher does in a browser. This compensates for
+ * the harness; it is not a shim for the component, which is why it is a line in
+ * the driver rather than a `?.` in the template.
+ */
+const settle = async (c) => {
+  if (!c.runSheet.value && c.design.value) c.runSheet.value = { ...c.design.value.sheet }
+}
+
+const runOf = (from, to) => async (c) => {
+  c.mode.value = 'range'; c.fromBook.value = from; c.toBook.value = to
+  await c.look(); await settle(c)
+}
+
+const thousand = await renderScreen(PRINT, batchStore('ticketsPerBook: 10, totalTickets: 10000', 10),
+  { props: { payload: {} }, drive: runOf('1', '1000') })
+ok(/Batch 1 of 50/.test(visibleText(thousand)),
+   'a thousand books says which batch of how many, on the screen')
+
+// The two counters are different questions and both have to survive.
+ok(/Sheet 1 of 50/.test(visibleText(thousand)),
+   'and still says which sheet within the batch')
+
+const oneBook = await renderScreen(PRINT, batchStore('ticketsPerBook: 10, totalTickets: 10000', 10),
+  { props: { payload: {} }, drive: async (c) => {
+      c.mode.value = 'book'; c.book.value = 'Book-001'; await c.look(); await settle(c)
+    } })
+// Anchored before it is denied. "No batch counter" is also what a modal that
+// failed to render says, and the two must not be the same assertion.
+ok(/Sheet 1 of \d+/.test(visibleText(oneBook)), 'one book draws its sheet')
+ok(!/Batch \d+ of \d+/.test(visibleText(oneBook)),
+   'and counts nothing — no "Batch 1 of 1"')
+
+const exact = await renderScreen(PRINT, batchStore('ticketsPerBook: 10, totalTickets: 10000', 10),
+  { props: { payload: {} }, drive: runOf('1', '20') })
+ok(/Sheet 1 of \d+/.test(visibleText(exact)), 'a run that fills one window exactly draws its sheet')
+ok(!/Batch \d+ of \d+/.test(visibleText(exact)),
+   'and counts nothing either')
+
+/*
+ * THE REFUSAL, which is the assertion worth having. With no configured book
+ * size the scope has no measure, so the total has no source — and the screen
+ * must say the batch it is on without inventing what it is out of.
+ */
+const noCfg = await renderScreen(PRINT, batchStore('totalTickets: 10000', 10),
+  { props: { payload: {} }, drive: runOf('1', '1000') })
+const noCfgText = visibleText(noCfg)
+ok(/Batch 1\b/.test(noCfgText), 'with no configured book size it still says which batch')
+ok(/Sheet 1 of \d+/.test(noCfgText), 'and still draws the sheet')
+ok(!/Batch \d+ of \d+/.test(noCfgText), 'and does not invent a total it cannot know')
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
