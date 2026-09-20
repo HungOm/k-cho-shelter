@@ -1300,7 +1300,20 @@ const printedSize = computed(() => {
           Held as shares of the template, so the same design survives a redraw at any size —
           and a different charity's artwork starts from its own.
         </span>
-        <button class="btn sm ghost" :disabled="!design" @click="resetDesign">Back to standard</button>
+        <!--
+          THREE ACTIONS THAT LOOKED IDENTICAL AND ARE NOT.
+          Undo takes back one step. "Back to saved" throws away this sitting.
+          "Back to standard" discards the whole design — every measurement
+          anybody has ever made on this template — and it was a ghost button
+          sitting flush against the other two, first in the row. Nothing on
+          the screen said which of the three you could not take back.
+          It is marked and it is separated now; the everyday one is nearest
+          the hand.
+        -->
+        <button class="btn sm ghost danger" :disabled="!design"
+                title="Discard the whole design and start from the standard one. This cannot be undone."
+                @click="resetDesign">Back to standard</button>
+        <span class="gap"></span>
         <button class="btn sm ghost" :disabled="!dirty"
                 :title="dirty ? 'Throw away every change since the last save' : 'Nothing has changed since the last save'"
                 @click="revertToSaved">Back to saved</button>
@@ -1334,7 +1347,17 @@ const printedSize = computed(() => {
 }
 .tabbtn.on { background: var(--brand); color: var(--brand-ink) }
 .tabbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
-.statetxt { font-size: .74rem; color: var(--muted) }
+/*
+ * IT SHRINKS BEFORE THE BUTTONS DO. The bar wraps, and this sentence is the
+ * longest thing in it — "Edited 12:04 · not yet saved" pushed Save onto a
+ * line of its own, which reads as an orphaned primary action rather than as
+ * a header that ran out of room. The status may truncate; the action may not
+ * move.
+ */
+.statetxt {
+  font-size: .74rem; color: var(--muted);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .statetxt.unsaved { color: var(--warn); font-weight: 500 }
 
 /* ---- three columns: list, ticket, one thing's settings ---- */
@@ -1543,6 +1566,7 @@ const printedSize = computed(() => {
 
 /* The arithmetic is how you check the answer, so it sits under it and quiet. */
 
+.footbar .gap { flex: 0 0 18px }
 .footbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding-top: 10px; border-top: 1px solid var(--border);

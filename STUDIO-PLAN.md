@@ -58,10 +58,19 @@ snapping to other boxes and to the stub. Positions stay shares of the template.
 **Rule:** the canvas and the inspector edit the same value. Every drag must be
 expressible as the number the inspector shows, or the two will disagree.
 
-### 4 — A toolbar, and progressive disclosure
-Undo/redo, zoom, fit, actual size, align, preview. Advanced print settings
-(bleed, crop marks, safe area, printer offset) collapse behind **Advanced** —
-they do not exist yet and should be built here or not at all.
+### 4 — A toolbar, and progressive disclosure — mostly already there
+Zoom, fit, undo and the save state all existed; what was missing was
+HIERARCHY. Three actions sat together looking identical, one of which
+discards every measurement ever made on a template. That one is marked and
+separated now.
+
+**The advanced settings were not built, and that is the decision rather than
+an omission.** Bleed, crop marks, safe area and printer offset appear in no
+part of the pipeline — `grep` finds none of them in ticketsheet.js or
+ticketdesign.js. Adding the controls would mean four sliders that nothing
+reads, which is the `sheet.perPage` bug exactly: a control that said four
+while the page took whatever fitted. If bleed is wanted, the work is in the
+print pipeline first and the control second.
 
 ### 5 — Preview mode
 A clean print preview: no editor controls, paper and orientation stated, zoom,
@@ -91,7 +100,8 @@ same file, they are the same task and one person does both.
 | 1 | Place tab out | `ticketdesign/PlaceTab.vue` | after 2 |
 | 2 | Inspector | `ticketdesign/Inspector.vue`, `PlaceTab.vue` | after 1c |
 | 3 | Canvas manipulation | `PlaceTab.vue`, `lib/ticketelements.js` | after 2 |
-| 4 | Toolbar + advanced | the shell, `studio.css` | after 1c |
+| 4 | Action hierarchy | the shell | **done** |
+| 4 | Advanced print settings | — | **not built, deliberately** |
 | 5 | Preview mode | `ticketdesign/PreviewTab.vue`, `ui/SheetPreview.vue` | **offered → ticket-printing-qr-integration** |
 | 6 | Layers | `Inspector.vue` | after 2 |
 | — | Icon set | `ui/Icon.vue` | **built by kcho-shelter-e3**, uncommitted |

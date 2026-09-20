@@ -159,6 +159,46 @@ console.log('holding shift means the drag was meant exactly')
   ok(keepRatio(wide, 0.001, 0.5).height >= 0.002, 'and a squashed one never reaches zero height')
 }
 
+console.log('the action you cannot take back does not look like the one you can')
+{
+  /*
+   * THREE BUTTONS SAT TOGETHER AND LOOKED THE SAME. Undo takes back one
+   * step. "Back to saved" throws away this sitting's work. "Back to
+   * standard" discards the whole design — every measurement anybody has
+   * made on that template, including the ones read off the printed artwork
+   * with a ruler — and it was a plain ghost button, first in the row, flush
+   * against the other two.
+   *
+   * Nothing on the screen said which of the three could not be taken back,
+   * and nothing in the suite would have noticed: the design rules pinned
+   * here are about disabled reasons and role words, not about weight.
+   */
+  const src = read('src/components/TicketDesign.vue')
+  const foot = src.slice(src.indexOf('<footer class="footbar">'), src.indexOf('</footer>'))
+  ok(/Back to standard/.test(foot) && /Back to saved/.test(foot) && /Undo/.test(foot),
+    'all three actions are still offered')
+  /*
+   * Matched as BUTTON ELEMENTS, not by slicing around a label. The first
+   * version cut the string at indexOf('Back to standard') — which found the
+   * comment above the button, not the button — and reported a correct file
+   * as failing. A test that reads markup has to match markup.
+   */
+  const buttons = [...foot.matchAll(/<button\b([\s\S]*?)>([\s\S]*?)<\/button>/g)]
+    .map((m) => ({ attrs: m[1], label: m[2].trim() }))
+  ok(buttons.length === 3, `three actions found (${buttons.map((b) => b.label).join(', ')})`)
+  const by = (label) => buttons.find((b) => b.label === label)
+  ok(/danger/.test(by('Back to standard').attrs), 'the one that cannot be undone is marked as dangerous')
+  ok(!/danger/.test(by('Back to saved').attrs), 'the one that only loses this sitting is not')
+  ok(!/danger/.test(by('Undo').attrs), 'and undo certainly is not')
+  /*
+   * A reason in the title, which is this repo's rule for a control whose
+   * consequence is not obvious from its label — the same rule permissionui
+   * enforces for controls somebody may not use.
+   */
+  ok(/cannot be undone/.test(foot), 'and it says so where somebody hovering will read it')
+  ok(/class="gap"/.test(foot), 'with a space between it and the two that are safe')
+}
+
 console.log('the paper is named, chosen, and obeyed')
 {
   const { pageFit, PAPERS, paperOf } = await import('../src/lib/ticketsheet.js')
