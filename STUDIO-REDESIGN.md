@@ -615,6 +615,15 @@ truncate; the action may not move." It is not a fourth tab and `.tabbtn`'s
 `white-space: nowrap` is not clipping it. Two sessions mis-identified it from a
 screenshot before anyone read the markup.
 
+**What IS arguably true there, and is 8d's region by the split they and 72
+agreed:** at desk width the status renders as `"sa…"`, which has stopped
+reporting while still holding the row. The trade the comment describes is the
+right one — the status should yield before the action moves — but this repo's
+idiom is that information you cannot read should stay *reachable*, the same
+rule that makes a disabled control carry its reason. A `title` with the full
+text is one attribute. Not taken: nobody's user has scoped it, and it is not
+mine to put in their file.
+
 ### Superseded — do not build
 
 `1a` canvas-first · `1b` one panel two tabs · `1c` drop-to-place · `4b` find a ticket.
