@@ -47,6 +47,50 @@ const schedule = ref(null)
 const prizesUnavailable = ref(false)
 const currency = computed(() => state.cfg?.currency || '')
 
+/*
+ * HOW FAR AWAY THE DRAW IS, said before what is in the way.
+ *
+ * Card 4e leads with a count — "Four things stand between you and drawing" —
+ * and lists them underneath. This screen had the heading and the list and
+ * nothing in between, so the same facts read differently: a list of four is
+ * read as four problems, and "four things stand between you and drawing" is
+ * read as four steps left. Same data, and the second is the screen an
+ * organiser wants to be looking at the week before a draw.
+ *
+ * Counted off `problems` with `blockers` behind it, for the reason the panel
+ * below already renders both: the Edge Function and the browser bundle deploy
+ * by different routes, and a client newer than the function must not announce
+ * that nothing is in the way.
+ */
+const blockerCount = computed(() =>
+  ready.value?.problems?.length ?? ready.value?.blockers?.length ?? 0)
+
+/* Spelled out to ten. A numeral at the head of a sentence reads as a quantity
+   being measured; a word reads as a number of steps left. */
+const WORDS = ['no', 'One', 'Two', 'Three', 'Four', 'Five',
+               'Six', 'Seven', 'Eight', 'Nine', 'Ten']
+const countWord = (n) => WORDS[n] ?? String(n)
+
+/*
+ * WHAT THIS CARD ALREADY KNOWS BEFORE ANYBODY PRESSES ANYTHING.
+ *
+ * The heading was permanently "Tickets with nobody's name" and the good news —
+ * "Every sold ticket has a name and a phone number" — only appeared inside the
+ * card AFTER pressing "Show them". But `ready.totals.missingContact` is on
+ * this screen already; it is the third figure in the stat row two inches
+ * above. So the screen held the answer and still made somebody press a button
+ * to be told it, and until they did, a raffle with nothing wrong was headed
+ * with the name of a problem it did not have.
+ *
+ * 'unknown' is a real third state, not a default: before `ready` arrives the
+ * card must not assert either, because asserting the bad one is how a screen
+ * says something is wrong while it is still loading.
+ */
+const contactState = computed(() => {
+  if (!ready.value) return 'unknown'
+  return Number(ready.value.totals?.missingContact ?? 0) ? 'some' : 'none'
+})
+
 onMounted(load)
 async function load() {
   try {
@@ -172,6 +216,12 @@ function download(filename, head, rows) {
   <div>
     <h1>The draw</h1>
 
+    <p v-if="ready && !ready.ready && blockerCount" class="lede">
+      {{ countWord(blockerCount) }}
+      {{ blockerCount === 1 ? 'thing stands' : 'things stand' }}
+      between you and drawing.
+    </p>
+
     <!--
       WHAT STANDS BETWEEN YOU AND DRAWING — as a list you can act on.
 
@@ -231,10 +281,32 @@ function download(filename, head, rows) {
     </div>
 
     <div class="card">
-      <div class="spread"><h3 style="margin:0">Tickets with nobody's name</h3>
-        <button class="btn sm" @click="loadMissing">Show them</button></div>
+      <div class="spread">
+        <!--
+          `missing` — a dashed outline with a slash — not `phoneOff`. The check
+          behind this card is name OR phone, and a crossed-out handset says only
+          the second, under a heading that says the first.
+        -->
+        <h3 class="head" style="margin:0">
+          <Icon v-if="contactState !== 'unknown'"
+                :name="contactState === 'none' ? 'check' : 'missing'" :size="18"
+                :class="contactState === 'none' ? 'ok' : 'bad'" />
+          {{ contactState === 'none'
+             ? 'Every sold ticket has a name and a phone number'
+             : "Tickets with nobody's name" }}
+        </h3>
+        <button class="btn sm" @click="loadMissing">Show them</button>
+      </div>
+      <!--
+        WHY IT MATTERS ALWAYS; WHAT TO DO ONLY WHEN THERE IS SOMETHING TO DO.
+        The heading now flips to the good news, and this line sat under it
+        still saying "Fix these before the draw" over a raffle with nothing to
+        fix. Only visible in a picture: both halves are correct sentences and
+        the bug is that one of them is answering a question nobody asked.
+      -->
       <p class="muted small">
-        A sold ticket with no name or phone is a winner you cannot find. Fix these before the draw.
+        A sold ticket with no name or phone is a winner you cannot find.<template
+          v-if="contactState === 'some'"> Fix these before the draw.</template>
       </p>
 
       <div v-if="missing === 'loading'" class="col" style="gap:10px">
@@ -393,4 +465,14 @@ function download(filename, head, rows) {
 .winner { display: flex; align-items: center; gap: 12px; padding: 12px 0;
   border-bottom: 1px solid var(--border); }
 .winner:last-child { border-bottom: 0; }
+
+/* How far away the draw is. Sits between the heading and the panel that lists
+   what is in the way, so it is the second thing read and not competing with
+   either — --muted would make it an aside, and it is the summary. */
+.lede { margin: -4px 0 14px; color: var(--text); font-size: 1.05rem; }
+
+/* The icon rides with the words rather than sitting in a column of its own:
+   this heading CHANGES with the data, and a mark that moves with the sentence
+   it qualifies is read as part of it. */
+.head { display: flex; align-items: center; gap: 8px; }
 </style>
