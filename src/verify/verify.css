@@ -2,29 +2,118 @@
  * Styles for the verify page. Inline-simple on purpose: this loads on a
  * stranger's phone, often on mobile data, to show four lines of text.
  */
+/*
+ * THE APP'S OWN TOKENS, COPIED RATHER THAN IMPORTED.
+ *
+ * This page used to carry a token set of its own — --ink, --line, --card,
+ * --good — with values a few degrees off the app's, and the effect was a page
+ * that read as a different product. The app's neutrals lean GREEN so they
+ * belong to the brand; these leaned blue. #17171b against #0f1a17, #f4f5f7
+ * against #f4f6f5: close enough that nobody could name it, far enough that a
+ * ticket and the page that checks it did not look related.
+ *
+ * That matters more here than on any screen inside the app. A stranger who
+ * scans a ticket sees THIS PAGE AND NOTHING ELSE of ours — there is no
+ * sidebar, no sign-in, no second screen to establish who is answering. It is
+ * the only chance the product has to look like itself, so it uses the
+ * product's colours.
+ *
+ * COPIED, NOT IMPORTED, and that is the whole reason this block exists rather
+ * than a `@import '../style.css'`. That file is the app's entire stylesheet,
+ * six hundred lines for fourteen screens; this page loads on a stranger's
+ * phone, often on mobile data, to show four lines of text. So: the NAMES are
+ * the app's, the VALUES are the app's, and the bytes are only the ones this
+ * page uses. If a token here ever disagrees with src/style.css, style.css is
+ * right and this copy is stale.
+ */
 :root {
-  --ink: #17171b; --muted: #5f6368; --line: #e3e3e8; --bg: #f4f5f7; --card: #fff;
-  --good: #0a7d32; --bad: #b3261e; --warn: #9a6700; --sample: #5b5f66;
+  --bg: #f4f6f5;
+  --surface: #ffffff;
+  --border: #e4e9e7;
+  --text: #0f1a17;
+  --muted: #5b6b66;
+  /* 3.03:1 — large text, icons and rules only, never a caption. */
+  --muted-2: #8a9793;
+  --brand: #0d7a6f;
+  --ok: #157a3c;
+  --warn: #9a5b06;
+  --bad: #b3261e;
+  --r: 16px;
+  --r-sm: 11px;
+  /*
+   * THE GLYPH INSIDE THE ROUNDEL, and it has to be a token because it flips.
+   *
+   * The mark was `color: #fff` on a solid semantic fill, which is right in
+   * light mode where --ok is #157a3c. It is wrong in dark, where the app's
+   * semantic colours are FOREGROUND values chosen to sit on a dark surface —
+   * --ok is #6ee7a0, a light mint, and a white tick on it is about 1.6:1. The
+   * verdict is the one thing on this page somebody came for, and in dark mode
+   * it had nearly disappeared.
+   */
+  --mark-ink: #ffffff;
+  /* Serials read as identity, not prose — the same face the app gives them. */
+  --font-data: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #e9e9ee; --muted: #a0a0aa; --line: #33333b; --bg: #131317; --card: #1c1c22;
-    --good: #5bd07f; --bad: #ff8a80; --warn: #e0b341; --sample: #9aa0a8;
+    --bg: #0d1211;
+    --surface: #161b1a;
+    --border: #2a3230;
+    --text: #e9efec;
+    --muted: #9aaaa4;
+    --muted-2: #7c8b86;
+    --brand: #2bd4c0;
+    --ok: #6ee7a0;
+    --warn: #fbbf50;
+    --bad: #fca5a0;
+    /* Near-black on those light fills: about 11:1, against 1.6:1 for white. */
+    --mark-ink: #0d1211;
   }
 }
 * { box-sizing: border-box }
 /*
- * The roundel's green is literal, not a theme token.
+ * The roundel is literal, not a theme token, and it is now the BRAND's teal
+ * rather than a green of its own.
  *
  * Every other colour here flips with the phone's dark mode because it is text
- * on a surface. This is an identity mark on a printed-matter check page and
- * should be the same green in both, the way a printed logo is the same colour
- * under any lamp.
+ * on a surface. This is an identity mark and should be the same in both, the
+ * way a printed logo is the same colour under any lamp — so it is written out
+ * rather than pointing at --brand, which does flip.
+ *
+ * It was #0f4a2f, a dark green belonging to nothing. The mark a stranger sees
+ * at the top of the only page of ours they will ever open should be the mark
+ * the product uses.
  */
-:root { --seal: #0f4a2f }
+:root { --seal: #0d7a6f }
+/*
+ * INTER FOR THE LATIN LAYER, the same self-hosted file the app uses, so a
+ * ticket and the page that checks it are set in one typeface. Same origin, one
+ * request, and `swap` so the text renders immediately in the fallback and
+ * reflows when it arrives — which is the right trade for somebody standing in
+ * a hall on mobile data.
+ *
+ * THE MYANMAR CHAIN IS UNTOUCHED AND MUST STAY THAT WAY. Padauk and Noto Sans
+ * Myanmar lead every rule that can carry Burmese; Inter has no Myanmar glyphs
+ * at all, so putting it first there would render half this page as boxes.
+ */
+@font-face {
+  font-family: 'Inter Variable';
+  /*
+   * Relative, and correct for the BUILD, which is what ships: the bundled
+   * stylesheet lands in assets/, so ../fonts/ resolves to dist/fonts/. In the
+   * dev server this file is served from /src/verify/, where the same path
+   * misses and the Latin text falls back to system-ui. That is a dev-only
+   * difference and it is noted rather than fixed, because the alternative is an
+   * absolute /fonts/ which breaks the moment the site is served from a project
+   * subpath — which is exactly how it is served (vite base: './').
+   */
+  src: url('../fonts/inter-latin.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
 body {
-  margin: 0; background: var(--bg); color: var(--ink);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 'Inter Variable', system-ui, -apple-system, "Segoe UI", sans-serif;
   min-height: 100vh; padding: 24px 16px;
 }
 /*
@@ -54,25 +143,25 @@ h1, .note, .state, .stamp, .about, .my, .en,
 .topbar { display: flex; align-items: center; gap: 10px; margin: 0 4px 14px }
 .logo {
   flex: none; width: 30px; height: 30px; border-radius: 50%;
-  background: var(--seal); border: 2px solid var(--card);
+  background: var(--seal); border: 2px solid var(--surface);
   box-shadow: 0 0 0 1px var(--seal);
 }
 .brand { min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.25 }
 .brand .en { font-weight: 500; color: var(--muted); font-size: 11px }
 .card {
-  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
   padding: 26px 20px; text-align: center;
 }
 .card.wait { color: var(--muted) }
 .mark {
   width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 30px; line-height: 1; color: #fff;
+  font-size: 30px; line-height: 1; color: var(--mark-ink);
 }
-.good .mark { background: var(--good) }
+.good .mark { background: var(--ok) }
 .bad .mark { background: var(--bad) }
 .warn .mark { background: var(--warn) }
-.sample .mark { background: var(--sample) }
+.sample .mark { background: var(--muted) }
 /*
  * The watermark, on the card rather than behind the text: `overflow: hidden`
  * on a positioned card clips the rotated band at the card's own edges, so it
@@ -87,14 +176,23 @@ h1, .note, .state, .stamp, .about, .my, .en,
 }
 .wash span {
   font: 700 clamp(26px, 9vw, 44px)/1.9 system-ui, sans-serif; letter-spacing: 0.12em;
-  color: var(--sample); opacity: 0.16; white-space: normal; text-align: center;
+  color: var(--muted); opacity: 0.16; white-space: normal; text-align: center;
 }
 h1 { font-size: 19px; margin: 0 0 12px }
 .en { display: block }
 .my { display: block; font-size: 0.86em; opacity: 0.75; font-family: Padauk, "Noto Sans Myanmar", sans-serif }
 .number { margin: 16px 0 6px }
 .number .label { display: block; font-size: 12px; color: var(--muted) }
-.number b { font-size: 26px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums }
+/*
+ * THE NUMBER IS THE TICKET'S IDENTITY, so it is set like one: the data face,
+ * tabular, with the letter-spacing a monospace already gives it removed. It
+ * was body text at 26px, which reads as a large word rather than as a serial
+ * somebody is about to compare against the thing in their hand.
+ */
+.number b {
+  font-size: 26px; font-family: var(--font-data);
+  font-variant-numeric: tabular-nums; letter-spacing: 0;
+}
 .state { margin: 6px 0 0; font-weight: 600 }
 .note { margin: 16px 0 0; font-size: 13px; color: var(--muted); text-align: left }
 
@@ -106,7 +204,7 @@ h1 { font-size: 19px; margin: 0 0 12px }
  * would make it read as a second verdict.
  */
 .privacy {
-  margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--line);
+  margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--border);
   font-size: 12px; color: var(--muted); text-align: left;
 }
 /* What to do about a refusal. Inside the card, because it is part of the
@@ -119,7 +217,7 @@ h1 { font-size: 19px; margin: 0 0 12px }
  */
 .why {
   margin: 16px 0 0; padding: 14px 16px;
-  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
 }
 .why h2 {
   margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em;
@@ -135,4 +233,4 @@ h1 { font-size: 19px; margin: 0 0 12px }
  */
 .about { margin: 18px 4px 0; font-size: 12px; line-height: 1.55; color: var(--muted); text-align: center }
 .aboutlink { margin: 8px 4px 0; text-align: center; font-size: 12px }
-.aboutlink a { color: var(--good); text-underline-offset: 2px }
+.aboutlink a { color: var(--ok); text-underline-offset: 2px }
