@@ -506,7 +506,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 6a | 4 Sell | List + docked ticket panel | yes (89ac4f5) |
 | 6b | 4 Sell | A sold ticket — record, movement, correction in one modal | **diverges by ruling — trail stays a sheet** |
 | 4c | 4 Sell | Write down sales — one ticket or a pile of stubs | not verified |
-| 4d | 5 Money | Money — who owes what, running-balance statement | not verified |
+| 4d | 5 Money | Money — who owes what, running-balance statement | yes (a71a080) — Export added; "account since" unbacked |
 | 4h | 6 Control | Approvals — the waiting request first | yes |
 | 8a | 7 Buyer | Books → book → a ticket — the keepsake in the raffle's colour | yes (9d78cef) — less the Motto chip |
 | 8b | 7 Buyer | Three treatments of the same ticket, one brand colour | ticket-printing (Certificate) |
@@ -655,6 +655,35 @@ is their call; this is the first time it has been exercised against a card.
 exist. Left deliberately — a prop describing an absent caller reads as
 intentional design rather than as a leftover, so this row is where that is
 written down.
+
+### 4d — verified; the statement already beat the card in five places
+
+Checked against 4d on 2026-09-21. The only element with nothing behind it was
+**Export**, now built (`a71a080`). Everything else was there, and `SellerMoney.vue`
+is ahead of the drawing:
+
+* **Three balance states in words** — "still to come in" / "handed in beyond
+  what is charged" / "nothing outstanding". The card glosses only the negative.
+* **A phone with three states** — dialable, on file but not dialable, absent.
+  The card prints a bare number. So 4d's subtitle phone was NOT added: it would
+  replace careful handling with a flat string.
+* **`reconciles === false`** — the server checks its own arithmetic against the
+  figure the table reads and the screen refuses to be trusted when they differ.
+  The card has nothing like it.
+* **Filters exhaustive by construction** — every row belongs to exactly one, so
+  the chips cannot hide a row the way an "everything except" set does. See
+  [[everything-except-x]].
+* **Lands on the closing balance** — `linePage` is set to the last page on load,
+  so the most recent movement is on screen at open. This is why 4d's "Last
+  movement" summary line was not added: it answers a question the table already
+  answers on arrival.
+
+**Deliberately not built:** `account since <date>`. There is no source — the
+agent select in `reports.ts` is `agent_id,name,phone,zone`, with no created or
+joined column. Adding it means a migration, not a label.
+
+**Still open:** the card's "All dates" filter. Not built; the existing filters
+are by kind, and a date range is a real feature rather than a refactor.
 
 ### Superseded — do not build
 
