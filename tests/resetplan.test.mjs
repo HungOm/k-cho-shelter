@@ -16,7 +16,7 @@
  * every table to have a home, which is the check that catches the quiet case:
  * a table absent from the map is not assumed safe, it is a failure.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
 
 const ROOT = new URL('..', import.meta.url).pathname
@@ -167,6 +167,77 @@ console.log('rows come out children first, so nothing refuses halfway through')
   for (const t of TABLES) {
     const f = P.featureOf(t.name)
     if (f && P.RESETTABLE.includes(f)) ok(at.has(t.name), `${t.name} is in the everything plan`)
+  }
+}
+
+/*
+ * AND THE THIRD LIST, WHICH NOTHING WAS CHECKING.
+ *
+ * There are two routes that empty this raffle and they keep separate lists of
+ * what they may touch. supabase/reset.sql names its tables in `delete from`
+ * lines, and tests/resetcovers has asked since it was written whether every
+ * table created is on them. `app_reset`, the SQL function the APP calls, keeps
+ * an allowlist built into itself — and nothing asked the same question of it.
+ *
+ * SO IT WENT OUT OF DATE IMMEDIATELY. `ticket_receipts` and
+ * `ticket_receipt_items` arrived with the buyer's receipt, resetplan filed them
+ * under `tickets`, and the allowlist had never heard of them. Ticking "Tickets,
+ * books and codes" — the likeliest selection anybody makes — sent them to
+ * app_reset, which refused: `app_reset refuses to empty ticket_receipt_items`.
+ * The reset failed AFTER the counts had been read and the sentence typed back.
+ *
+ * It failed safely, because the allowlist is checked over the whole list before
+ * anything is touched. That is the difference between this and the money_entries
+ * case above, which succeeded and carried a raffle's journal into the next one.
+ * A loud failure at the worst possible moment is still a failure, and this is
+ * the check that would have found it in a test run instead.
+ *
+ * The EFFECTIVE definition is the last one in migration order, because these
+ * are `create or replace` and a later migration wins. Reading only the first
+ * would test a function the database no longer has.
+ */
+console.log('the SQL function the app calls will accept every table the plan sends it')
+{
+  const MIG = ROOT + 'supabase/migrations/'
+  let allowed = null, definedIn = ''
+  for (const f of readdirSync(MIG).filter((x) => x.endsWith('.sql')).sort()) {
+    const sql = readFileSync(MIG + f, 'utf8')
+    const m = sql.match(/create or replace function app_reset[\s\S]*?allowed constant text\[\] := array\[([\s\S]*?)\]/)
+    if (!m) continue
+    allowed = [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])
+    definedIn = f
+  }
+
+  /* A parse that quietly matches nothing passes everything below it. */
+  ok(allowed !== null, 'app_reset\'s allowlist was found in the migrations')
+  ok((allowed ?? []).length >= 15, `and read (${(allowed ?? []).length} tables, from ${definedIn})`)
+
+  if (allowed) {
+    const set = new Set(allowed)
+    /* Every table the plan can put in front of it, for any selection anybody
+     * can make from the screen. */
+    const sendable = P.planFor(P.RESETTABLE).tables
+    ok(sendable.length >= 15, `tables the screen can send (${sendable.length})`)
+    for (const t of sendable) {
+      ok(set.has(t),
+         `app_reset accepts ${t} — the plan sends it, and a table missing here refuses the `
+         + 'whole reset after the System Admin has typed the confirmation')
+    }
+
+    /*
+     * AND THE OTHER DIRECTION, which is the refusal rather than the omission.
+     * These three are deliberately not on it: they are how the person running
+     * the reset gets back in, and the record that they ran it.
+     */
+    for (const t of ['app_users', 'permissions', 'audit_log']) {
+      ok(!set.has(t), `app_reset refuses ${t} — reset.sql does that from a terminal, not a page`)
+    }
+    for (const t of allowed) {
+      const owner = P.featureOf(t)
+      ok(owner !== '', `${t} is on the allowlist and belongs to a feature`)
+      ok(P.RESETTABLE.includes(owner),
+         `${t} is allowed and its feature (${owner}) is one the app offers`)
+    }
   }
 }
 
