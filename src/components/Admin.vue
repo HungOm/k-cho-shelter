@@ -863,18 +863,20 @@ function details(d) {
         note above reads differently depending on which it is.
 
         WHEN TO DELETE THE NOTE, because this screen cannot work it out for
-        itself. The Edge Function and this bundle deploy by different routes — a
-        push to master ships the client alone — so the verify function reading
-        ORG_PHONE in the worktree does NOT mean a stranger can see it. The note
-        is a claim about what is DEPLOYED, and the trigger for removing it is
-        the deployed verify function returning these three, not the code landing
-        on master. Check the platform rather than the tree: a deploy record is a
-        record, not evidence.
+        itself. The note that used to sit here said the public page did not read
+        these yet, and named its own removal trigger: the DEPLOYED verify
+        function returning them, not the code landing on master, because the
+        function and this bundle deploy by different routes.
+
+        That trigger fired on 2026-09-20. Measured against the platform rather
+        than the tree — GET /functions/v1/verify?about returns 200 with the org
+        block — so the claim became false and the note is gone. Saving one now
+        does change what a stranger sees.
       -->
       <p class="note tiny">
-        The public page does not read these yet. They are saved and audited from now,
-        so it has them the moment it does &mdash; but saving one today does not change
-        what a stranger sees.
+        These are shown on the public ticket-check page. Leaving one empty shows
+        nothing rather than an empty heading, so a detail you have not got is a
+        detail nobody is offered.
       </p>
 
       <div class="field" style="margin-top:14px">
