@@ -118,7 +118,7 @@ async function release() {
 </script>
 
 <template>
-  <Sheet title="Make more tickets"
+  <Sheet :title="current ? 'Make more tickets' : 'Make the first tickets'"
          subtitle="Create new ticket rows that do not exist yet" @close="emit('close')">
 
     <!-- done -->
@@ -154,10 +154,16 @@ async function release() {
       </div>
 
       <template v-else>
+        <!--
+          The second sentence answers "I have too many" and there is no such
+          state at zero — it points somebody with no tickets at a screen for
+          taking tickets out of play. The warning that this cannot be undone
+          still applies and stays.
+        -->
         <div class="note plain">
-          This creates tickets that do not exist yet, and cannot be undone. To
-          sell fewer of the tickets you already have, use <b>Tickets in play</b>
-          instead — that one can be moved back.
+          This creates tickets that do not exist yet, and cannot be undone.<template v-if="current">
+          To sell fewer of the tickets you already have, use <b>Tickets in play</b>
+          instead — that one can be moved back.</template>
         </div>
 
         <label>How many more?</label>

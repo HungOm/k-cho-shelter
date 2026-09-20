@@ -738,12 +738,21 @@ function details(d) {
           <template v-if="allMade">
             All {{ made.toLocaleString() }} planned tickets have been made.
           </template>
+          <!--
+            "Make more" is the wrong verb when there are none. A raffle that has
+            never made a ticket reads "Need more than 0 tickets altogether?" over
+            a button offering to add to nothing, and the one moment this control
+            matters most — the first run — is the one it was not written for.
+          -->
+          <template v-else-if="!made">
+            No tickets have been made yet.
+          </template>
           <template v-else>
             Need more than {{ made.toLocaleString() }} tickets altogether?
           </template>
         </span>
         <button v-if="!allMade" class="btn sm ghost" @click="emit('make-tickets')">
-          Make more
+          {{ made ? 'Make more' : 'Make the first tickets' }}
         </button>
       </div>
     </div>
