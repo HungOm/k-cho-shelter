@@ -34,6 +34,9 @@ export const S = {
 
   ticketNo: { en: 'Ticket number', my: 'လက်မှတ်အမှတ်' },
 
+  /* The label on the state row. The mockup's facts are all label-and-value. */
+  statusLabel: { en: 'Status', my: 'အခြေအနေ' },
+
   /*
    * A RECEIPT — one code standing for the tickets one buyer took, so a buyer
    * who bought ten checks them in one scan instead of ten.

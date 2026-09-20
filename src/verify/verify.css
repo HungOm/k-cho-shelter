@@ -150,9 +150,41 @@ h1, .note, .state, .stamp, .about, .my, .en,
 .brand .en { font-weight: 500; color: var(--muted); font-size: 11px }
 .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
-  padding: 26px 20px; text-align: center;
+  overflow: hidden; text-align: center;
 }
-.card.wait { color: var(--muted) }
+.card.wait { color: var(--muted); padding: 26px 20px }
+
+/*
+ * THE VERDICT BAND — tinted, full width, and the first thing the eye lands on.
+ *
+ * The card was one white box with a coloured roundel floating in it, so the
+ * answer and the facts about the ticket carried the same weight. The tint runs
+ * edge to edge (the card clips it with overflow: hidden, which the sample
+ * watermark already relied on) and the facts sit on plain paper underneath.
+ *
+ * COLOUR-MIX RATHER THAN A SOFT TOKEN PER TONE. The app has --ok-soft and
+ * friends, but they are tuned as fills behind small text inside the app's
+ * chrome; here the band is large and sits under a solid roundel of the same
+ * hue, and mixing the tone into the page background gives a tint that stays
+ * correct in both themes without four more copied values. Where colour-mix is
+ * unsupported the declaration is dropped and the band is plain --surface,
+ * which is exactly the card that shipped before this — so the fallback is the
+ * old design rather than a broken one.
+ */
+.band { padding: 26px 20px 22px; background: var(--surface) }
+.good .band { background: color-mix(in srgb, var(--ok) 10%, var(--surface)) }
+.bad .band { background: color-mix(in srgb, var(--bad) 10%, var(--surface)) }
+.warn .band { background: color-mix(in srgb, var(--warn) 12%, var(--surface)) }
+.sample .band { background: color-mix(in srgb, var(--muted) 10%, var(--surface)) }
+
+/* The headline takes the tone's own colour, which is what makes the band read
+   as one object rather than as a tick sitting on a coloured rectangle. */
+.good .band h1 { color: var(--ok) }
+.bad .band h1 { color: var(--bad) }
+.warn .band h1 { color: var(--warn) }
+
+.body { padding: 20px }
+.body > :first-child { margin-top: 0 }
 .mark {
   width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -181,8 +213,19 @@ h1, .note, .state, .stamp, .about, .my, .en,
 h1 { font-size: 19px; margin: 0 0 12px }
 .en { display: block }
 .my { display: block; font-size: 0.86em; opacity: 0.75; font-family: Padauk, "Noto Sans Myanmar", sans-serif }
-.number { margin: 16px 0 6px }
-.number .label { display: block; font-size: 12px; color: var(--muted) }
+/*
+ * THE NUMBER KEEPS THE MIDDLE OF THE CARD. Its label is set the way the
+ * mockup sets every small label — upper case, letterspaced, muted — so that
+ * the eye reads "this is what that value is" before reading the value.
+ */
+.number { margin: 4px 0 6px }
+.number .label {
+  display: block; font-size: 11px; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted);
+}
+/* Burmese is not an upper-case script; the transform does nothing to it and the
+   letterspacing actively harms it, so that half opts out. */
+.number .label .my { text-transform: none; letter-spacing: 0 }
 /*
  * THE NUMBER IS THE TICKET'S IDENTITY, so it is set like one: the data face,
  * tabular, with the letter-spacing a monospace already gives it removed. It
@@ -193,7 +236,22 @@ h1 { font-size: 19px; margin: 0 0 12px }
   font-size: 26px; font-family: var(--font-data);
   font-variant-numeric: tabular-nums; letter-spacing: 0;
 }
-.state { margin: 6px 0 0; font-weight: 600 }
+/*
+ * FACTS ARE LABEL-LEFT, VALUE-RIGHT, RULED — the shape the mockup gives every
+ * fact about a ticket. One row today, and the shape matters more than the
+ * count: it is what lets another fact be added without redesigning the card,
+ * and what stops a second one being written as more centred bold text.
+ */
+.facts { margin: 18px 0 0; text-align: left }
+.fact {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 11px 0; border-top: 1px solid var(--border);
+}
+.fact dt { color: var(--muted); font-size: 14px; flex: 1; min-width: 0 }
+.fact dd { margin: 0; font-weight: 600; text-align: right; min-width: 0 }
+.state { margin: 0; font-weight: 600 }
+.good .state { color: var(--ok) }
+.warn .state { color: var(--warn) }
 .note { margin: 16px 0 0; font-size: 13px; color: var(--muted); text-align: left }
 
 /*
@@ -203,8 +261,20 @@ h1 { font-size: 19px; margin: 0 0 12px }
  * itself, not another fact about the ticket, and putting it in a tinted panel
  * would make it read as a second verdict.
  */
+/*
+ * WHAT THIS PAGE WILL NEVER SHOW.
+ *
+ * It was divided off by a rule, on the argument that a tinted panel would make
+ * it read as a second verdict. The mockup draws it as a quiet bordered box
+ * instead, and the argument survives the change: it takes no tone colour and no
+ * mark, so it is plainly furniture rather than an answer. A box also stops it
+ * running into the facts above it now that those are ruled rows — two
+ * consecutive hairlines read as a table that lost its last row.
+ */
 .privacy {
-  margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--border);
+  margin: 16px 0 0; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg);
   font-size: 12px; color: var(--muted); text-align: left;
 }
 /* What to do about a refusal. Inside the card, because it is part of the

@@ -183,13 +183,30 @@ function panel(tone, headKey, noteKey, extra = '') {
   const wash = tone === 'sample'
     ? '<div class="wash" aria-hidden="true"><span>SAMPLE SAMPLE SAMPLE SAMPLE</span></div>'
     : ''
+  /*
+   * THE VERDICT IS A BAND, NOT THE TOP OF A CARD.
+   *
+   * The card used to be one white box with a coloured roundel floating in it,
+   * so the answer and the facts about the ticket sat at the same visual weight
+   * and the eye had to read to find out which was which. The mockup tints the
+   * verdict across the full width and lets the facts sit on plain paper below
+   * it — "a clear verdict first, the ticket's facts second", which is the
+   * sentence the card is titled with.
+   *
+   * The tint is the same hue as the mark and much weaker, so the band reads as
+   * belonging to the tick rather than as a second status of its own.
+   */
   return `
     <div class="card ${tone}">
       ${wash}
-      <div class="mark" aria-hidden="true">${mark}</div>
-      <h1>${say(headKey)}</h1>
-      ${extra}
-      <p class="note">${say(noteKey)}</p>
+      <div class="band">
+        <div class="mark" aria-hidden="true">${mark}</div>
+        <h1>${say(headKey)}</h1>
+      </div>
+      <div class="body">
+        ${extra}
+        <p class="note">${say(noteKey)}</p>
+      </div>
     </div>`
 }
 
@@ -318,9 +335,30 @@ async function run() {
   const noteKey = body.state === 'unsold' ? 'unsoldNote' : 'photocopy'
   const tone = body.state === 'void' ? 'warn' : 'good'
 
+  /*
+   * THE NUMBER STANDS ALONE AND THE STATE IS A ROW.
+   *
+   * They were two centred paragraphs of equal weight, so "KS-00842" and
+   * "Recorded as sold" competed. The number is the ticket's identity and the
+   * thing somebody compares against the paper in their hand, so it keeps the
+   * middle of the card to itself; the state is a FACT ABOUT it and takes a
+   * labelled row, which is the shape the mockup gives every such fact and the
+   * shape that lets more of them be added without redesigning anything.
+   *
+   * Only one row today. The mockup also draws `Recorded` and `Draw date`, and
+   * those are not here on purpose: this endpoint answers anybody with no
+   * session, and what it discloses is a ruling rather than a layout decision —
+   * see the comment at the head of supabase/functions/verify/index.ts about
+   * every failure returning the same answer.
+   */
   const details = `
     <p class="number"><span class="label">${say('ticketNo')}</span><b>${escapeHtml(body.number)}</b></p>
-    <p class="state">${say(stateKey)}</p>
+    <dl class="facts">
+      <div class="fact">
+        <dt>${say('statusLabel')}</dt>
+        <dd class="state">${say(stateKey)}</dd>
+      </div>
+    </dl>
     <p class="privacy">${say('privacyNote')}</p>`
 
   render(panel(tone, 'genuine', noteKey, details) + `
