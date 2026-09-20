@@ -1810,9 +1810,18 @@ const printedSize = computed(() => {
 .ruler span { position: absolute; top: 2px; padding-left: 3px; border-left: 1px solid var(--border) }
 .ruler .right { right: 0; border-left: 0; border-right: 1px solid var(--border); padding: 0 3px 0 0 }
 
+/*
+ * --paper, not --surface. This is the sheet the ticket prints on, and it was
+ * following the theme: in dark mode the artboard went near-black, so a field
+ * was being positioned and judged against a colour no printer produces. The
+ * <img> above it is unconditional, so on a FROM-SCRATCH design — 9a's second
+ * route, and the state 9c itself draws — nothing covers the frame and the
+ * artboard IS the paper. Artwork with transparency composites over it the same.
+ * The surround it sits on (.stage) does flip, and should: that is the chrome.
+ */
 .frame {
   position: relative; margin: 0 auto; touch-action: none;
-  box-shadow: var(--shadow); background: var(--surface);
+  box-shadow: var(--shadow); background: var(--paper);
 }
 .frame.drawing { cursor: crosshair }
 .frame.fitted { width: 100% }

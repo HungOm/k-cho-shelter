@@ -125,7 +125,8 @@ console.log('and every token that varies by theme has a dark value')
    *                 under any lamp, and the design system says it is never
    *                 chrome. The verify page's --seal is the same argument.
    */
-  const THEME_FREE = ['--ease', '--font-data', '--r', '--r-sm', '--tap', '--ticket-gold']
+  const THEME_FREE = ['--ease', '--font-data', '--r', '--r-sm', '--tap',
+                      '--ticket-gold', '--paper']
 
   const css = readFileSync(ROOT + 'src/style.css', 'utf8')
   const darkAt = css.indexOf('@media (prefers-color-scheme: dark)')

@@ -104,6 +104,16 @@
    * and on the things that stand for tickets, and nowhere in the chrome.
    */
   --ticket-gold: #ffe9a3;
+  /*
+   * THE PAPER IS NOT CHROME, so it does not flip. Card 9c: "Dark mode only
+   * changes the studio chrome — the ticket keeps its own colours." The studio's
+   * artboard was painted --surface and so went dark with the theme, which put a
+   * designer in front of a sheet of paper no printer will ever produce. On a
+   * from-scratch design there is no artwork over it, so the artboard IS the paper.
+   * Theme-free on purpose, the same way --ticket-gold is; tests/tokens.test.mjs
+   * names both and checks they still exist.
+   */
+  --paper: #ffffff;
 
   /*
    * WHERE A BOOK IS — five colours that answer one question.
