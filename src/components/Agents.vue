@@ -92,7 +92,11 @@ function waLink(o) {
 </script>
 
 <template>
-  <div>
+  <!-- Dense: an organiser screen, read many rows at a time at a desk. The class
+       is half the switch; the other half is a >= 1024px media query in
+       style.css, so this is an ordinary 17px screen with 52px targets on a
+       phone. --tap is never overridden. -->
+  <div class="dense">
     <div class="spread" style="margin-bottom:6px">
       <h1 style="margin:0">Sellers</h1>
       <button v-if="isAdmin" class="btn primary" @click="emit('add-agent')">Add someone</button>

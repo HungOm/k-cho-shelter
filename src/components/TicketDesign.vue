@@ -203,6 +203,22 @@ function sideOf(el) {
   return el.box.left + el.box.width / 2 >= at ? 'stub' : 'half'
 }
 
+/*
+ * The rail's two groups. `sideOf` already decides which half a box is on — it
+ * asks where the box's CENTRE falls against the stub line — so this is only
+ * that answer, collected. Order within a group is left exactly as it is; the
+ * grouping must not become a reordering.
+ */
+const HALVES = [
+  { k: 'half', t: 'Main half' },
+  { k: 'stub', t: 'Stub' },
+]
+const byHalf = computed(() => {
+  const out = { half: [], stub: [] }
+  for (const el of elements.value) out[sideOf(el)].push(el)
+  return out
+})
+
 function pick(id) {
   sel.value = id
   /* Selecting from the rail should show the thing selected, not leave it
@@ -1025,7 +1041,7 @@ const printedSize = computed(() => {
     <p class="muted">This is an organiser's screen.</p>
   </section>
 
-  <section v-else class="designer">
+  <section v-else class="designer dense">
     <!--
       THE HEADER IS THE TEMPLATE. Which artwork is being designed, what shape it
       is, and the two things you do when you have finished. It stays put while
@@ -1041,8 +1057,18 @@ const printedSize = computed(() => {
           <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
       </label>
-      <span v-if="active && design" class="specs">
-        {{ printedSize }} · {{ active.width }} × {{ active.height }} px
+      <!--
+        THE ARTBOARD'S OWN NUMBERS, written as card 9b writes them:
+        "190.0 x 61.5 mm - 2244 x 726 px - 300 dpi". The dpi was computed here
+        already and shown only inside the artwork verdict, which is the one tab
+        somebody is NOT on while placing boxes — so the resolution they are
+        designing against was invisible exactly when it constrains what they do.
+
+        All of it is data, so all of it takes --font-data.
+      -->
+      <span v-if="active && design" class="specs data">
+        {{ printedSize }} · {{ active.width }} × {{ active.height }} px<template
+          v-if="dpi"> · {{ dpi.v }} dpi</template>
       </span>
 
       <nav class="tabs" role="tablist">
@@ -1097,23 +1123,60 @@ const printedSize = computed(() => {
               <h3 class="rubric">
                 On this template <span class="count">{{ elements.length }}</span>
               </h3>
-              <ul class="ellist">
-                <li v-for="el in elements" :key="el.id"
-                    :class="{ on: sel === el.id, off: el.enabled === false }">
-                  <input
-                    v-model="el.enabled" type="checkbox"
-                    :aria-label="`Print ${nameOf(el)}`"
-                    :title="`Print ${nameOf(el)} on every ticket`">
-                  <span class="tag" :class="el.kind">{{ TAG[el.kind] }}</span>
-                  <button type="button" class="elname" @click="pick(el.id)">{{ nameOf(el) }}</button>
-                  <span v-if="trouble(el)" class="warnmark"
-                        :title="`${nameOf(el)} ${trouble(el)}`">!</span>
-                  <span class="side">{{ sideOf(el) }}</span>
-                </li>
-              </ul>
+              <!--
+                GROUPED BY HALF, which is how card 7a draws it and how the
+                ticket itself is organised: MAIN HALF and STUB are two different
+                pieces of paper after somebody tears along the perforation, and
+                what is printed on each is a separate decision.
+
+                It was a flat list with the side repeated on every row as a
+                small grey word — ten rows carrying the same two answers, and
+                the reader doing the sorting. The heading says it once and
+                counts them, and a box that crosses the line changes GROUP when
+                it is dragged, which is the same fact told more loudly.
+              -->
+              <template v-for="g in HALVES" :key="g.k">
+                <h4 v-if="byHalf[g.k].length" class="halfhead">
+                  {{ g.t }} <span class="count data">{{ byHalf[g.k].length }}</span>
+                </h4>
+                <ul v-if="byHalf[g.k].length" class="ellist">
+                  <li v-for="el in byHalf[g.k]" :key="el.id"
+                      :class="{ on: sel === el.id, off: el.enabled === false }">
+                    <input
+                      v-model="el.enabled" type="checkbox"
+                      :aria-label="`Print ${nameOf(el)}`"
+                      :title="`Print ${nameOf(el)} on every ticket`">
+                    <span class="tag" :class="el.kind">{{ TAG[el.kind] }}</span>
+                    <button type="button" class="elname" @click="pick(el.id)">{{ nameOf(el) }}</button>
+                    <span v-if="trouble(el)" class="warnmark"
+                          :title="`${nameOf(el)} ${trouble(el)}`">!</span>
+                  </li>
+                </ul>
+              </template>
               <p v-if="!elements.length" class="tiny muted">
                 Nothing is printed on this ticket yet. Pick something above and draw a box.
               </p>
+            </div>
+
+            <!--
+              ARTBOARD — what the canvas DRAWS, as card 9b groups it.
+
+              These two were loose on the status bar beside Snap and Longest
+              entry, which mixes two kinds of control: what the artboard shows
+              you, and how the tool behaves while you drag. The card separates
+              them and it is right — "Real QR" changes the picture, "Snap"
+              changes the pointer.
+
+              The card also draws "Grid & guides" and "Bleed & safe area" here.
+              Neither is built: nothing in ticketsheet.js or ticketdesign.js has
+              ever heard of a bleed, and a toggle over absent machinery is the
+              sheet.perPage bug — a control that said four while the sheet did
+              something else. They are a pipeline task with a UI at the end.
+            -->
+            <div class="block">
+              <h3 class="rubric">Artboard</h3>
+              <label class="choice tiny"><input v-model="showAllBoxes" type="checkbox"> Every box</label>
+              <label class="choice tiny"><input v-model="realQr" type="checkbox"> Real QR</label>
             </div>
 
             <div class="block">
@@ -1139,10 +1202,8 @@ const printedSize = computed(() => {
                 <button type="button" class="zbtn" title="Zoom in" @click="stepZoom(1)">+</button>
                 <button type="button" class="btn sm ghost" @click="fitToWidth">Fit</button>
               </div>
-              <label class="choice tiny"><input v-model="showAllBoxes" type="checkbox"> Every box</label>
-              <label class="choice tiny"><input v-model="showLongest" type="checkbox"> Longest entry</label>
               <label class="choice tiny"><input v-model="snapping" type="checkbox"> Snap to other boxes</label>
-              <label class="choice tiny"><input v-model="realQr" type="checkbox"> Real QR</label>
+              <label class="choice tiny"><input v-model="showLongest" type="checkbox"> Longest entry</label>
               <span class="grow"></span>
               <span class="tiny muted held">positions held as a share of the template, not as pixels</span>
             </div>
@@ -1365,7 +1426,7 @@ const printedSize = computed(() => {
 }
 .bar h2 { margin: 0; font-size: 1.05rem }
 .picker select { min-height: 34px; padding: 4px 8px; width: auto; max-width: 220px }
-.specs { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; color: var(--muted) }
+.specs { font-family: var(--font-data); font-size: .72rem; color: var(--muted) }
 .tabs { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: var(--r-sm) }
 .tabbtn {
   border: 0; background: none; color: var(--muted); cursor: pointer;
@@ -1415,7 +1476,7 @@ const printedSize = computed(() => {
 /* The kind, as three letters. A word would push the name out of a 240px rail;
  * a coloured dot alone would say nothing without a key. */
 .tag {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-data);
   font-size: .58rem; font-weight: 700; letter-spacing: .04em;
   padding: 2px 4px; border-radius: 3px; background: var(--surface-2); color: var(--muted);
 }
@@ -1431,7 +1492,7 @@ const printedSize = computed(() => {
 .stubrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
 .pcfield {
   width: 82px; min-height: 32px; padding: 4px 8px; text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
 
 /* ---- the stage ---- */
@@ -1444,7 +1505,7 @@ const printedSize = computed(() => {
 .zbtn:hover { border-color: var(--brand) }
 .zval {
   min-width: 42px; text-align: center; font-size: .76rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
 .held { text-align: right }
 
@@ -1452,7 +1513,7 @@ const printedSize = computed(() => {
 .stage.plain { padding-bottom: 0 }
 .ruler {
   position: relative; height: 15px; margin: 0 auto; font-size: .6rem; color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-data);
 }
 .ruler span { position: absolute; top: 2px; padding-left: 3px; border-left: 1px solid var(--border) }
 .ruler .right { right: 0; border-left: 0; border-right: 1px solid var(--border); padding: 0 3px 0 0 }
@@ -1524,14 +1585,14 @@ const printedSize = computed(() => {
 .stubgrip {
   position: absolute; top: 50%; left: -21px; transform: translateY(-50%);
   background: var(--info); color: #fff; font-size: .58rem; padding: 2px 3px;
-  border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-radius: 3px; font-family: var(--font-data);
   writing-mode: vertical-rl;
 }
 
 .readout {
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0;
   font-size: .72rem; color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
 .readout b { color: var(--text) }
 
@@ -1586,7 +1647,7 @@ const printedSize = computed(() => {
  */
 .sgrid input {
   min-height: 30px; padding: 3px 6px; text-align: right; font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
 .sgrid .wrap input[type=number] { padding-right: 30px }
 .sgrid .unit { font-size: .66rem }

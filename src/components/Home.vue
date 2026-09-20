@@ -122,7 +122,7 @@ function doStep(action) {
     <!-- what needs doing -->
     <template v-if="attention.length">
       <h3 class="sect"><Bi text="Needs looking at" /></h3>
-      <TransitionGroup name="pop" tag="div">
+      <TransitionGroup name="pop" tag="div" class="attns">
         <!-- A row may name a SHEET rather than a screen. "Time to report" sent
              sellers to the Books screen, which is not in a seller's sidebar at
              all — the one row written for them pointed at a page they cannot
@@ -239,6 +239,23 @@ function doStep(action) {
   border-left: 4px solid var(--muted); border-radius: var(--r);
   cursor: pointer; text-align: left;
   transition: transform .14s var(--ease), box-shadow .14s;
+}
+/*
+ * TWO ACROSS AT A DESK, one across on a phone.
+ *
+ * "Needs looking at" is a list of two or three things, and on a wide screen a
+ * stack of full-width bars wastes the width and pushes "What do you want to do?"
+ * below the fold — so the actions an organiser came for sit under a scroll,
+ * beneath the problems they already knew about. The phone keeps the stack,
+ * where full width is the only sensible measure.
+ *
+ * The rows stretch rather than sitting at their natural heights, so two alerts
+ * with different amounts of text still read as a pair.
+ */
+.attns { display: grid; gap: 9px; }
+@media (min-width: 900px) {
+  .attns { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); align-items: stretch; }
+  .attn { margin-bottom: 0; }
 }
 .attn:hover { transform: translateX(3px); box-shadow: var(--shadow); }
 .attn.bad  { border-left-color: var(--bad); }

@@ -6,11 +6,37 @@
  * them. Every one of those is a winner you would not be able to find.
  */
 import { ref, onMounted, computed, watch } from 'vue'
-import { state, api, toast, isSuper, isAdmin, canWrite, drawStamp } from '../lib/store.js'
+import { state, api, toast, isSuper, isAdmin, canWrite, drawStamp, go } from '../lib/store.js'
 import { moneyShort, money, date } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
+import Icon from './ui/Icon.vue'
+import Bi from './ui/Bi.vue'
 
 const emit = defineEmits(['open-ticket', 'record-winner', 'edit-prize'])
+
+/*
+ * WHERE EACH BLOCKER IS FIXED.
+ *
+ * Keyed on what the server SENDS, never on the sentence it sends. A blocker's
+ * prose is the most rewordable text in the product — somebody will improve
+ * "books not yet settled" one afternoon — and a screen that matched on it would
+ * quietly stop offering the way out, with nothing failing to say so.
+ *
+ * 'here' is a real value and deliberately has no button: tickets with nobody's
+ * name are fixed on THIS screen, a few inches further down, and sending
+ * somebody elsewhere for them would be wrong.
+ */
+const WHERE = {
+  books: 'Open Books',
+  money: 'Open Money',
+  search: 'Find them',
+  approvals: 'Open Approvals',
+  prize: 'Add a prize',
+}
+function fix(where) {
+  if (where === 'prize') return emit('edit-prize', null)
+  go(where)
+}
 
 const ready = ref(null)
 const missing = ref(null)
@@ -137,13 +163,58 @@ function download(filename, head, rows) {
 }
 </script>
 
+<!--
+  Where each blocker is fixed. The server sends a KEY, never a label — a screen
+  name matched on the blocker's prose would break the first time somebody
+  reworded a sentence, which is the least stable text there is.
+-->
 <template>
   <div>
     <h1>The draw</h1>
 
-    <div v-if="ready" :class="['note', ready.ready ? 'ok' : 'warn']">
-      <b>{{ ready.ready ? '✅ Ready to draw' : '⚠️ Not ready yet' }}</b>
-      <div v-for="b in ready.blockers" :key="b">• {{ b }}</div>
+    <!--
+      WHAT STANDS BETWEEN YOU AND DRAWING — as a list you can act on.
+
+      This was a bullet list of sentences: "books not yet settled (3)", and
+      nothing else. The server has always built each blocker with the REASON it
+      blocks and now says which screen fixes it, and all of that was being
+      thrown away one line before it reached the page. So an organiser was told
+      what was wrong, never why it mattered, and left to work out for themselves
+      where to go — on the one screen in the app that exists to say "not yet".
+
+      `problems` is the structured list; `blockers` is the flattened one this
+      screen used to read. Both are rendered, because the Edge Function and the
+      browser bundle deploy by different routes: a client newer than the
+      function would otherwise show an empty readiness card, which reads as
+      "nothing is wrong" — the most expensive wrong answer this screen has.
+    -->
+    <div v-if="ready" :class="['note ready', ready.ready ? 'ok' : 'warn']">
+      <b class="row">
+        <Icon :name="ready.ready ? 'check' : 'clock'" :size="20" />
+        <Bi :text="ready.ready ? 'Ready to draw' : 'Not ready yet'" />
+      </b>
+      <template v-if="ready.problems?.length">
+        <div v-for="b in ready.problems" :key="b.what" class="blocker">
+          <span class="grow">
+            <!--
+              THE COUNT STAYS WHERE THE SERVER PUT IT, in brackets after the
+              phrase. Leading with it reads better — "3 books not yet settled" —
+              right up until the count is one, and the sentence becomes "1
+              requests waiting for approval". The phrase is written on the
+              server in one grammatical number and no client can re-inflect
+              somebody else's prose, so the bracket is the only form that is
+              correct for every count.
+            -->
+            <span class="t">{{ b.what }}<template v-if="b.count"> ({{ b.count }})</template></span>
+            <span v-if="b.why" class="d">{{ b.why }}</span>
+          </span>
+          <button v-if="b.where && b.where !== 'here'" class="btn sm ghost fix"
+                  @click="fix(b.where)">{{ WHERE[b.where] }} &rarr;</button>
+        </div>
+      </template>
+      <div v-else v-for="b in ready.blockers" :key="b" class="blocker">
+        <span class="t">{{ b }}</span>
+      </div>
     </div>
     <div v-else class="skel" style="height:60px;margin-bottom:14px"></div>
 
@@ -305,6 +376,20 @@ function download(filename, head, rows) {
 </template>
 
 <style scoped>
+/*
+ * A blocker is a row, not a bullet. It has three parts — what, why, and the way
+ * out — and a `•` in front of a sentence can carry only the first.
+ */
+.ready .row { gap: 8px; margin-bottom: 4px; }
+.blocker {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 8px 0; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.blocker .t { display: block; font-weight: 650; }
+/* The reason is quieter than the problem but it is not decoration — it is why
+   the organiser should care, in the server's own words. */
+.blocker .d { display: block; font-size: .88em; opacity: .85; margin-top: 2px; }
+.blocker .fix { flex: 0 0 auto; color: inherit; font-weight: 650; text-decoration: underline; }
 .winner { display: flex; align-items: center; gap: 12px; padding: 12px 0;
   border-bottom: 1px solid var(--border); }
 .winner:last-child { border-bottom: 0; }

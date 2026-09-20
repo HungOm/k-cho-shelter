@@ -19,6 +19,18 @@ import Sheet from '../ui/Sheet.vue'
 import FreeRuns from '../ui/FreeRuns.vue'
 import AgentForm from './AgentForm.vue'
 
+/*
+ * A BOOK MAY ARRIVE ALREADY CHOSEN.
+ *
+ * Opened from the Books grid, the organiser has just pressed the square they
+ * mean, and asking them to type its number back is the kind of small insult
+ * that makes people stop using a screen. Opened from anywhere else the payload
+ * is empty and this behaves exactly as it did.
+ *
+ * It fills BOTH ends of the range, because one book is a range of one — and a
+ * prefilled `from` with an empty `to` would submit as an open-ended run.
+ */
+const props = defineProps({ payload: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['close', 'issued'])
 
 const agentId = ref(state.agents[0]?.id || '')
@@ -65,8 +77,8 @@ async function sellerAdded(e) {
   await refresh()
   if (e?.agentId) agentId.value = e.agentId
 }
-const from = ref('')
-const to = ref('')
+const from = ref(String(props.payload?.book ?? ''))
+const to = ref(String(props.payload?.book ?? ''))
 const due = ref(defaultDue())
 const busy = ref(false)
 const blocked = ref(null)

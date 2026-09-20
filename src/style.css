@@ -8,22 +8,113 @@
  *      tabs become a sidebar, and lists gain a detail pane beside them.
  */
 
+/*
+ * THE NEUTRALS CARRY A TRACE OF THE BRAND, and that is the whole difference
+ * between a designed product and teal dropped onto stock grey.
+ *
+ * They used to be blue-grey (#dce1e8, #5d6775) under a teal brand, which is two
+ * unrelated decisions sitting next to each other. Every neutral here now leans
+ * very slightly green, so a border beside a brand-coloured button belongs to it
+ * rather than merely tolerating it. The shift is small on purpose: measured
+ * against the old values it is two or three points of hue, which nobody will
+ * name and everybody will feel.
+ */
 :root {
-  --bg: #f4f6f8;
+  --bg: #f4f6f5;
   --surface: #ffffff;
-  --surface-2: #eef1f5;
-  --border: #dce1e8;
-  --text: #12161c;
-  --muted: #5d6775;
+  --surface-2: #eef1f0;
+  --border: #e4e9e7;
+  /* The heavier rule: table dividers, and any edge that has to hold a column
+     apart rather than merely suggest an edge. One border weight was never
+     enough for a ledger. */
+  --border-strong: #d6dedb;
+  --text: #0f1a17;
+  --muted: #5b6b66;
+  /*
+   * A SECOND MUTED, because there were two jobs and one token: a row's
+   * supporting line and the caption above a column are not equally important,
+   * and using --muted for both flattened every table into one grey.
+   *
+   * MEASURED, NOT ASSUMED: this is 3.03:1 on white. That is large-text contrast
+   * only — so it is for type at 24px and above, for icons, rules and disabled
+   * states, and NEVER for a small caption. The mockups use it at 10.5px, which
+   * is the one place their palette does not survive being checked; --muted at
+   * 5.3:1 is the token for anything a person has to read at size.
+   */
+  --muted-2: #8a9793;
 
   --brand: #0d7a6f;
-  --brand-soft: #e3f4f1;
+  --brand-soft: #e8f4f1;
   --brand-ink: #ffffff;
+  /* The brand under pressure — a hovered or held brand surface. It was a drop
+     shadow before, which says "floating" rather than "you are pressing this". */
+  --brand-press: #0a5f57;
+  /* A brand-coloured RULE rather than a brand-coloured fill: the outline of a
+     selected row, the edge of a focused card. --brand at full strength shouts
+     on a 1px line; --brand-soft disappears into the surface. */
+  --brand-line: #bfe0d9;
 
   --ok: #157a3c;      --ok-soft: #dcf5e5;
   --warn: #9a5b06;    --warn-soft: #fdf0d5;
   --bad: #b3261e;     --bad-soft: #fde8e6;
   --info: #1d4ed8;    --info-soft: #e4ecfd;
+
+  /*
+   * THE TICKET'S OWN COLOUR, which is not a UI colour and must never become
+   * one. Warm gold against the teal: the perforation, the serial number, the
+   * stub's rule. It belongs to the printed artefact, so it appears on tickets
+   * and on the things that stand for tickets, and nowhere in the chrome.
+   */
+  --ticket-gold: #ffe9a3;
+
+  /*
+   * WHERE A BOOK IS — five colours that answer one question.
+   *
+   * These lived as bare hexes inside BookGrid, which meant two things. They
+   * never followed dark mode, so the grid that shows the whole raffle kept a
+   * daylight palette on a dark screen; and "with a seller" was #2563eb, a stock
+   * blue belonging to no other part of this product, on the most-looked-at
+   * surface in the app.
+   *
+   * Custody is now the BRAND, because a book in a seller's hands is the normal,
+   * working state of this raffle and the brand is what normal looks like here.
+   * The exceptions keep their semantic colours: brought back is amber because
+   * it is waiting for someone, lost is red because it is a loss.
+   *
+   * DISTINCTNESS IS THE CONSTRAINT, not harmony. Six states have to be told
+   * apart at 40px by somebody who may not see colour well, so they differ in
+   * lightness as well as hue, and the grid never uses colour alone — the tile
+   * carries its number and the legend names every state in two languages.
+   */
+  --custody-office: #94a3a0;   /* in the office — the quiet default */
+  --custody-out:    #0d7a6f;   /* with a seller — the brand, the working state */
+  --custody-back:   #c2700a;   /* brought back, waiting to be counted */
+  --custody-done:   #15803d;   /* finished */
+  --custody-lost:   #c62828;   /* lost */
+  --custody-void:   #4b5563;   /* voided */
+
+  /*
+   * THE FACE FOR DATA, which is the loudest thing the mockups do and the
+   * easiest to miss.
+   *
+   * Counted across the 22 in-scope frames: `ui-monospace` is declared 662
+   * times, the proportional face 21. Every ticket number, every amount, every
+   * measurement, dpi, mm, page count and reference is set in it; the prose is
+   * not. That single split is most of why the document reads as an instrument
+   * rather than as a website, and it was doing far more work than the colour.
+   *
+   * It is also the right call for this product on its own merits. A serial
+   * number is read CHARACTER BY CHARACTER — over a phone, against a paper
+   * stub, into a search box — and a proportional face makes KS-00011 and
+   * KS-000ll the same shape. Money in a column has to align on the digit.
+   * `tabular-nums` fixes the widths and leaves the letterforms; this fixes
+   * both, and says which text is data rather than leaving the reader to infer.
+   *
+   * No webfont: every platform ships a good mono and `ui-monospace` resolves to
+   * it. Nothing to download, nothing to self-host, nothing to go wrong offline.
+   */
+  --font-data: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
 
   --r: 16px;
   --r-sm: 11px;
@@ -35,16 +126,37 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1115;
-    --surface: #171b21;
-    --surface-2: #1f242c;
-    --border: #2b323c;
-    --text: #eaeef4;
-    --muted: #9aa5b4;
+    --bg: #0d1211;
+    --surface: #161b1a;
+    --surface-2: #1e2523;
+    --border: #2a3230;
+    --border-strong: #3a4441;
+    --text: #e9efec;
+    --muted: #9aaaa4;
+    --muted-2: #7c8b86;
 
     --brand: #2bd4c0;
     --brand-soft: #103030;
     --brand-ink: #06211e;
+    /*
+     * "Press" means MORE COMMITTED, not darker. In light mode a held teal
+     * button deepens; here the brand is already light-on-dark, so deepening it
+     * would read as the control receding under the finger. It brightens
+     * instead, and the token keeps its meaning across both themes — which is
+     * the whole reason it is not called --brand-dark.
+     */
+    --brand-press: #55e3d2;
+    --brand-line: #1f4a45;
+
+    /* The same five states, lifted for a dark surface. A tile is a small block
+       of solid colour with white-ish text on it, so these are chosen for
+       legibility at 40px rather than by lightening the daylight values. */
+    --custody-office: #4a5654;
+    --custody-out:    #1f9e90;
+    --custody-back:   #b9791f;
+    --custody-done:   #2f9b58;
+    --custody-lost:   #d04a44;
+    --custody-void:   #565e6b;
 
     --ok: #6ee7a0;      --ok-soft: #10301e;
     --warn: #fbbf50;    --warn-soft: #362a10;
@@ -56,6 +168,119 @@
   }
 }
 
+/* ---------- two densities, because there are two people using this ---------- */
+/*
+ * A seller stands outdoors holding cash and a book of tickets and presses one
+ * thing at a time. An organiser sits at a desk and reads a hundred rows of a
+ * ledger. Those are not the same interface, and the sizes that serve one make
+ * the other worse: 68px rows turn a reconciliation into a scrolling exercise,
+ * and 34px rows on a phone are a mis-tap in front of somebody who is paying.
+ *
+ * So there are two, and the switch is deliberately TWO gates rather than one:
+ *
+ *   1. the screen opts in, by carrying `.dense` — an organiser's table does,
+ *      a seller's field control does not, and the choice is visible in the
+ *      component rather than buried in a breakpoint;
+ *   2. the viewport agrees, at >= 1024px — so a dense screen opened on a phone
+ *      is still a phone screen. A seller who follows a link into the money
+ *      report gets 17px and 52px targets like everywhere else.
+ *
+ * --tap SURVIVES BOTH. Nothing below names it, and nothing in a dense scope
+ * overrides it. Compact rows are a reading decision; the touch minimum is a
+ * correctness one, and the two must not be allowed to argue.
+ */
+:root {
+  --fs-ui: 1rem;        /* 17px — the size chosen for someone unsure with phones */
+  --row-h: 68px;
+  --r-ui: var(--r-sm);
+  --pad-x: 18px;
+  --pad-y: 12px;
+}
+
+@media (min-width: 1024px) {
+  .dense {
+    --fs-ui: .74rem;    /* ~12.6px, the density the mockups are drawn at */
+    --row-h: 34px;
+    --r-ui: 5px;
+    --pad-x: 12px;
+    --pad-y: 7px;
+  }
+}
+
+/*
+ * Everything a dense scope actually changes, in one place so it can be read as
+ * a single decision and reversed as one. Each rule is the base component with
+ * its four measurements swapped for the tokens above; nothing changes colour,
+ * weight or behaviour, because density is a size question and dressing it up
+ * as a restyle is how a redesign becomes unreviewable.
+ */
+.dense table          { font-size: var(--fs-ui); }
+.dense th,
+.dense td             { padding: var(--pad-y) var(--pad-x); }
+.dense .item          { min-height: var(--row-h); padding: var(--pad-y) var(--pad-x);
+                        gap: 10px; font-size: var(--fs-ui); }
+.dense .item .lead    { font-size: 1.04em; }
+.dense .item .sub     { font-size: .92em; }
+.dense .card          { padding: 14px; border-radius: var(--r-ui); margin-bottom: 10px; }
+.dense .stat          { padding: 10px 12px; border-radius: var(--r-ui); }
+.dense .stat .n       { font-size: 1.5em; }
+.dense .stat .l       { font-size: .82em; }
+.dense .pill          { padding: 2px 9px; font-size: .78em; }
+.dense .chip          { min-height: 28px; padding: 4px 11px; font-size: .86em; }
+.dense .btn           { min-height: 34px; padding: 6px 14px;
+                        font-size: var(--fs-ui); border-radius: var(--r-ui); }
+.dense .btn.lg        { min-height: 44px; font-size: 1.05em; border-radius: var(--r-sm); }
+.dense input,
+.dense select,
+.dense textarea       { min-height: 34px; padding: 7px 10px;
+                        font-size: var(--fs-ui); border-radius: var(--r-ui); }
+.dense textarea       { min-height: 64px; }
+/* The exception that proves the rule above: a tick box was never sized by the
+   type scale, and shrinking it makes a 20px target into a 15px one for no
+   reading benefit at all. */
+.dense input[type=checkbox],
+.dense input[type=radio] { min-height: 0; width: 18px; height: 18px; padding: 0; }
+.dense label          { font-size: .86em; margin-bottom: 4px; }
+
+/*
+ * INTER, SELF-HOSTED, LATIN ONLY — 48 KB.
+ *
+ * The mockups are set in it and it is a better face than a system stack for a
+ * screen full of figures: tighter, more even colour, and unambiguous letterforms
+ * where the app shows codes beside numbers.
+ *
+ * SELF-HOSTED RATHER THAN FETCHED. This app has no external dependency of any
+ * kind at runtime — no CDN, no Google Fonts — and a raffle is run in places
+ * where the network is what it is. A stylesheet from fonts.googleapis.com is a
+ * request that can hang, and it would also hand a third party the address of
+ * every volunteer's browser. One 48 KB file in public/ costs nothing after the
+ * first load and cannot fail differently from the app itself.
+ *
+ * VARIABLE, so one file covers every weight the interface uses instead of four.
+ * `swap` so text renders immediately in the fallback and reflows when it
+ * arrives, which is the right trade on a slow connection: a volunteer standing
+ * in a car park reads the fallback rather than a blank screen.
+ *
+ * THE MYANMAR CHAIN IS UNTOUCHED. Burmese is rendered by `.my` in Bi.vue, which
+ * names Padauk and Noto Sans Myanmar ahead of anything else, and nothing here
+ * goes near it — dropping that chain breaks Myanmar rendering on the phones
+ * this is mostly used on.
+ *
+ * The path is relative on purpose: the bundled stylesheet lands in assets/, so
+ * ../fonts/ resolves the same way whether the app is served from a domain root
+ * or from the dev server.
+ */
+@font-face {
+  font-family: 'Inter Variable';
+  src: url('../fonts/inter-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                 U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                 U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
@@ -64,7 +289,8 @@ html, body, #app { margin: 0; padding: 0; min-height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 17px/1.5 'Inter Variable', -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
 }
@@ -80,6 +306,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- utility ---------- */
 .muted { color: var(--muted); }
+/*
+ * DATA, NOT PROSE. Anything read character by character or compared down a
+ * column: serial numbers, money, measurements, references, counts. The rule
+ * sets `tabular-nums` too, because a mono face still benefits from it for the
+ * few glyphs that are not fixed-width in every family.
+ */
+.data { font-family: var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 /*
  * Text colours for a state. These were being used before they existed —
  * `:class="ok ? 'muted' : 'bad'"` on the QR density warning resolved to nothing,
@@ -129,7 +362,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn:active:not(:disabled) { transform: scale(.975); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
-.btn.primary:hover:not(:disabled) { box-shadow: 0 4px 16px color-mix(in srgb, var(--brand) 35%, transparent); }
+/* The surface itself deepens, rather than only casting a shadow: a shadow says
+   "this floats", which is not what a finger on a button means. */
+.btn.primary:hover:not(:disabled) {
+  background: var(--brand-press); border-color: var(--brand-press);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--brand) 35%, transparent);
+}
 .btn.danger  { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
 .btn.ghost   { border-color: transparent; background: transparent; font-weight: 550; color: var(--muted); }
 /*
@@ -265,7 +503,13 @@ input[type=file] { padding: 10px }
 }
 .item:hover { background: var(--surface-2); }
 .item:active { background: var(--border); }
-.item .lead { font-weight: 700; font-size: 1.06rem; font-variant-numeric: tabular-nums; }
+/* A row's lead is nearly always an identity — a ticket number, a book number,
+   a seller id — so it takes the data face. Where it is a person's NAME the
+   component overrides it; a name is prose. */
+.item .lead {
+  font-weight: 700; font-size: 1.06rem;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
+}
 .item .sub { font-size: .9rem; color: var(--muted); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .chev { color: var(--muted); font-size: 1.3rem; flex: 0 0 auto; }
@@ -294,7 +538,10 @@ input[type=file] { padding: 10px }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r); padding: 14px 16px;
 }
-.stat .n { font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+.stat .n {
+  font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
+}
 .stat .l { font-size: .86rem; color: var(--muted); font-weight: 600; margin-top: 3px; }
 .stat.accent { border-color: var(--brand); }
 
@@ -303,8 +550,14 @@ input[type=file] { padding: 10px }
 table { border-collapse: collapse; width: 100%; font-size: .95rem; }
 th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
 th { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em;
-     color: var(--muted); font-weight: 700; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+     color: var(--muted); font-weight: 700;
+     /* The header rule carries more weight than the rules between rows, so the
+        columns read as a table rather than as a list that happens to align. */
+     border-bottom-color: var(--border-strong); }
+td.num, th.num {
+  text-align: right;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
+}
 
 /* ---------- empty states ---------- */
 .empty { padding: 48px 24px; text-align: center; }

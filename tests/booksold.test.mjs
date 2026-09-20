@@ -137,9 +137,58 @@ console.log('5b. a sold-out book carries a mark you can see, and still says wher
   const fill = css.match(/\.bk\.sold-all\s*\{[^}]*\}/)?.[0] ?? ''
   ok(!/background:\s*#[0-9a-f]{3,8}/i.test(fill),
      'the tile keeps its custody colour — a sold-out book still says where it is')
-  for (const custody of ['#2563eb', '#c2700a', '#15803d', '#c62828', '#4b5563']) {
-    ok(css.includes(`--custody: ${custody}`) || css.includes(`--custody:${custody}`),
-       `${custody} is still a place a book can be`)
+  /*
+   * WHAT CHANGED HERE, AND WHY IT IS NOT A WEAKENING.
+   *
+   * This used to name five literal hexes — #2563eb and four others — and assert
+   * each was still present. The hexes were a PROXY for the real property: that
+   * every place a book can be has its own colour, declared once, so the sales
+   * mark can borrow it. Pinning the values instead of the property meant the
+   * palette could not be corrected without editing the test, and it said
+   * nothing at all about the fault that was actually shipping: the values were
+   * bare hexes inside this component, so the grid that shows the whole raffle
+   * kept its daylight palette on a dark screen.
+   *
+   * So the property is asserted directly, and the theme fault is asserted too —
+   * which the old form could never have caught, because a hard-coded hex passed
+   * it by definition.
+   */
+  const STATES = ['Offered', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
+  const declared = {}
+  for (const st of STATES) {
+    const rule = cut(css, `.s-${st}`, '}', `the ${st} rule`)
+    const m = rule.match(/--custody:\s*([^;]+);/)
+    ok(m, `${st} names its own custody colour`)
+    if (m) declared[st] = m[1].trim()
+  }
+
+  // Offered is deliberately the same hue as Out — a book on its way to a seller
+  // is that seller's custody, drawn hollow. Every other state is its own.
+  const filled = STATES.filter((s2) => s2 !== 'Offered').map((s2) => declared[s2])
+  ok(new Set(filled).size === filled.length,
+     `the five filled states are five different colours (${filled.join(' ')})`)
+  ok(declared.Offered === declared.Out,
+     'and a book offered to a seller wears that seller\'s colour, hollow')
+
+  // Every one goes through a token, or it cannot follow dark mode.
+  for (const st of STATES) {
+    ok(/^var\(--custody-[a-z]+\)$/.test(declared[st] || ''),
+       `${st} takes its colour from a token, not a literal (${declared[st]})`)
+  }
+
+  /*
+   * AND THE TOKENS EXIST, IN BOTH THEMES. A var() pointing at nothing is not a
+   * wrong colour, it is NO colour — the tile falls through to a bare square and
+   * the grid stops answering the one question it exists for. The light block is
+   * the file's :root; the dark one is inside the prefers-color-scheme block.
+   */
+  const tokens = read('src/style.css')
+  const darkBlock = cut(tokens, '@media (prefers-color-scheme: dark)', '\n}\n', 'the dark theme')
+  for (const st of STATES) {
+    const name = (declared[st] || '').replace(/^var\(|\)$/g, '')
+    if (!name) continue
+    ok(new RegExp(`${name}:\\s*#`).test(tokens), `${name} is defined for the light theme`)
+    ok(new RegExp(`${name}:\\s*#`).test(darkBlock), `${name} is defined for the dark theme too`)
   }
   ok(/--custody:/.test(cut(css, '.s-Out', '}', 'the out-state rule')),
      'and each state names its colour once, so the mark can borrow it')

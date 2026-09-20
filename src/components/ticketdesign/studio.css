@@ -37,4 +37,4 @@
 }
 .segbtn.on { background: var(--brand); color: var(--brand-ink) }
 .segbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums }

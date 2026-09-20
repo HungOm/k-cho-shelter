@@ -32,9 +32,23 @@ import Bi from './Bi.vue'
 
 const props = defineProps({
   books: { type: Array, default: () => [] },
-  limit: Number
+  limit: Number,
+  /*
+   * SELECTION IS OPT-IN, and that is what makes it safe to add.
+   *
+   * Left alone, a click opens the book exactly as it always has — which is what
+   * Home wants, because a tile there is a shortcut into one book and nothing
+   * else. The Books screen turns it on: a click there PICKS the book and raises
+   * a bar naming it, so the things you can do to a book sit next to the book
+   * rather than in a card of six buttons that has no idea which one you meant.
+   *
+   * Two emits rather than one flag on a shared emit, so a listener cannot be
+   * wired to the wrong intention by accident.
+   */
+  selectable: Boolean,
+  selected: { type: String, default: '' },
 })
-const emit = defineEmits(['pick', 'more'])
+const emit = defineEmits(['pick', 'more', 'select'])
 
 const shown = computed(() => props.limit ? props.books.slice(0, props.limit) : props.books)
 const remaining = computed(() => props.limit ? Math.max(0, props.books.length - props.limit) : 0)
@@ -84,8 +98,10 @@ function sales(b) {
     <div class="grid">
       <button v-for="b in shown" :key="b.book"
               :class="['bk', 's-' + b.status, sales(b) && 'sold-' + sales(b),
-                       { late: b.daysOverdue > 0 }]"
-              :title="label(b)" @click="emit('pick', b)">
+                       { late: b.daysOverdue > 0, on: selectable && selected === b.book }]"
+              :aria-pressed="selectable ? String(selected === b.book) : undefined"
+              :title="label(b)"
+              @click="emit(selectable ? 'select' : 'pick', b)">
         {{ bookShort(b.book) }}
       </button>
       <button v-if="remaining" class="bk more" @click="emit('more')" :title="remaining + ' more'">
@@ -108,11 +124,22 @@ function sales(b) {
 
 <style scoped>
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 5px; }
+/*
+ * THE CHOSEN TILE, marked with a ring OUTSIDE its own edge rather than by
+ * changing its colour. The colour of a tile is its custody — the one thing this
+ * grid exists to say — so selection cannot be allowed to borrow it. An offset
+ * outline sits in the gap between tiles and reads at a glance without touching
+ * what the square already means.
+ */
+.bk.on { outline: 3px solid var(--text); outline-offset: 2px; z-index: 1; }
 .bk {
   aspect-ratio: 1; border: 0; border-radius: 7px; padding: 0;
   position: relative; --seal: 13px;
   display: grid; place-items: center; cursor: pointer;
   font-size: .68rem; font-weight: 700; color: #fff;
+  /* The tile IS its number — six hundred of them read as a sequence, and a
+     proportional face makes 111 narrower than 000 in a grid of equal squares. */
+  font-family: var(--font-data);
   transition: transform .12s var(--ease), box-shadow .12s;
 }
 .bk:hover { transform: scale(1.22); z-index: 2; box-shadow: var(--shadow); }
@@ -131,14 +158,21 @@ function sales(b) {
  * rendered as a washed-out blank: the one state that needed to stand out was
  * the only one that disappeared.
  */
-.s-Offered    { --custody: #2563eb; color: #2563eb; font-weight: 800;
-                background: color-mix(in srgb, #2563eb 18%, transparent);
+/*
+ * THE FIVE COLOURS ARE TOKENS NOW, declared in style.css. They were bare hexes
+ * here, which meant the grid that shows the whole raffle never followed dark
+ * mode — a daylight palette on a dark screen — and "with a seller" was a stock
+ * blue that appeared nowhere else in the product. Each state still names its
+ * colour exactly once, so the sales mark can borrow it.
+ */
+.s-Offered    { --custody: var(--custody-out); color: var(--custody-out); font-weight: 800;
+                background: color-mix(in srgb, var(--custody-out) 18%, transparent);
                 box-shadow: inset 0 0 0 2px var(--custody); }
-.s-Out        { --custody: #2563eb; background: var(--custody); }
-.s-Returned   { --custody: #c2700a; background: var(--custody); }
-.s-Settled    { --custody: #15803d; background: var(--custody); }
-.s-Lost       { --custody: #c62828; background: var(--custody); }
-.s-Void       { --custody: #4b5563; background: var(--custody); }
+.s-Out        { --custody: var(--custody-out); background: var(--custody); }
+.s-Returned   { --custody: var(--custody-back); background: var(--custody); }
+.s-Settled    { --custody: var(--custody-done); background: var(--custody); }
+.s-Lost       { --custody: var(--custody-lost); background: var(--custody); }
+.s-Void       { --custody: var(--custody-void); background: var(--custody); }
 .more         { background: var(--brand-soft); color: var(--brand); }
 .late { outline: 2.5px solid var(--bad); outline-offset: -2.5px; }
 

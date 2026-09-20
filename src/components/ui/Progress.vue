@@ -42,8 +42,18 @@ watch(() => props.percent, animate)
 </template>
 
 <style scoped>
+/*
+ * THE GRADIENT USED TO END IN A BLUE. `color-mix(… var(--brand) 62%, #0ea5e9)`
+ * — a sky blue, hard-coded, belonging to no token and to nothing else in the
+ * product. It is the single largest block of colour in the app and a third of
+ * it was borrowed from another palette, which is most of why the screen read as
+ * a dashboard rather than as this raffle.
+ *
+ * Teal into deeper teal instead: the same journey, made of the brand's own two
+ * values, and it follows dark mode because both ends are tokens.
+ */
 .hero {
-  background: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 62%, #0ea5e9));
+  background: linear-gradient(135deg, var(--brand), var(--brand-press));
   color: var(--brand-ink); border-radius: var(--r);
   padding: 24px; margin-bottom: 14px; box-shadow: var(--shadow);
 }

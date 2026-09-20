@@ -17,7 +17,7 @@
  * Mounting is that request, which is the whole of the lazy-loading story now
  * that the panel is a component: it cannot be built before somebody opens it.
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { api, state, isAdmin } from '../../lib/store.js'
 import { money, date, COUNTED_IN_HELP } from '../../lib/format.js'
 // Asked here as well as by the screen that built the link. Every component that
@@ -28,6 +28,7 @@ import { isDialable } from '../../lib/search.js'
 import Sheet from '../ui/Sheet.vue'
 import Pager from '../ui/Pager.vue'
 import Who from '../ui/Who.vue'
+import Filters from '../ui/Filters.vue'
 import History from './History.vue'
 
 const props = defineProps({
@@ -132,8 +133,62 @@ const LINES = 20
 const entries = computed(() => st.value.data?.entries || [])
 const linePage = ref(1)
 const payPage = ref(1)
+
+/*
+ * FILTERING THE ACCOUNT — and every row belongs to exactly one filter.
+ *
+ * The obvious shape is All / Charges / Payments / Reversed, which is what the
+ * mockup draws. It leaves `writeoff` in no group at all: a written-off debt
+ * would then be visible under All and nowhere else, which is the "everything
+ * except X" trap this repository has paid for three times. A row that vanishes
+ * from every named view is worse than one that is hard to find, because the
+ * filter reads as exhaustive.
+ *
+ * So the groups are named after what the row DOES to the balance, and the six
+ * kinds map onto five groups with nothing left over. Written off gets its own
+ * chip because it is the one credit that is not money — somebody deciding a
+ * debt will not be collected is not somebody handing cash over, and a statement
+ * that shows them together cannot be used to chase either.
+ */
+const GROUP = {
+  sale: 'charge',
+  payment: 'in',
+  settlement: 'in',
+  writeoff: 'off',
+  'payment-reversal': 'rev',
+  'settlement-reversal': 'rev',
+}
+const FILTERS = [
+  { k: 'all', t: 'All' },
+  { k: 'charge', t: 'Charges' },
+  { k: 'in', t: 'Money in' },
+  { k: 'off', t: 'Written off' },
+  { k: 'rev', t: 'Reversed' },
+]
+const filter = ref('all')
+const groupOf = (e) => GROUP[e.kind] || 'charge'
+const counts = computed(() => {
+  const c = { all: entries.value.length }
+  for (const e of entries.value) c[groupOf(e)] = (c[groupOf(e)] || 0) + 1
+  return c
+})
+const filtered = computed(() => filter.value === 'all'
+  ? entries.value
+  : entries.value.filter((e) => groupOf(e) === filter.value))
+/* A filter that leaves you on page 4 of a one-page list shows an empty table
+   and looks like a screen with no data in it. */
+watch(filter, () => { linePage.value = 1 })
+
+/*
+ * The supporting line under each figure in the identity above the table. These
+ * are DERIVED here rather than asked of the server: the counts are already in
+ * the rows it sent, and a second field to keep in step is a second field that
+ * can disagree with the first.
+ */
+const handOvers = computed(() => entries.value.filter((e) => groupOf(e) === 'in').length)
+
 const shownEntries = computed(() =>
-  entries.value.slice((linePage.value - 1) * LINES, linePage.value * LINES))
+  filtered.value.slice((linePage.value - 1) * LINES, linePage.value * LINES))
 const shownPayments = computed(() =>
   (payments.value || []).slice((payPage.value - 1) * LINES, payPage.value * LINES))
 
@@ -214,10 +269,18 @@ const KINDS = {
       <!-- The identity this screen is accountable for, written out rather than
            implied: charged, less what came in, less what was forgiven, is what
            is left. A reader who checks one thing should be able to check that. -->
+      <!-- Each figure says what it is COUNTED FROM, not only what it comes to.
+           "Received 380.00" is a number to be trusted or not; "380.00, over 3
+           hand-overs" is a number somebody can go and check, which is the
+           difference between a statement and a claim. -->
       <div class="recon">
-        <span><i>Charged</i><b>{{ money(st.data.expected, currency) }}</b></span>
+        <span><i>Charged</i><b>{{ money(st.data.expected, currency) }}</b>
+          <small v-if="agent.ticketsSold">{{ agent.ticketsSold }} tickets written down</small>
+        </span>
         <span class="op">−</span>
-        <span><i>Received</i><b>{{ money(st.data.collected, currency) }}</b></span>
+        <span><i>Received</i><b>{{ money(st.data.collected, currency) }}</b>
+          <small v-if="handOvers">{{ handOvers }} hand-over{{ handOvers === 1 ? '' : 's' }}</small>
+        </span>
         <template v-if="st.data.writtenOff">
           <span class="op">−</span>
           <span><i>Written off</i><b>{{ money(st.data.writtenOff, currency) }}</b></span>
@@ -242,7 +305,21 @@ const KINDS = {
       <div v-if="!(st.data.entries || []).length" class="tiny muted">
         Nothing has been charged to this seller and nothing has come in.
       </div>
-      <div v-else class="tablewrap">
+      <template v-else>
+      <!-- WHAT IS BEING SHOWN, said above the table rather than left to be
+           inferred from a highlighted chip. A filtered statement still ends in
+           the account's own balance, so without this line a reader can take a
+           short list of charges for the whole account. -->
+      <Filters v-model="filter" :items="FILTERS" :counts="counts">
+        <template #after>
+          <span v-if="filter !== 'all'" class="tiny muted grow">
+            Showing {{ filtered.length }} of {{ entries.length }} lines. The balance
+            below is the whole account's.
+          </span>
+        </template>
+      </Filters>
+
+      <div class="tablewrap">
         <table class="statement">
           <thead>
             <tr>
@@ -253,7 +330,7 @@ const KINDS = {
           <tbody>
             <tr v-for="(e, i) in shownEntries" :key="i"
                 :class="{ writeoff: e.kind === 'writeoff' }">
-              <td class="tiny muted">{{ e.at ? date(e.at) : '—' }}</td>
+              <td class="tiny muted when">{{ e.at ? date(e.at) : '—' }}</td>
               <!-- "Counted in" is this app's word for the last step of a book,
                    and a statement is exactly where somebody meets it without
                    context: their debt is one line and the line is a phrase they
@@ -289,8 +366,10 @@ const KINDS = {
             </tr>
           </tfoot>
         </table>
-        <Pager v-model:page="linePage" :total="entries.length" :size="LINES" noun="entries" />
+        <Pager v-model:page="linePage" :total="filtered.length" :size="LINES" noun="entries" />
       </div>
+
+      </template>
 
       <p class="tiny muted" style="margin-top:8px">
         <button class="linkish" @click="toggleAudit">
@@ -387,22 +466,48 @@ const KINDS = {
 
 <style scoped>
 .head { margin-bottom: 16px; }
-.big { font-size: 2rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.big {
+  font-size: 2rem; font-weight: 800; line-height: 1.1;
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
+}
 .big.owed { color: var(--warn); }
 .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+/*
+ * THE BAND HAD NO EDGE. It was --surface sitting on a sheet that is also
+ * --surface, so the one row carrying the whole identity — charged, less
+ * received, less written off, equals the balance — was four figures floating
+ * in the page with nothing to say they belonged together. Invisible for as
+ * long as it has existed, because a background that matches its parent looks
+ * exactly like a background that was never set.
+ *
+ * A border and a rule between each figure, which is also what makes it read as
+ * an equation rather than a row of statistics that happen to be adjacent.
+ */
 .recon {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 14px;
-  padding: 12px 14px; margin: 14px 0; border-radius: var(--r-sm); background: var(--surface);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 0;
+  padding: 0; margin: 14px 0; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--surface); overflow: hidden;
 }
+.recon > span { padding: 11px 16px; }
+/* The operators keep the figures apart; the rules keep the GROUPS apart, so a
+   divider goes before each operator rather than between every child. */
+.recon > .op + span { border-left: 1px solid var(--border); }
 .recon i { display: block; font-style: normal; font-size: .76rem; color: var(--muted); }
-.recon b { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.recon b { font-size: 1.05rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .recon b.owed { color: var(--warn); }
 .recon .op { color: var(--muted); font-size: 1.1rem; }
+/* What the figure above was counted from. Deliberately quieter than the caption
+   — the caption names the figure, this one only says where to go and check it. */
+.recon small { display: block; font-size: .72rem; color: var(--muted); margin-top: 2px; }
+
 .tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 th { font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
+.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+/* The date column is data too — a statement is read by running down it looking
+   for a day, and a proportional face makes every row a different length. */
+td.when { font-family: var(--font-data); }
 .bal { font-weight: 700; }
 tr.writeoff td { color: var(--muted); }
 .receipt {
@@ -415,4 +520,7 @@ tr.writeoff td { color: var(--muted); }
 .receipt .f { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: .9rem; }
 .receipt .f span { color: var(--muted); }
 .linkish { background: none; border: 0; padding: 0; color: var(--brand); cursor: pointer; font: inherit; }
+/* A reference is an identity somebody will read out, type in, or match against
+   a paper stub — Book-004, #13. Same face as the figures it sits beside. */
+td .linkish { font-family: var(--font-data); }
 </style>

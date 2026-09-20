@@ -285,7 +285,19 @@ function waLink(a) {
 </script>
 
 <template>
-  <div>
+  <!--
+    DENSE, AND WHAT THAT DOES NOT MEAN.
+
+    This is the screen somebody reads a hundred rows of, so at desk width it
+    takes the compact scale: 12.6px type, 34px rows, tighter cards. `.dense` is
+    an opt-in class AND a >= 1024px media query, so a seller who follows a link
+    into their own money on a phone gets the ordinary 17px screen with 52px
+    targets — the compact scale never reaches a thumb. See style.css.
+
+    The modal below inherits it, which is right: a statement opened from a
+    dense table that suddenly doubled in size would read as a different app.
+  -->
+  <div class="dense">
     <!--
       THE SAME SCREEN ANSWERS TWO DIFFERENT QUESTIONS, and it used to ask both
       readers the organiser's one.

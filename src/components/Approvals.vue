@@ -13,6 +13,7 @@ import { ref, onMounted, onActivated, computed, watch, nextTick } from 'vue'
 import { api, toast, state, go, isAdmin } from '../lib/store.js'
 import { dateTime, relative, money, COUNTED_IN_HELP } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
+import Filters from './ui/Filters.vue'
 
 /** The seller this account is linked to, or '' for anybody who is not one. */
 const myAgentId = computed(() => state.user?.agentId || '')
@@ -302,6 +303,40 @@ function canDecide(r) {
 const pending = computed(() => (rows.value || []).filter(r => r.status === 'Pending'))
 const settled = computed(() => (rows.value || []).filter(r => r.status !== 'Pending'))
 
+/*
+ * NARROWING WHAT HAS ALREADY BEEN DECIDED.
+ *
+ * "Already dealt with" was the last 25 rows in one undifferentiated list, and
+ * the question somebody actually brings to it is narrow: what did we turn down,
+ * or what did we cancel. Scrolling a mixed list for a rejection among approvals
+ * is the work this saves.
+ *
+ * THE LAST GROUP IS 'ELSE', ON PURPOSE. Approved, Rejected and Cancelled are
+ * the three the server writes today, but the status is a string from a database
+ * and a fourth would otherwise belong to no chip — visible under All and
+ * nowhere else, which is the trap the statement's filters were written to
+ * avoid. Anything unrecognised lands in Other, so the counts always sum to All
+ * and nothing can hide.
+ */
+const DECIDED = [
+  { k: 'all', t: 'All' },
+  { k: 'Approved', t: 'Approved' },
+  { k: 'Rejected', t: 'Rejected' },
+  { k: 'Cancelled', t: 'Cancelled' },
+  { k: 'other', t: 'Other' },
+]
+const decidedFilter = ref('all')
+const groupOfRow = (r) =>
+  ['Approved', 'Rejected', 'Cancelled'].includes(r.status) ? r.status : 'other'
+const decidedCounts = computed(() => {
+  const c = { all: settled.value.length }
+  for (const r of settled.value) c[groupOfRow(r)] = (c[groupOfRow(r)] || 0) + 1
+  return c
+})
+const settledShown = computed(() => decidedFilter.value === 'all'
+  ? settled.value
+  : settled.value.filter((r) => groupOfRow(r) === decidedFilter.value))
+
 async function decide(r, approve) {
   busy.value = r.requestId
   try {
@@ -394,10 +429,17 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
     </div>
 
     <template v-else-if="pending.length">
-      <div v-for="r in pending" :key="r.requestId" class="card req">
+      <div v-for="r in pending" :key="r.requestId" class="card reqcard">
         <div class="spread" style="margin-bottom:8px">
           <span class="pill warn">Waiting</span>
-          <span class="tiny muted">lapses {{ relative(r.expiresAt) }}</span>
+          <!--
+            ONLY WHEN THERE IS A DATE. `relative()` answers "" for a missing
+            one, so this rendered the bare word "lapses" with nothing after it —
+            a label with no value, on the one card an organiser decides from.
+            Not every kind of request carries an expiry, so this was not a
+            hypothetical: it is whatever the server leaves out.
+          -->
+          <span v-if="r.expiresAt" class="tiny muted">lapses {{ relative(r.expiresAt) }}</span>
         </div>
         <!-- The server sends the facts beside the sentence. "40 tickets leave
              the draw" is the number an approver needs; "4 books" hides it. -->
@@ -618,9 +660,10 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 
     <template v-if="settled.length">
       <h3 class="mt">Already dealt with</h3>
+      <Filters v-model="decidedFilter" :items="DECIDED" :counts="decidedCounts" />
       <div class="card flush">
         <ul class="list">
-          <li v-for="r in settled.slice(0, 25)" :key="r.requestId">
+          <li v-for="r in settledShown.slice(0, 25)" :key="r.requestId">
             <div class="item" style="cursor:default">
               <span class="grow">
                 <!-- Its own line. Run together, the summary's full stop met the
@@ -742,7 +785,21 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 .linkrow code {
   font-size: .82rem; color: var(--muted); word-break: break-all; flex: 1 1 200px;
 }
-.req { border-left: 4px solid var(--warn); }
+/*
+ * RENAMED FROM `.req`, WHICH WAS COLLIDING WITH A GLOBAL.
+ *
+ * style.css defines `.req { color: var(--bad) }` — the red asterisk that marks
+ * a required field, and this file uses it correctly for that three lines below.
+ * The pending-request CARD was also called `.req`, and a global rule is not
+ * scoped, so every waiting request has been drawing its summary in alarm red:
+ * the sentence an organiser reads before approving somebody's book, coloured
+ * as though something had gone wrong.
+ *
+ * Nothing failed. A scoped rule and a global one with the same name simply both
+ * apply, and only the global one carried a colour. Found by rendering the
+ * screen and looking at it.
+ */
+.reqcard { border-left: 4px solid var(--warn); }
 .what { font-size: 1.08rem; font-weight: 650; line-height: 1.4; }
 .stake { font-size: 1.25rem; font-weight: 800; color: var(--bad); margin-bottom: 2px; }
 </style>

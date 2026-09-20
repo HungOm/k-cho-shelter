@@ -483,9 +483,9 @@ function seeTickets(book) {
                    @add-agent="openModal('agent', null)"
                    @add-user="openModal('user')"
                    @edit-user="u => openModal('user', u)"
-                   @issue="openModal('issue')"
+                   @issue="b => openModal('issue', b && b.book ? { book: b.book } : {})"
                    @sell-book="b => openModal('sellbook', b)"
-                   @print-range="() => openModal('printtickets', {})"
+                   @print-range="p => openModal('printtickets', p || {})"
                    @print-sample="() => openModal('printtickets', { sample: true })"
                    @transfer="openModal('bookaction', 'transfer')"
                    @return-books="openModal('bookaction', 'return')"
@@ -513,7 +513,7 @@ function seeTickets(book) {
     <UserForm v-else-if="modal?.kind === 'user'" :user="modal.payload"
               @close="closeModal" @saved="closeModal"
               @needs-approval="r => openModal('askapproval', r)" />
-    <IssueBooks v-else-if="modal?.kind === 'issue'"
+    <IssueBooks v-else-if="modal?.kind === 'issue'" :payload="modal.payload || {}"
                 @close="closeModal" @issued="id => openModal('receipt', id)" />
     <Receipt v-else-if="modal?.kind === 'receipt'" :agent-id="modal.payload" @close="closeModal" />
     <PrintTickets v-else-if="modal?.kind === 'printtickets'" :payload="modal.payload"

@@ -489,18 +489,18 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
   const problems = []
   if (missingContact) {
     problems.push({
-      what: 'tickets sold with no way to contact the buyer',
+      what: 'tickets sold with no way to contact the buyer', where: 'here',
       count: missingContact,
       // Said plainly because this is the one that cannot be fixed afterwards.
       why: 'If one of these wins, there is no way to tell them.',
     })
   }
   if (unsettled) {
-    problems.push({ what: 'books not yet settled', count: unsettled,
+    problems.push({ what: 'books not yet settled', count: unsettled, where: 'books',
       why: 'Their tickets may not be recorded correctly yet.' })
   }
   if (outstanding > 0) {
-    problems.push({ what: 'money not handed in', count: outstanding,
+    problems.push({ what: 'money not handed in', count: outstanding, where: 'money',
       why: writtenOff > 0
         ? `Sold, but the cash has not come back. ${writtenOff} has been written off ` +
           'already and is not counted here.'
@@ -508,12 +508,12 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
           'it off with a reason rather than recording a payment that did not happen.' })
   }
   if (reserved) {
-    problems.push({ what: 'tickets still being held', count: reserved,
+    problems.push({ what: 'tickets still being held', count: reserved, where: 'search',
       why: 'Neither sold nor available — decide before the draw.' })
   }
   if (unidentified) {
     problems.push({
-      what: 'tickets sold but not identified', count: unidentified,
+      what: 'tickets sold but not identified', count: unidentified, where: 'books',
       why: 'Counted as money when the book was settled, but no ticket number was written ' +
            'down, so they cannot be drawn. Record which numbers sold, or accept that those ' +
            'buyers are not in the draw.',
@@ -521,7 +521,7 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
   }
   if (pendingApprovals) {
     problems.push({
-      what: 'requests waiting for approval', count: pendingApprovals,
+      what: 'requests waiting for approval', count: pendingApprovals, where: 'approvals',
       why: 'An approved request changes the books. Decide them before drawing, not after.',
     })
   }
@@ -542,7 +542,7 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
   const prizesOffered = Number(prizeCount ?? 0)
   if (!prizesOffered) {
     problems.push({
-      what: 'no prizes have been set up',
+      what: 'no prizes have been set up', where: 'prize',
       count: 0,
       why: 'There is nothing to draw for. Set the prize schedule before the draw, ' +
            'so every winner is recorded against a prize rather than a typed phrase.',
@@ -588,6 +588,19 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
    * reply, which is the third time today that a payload the server was happy
    * with was one the browser could not use.
    */
+  /*
+   * TWO SHAPES OF THE SAME LIST, and both are sent on purpose.
+   *
+   * `blockers` is the flattened sentence this has always returned, kept because
+   * the Edge Function and the browser bundle deploy by different routes and on
+   * different days — a client older than this function must keep working, and a
+   * client newer than it must not show an empty checklist.
+   *
+   * `problems` is what was always built here and never left the building: each
+   * blocker's own count, the REASON it blocks, and now `where` — the screen
+   * that fixes it. The screen had been rendering a bullet list of sentences
+   * with the explanation discarded and no way to act on any of it.
+   */
   const blockers = problems.map((x) => `${x.what}${x.count ? ` (${x.count})` : ''}`)
 
   return {
@@ -598,6 +611,7 @@ export async function reportDrawReady(_p: Record<string, unknown>, user: AppUser
     finalPassed: !!finalDeadline && finalDeadline < now,
     ready: problems.length === 0,
     blockers,
+    problems,
     totals: {
       ticketsSold: sold,
       ticketsAvailable: availableCount,

@@ -42,6 +42,14 @@ export const MY = {
   'Sellers': 'ရောင်းသူများ',
   'Money': 'ငွေကြေး',
   'Draw': 'မဲဖောက်ခြင်း',
+  /*
+   * Bound into <Bi :text> on the draw screen, so i18n.test cannot see either of
+   * them — the same blind spot that left the Ticket Studio tab with no Burmese
+   * for as long as it existed. Added by hand at the moment the binding was
+   * written, because nothing else was going to ask.
+   */
+  'Ready to draw': 'မဲဖောက်ရန် အဆင်သင့်',
+  'Not ready yet': 'အဆင်သင့် မဖြစ်သေးပါ',
   'Setup': 'စနစ်ပြင်ဆင်ခြင်း',
   /*
    * THE NAV ITEM THAT HAS NEVER HAD A LINE HERE.
