@@ -72,6 +72,29 @@ const onBehalf = ref('')
 const filled = computed(() => rows.value.filter(r => r.num.trim()).length)
 const value = computed(() => filled.value * (state.cfg?.ticketPrice || 0))
 
+/*
+ * WHICH BOOK THE MONEY LANDS ON, which is the fact card 4c adds and this screen
+ * did not carry anywhere. The count and the total were already on the panel;
+ * "RM 20.00" says how much and never said whose. A book is somebody's account,
+ * so a batch typed against the wrong one moves a balance under a seller who did
+ * not sell it, and the screen that could have said so said only a number.
+ *
+ * DISTINCT BOOKS, NOT THE FIRST ONE. A pile of stubs is usually one book and is
+ * not always: it is whatever is on the desk. Naming the first and staying quiet
+ * about the rest would be the confident-and-wrong answer, so two or more are
+ * counted rather than named — enough to notice a batch that should have been
+ * one book and is not.
+ */
+const batchBooks = computed(() => {
+  const seen = new Set()
+  for (const r of rows.value) {
+    if (!r.num.trim()) continue
+    const b = resolve(r.num)?.book
+    if (b) seen.add(b)
+  }
+  return [...seen]
+})
+
 /** Accepts a full number or just the trailing digits people actually remember. */
 function resolve(raw) {
   const n = resolveTicketNumber(raw)
@@ -269,12 +292,24 @@ function phoneWarning(phone) {
          anybody who is not holding books. -->
     <YourStock report-back @open="t => emit('open', t)" @report-back="emit('report-back')" />
 
-    <!-- The same answer for whoever is at the desk. YourStock draws nothing for
-         an organiser because they hold no books; this is what they hold
-         instead, which is the rest of the raffle. Exactly one of the two ever
-         draws, and each decides that for itself. -->
-    <DeskStock @open="t => emit('open', t)" />
 
+    <!--
+      SIDE BY SIDE AT A DESK, which is card 4c's title: "one ticket, or a pile
+      of stubs, side by side". They were two stacked cards at every width, so
+      somebody typing up an afternoon of stubs scrolled past the lookup box on
+      every pass.
+
+      Gated at the desk breakpoint the rest of the app uses, and never below it:
+      the stub rows are already three inputs wide and halving that on a phone
+      would put a ticket number in a box too narrow to read. On a phone they
+      stack, which is the right shape for a thumb anyway.
+
+      `align-items: start` so the lookup card keeps its own height instead of
+      stretching to match a pile of stubs that grows a row at a time.
+    -->
+    <div class="panes">
+    <!-- The left column: look one up, and what is on the shelf to sell. -->
+    <div class="pane">
     <div class="card">
       <h3><Bi text="One ticket" /></h3>
       <p class="muted small">Type the number and it opens straight away.</p>
@@ -286,12 +321,26 @@ function phoneWarning(phone) {
       <p class="hint">Just the last few numbers is enough.</p>
     </div>
 
+    <!--
+      "To sell in the office" — 4c puts it in the LEFT column under the lookup,
+      and that is where it belongs rather than above both panes: the lookup card
+      is short, the pile of stubs grows a row at a time, and with nothing beneath
+      it the left column was a third of the screen holding one input.
+
+      It is still the organiser's half of the pair. YourStock stays above,
+      because it is the seller's own numbers and a seller reading this screen
+      should meet them before anything else; exactly one of the two ever draws.
+    -->
+    <!-- The same answer for whoever is at the desk. YourStock draws nothing for
+         an organiser because they hold no books; this is what they hold
+         instead, which is the rest of the raffle. Exactly one of the two ever
+         draws, and each decides that for itself. -->
+    <DeskStock @open="t => emit('open', t)" />
+    </div>
+
     <div class="card">
       <div class="spread" style="margin-bottom:6px">
         <h3 style="margin:0"><Bi text="A pile of stubs" /></h3>
-        <span class="pill brand" v-if="filled">
-          {{ filled }} · {{ money(value, state.cfg?.currency) }}
-        </span>
       </div>
       <!-- WORDED FOR WHOEVER IS READING IT. "For when a seller brings back their
            book" is a sentence about somebody else, and a seller reading it on
@@ -353,6 +402,21 @@ function phoneWarning(phone) {
                placeholder="e.g. she brought the counterfoils back on Sunday">
       </div>
 
+      <!--
+        WHAT PRESSING IT WILL DO, directly above the thing that does it. 4c puts
+        this here rather than by the heading, which is the same argument the
+        sold-ticket panel already makes about an instruction belonging beside
+        the control that carries it out: at the top of the card it is a status
+        read on the way in, here it is a consequence read on the way out.
+      -->
+      <p v-if="filled" class="note info tiny ready">
+        {{ filled }} {{ filled === 1 ? 'line' : 'lines' }} ready ·
+        <b>{{ money(value, state.cfg?.currency) }}</b> will be recorded
+        <template v-if="batchBooks.length === 1">against {{ batchBooks[0] }}</template>
+        <template v-else-if="batchBooks.length > 1">across {{ batchBooks.length }} books</template>
+        <template v-else>once the numbers resolve</template>
+      </p>
+
       <div class="row mt">
         <button class="btn grow" @click="addRow(true)">+ Another line</button>
         <button class="btn primary grow lg" :disabled="busy || checking || !filled" @click="saveAll">
@@ -360,14 +424,38 @@ function phoneWarning(phone) {
           <template v-else-if="busy">
             Saving<template v-if="waited >= 4"> — {{ waited }}s</template>…
           </template>
-          <template v-else>Save {{ filled || '' }}</template>
+          <!--
+            ONE INTERPOLATION, NOT TWO FRAGMENTS WITH A SPACE BETWEEN THEM.
+            Written as `Save<template v-if>&nbsp;{{ n }} sales</template>` it
+            rendered "Save2 sales": Vue condenses the leading whitespace of a
+            text node that follows an element boundary, so the space existed in
+            the source and not on screen. That is e585505's defect exactly — a
+            name and the role after it printed as one word — and it is invisible
+            in the template, which reads correctly.
+          -->
+          <template v-else>{{ filled ? `Save ${filled} ${filled === 1 ? 'sale' : 'sales'}` : 'Save' }}</template>
         </button>
       </div>
+    </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.panes { display: grid; gap: 14px; align-items: start }
+/* The left column stacks its own two pieces; the card already carries its
+   bottom margin, so this only needs to stop them stretching. */
+.pane { align-self: start }
+@media (min-width: 1024px) {
+  /* The stubs pane is wider: three inputs and a delete button per row against
+     one input and a button. Equal columns squeezed the phone field. */
+  .panes { grid-template-columns: 1fr 1.35fr }
+}
+/* `.note` carries 14px beneath it, and the button row below adds its own top
+   margin — together that opened a gap between the sentence and the control it
+   describes, which is the one thing this placement exists to close. */
+.ready { margin-bottom: 0 }
+
 /* The question sits inside the warning it belongs to. */
 .why { margin-top: 12px; }
 .rows { margin-top: 12px; }
