@@ -83,8 +83,12 @@ same file, they are the same task and one person does both.
 | Phase | Task | Files it owns | Can start |
 |---|---|---|---|
 | 1 | Print sheet tab out | `ticketdesign/SheetTab.vue`, `studio.css` | **done** (`c6350da`) |
-| 1 | Artwork tab out | `ticketdesign/ArtworkTab.vue` + the shell | after 1a |
-| 1 | Place tab out | `ticketdesign/PlaceTab.vue` + the shell | after 1b |
+| 1 | Shapes panel out | `ticketdesign/ShapesPanel.vue` | **done** (`fa8a5c2`) |
+| 1 | Template rail out | `ticketdesign/TemplateRail.vue` | **done** (`48ed3f8`) |
+| 1 | Artwork verdict out | `ticketdesign/ArtworkVerdict.vue` | **done** (`a7fe5c9`) |
+| 2 | Inspector | `ticketdesign/Inspector.vue` + the shell | **next** |
+| 1 | Artwork stage out | `ticketdesign/ArtworkStage.vue` | after 3 |
+| 1 | Place tab out | `ticketdesign/PlaceTab.vue` | after 2 |
 | 2 | Inspector | `ticketdesign/Inspector.vue`, `PlaceTab.vue` | after 1c |
 | 3 | Canvas manipulation | `PlaceTab.vue`, `lib/ticketelements.js` | after 2 |
 | 4 | Toolbar + advanced | the shell, `studio.css` | after 1c |
@@ -95,9 +99,21 @@ same file, they are the same task and one person does both.
 | — | `key` and `phoneOff` read as blobs | `ui/Icon.vue` | **unowned** — in the sidebar, nobody's |
 | — | Token audit | `src/style.css`, `studio.css` | **offered → kcho-shelter-72** |
 
-**The three 1a→1b→1c rows are one worker's job, in order.** They all edit the
-shell as they remove a tab from it, so splitting them across workers means
-three people editing one file. That is not parallelism, it is a merge.
+**PHASE 1 WAS WRITTEN WRONG AND THE WORK CORRECTED IT.** The plan said "three
+tab components". What came out was five smaller ones, because the unit that
+matters is not the tab — it is the SEAM. The sheet tab was worth cutting
+whole; the shapes panel was four bindings, the rail five, the verdict one.
+The Artwork tab as a whole was eighteen, and eighteen props and emits is the
+same coupling written out longhand in a second file.
+
+So the two tabs still in the shell are not waiting for someone to be brave.
+The artwork STAGE shares pointer handling with the parent, and the Place tab
+IS the selection state that phase 2 exists to give a home to. Extracting
+either before that is relocating, not extracting. Phase 2 comes next and the
+two tabs fall out of it.
+
+**These rows are one worker's job, in order**, because each edits the shell as
+it removes something from it. That is not parallelism, it is a merge.
 
 An offer is not an assignment. Each of those sessions has its own user, and a
 peer saying yes is not that user saying yes — so a row stays open until the
