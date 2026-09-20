@@ -166,6 +166,113 @@ async function loadUsers() {
  * the same thing to the person refused, and not the same decision to the person
  * looking at the list.
  */
+/* ---------- filling a raffle with sample data ---------- */
+
+/*
+ * THE CONSTRUCTIVE HALF OF THE SAME CONTROL, and it sits ABOVE the reset
+ * because of what each one is for. This is what a new install needs; the reset
+ * is what a finished raffle needs, and meeting it on the way to this one is how
+ * somebody empties a raffle they meant to fill.
+ *
+ * It is built exactly like the reset — the feature list comes from the server,
+ * the counts come from the code that does the work, and the confirmation is
+ * typed. The differences are the two that matter and both are deliberate:
+ *
+ *   IT SAYS WHAT IT WOULD MAKE BEFORE MAKING IT, in the same shape the reset
+ *   says what it would destroy, so the two screens read as one idea.
+ *
+ *   AND THE SERVER CAN REFUSE THE WHOLE THING. A raffle that has printed a
+ *   ticket, taken a payment or recorded a sale by a real person is in use, and
+ *   sample sellers must never join it. That refusal is shown here as a sentence
+ *   with the reason, not as a failed press.
+ */
+const seedInfo = ref(null)
+const seedPick = ref([])
+const seedSize = ref('')
+const seedPhrase = ref('')
+const seedBusy = ref(false)
+const seedErr = ref('')
+const seedDone = ref(null)
+/* Same window as the reset: the browser app deploys on a push and the edge
+ * function is deployed by hand, so this screen can exist before the action
+ * behind it does. A sentence, not an error. */
+const seedUnavailable = ref(false)
+
+async function previewSeed() {
+  seedBusy.value = true
+  seedErr.value = ''
+  seedDone.value = null
+  try {
+    seedInfo.value = await api('seed_preview', {
+      features: seedPick.value,
+      size: seedSize.value,
+    })
+    /* The server owns the list of sizes and which one is the default. Taking it
+     * from the answer rather than naming one here is what stops the screen
+     * offering a size the server does not have. */
+    if (!seedSize.value) seedSize.value = seedInfo.value.size
+  } catch (e) {
+    if (e.code === 'UNKNOWN_ACTION') {
+      seedUnavailable.value = true
+    } else {
+      seedErr.value = e.message
+      if (e.code) toast(e.message, 'bad', e.code)
+    }
+  } finally {
+    seedBusy.value = false
+  }
+}
+
+function toggleSeed(id) {
+  seedPick.value = seedPick.value.includes(id)
+    ? seedPick.value.filter((x) => x !== id)
+    : [...seedPick.value, id]
+  /* A phrase belongs to a selection, and the counts in it change with one. */
+  seedPhrase.value = ''
+  previewSeed()
+}
+
+function pickSize(id) {
+  seedSize.value = id
+  seedPhrase.value = ''
+  previewSeed()
+}
+
+const seedReady = computed(() => {
+  const i = seedInfo.value
+  if (!i || i.inUse || !i.total || !i.willFill?.length) return false
+  return seedPhrase.value.trim().replace(/\s+/g, ' ').toUpperCase() === i.phrase
+})
+
+async function applySeed() {
+  if (!seedReady.value) return
+  seedBusy.value = true
+  seedErr.value = ''
+  try {
+    seedDone.value = await api('seed_apply', {
+      features: seedPick.value,
+      size: seedSize.value,
+      phrase: seedPhrase.value,
+    })
+    toast('The raffle was filled with sample data', 'ok')
+    seedPick.value = []
+    seedPhrase.value = ''
+    seedInfo.value = null
+  } catch (e) {
+    seedErr.value = e.message
+    if (e.code) toast(e.message, 'bad', e.code)
+    /*
+     * BOTH OF THESE MEAN THE ANSWER ON SCREEN IS STALE, and for opposite
+     * reasons. A mismatch means the counts moved; a stop part way means some of
+     * it is now there. Either way the next thing this person needs is the
+     * current state rather than the one they were looking at.
+     */
+    if (e.code === 'CONFIRM_MISMATCH' || e.code === 'SEED_FAILED') previewSeed()
+  } finally {
+    seedBusy.value = false
+  }
+}
+
 /* ---------- resetting the raffle ---------- */
 
 /*
@@ -641,6 +748,123 @@ function details(d) {
     </div>
 
     <!--
+      THE SEED, above the reset, because this is what an empty install needs and
+      that is what a finished raffle needs.
+    -->
+    <div v-if="isSuper" class="card fill">
+      <div class="spread">
+        <h3 style="margin:0">Fill this raffle with sample data</h3>
+        <button class="btn sm" :disabled="seedBusy || seedUnavailable"
+                :title="seedUnavailable ? 'The server has not been updated with this yet' : 'Work out what would be made'"
+                @click="previewSeed">
+          {{ seedInfo ? 'Refresh' : 'Show' }}
+        </button>
+      </div>
+      <p class="muted small">
+        Makes a raffle that looks like one in flight &mdash; sellers, books, some out
+        and some sold, money handed in &mdash; so the screens can be seen with something
+        on them. Everything is made by the app&rsquo;s own actions, so nothing here is a
+        state the raffle could not reach on its own. Undone by the reset below.
+      </p>
+
+      <p v-if="seedUnavailable" class="note tiny">
+        This raffle&rsquo;s server has not been updated with this yet, so there is nothing
+        to work out. The browser app and the server are deployed separately and the
+        server goes first; whoever deploys will know.
+      </p>
+
+      <template v-else-if="seedInfo">
+        <!--
+          THE REFUSAL THAT MATTERS, said before anything is chosen rather than
+          after it is pressed. A raffle somebody is using must never take sample
+          sellers, and the reason is the useful part.
+        -->
+        <p v-if="seedInfo.inUse" class="note bad tiny">
+          <b>This raffle is in use, so sample data cannot be added to it.</b>
+          <span v-for="(w, i) in seedInfo.inUseWhy" :key="i"><br>{{ w }}</span>
+        </p>
+
+        <ul class="feats">
+          <li v-for="f in seedInfo.features" :key="f.id">
+            <label class="choice">
+              <input type="checkbox" :checked="seedPick.includes(f.id)"
+                     :disabled="!f.offered || seedBusy || seedInfo.inUse"
+                     :title="!f.offered ? f.never : (seedInfo.inUse ? 'This raffle is in use' : `Fill ${f.name}`)"
+                     @change="toggleSeed(f.id)">
+              <span>{{ f.name }}
+                <span class="why">{{ f.offered ? f.makes : f.never }}</span>
+              </span>
+            </label>
+          </li>
+        </ul>
+
+        <template v-if="seedPick.length">
+          <p class="tiny muted" style="margin-top:10px">How much of it:</p>
+          <div class="sizes">
+            <button v-for="z in seedInfo.sizes" :key="z.id" class="btn sm"
+                    :class="{ on: seedSize === z.id }"
+                    :disabled="seedBusy || seedInfo.inUse"
+                    :title="seedInfo.inUse ? 'This raffle is in use' : `${z.tickets} tickets, ${z.sellers} sellers`"
+                    @click="pickSize(z.id)">
+              {{ z.name }}
+            </button>
+          </div>
+
+          <p v-if="seedInfo.added.length" class="note tiny">
+            <b>This needs more first.</b>
+            <span v-for="a in seedInfo.added" :key="a.id"><br>{{ a.name }} &mdash; {{ a.why }}</span>
+          </p>
+          <p v-if="seedInfo.refused.length" class="note bad tiny">
+            <span v-for="r in seedInfo.refused" :key="r.id">{{ r.why }}<br></span>
+          </p>
+          <!--
+            ALREADY THERE IS NOT THE SAME AS REFUSED, and saying so is the
+            difference between "the seed left your sellers alone" and "the seed
+            did not work". The rows count as present, which is what anything
+            depending on them needed.
+          -->
+          <p v-if="seedInfo.already.length" class="note tiny">
+            <b>Left alone, because there is already something there.</b>
+            <span v-for="k in seedInfo.already" :key="k.id"><br>{{ k.name }} &mdash;
+              {{ k.rows }} row{{ k.rows === 1 ? '' : 's' }} already. Anything that needed
+              this has it.</span>
+          </p>
+
+          <table v-if="seedInfo.total" class="counts">
+            <tbody>
+              <tr v-for="(n, t) in seedInfo.makes" :key="t">
+                <td>{{ String(t).replace(/_/g, ' ') }}</td>
+                <td class="n">{{ n }}</td>
+              </tr>
+              <tr class="tot"><td>in total</td><td class="n">{{ seedInfo.total }}</td></tr>
+            </tbody>
+          </table>
+          <p v-else class="tiny muted">There is nothing left to make from what you chose.</p>
+
+          <template v-if="seedInfo.total">
+            <p class="tiny muted" style="margin-top:10px">Type this, exactly:</p>
+            <p class="phrase">{{ seedInfo.phrase }}</p>
+            <input v-model="seedPhrase" class="phrasein" spellcheck="false"
+                   :disabled="seedInfo.inUse"
+                   aria-label="Type the confirmation" placeholder="Type it here">
+            <button class="btn wide" :disabled="!seedReady || seedBusy"
+                    :title="seedInfo.inUse ? 'This raffle is in use, so sample data cannot be added to it'
+                            : (seedReady ? 'Make everything listed above' : 'Tick what to fill, then type the line above exactly')"
+                    @click="applySeed">
+              {{ seedBusy ? 'Filling…' : 'Fill it' }}
+            </button>
+          </template>
+        </template>
+        <p v-else class="tiny muted">Choose what to fill.</p>
+      </template>
+
+      <p v-if="seedErr" class="note bad tiny">{{ seedErr }}</p>
+      <p v-if="seedDone" class="note tiny">
+        Filled: {{ seedDone.made.map(m => `${m.count} ${m.what}`).join(', ') }}.
+      </p>
+    </div>
+
+    <!--
       LAST ON THE SCREEN, and only for the system admin. It is the only control
       here that destroys anything, and it is not something to meet on the way to
       something else.
@@ -759,6 +983,11 @@ function details(d) {
 /* The one card here that destroys things, edged so it does not read as another
  * settings box. */
 .wipe { border-left: 3px solid var(--bad); }
+/* The constructive twin of .wipe, and the only difference is which edge of the
+ * status vocabulary it borrows. Both are tokens; neither is a new colour. */
+.fill { border-left: 3px solid var(--brand); }
+.sizes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px }
+.sizes .btn.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-ink) }
 .feats { list-style: none; margin: 10px 0 0; padding: 0 }
 .feats li { border-bottom: 1px solid var(--border) }
 .feats li:last-child { border-bottom: 0 }

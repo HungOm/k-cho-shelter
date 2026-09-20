@@ -342,3 +342,39 @@ there. That has already cost one session twenty minutes of rewriting.
 `restrict`, so `books` can no longer be deleted while it has history rows.
 `reset.sql` deletes children before parents and still works. A runbook that
 deletes in a different order, or truncates, will be refused.
+
+## 2026-09-20 — the reset and the seed, server halves not deployed
+
+A record, not a request, and stale the moment anybody deploys without editing
+it. Re-derive every line before acting on it.
+
+| What | Where | Needs |
+|---|---|---|
+| `app_reset(text[], text)` | `20260920400000` | `supabase db push` |
+| the same function, allowlist corrected | `20260920500000` | the same push |
+| `reset_preview`, `reset_apply` | `api/reset.ts` | `supabase functions deploy api` |
+| `seed_preview`, `seed_apply` | `api/seed.ts` | the same deploy |
+
+Migrations before the function, as always: `reset_apply` calls `app_reset`, and
+a function deployed first answers the screen with a Postgres error about a
+function that does not exist.
+
+**The client half is already safe to push on its own.** Both screens catch
+`UNKNOWN_ACTION` and say the server has not been updated yet, rather than
+failing in a way that reads as the app being broken. So the usual ordering
+worry — migration, function, push — costs a sentence on the Access screen here
+instead of a dead control, which is the point of that handling.
+
+**`20260920500000` is a `create or replace` of the function `20260920400000`
+installs**, deliberately, because this environment cannot check whether
+`20260920400000` was ever applied — `supabase migration list --linked` needs
+`SUPABASE_DB_PASSWORD` and it is not here. Replace is correct either way. If it
+turns out `20260920400000` was never applied, the two can be collapsed by
+anybody who can confirm that against the database; nobody should collapse them
+on the strength of assuming it.
+
+**The seed writes no SQL of its own and needs no migration.** It calls the
+app's own actions — `upsert_agent`, `expand_tickets`, `issue_books`,
+`sell_book`, `record_payment`, `upsert_prize` — so `seed_apply` works the day
+the function is deployed and needs nothing else. It does depend on `sell_books`
+in `functions.sql` being present, which it has been since before this hold.

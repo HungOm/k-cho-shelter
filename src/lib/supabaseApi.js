@@ -50,6 +50,11 @@ const WRITES = new Set([
    * that no permissions row can hand it out, and the two lists have to agree or
    * it gets the read timeout and is reported as failed after succeeding. */
   'reset_preview', 'reset_apply',
+  /* And filling one up. `seed_apply` drives a whole script of other actions —
+   * sellers, then tickets, then books out, then sales, then payments — so it is
+   * the slowest write in the app by a wide margin and the read timeout would
+   * abandon it mid-raffle. */
+  'seed_preview', 'seed_apply',
   // Minting the codes that make a printed ticket provable, and drawing them.
   'generate_tickets', 'render_tickets',
   'record_payment', 'reverse_payment',

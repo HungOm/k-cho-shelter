@@ -241,6 +241,12 @@ export const MY_ERRORS = {
   CONFIRM_MISMATCH: 'အတည်ပြုစာသားကို အတိအကျ ရိုက်ထည့်ပါ။',
   PRINTED_TICKETS_EXIST: 'ပုံနှိပ်ပြီးသော လက်မှတ်များ ရှိနေပါသည်။ ဆက်လုပ်ရန် သီးခြားအတည်ပြုပါ။',
   RESET_FAILED: 'ပြန်လည်သုတ်သင်ခြင်း မအောင်မြင်ပါ။ ဘာမျှ ပြောင်းလဲမှုမရှိပါ။',
+  /* Phase 7, the other half: filling a raffle with sample data. Burmese
+   * unreviewed, same as the five above — the English is the sentence that was
+   * meant, and is what to correct the Burmese against. */
+  RAFFLE_IN_USE: 'ဤကံစမ်းမဲကို အသုံးပြုနေပြီဖြစ်၍ နမူနာအချက်အလက် ထည့်၍မရပါ။',
+  NOTHING_TO_FILL: 'ရွေးထားသည့်အထဲတွင် အားလုံး ရှိနှင့်ပြီးဖြစ်၍ ဖြည့်စရာ မရှိပါ။',
+  SEED_FAILED: 'နမူနာအချက်အလက် ထည့်ခြင်း အလယ်တွင် ရပ်သွားပါသည်။ ထည့်ပြီးသမျှ ကျန်ရှိနေပါသည်။',
   MISSING_FIELD: 'လိုအပ်သော အချက်အလက် မပြည့်စုံပါ',
   BAD_REQUEST: 'တောင်းဆိုချက် မမှန်ကန်ပါ',
   BAD_PHONE: 'ဖုန်းနံပါတ် မမှန်ကန်ပါ',

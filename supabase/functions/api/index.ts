@@ -45,6 +45,7 @@ import { configPayload } from './config.ts'
 import * as branding from './branding.ts'
 import * as templates from './templates.ts'
 import * as reset from './reset.ts'
+import * as seed from './seed.ts'
 import * as printing from './printing.ts'
 import * as tickets from './tickets.ts'
 import * as books from './books.ts'
@@ -186,6 +187,8 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   set_ticket_sizes: { group: 'Access', label: 'Change the accepted ticket sizes', danger: true },
   reset_preview: { group: 'Access', label: 'See what resetting a raffle would destroy', danger: true },
   reset_apply: { group: 'Access', label: 'Reset a raffle', danger: true },
+  seed_preview: { group: 'Access', label: 'See what filling a raffle with sample data would make' },
+  seed_apply: { group: 'Access', label: 'Fill a raffle with sample data', danger: true },
   generate_tickets: { group: 'Books', label: 'Generate ticket codes for printing', danger: true },
   render_tickets: { group: 'Books', label: 'Draw tickets for printing' },
   make_receipt: { group: 'Books', label: 'Make a buyer\'s receipt for several tickets' },
@@ -417,6 +420,19 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    */
   reset_preview: { roles: ADMIN_ONLY, kind: 'write', fn: reset.resetPreview },
   reset_apply: { roles: ADMIN_ONLY, kind: 'write', fn: reset.resetApply },
+  /*
+   * AND FILLING ONE UP, which is the same control read the other way. Same
+   * bar, same two-step, same reason for `write` on a preview that only counts.
+   *
+   * `seed_apply` is `danger` and `seed_preview` is not — the preview of a
+   * reset is marked dangerous because knowing the counts is the last step
+   * before destroying them, and nothing the seed previews is destructive. It
+   * is still ADMIN_ONLY and still refuses anybody but the System Admin inside
+   * the handler: sample sellers and sample money in somebody's live raffle is
+   * not a small mess to clean up by hand.
+   */
+  seed_preview: { roles: ADMIN_ONLY, kind: 'write', fn: seed.seedPreview },
+  seed_apply: { roles: ADMIN_ONLY, kind: 'write', fn: seed.seedApply },
   // Minting the codes that make a ticket provable. Same bar as the artwork
   // above, and for a sharper reason: whoever can generate a code can make a
   // forgery verify.

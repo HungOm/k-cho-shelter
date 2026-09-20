@@ -237,6 +237,19 @@ const CALLS = {
    */
   reset_apply: { features: ['artwork'], phrase: 'DELETE EVERYTHING' },
   /*
+   * And the other half of phase 7: working out what filling a raffle would
+   * make. Nothing is written — it counts, plans and hands back the sentence.
+   */
+  seed_preview: { features: ['prizes'] },
+  /*
+   * THE REFUSAL THIS ONE EXISTS FOR, and it is the guard rather than the
+   * confirmation. The fixture has sold tickets recorded by a person, so this
+   * raffle is IN USE, and sample sellers must never join one. It is the check
+   * that has to fire before the phrase is even looked at — a correct phrase on
+   * a live raffle is the one way this feature could do real damage.
+   */
+  seed_apply: { features: ['prizes'], phrase: 'FILL 4 PRIZES' },
+  /*
    * The fixture has no ticket artwork, so this refuses with NO_TEMPLATE —
    * deliberately, and it is the right path to exercise: generating codes for
    * tickets that cannot be drawn would mint something nobody can print.
@@ -281,6 +294,14 @@ const DELIBERATE = new Set([
    * that fails is broken rather than careful.
    */
   'NOTHING_SELECTED', 'NOTHING_TO_RESET', 'CONFIRM_MISMATCH', 'PRINTED_TICKETS_EXIST',
+  /*
+   * And filling one. RAFFLE_IN_USE is the seed declining to touch a raffle
+   * somebody is running; NOTHING_TO_FILL is it declining to fill what is
+   * already full. SEED_FAILED is deliberately NOT here, for the same reason as
+   * RESET_FAILED: it means the script stopped part way through, and a seed that
+   * gets halfway is broken rather than careful.
+   */
+  'RAFFLE_IN_USE', 'NOTHING_TO_FILL',
   // Asking to generate ticket codes before any artwork has been uploaded.
   'NO_TEMPLATE',
   'BELOW_GENERATED', 'NOT_YOUR_BOOK', 'BOOK_WITH_SELLER', 'BOOK_CLOSED',
