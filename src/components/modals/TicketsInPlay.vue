@@ -221,7 +221,8 @@ async function save() {
  * reads as though the warning is handled. --warn is the token for this role
  * and flips properly in both themes.
  */
-.hint.warnish { color: var(--warn); }
+/* .hint.warnish moved to src/style.css — three components used it and only
+   two defined it. */
 .note.plain { background: var(--surface-2); color: var(--muted); }
 .ok { text-align: center; padding: 18px 0 10px; }
 .ok .tick {

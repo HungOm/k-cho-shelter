@@ -550,6 +550,11 @@ input[type=file] { padding: 10px }
  * A class that resolves to nothing is the same defect as `.bad` resolving to
  * nothing further up this file — it reads as handled and does nothing.
  */
+/* A hint that is a caution rather than a note. Was defined identically in two
+   components' scoped blocks and used in a third, where it resolved to nothing —
+   the same failure as `.segbtn` below and `.bad` above it. */
+.hint.warnish { color: var(--warn); }
+
 .seg { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: 9px }
 .segbtn {
   flex: 1; border: 0; background: none; cursor: pointer; padding: 7px 6px;

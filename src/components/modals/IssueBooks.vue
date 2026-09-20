@@ -345,5 +345,6 @@ async function issue() {
 /* Native option styling is limited, but colour and weight carry. */
 .newopt { color: var(--brand); font-weight: 700; }
 
-.hint.warnish { color: var(--warn); }
+/* .hint.warnish moved to src/style.css — three components used it and only
+   two defined it. */
 </style>

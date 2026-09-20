@@ -188,9 +188,28 @@ async function release() {
           <label for="rt">Or set the new total</label>
           <input id="rt" v-model="target" class="xl" inputmode="numeric"
                  :placeholder="String(current + 1000)">
+          <!--
+            THE HINT DISAPPEARED AT THE MOMENT IT WAS NEEDED. It was
+            `v-if="adding"`, so a total equal to or below what already exists —
+            the commonest mistake on this field, because the label says "the new
+            TOTAL" and the number in your head is usually the number you want to
+            add — produced no hint, no warning, and a disabled button with
+            nothing on it. Reported as "I still cannot create new tickets", from
+            a screen that had said nothing at all.
+
+            permissionui: a control you cannot use carries its reason.
+          -->
           <p v-if="adding" class="hint">
             That makes <b class="data">{{ adding.toLocaleString() }}</b> more
             ({{ Math.ceil(adding / perBook) }} books).
+          </p>
+          <p v-else-if="wanted && wanted === current" class="hint warnish">
+            That is the <b class="data">{{ current.toLocaleString() }}</b> you already
+            have, so there is nothing to make. Type a bigger total, or use a button above.
+          </p>
+          <p v-else-if="wanted" class="hint warnish">
+            Lower than the <b class="data">{{ current.toLocaleString() }}</b> already made.
+            Tickets can only be added, never removed.
           </p>
         </div>
 
@@ -227,7 +246,11 @@ async function release() {
       <button v-if="done" class="btn primary block" @click="emit('released')">Done</button>
       <template v-else-if="headroom !== 0">
         <button class="btn" @click="emit('close')">Cancel</button>
-        <button v-if="!preview" class="btn primary" :disabled="busy || !adding" @click="look">
+        <button v-if="!preview" class="btn primary" :disabled="busy || !adding"
+                :title="adding ? 'Show what this would create, without creating it'
+                  : (wanted ? `${wanted.toLocaleString()} is not more than the ${current.toLocaleString()} already made`
+                            : 'Choose how many more, or type a new total')"
+                @click="look">
           {{ busy ? 'Checking…' : 'See what this does' }}
         </button>
         <button v-else class="btn primary" :disabled="busy || !confirmed" @click="release">
