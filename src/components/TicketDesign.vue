@@ -33,8 +33,8 @@
  * placing print artwork to the pixel; a 52px target would cover the thing being
  * positioned. The visible handles are small and their hit areas are generous.
  */
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { state, api, setConfig, toast, isAdmin } from '../lib/store.js'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { state, api, setConfig, toast, isAdmin, setFocus, go } from '../lib/store.js'
 import { designFor, validateDesign, stubShare } from '../lib/ticketdesign.js'
 import {
   elementLayerSVG, placeElements, qrModuleMM, ticketVerifyUrl,
@@ -53,6 +53,7 @@ import TemplateRail from './ticketdesign/TemplateRail.vue'
 import ArtworkVerdict from './ticketdesign/ArtworkVerdict.vue'
 import Inspector from './ticketdesign/Inspector.vue'
 import Ink from './ui/Ink.vue'
+import Icon from './ui/Icon.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 /* Across into the check page's own folder on purpose: the sample book and the
  * page that answers a sample QR have to agree, and that page may not import
@@ -657,7 +658,46 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(() => { load().then(() => nextTick(fitToWidth)) })
+/*
+ * THE STUDIO ASKS FOR THE ROOM, and gives it back on the way out.
+ *
+ * Card 7a draws the app's chrome collapsed with "Exit studio" top left and ⌘\
+ * to bring it back. The reason is the artboard: this screen measures in
+ * millimetres beside a sidebar of eleven tabs nobody is going to press while
+ * placing a field to the pixel.
+ *
+ * THREE WAYS BACK, because a person who has lost the navigation does not know
+ * which one they were supposed to know about — the shortcut, the visible Exit
+ * studio button, and go() clearing the flag from anywhere else. A keyboard
+ * shortcut as the only way out is a trap wearing a feature's clothes.
+ */
+onMounted(() => {
+  setFocus(true)
+  window.addEventListener('keydown', onFocusKey)
+  load().then(() => nextTick(fitToWidth))
+})
+onUnmounted(() => {
+  setFocus(false)
+  window.removeEventListener('keydown', onFocusKey)
+})
+
+/*
+ * Named apart from onKey above, which nudges the selected box with the arrow
+ * keys and is bound per element. This one is a WINDOW listener for the whole
+ * screen's chrome, and two handlers on one name is how a listener ends up
+ * removed by the wrong remove.
+ */
+function onFocusKey(e) {
+  // ⌘\ on a Mac, Ctrl+\ elsewhere. Not a bare key: this screen is full of
+  // text fields and a single letter would fire while somebody types a motto.
+  if (e.key === '\\' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault()
+    setFocus(!state.focus)
+  }
+}
+
+/* Out of the studio entirely, as distinct from bringing the nav back. */
+function exitStudio() { go('home') }
 
 watch(activeId, () => {
   const t = active.value
@@ -1081,6 +1121,14 @@ const printedSize = computed(() => {
       question a screen with three tabs and two side panels most easily loses.
     -->
     <header class="bar">
+      <!--
+        THE VISIBLE WAY OUT, top left, as card 7a draws it. It is first in the
+        bar because that is where somebody looks for the way back when the
+        navigation they were using has gone.
+      -->
+      <button class="btn sm ghost exit" @click="exitStudio">
+        <Icon name="arrowLeft" :size="16" />Exit studio
+      </button>
       <h2>Ticket Studio</h2>
 
       <label v-if="templates.length" class="picker">

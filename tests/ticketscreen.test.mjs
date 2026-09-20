@@ -38,6 +38,11 @@ export const api = async (action) => { asked.push(action); return ${JSON.stringi
 export const setConfig = () => {}
 export const toast = () => {}
 export const go = () => {}
+// The studio asks the shell for the room and gives it back on the way out.
+// Present here because the stub mirrors the real store's exports — a screen
+// that grows an import otherwise fails the BUNDLE, which reads as a broken
+// component rather than as a fixture one field behind.
+export const setFocus = () => {}
 export const isAdmin = ${user.role === 'admin'}
 export const isSuper = false
 `

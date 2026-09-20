@@ -116,7 +116,7 @@ defineEmits(['signout'])
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ focus: state.focus }">
     <!-- desktop sidebar -->
     <aside class="sidebar noprint">
       <!--
@@ -223,6 +223,23 @@ defineEmits(['signout'])
 
 <style scoped>
 .shell { display: flex; min-height: 100dvh; }
+
+/*
+ * FOCUS — the app's own furniture out of the way for a screen that is a canvas.
+ *
+ * The studio measures an artboard in millimetres beside a sidebar of eleven
+ * tabs nobody presses while placing a field, so it asks for the room. Hidden
+ * rather than narrowed: a half-width rail is still a rail, and the width it
+ * gives back is the point.
+ *
+ * THE BOTTOM TABS GO TOO, and that is the part to be careful about — on a phone
+ * they are the only navigation there is. The screen asking for this is
+ * organiser-only and desk-shaped, it carries its own visible way out, and
+ * go() clears the flag, so there are three ways back before the shortcut. If a
+ * screen a seller uses ever asks for focus, this rule needs a width gate.
+ */
+.shell.focus .sidebar,
+.shell.focus .tabs { display: none; }
 
 /* ---------- sidebar (desktop only) ---------- */
 .sidebar { display: none; }

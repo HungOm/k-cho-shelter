@@ -54,6 +54,11 @@ export const api = async () => (${JSON.stringify(reply)})
 export const setConfig = () => {}
 export const toast = () => {}
 export const go = () => {}
+// The studio asks the shell for the room and gives it back on the way out.
+// Present because this stub mirrors the real store's exports — a screen that
+// grows an import otherwise fails the BUNDLE, which reads as a broken component
+// rather than as a fixture one field behind.
+export const setFocus = () => {}
 export const isAdmin = true
 export const isSuper = false
 `

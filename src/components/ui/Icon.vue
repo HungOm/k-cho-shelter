@@ -96,6 +96,9 @@ const PATHS = {
   trash:     'M4.5 7h15M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12',
   arrowUp:   'M12 20V4.5M6 10.5 12 4.5l6 6',
   arrowDown: 'M12 4v15.5M18 13.5 12 19.5l-6-6',
+  /* Back out of somewhere, rather than back one step in a list — it sits on
+     "Exit studio", where the thing being left is a whole mode. */
+  arrowLeft: 'M20 12H4.5M10.5 6 4.5 12l6 6',
 
   // --- the studio: what a ticket is made of ----------------------------
   /*

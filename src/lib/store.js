@@ -86,6 +86,9 @@ export const state = reactive({
 
   // ui
   screen: 'home',
+  /* The chrome is out of the way — see setFocus. Never persisted: a mode that
+     survives a reload is a mode somebody wakes up trapped in. */
+  focus: false,
   loading: false,
   loadProgress: null,
   lastSync: null,
@@ -933,8 +936,34 @@ export function setSellMode(mode) {
 }
 
 export function go(screen) {
+  /*
+   * LEAVING A SCREEN LEAVES ITS FOCUS BEHIND. A screen that asked for the
+   * chrome to get out of the way cannot be trusted to clear that on the way
+   * out — an error, a refresh mid-navigation, or simply forgetting, and the
+   * nav is gone from every screen after it with no way back except the
+   * shortcut somebody has not been told about.
+   */
+  state.focus = false
   state.screen = screen
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+/**
+ * THE CHROME OUT OF THE WAY, for a screen that is a canvas.
+ *
+ * The studio is the one screen where the app's own furniture competes with the
+ * work: an artboard measured in millimetres, beside a sidebar of eleven tabs
+ * nobody is going to press while placing a field to the pixel. Asked for by the
+ * screen rather than decided by the shell, because the shell knowing which
+ * screens are canvases is the shell knowing too much.
+ *
+ * NOT A MODE SOMEBODY CAN GET STUCK IN, which is the only way this goes wrong.
+ * `go()` clears it, the shortcut toggles it, and the screen that turned it on
+ * carries a visible way out — three ways back, because a person who has lost
+ * the navigation does not know which one they are supposed to know about.
+ */
+export function setFocus(on) {
+  state.focus = !!on
 }
 
 // ---------- the draw screen's own facts ----------
