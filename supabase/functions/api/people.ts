@@ -17,6 +17,7 @@
  * you is the one worth attacking.
  */
 import { ApiError, isSuperAdminEmail, requireSuperAdmin, type AppUser, type Role } from './gate.ts'
+import { configPayload } from './config.ts'
 import {
   addDays, checkInRound, configDate, daysBetween, graceDays, reportState, reportedIn,
   reportsBefore, today,
@@ -860,6 +861,99 @@ export async function expandTickets(p: Record<string, unknown>, user: AppUser, c
 }
 
 /** The planned size of this raffle — the guard rail expand_tickets checks. */
+/*
+ * THE NUMBERING, WHILE THERE IS STILL NOTHING TO RENUMBER.
+ *
+ * Every ticket number is a STORED string — `number: prefix + pad(...)` in the
+ * expand below — so changing the prefix later does not renumber anything. It
+ * makes the setting disagree with the paper: searching for a printed ticket
+ * finds nothing and selling one says it does not exist. `config_numbering_locked`
+ * refuses exactly that at the database, and this refuses it here so somebody
+ * gets a sentence instead of a constraint violation.
+ *
+ * WHICH MEANS THIS IS EDITABLE FOR EXACTLY ONE WINDOW: before the first ticket
+ * exists. It had no way to be set at all, on any screen, so a raffle generated
+ * with the wrong prefix was wrong for its whole life — and the only way out was
+ * emptying it, which is the one operation nobody trusts.
+ *
+ * COUNTED FROM THE TICKETS, not from TOTAL_TICKETS. The setting and the rows
+ * have disagreed twice in one night on this deployment, and the row count is
+ * the one that says what would actually be renumbered.
+ */
+export async function setNumbering(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  requireSuperAdmin(user, 'Changing the ticket numbering')
+
+  const { count } = await ctx.supabaseAdmin
+    .from('tickets').select('idx', { count: 'exact', head: true })
+  const have = Number(count ?? 0)
+  if (have > 0) {
+    throw new ApiError(
+      'NUMBERING_LOCKED',
+      `${have} tickets already exist, so the numbering cannot change. Every number ` +
+      'already written down was built from these settings — changing them does not ' +
+      'renumber those tickets, it stops them matching.',
+      { tickets: have },
+    )
+  }
+
+  const text = (v: unknown) => String(v ?? '').trim()
+  const whole = (v: unknown, dflt: number) => {
+    const n = parseInt(String(v ?? ''), 10)
+    return isNaN(n) ? dflt : n
+  }
+
+  const ticketPrefix = text(p.ticketPrefix)
+  const bookPrefix = text(p.bookPrefix)
+  const ticketDigits = whole(p.ticketDigits, 5)
+  const ticketStart = whole(p.ticketStart, 1)
+  const perBook = whole(p.ticketsPerBook, 10)
+  const bookDigits = whole(p.bookDigits, 4)
+
+  /* A prefix goes into a filename and onto a URL as well as onto paper. Letters,
+     digits, hyphen and space only — no slash, no dot, nothing that could make a
+     path or a query out of a ticket number. */
+  for (const [what, v] of [['Ticket prefix', ticketPrefix], ['Book prefix', bookPrefix]]) {
+    if (v.length > 12) throw new ApiError('BAD_PREFIX', `${what} is longer than 12 characters.`)
+    if (v && !/^[\p{L}\p{N} -]+$/u.test(v)) {
+      throw new ApiError('BAD_PREFIX',
+        `${what} can use letters, numbers, spaces and hyphens only.`)
+    }
+  }
+  if (ticketDigits < 1 || ticketDigits > 9) {
+    throw new ApiError('BAD_REQUEST', 'Ticket numbers must be between 1 and 9 digits.')
+  }
+  if (bookDigits < 1 || bookDigits > 9) {
+    throw new ApiError('BAD_REQUEST', 'Book numbers must be between 1 and 9 digits.')
+  }
+  if (ticketStart < 0) throw new ApiError('BAD_REQUEST', 'The first number cannot be negative.')
+  if (perBook < 1 || perBook > 1000) {
+    throw new ApiError('BAD_REQUEST', 'A book holds between 1 and 1000 tickets.')
+  }
+
+  const rows = {
+    TICKET_PREFIX: ticketPrefix, TICKET_DIGITS: String(ticketDigits),
+    TICKET_START: String(ticketStart), TICKETS_PER_BOOK: String(perBook),
+    BOOK_PREFIX: bookPrefix, BOOK_DIGITS: String(bookDigits),
+  }
+  const { error } = await ctx.supabaseAdmin
+    .from('config')
+    .upsert(Object.entries(rows).map(([key, value]) => ({ key, value })), { onConflict: 'key' })
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SET_NUMBERING', details: rows, email: user.email,
+  })
+  /* The whole config back, like every other setter here — one shape for the
+     client to assign rather than a second object shaped like it. */
+  const { data: after } = await ctx.supabaseAdmin.from('config').select('key,value')
+  const cfg: Record<string, string> = {}
+  for (const r of after ?? []) cfg[r.key] = r.value
+  return {
+    config: configPayload(cfg),
+    example: ticketPrefix + String(ticketStart).padStart(ticketDigits, '0'),
+  }
+}
+
 export async function setTicketCeiling(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   requireSuperAdmin(user, 'Changing the planned size of the raffle')
 

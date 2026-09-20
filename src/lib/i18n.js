@@ -363,6 +363,11 @@ export const MY_ERRORS = {
   NO_TEMPLATE: 'လက်မှတ်ပုံ မရှိသေးပါ — အရင်တင်ပါ',
   /* Composed, not written by a Burmese reader — like the rest of this file.
      "Several artworks are stored; none is chosen. Pick one." */
+  /* Composed, not written by a Burmese reader, like the rest of this file.
+     "Tickets already exist — the numbering cannot be changed." and
+     "The prefix cannot be used." */
+  NUMBERING_LOCKED: 'လက်မှတ်များ ရှိပြီးဖြစ်၍ နံပါတ်စနစ် ပြောင်း၍ မရပါ',
+  BAD_PREFIX: 'ရှေ့ဆက်စာလုံး မသုံးနိုင်ပါ',
   NO_TEMPLATE_CHOSEN: 'လက်မှတ်ပုံ အများရှိသည် — မည်သည့်ပုံကို သုံးမည် ရွေးပါ',
   // Dates and deadlines. Short on purpose: the English underneath carries the
   // detail, and a gloss that runs to three lines stops being a gloss.

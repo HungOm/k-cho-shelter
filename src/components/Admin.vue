@@ -249,6 +249,54 @@ async function removeLogo() {
   } finally { logoBusy.value = false }
 }
 
+/*
+ * THE NUMBERING, EDITABLE FOR THE ONE WINDOW IT CAN BE.
+ *
+ * Every ticket number is stored on its row, so changing the prefix after the
+ * first ticket exists does not renumber anything — it makes the setting
+ * disagree with the paper. The database refuses it and so does the server; this
+ * shows the fields DISABLED WITH THE REASON rather than hiding them, per
+ * permissionui, so an organiser learns why instead of concluding it is missing.
+ *
+ * It had no control anywhere before this. A raffle generated with the wrong
+ * prefix was wrong for its whole life, and the only way out was emptying it.
+ */
+const nb = ref({ ticketPrefix: '', ticketDigits: 5, ticketStart: 1,
+                 ticketsPerBook: 10, bookPrefix: 'Book-', bookDigits: 4 })
+const nbSaving = ref(false)
+const numberingLocked = computed(() => made.value > 0)
+const numberingWhy = computed(() => (numberingLocked.value
+  ? `${made.value.toLocaleString()} tickets already exist. Every number written down was built `
+    + 'from these settings, so changing them would stop the tickets matching.'
+  : ''))
+const nbExample = computed(() =>
+  String(nb.value.ticketPrefix || '')
+  + String(Math.max(0, Number(nb.value.ticketStart) || 0))
+      .padStart(Math.min(9, Math.max(1, Number(nb.value.ticketDigits) || 1)), '0'))
+
+function loadNumbering() {
+  const cf = c.value || {}
+  nb.value = {
+    ticketPrefix: cf.ticketPrefix ?? '', ticketDigits: cf.ticketDigits ?? 5,
+    ticketStart: cf.ticketStart ?? 1, ticketsPerBook: cf.ticketsPerBook ?? 10,
+    bookPrefix: cf.bookPrefix ?? 'Book-', bookDigits: cf.bookDigits ?? 4,
+  }
+}
+watch(c, loadNumbering, { immediate: true })
+
+async function saveNumbering() {
+  nbSaving.value = true
+  try {
+    const r = await api('set_numbering', { ...nb.value })
+    if (r?.config) setConfig(r.config)
+    loadNumbering()
+    toast(`Numbering saved — the first ticket will be ${r?.example || nbExample.value}`, 'ok')
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+    loadNumbering()
+  } finally { nbSaving.value = false }
+}
+
 async function saveBrand() {
   brandSaving.value = true
   try {
@@ -755,6 +803,63 @@ function details(d) {
           {{ made ? 'Make more' : 'Make the first tickets' }}
         </button>
       </div>
+    </div>
+
+    <div v-if="c && isSuper" class="card">
+      <h3>Ticket numbering</h3>
+      <p class="muted small">
+        <template v-if="numberingLocked">{{ numberingWhy }}</template>
+        <template v-else>
+          Set before the first ticket is made. It cannot be changed afterwards,
+          because the number is written onto every ticket as it is created.
+        </template>
+      </p>
+
+      <div class="nbgrid">
+        <div class="field">
+          <label for="nbp">Ticket prefix</label>
+          <input id="nbp" v-model="nb.ticketPrefix" autocomplete="off" placeholder="e.g. KS-"
+                 :disabled="numberingLocked" :title="numberingWhy">
+        </div>
+        <div class="field">
+          <label for="nbd">Digits</label>
+          <input id="nbd" v-model.number="nb.ticketDigits" inputmode="numeric"
+                 :disabled="numberingLocked" :title="numberingWhy">
+        </div>
+        <div class="field">
+          <label for="nbs">First number</label>
+          <input id="nbs" v-model.number="nb.ticketStart" inputmode="numeric"
+                 :disabled="numberingLocked" :title="numberingWhy">
+        </div>
+        <div class="field">
+          <label for="nbpb">Tickets in a book</label>
+          <input id="nbpb" v-model.number="nb.ticketsPerBook" inputmode="numeric"
+                 :disabled="numberingLocked" :title="numberingWhy">
+        </div>
+        <div class="field">
+          <label for="nbbp">Book prefix</label>
+          <input id="nbbp" v-model="nb.bookPrefix" autocomplete="off" placeholder="e.g. Book-"
+                 :disabled="numberingLocked" :title="numberingWhy">
+        </div>
+        <div class="field">
+          <label for="nbbd">Book digits</label>
+          <input id="nbbd" v-model.number="nb.bookDigits" inputmode="numeric"
+                 :disabled="numberingLocked" :title="numberingWhy">
+        </div>
+      </div>
+
+      <!-- What it will actually produce, before it is saved. A prefix is easy
+           to get subtly wrong — a missing hyphen reads as correct in a form
+           field and wrong on ten thousand tickets. -->
+      <p class="hint">
+        The first ticket will be <b class="data">{{ nbExample }}</b>.
+      </p>
+
+      <button class="btn primary" :disabled="numberingLocked || nbSaving"
+              :title="numberingWhy || 'Save the numbering for this raffle'"
+              @click="saveNumbering">
+        {{ nbSaving ? 'Saving…' : 'Save numbering' }}
+      </button>
     </div>
 
     <div v-if="c" class="card">
@@ -1367,6 +1472,9 @@ function details(d) {
 </template>
 
 <style scoped>
+.nbgrid { display: grid; gap: 12px; grid-template-columns: 1fr }
+@media (min-width: 720px) { .nbgrid { grid-template-columns: 2fr 1fr 1fr } }
+
 .swatch {
   width: 46px; height: 38px; padding: 2px;
   cursor: pointer; flex: 0 0 auto;

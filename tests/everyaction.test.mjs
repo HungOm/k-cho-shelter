@@ -173,6 +173,12 @@ const CALLS = {
   expand_tickets: { totalTickets: 50 },
   set_active_tickets: { activeTickets: 20 },
   set_ticket_ceiling: { ticketCeiling: 200 },
+  /* Refused here rather than applied: this world has tickets, and the numbering
+     locks the moment the first one exists. Exercising it proves the refusal is
+     reachable, which is the half that matters — the permissive path only exists
+     on an empty raffle. */
+  set_numbering: { ticketPrefix: 'KS-', ticketDigits: 5, ticketStart: 1,
+                   ticketsPerBook: 10, bookPrefix: 'Book-', bookDigits: 4 },
   roll_check_in: {}, set_final_deadline: { date: '2027-01-01' },
   record_check_in: { agentId: 'A001', booksBack: 1, ticketsSold: 4, amountPaid: 40,
                      stubsReturned: 4, unsoldReturned: 6 },
@@ -302,6 +308,8 @@ const DELIBERATE = new Set([
   'TOO_FAR', 'BAD_DATE', 'AFTER_DRAW', 'DUE_AFTER_FINAL', 'PARTIAL_BOOK',
   'TICKETS_IN_USE', 'BOOKS_IN_USE', 'NOT_GENERATED', 'ABOVE_CEILING',
   'CANNOT_SHRINK', 'SCHEMA_DRIFT', 'NOT_ELIGIBLE', 'NOT_IN_BOOK',
+  /* The numbering locks once a ticket exists; this world has tickets. */
+  'NUMBERING_LOCKED',
   'NOT_RESERVED', 'MISSING_FIELD', 'BAD_REQUEST', 'RANGE_TOO_LARGE',
   // Naming an artwork that is not there. The design screen reaches these with
   // an id it read a moment ago, so the case that matters is the one where
