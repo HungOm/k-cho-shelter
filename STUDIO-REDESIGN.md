@@ -466,3 +466,77 @@ persuasive. Measure, then build.
 Either the studio grows a drawing mode — a real piece of work, and a different
 product from a placement tool — or 9a offers one honest route and says what the
 other would require. That is the user's call.
+
+---
+
+## 13. The card ledger — every card, live or superseded, and what is built
+
+Written 2026-09-20 after a briefing error that cost a session a whole card of
+work. I sent kcho-shelter-72 to build **1b**, quoting its title from notes I had
+taken days earlier. 1b is in the document's last section:
+
+> **Earlier explorations — Kept for reference — superseded by the chapters above.**
+
+So the studio was rebuilt to a retired card, and a user who uses that screen
+said within the hour that it was wrong. They were right and the document agreed
+with them. **Nobody briefs from memory again — brief from this table, and if a
+card is not in it, extract it before quoting it.**
+
+Extraction: the card ids are `<div class="dv-opt" id="…">`, chapter titles are
+`<span class="dv-tname">`, card titles are `<div class="dv-olabel">`. The file
+stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
+
+### Live cards
+
+| Card | Chapter | What it draws | Built? |
+|---|---|---|---|
+| 4f | 1 Set up | Setup · brand colour previewed on real chrome | yes |
+| 4g | 1 Set up | Access — System Admin only, page says so, shows diffs | yes |
+| 9a | 2 Studio | Start a design — two routes, artboard set before you draw | yes (d5d82a6) |
+| **9b** | 2 Studio | **Studio from scratch, light — layers LEFT, artboard MIDDLE with rulers, inspector RIGHT** | **regressed by 6d4feb1; 72 rebuilding** |
+| **9c** | 2 Studio | The same studio in dark mode — chrome flips, ticket keeps its own colours | **never looked at** |
+| 2a | 2 Studio | Artwork & paper — the verdict is the page | yes (72 confirmed) |
+| 7a | 2 Studio | Collapsed rail — Exit studio top left, hover or ⌘\ | yes (33dce6f, 008d630) |
+| 2b | 2 Studio | Print sheet — paper, how they sit, cut line | yes |
+| 8c | 2 Studio | Studio · Digital ticket **(future tab)** | no — marked future in the document |
+| 5a | 3 Books | Books — selection raises the bar that owns Print tickets | open with ceam-raffle-15's user |
+| 5b | 3 Books | Print tickets step 1 — batch, honest empty preview | yes (6678c2e) |
+| 5c | 3 Books | Print tickets step 2 — codes then paper as two steps | yes |
+| 4a | 4 Sell | Home — one banner, what needs looking at, then doing | yes |
+| 6a | 4 Sell | List + docked ticket panel | yes (89ac4f5) |
+| 6b | 4 Sell | A sold ticket — record, movement, correction in one modal | not verified against the card |
+| 4c | 4 Sell | Write down sales — one ticket or a pile of stubs | not verified |
+| 4d | 5 Money | Money — who owes what, running-balance statement | not verified |
+| 4h | 6 Control | Approvals — the waiting request first | yes |
+| **8a** | 7 Buyer | **Books → book → a ticket — the keepsake in the raffle's colour** | **NO — see below** |
+| **8b** | 7 Buyer | **Three treatments of the same ticket, one brand colour** | **NO** |
+| 4i | 7 Buyer | Ticket check — the public page | in progress (V1/V2/V3) |
+| 4e | 8 Draw | The draw — readiness as a checklist, prize form beside it | no owner |
+
+### Superseded — do not build
+
+`1a` canvas-first · `1b` one panel two tabs · `1c` drop-to-place · `4b` find a ticket.
+
+### 8a, in full, because it is the largest outstanding gap
+
+The modal is **two columns**. Header: `Book-004 · the buyer's ticket`, then
+`KS-00031 — KS-00040 · 10 sold`, and a pager `‹ 1 of 10 ›` — you step through
+the book's tickets without closing.
+
+Left, the keepsake on a pale stage: org mark, `Fundraising Raffle`,
+`CEAM Shelter · Kajang, Selangor`, a gold **SOLD** chip; `TICKET NUMBER` and
+the serial **in gold, large, serif**; `ISSUED TO` and the buyer; a three-column
+fact row `PRICE RM 10.00 · BOOK Book-004 · SOLD 14 Sep 2026`; the QR with
+`Scan to check this ticket`; a perforation with notches; the motto in gold
+italic; `Thank you — this keeps the shelter open.`; the verify URL in mono.
+
+Right rail: `This ticket` as a facts table — Buyer, Phone, Seller, Code; the
+privacy note; `Look` as three chips — Raffle colour, Logo watermark, Motto on;
+`Set in Setup → how this raffle looks. Design it in the studio →`; then
+`Send on WhatsApp`, `Save the picture`, `Print`.
+
+**What exists today** is one column: a dark teal card with a white serial, no
+SOLD chip, no motto, no perforation, `PRICE` but no BOOK or SOLD date, no
+pager, and no right rail at all — so Buyer, Phone, Seller and Code are not
+shown, and the three Look chips do not exist. `--ticket-gold` is a token in
+`style.css` and this card, the one place it is for, does not use it.

@@ -157,6 +157,13 @@ function cardValues(t) {
     event: String(c.eventName ?? '').trim(),
     drawOn: c.drawDate ? date(c.drawDate) : '',
     price: c.ticketPrice ? `${c.currency ?? ''} ${c.ticketPrice}`.trim() : '',
+    /* Card 8a puts three facts on one line — what it cost, which book, when it
+     * sold. `soldAt` is rendered only if the payload carries it; a fact that is
+     * absent draws nothing rather than an empty label. */
+    book: t.book ?? '',
+    soldOn: t.soldAt ? date(t.soldAt) : '',
+    sold: isSold(t),
+    motto: String(c.motto ?? '').trim(),
     brand,
     /* Computed, never configured — an organisation choosing a colour is not
      * choosing a contrast ratio. See brand.js. */

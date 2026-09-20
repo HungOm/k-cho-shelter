@@ -1087,6 +1087,10 @@ export function digitalCardSVG(design, values = {}, opts = {}) {
   const event = s(values.event)
   const draw = s(values.drawOn)
   const price = s(values.price)
+  const book = s(values.book)
+  const soldOn = s(values.soldOn)
+  const motto = s(values.motto)
+  const sold = !!values.sold
   const link = s(values.link)
   const logo = s(values.logo)
 
@@ -1111,34 +1115,74 @@ export function digitalCardSVG(design, values = {}, opts = {}) {
     : `<circle cx="102" cy="90" r="38" fill="none" stroke="${hair}" stroke-width="2"/>`
       + t(initial, 102, 104, 42, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')
 
+  /* The serial and the motto take the ticket's own gold — --ticket-gold, which
+   * style.css says is the printed ticket's colour and never chrome. Only on a
+   * dark face: on a light brand colour it would be unreadable, so the ink
+   * stands instead. */
+  const gold = ink.toLowerCase() === '#ffffff' ? '#ffe9a3' : ink
+
   const qr = { enabled: true, x: W - 316, y: 250, size: 236, ecc: 'M', backing: true }
   const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
 
+  /* A chip, not a word in the corner: the mock puts the state where a ticket
+   * puts it, and "SOLD" is the one fact a buyer checks before anything else. */
+  const chip = sold
+    ? `<rect x="${W - 232}" y="56" width="168" height="52" rx="26" fill="${gold}"/>`
+      + t('SOLD', W - 148, 92, 26, paper, TEXT_FAMILY, 'text-anchor="middle" font-weight="700" letter-spacing="2"')
+    : ''
+
+  /* Three facts on one line, evenly spaced, because they answer three
+   * different questions — what it cost, which book it came from, when it sold. */
+  const facts = [
+    price && ['PRICE', price], book && ['BOOK', book], soldOn && ['SOLD', soldOn],
+  ].filter(Boolean)
+  const factRow = facts.map(([label, value], i) =>
+    cap(label, 64 + i * 224, 520) + t(value, 64 + i * 224, 566, 34, ink, TEXT_FAMILY)).join('')
+
+  /*
+   * WHERE IT TEARS. Dashed, with the two notches genuinely cut out of the card
+   * rather than painted on — a mask, so they composite over whatever the card
+   * is shown against instead of being white blobs on WhatsApp's background.
+   * This is what makes a rectangle read as a ticket.
+   */
+  const tearY = 628
+  const notchMask = `<mask id="notch"><rect width="${W}" height="${H}" fill="#fff"/>`
+    + `<circle cx="0" cy="${tearY}" r="18" fill="#000"/><circle cx="${W}" cy="${tearY}" r="18" fill="#000"/></mask>`
+  /* Drawn INSIDE the group and after the paper. Outside it the paper covers it,
+   * which is how the first version shipped a tear line nobody could see. */
+  const tearLine = `<line x1="100" y1="${tearY}" x2="${W - 100}" y2="${tearY}" stroke="${hair}" `
+    + `stroke-width="2" stroke-dasharray="10 8"/>`
+
   return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
+    + notchMask
+    + `<g mask="url(#notch)">`
     + `<rect width="${W}" height="${H}" fill="${paper}"/>`
+    + tearLine
     + mark
     + t(org, 166, 84, 38, ink, TEXT_FAMILY, 'font-weight="700"')
     + t(event, 166, 124, 28, quiet, TEXT_FAMILY)
+    + chip
     + `<line x1="64" y1="168" x2="${W - 64}" y2="168" stroke="${hair}" stroke-width="2"/>`
 
-    + cap('TICKET', 64, 226)
-    + t(number, 64, 310, 76, ink, FONT.family, 'font-weight="700"')
+    + cap('TICKET NUMBER', 64, 226)
+    + t(number, 64, 310, 76, gold, FONT.family, 'font-weight="700"')
 
     + (name ? cap('ISSUED TO', 64, 386) : '')
     + t(name, 64, 438, 42, ink, TEXT_FAMILY, 'font-weight="700"')
 
-    + (draw ? cap('DRAW', 64, 520) : '')
-    + t(draw, 64, 566, 34, ink, TEXT_FAMILY)
-    + (price ? cap('PRICE', 400, 520) : '')
-    + t(price, 400, 566, 34, ink, TEXT_FAMILY)
+    + factRow
+    + (facts.length ? '' : (draw ? cap('DRAW', 64, 520) + t(draw, 64, 566, 34, ink, TEXT_FAMILY) : ''))
 
     + code
     + t(code ? 'Scan to check this ticket' : '', W - 198, 528, 22, quiet, TEXT_FAMILY, 'text-anchor="middle"')
 
-    + `<line x1="64" y1="628" x2="${W - 64}" y2="628" stroke="${hair}" stroke-width="2"/>`
-    + t(s(values.thanks), 64, 676, 30, ink, TEXT_FAMILY)
+    + `</g>`
+    /* Below the tear: the stub half — what the raffle says for itself. */
+    + t(motto ? `“${motto}”` : '', 64, 664, 30, gold, FONT.family, 'font-style="italic"')
+    + t(s(values.thanks), 64, motto ? 702 : 676, 30, ink, TEXT_FAMILY)
     /* The address in words as well as in the code: a QR that will not scan is
-     * still a link somebody can type. */
-    + t(link, 64, 718, 22, quiet, FONT.family)
+     * still a link somebody can type. Kept clear of the edge: at 752 its
+     * descenders sat on the card’s bottom border. */
+    + t(link, 64, motto ? 736 : 718, 22, quiet, FONT.family)
     + '</svg>'
 }
