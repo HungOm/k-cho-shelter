@@ -504,7 +504,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 5c | 3 Books | Print tickets step 2 — codes then paper as two steps | yes |
 | 4a | 4 Sell | Home — one banner, what needs looking at, then doing | yes |
 | 6a | 4 Sell | List + docked ticket panel | yes (89ac4f5) |
-| 6b | 4 Sell | A sold ticket — record, movement, correction in one modal | not verified against the card |
+| 6b | 4 Sell | A sold ticket — record, movement, correction in one modal | yes (437b15e) — trail now inline |
 | 4c | 4 Sell | Write down sales — one ticket or a pile of stubs | not verified |
 | 4d | 5 Money | Money — who owes what, running-balance statement | not verified |
 | 4h | 6 Control | Approvals — the waiting request first | yes |
