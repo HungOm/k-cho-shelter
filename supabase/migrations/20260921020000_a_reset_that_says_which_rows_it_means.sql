@@ -35,11 +35,21 @@
 -- WHAT IS ESTABLISHED: the error reached the screen through the APP, not the
 -- Supabase SQL editor. resetApply passes the rpc's error verbatim into
 -- RESET_FAILED, and the organiser saw it in this app's own toast beneath its
--- own confirmation box. That proves the path and the raising side; it does not
--- prove WHICH DATABASE. This repository supports a self-hosted stack — see
--- 2175c92, the `kid`-less JWT fix, and functions/main — and a self-hosted
--- Postgres is somebody else's image with somebody else's extensions, on which
--- a DELETE guard is an ordinary thing to find.
+-- own confirmation box. The string appears in no source file of ours and in no
+-- dependency — the whole tree including node_modules was searched — and there
+-- is no unfiltered delete anywhere in src/. And the organiser has confirmed
+-- they were on the HOSTED project, so the self-hosted-stack theory that stood
+-- here briefly is closed as well.
+--
+-- SO THE CAUSE IS UNKNOWN AND THREE THEORIES HAVE DIED: safeupdate (not
+-- installed), plan_filter (off), a self-hosted image (wrong deployment). The
+-- remaining gap is that the probe which cleared the database was a REPLICA of
+-- app_reset, not app_reset. It omitted `alter table ... disable trigger user`,
+-- the loop over several tables, the `returns table` / `return next` shape, and
+-- the audit_log insert. A copy that passes says nothing about an original that
+-- does more. Calling the live function inside a rolled-back transaction is the
+-- test nobody has run; whether the DEPLOYED edge function even matches this
+-- repo is the other.
 --
 -- SO THIS MIGRATION IS NOT A FIX FOR AN OUTAGE ANYBODY HAS REPRODUCED. It is
 -- harmless and portable: a statement that says which rows it means survives a
