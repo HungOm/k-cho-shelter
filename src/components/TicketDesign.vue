@@ -49,6 +49,7 @@ import Dim from './ui/Dim.vue'
 import SheetTab from './ticketdesign/SheetTab.vue'
 import ShapesPanel from './ticketdesign/ShapesPanel.vue'
 import TemplateRail from './ticketdesign/TemplateRail.vue'
+import ArtworkVerdict from './ticketdesign/ArtworkVerdict.vue'
 import Ink from './ui/Ink.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 /* Across into the check page's own folder on purpose: the sample book and the
@@ -1394,49 +1395,7 @@ const printedSize = computed(() => {
               THE ONE CARD ON THIS SCREEN THAT IS A CARD. Three questions with
               three numbers, each stating what was wanted beside what was got.
             -->
-            <div v-if="artworkReport" class="verdict" :class="artworkReport.ready ? 'ok' : 'warn'">
-              <p class="vhead">
-                <span class="dot"></span>
-                <b v-if="artworkReport.ready">This artwork is ready to print</b>
-                <b v-else>This artwork is not ready yet</b>
-              </p>
-              <div class="vgrid">
-                <div>
-                  <p class="rubric">Shape</p>
-                  <p class="big mono">{{ artworkReport.ratio.toFixed(3) }}</p>
-                  <p class="tiny" :class="artworkReport.size ? 'okt' : 'badt'">
-                    <template v-if="artworkReport.size">
-                      wanted {{ artworkReport.wanted.toFixed(3) }} ±{{ artworkReport.tolerance }}
-                      — {{ artworkReport.exact ? 'exact' : 'within tolerance' }}
-                    </template>
-                    <template v-else>not a shape this raffle accepts</template>
-                  </p>
-                </div>
-                <div>
-                  <p class="rubric">Width in pixels</p>
-                  <p class="big mono">{{ artworkReport.px }}</p>
-                  <p class="tiny" :class="artworkReport.enoughPx ? 'okt' : 'badt'">
-                    <template v-if="artworkReport.minPx">
-                      {{ artworkReport.minPx }} needed —
-                      {{ artworkReport.px === artworkReport.minPx ? 'just enough' : (artworkReport.enoughPx ? 'comfortable' : 'too few') }}
-                    </template>
-                    <template v-else>no floor set for this shape</template>
-                  </p>
-                </div>
-                <div>
-                  <p class="rubric">Placements still valid</p>
-                  <p class="big mono">
-                    {{ artworkReport.placed - artworkReport.overflowing }} of {{ artworkReport.placed }}
-                  </p>
-                  <p class="tiny" :class="artworkReport.overflowing ? 'badt' : 'okt'">
-                    <template v-if="artworkReport.overflowing">
-                      {{ artworkReport.overflowing }} will not fit its box
-                    </template>
-                    <template v-else>nothing overflows</template>
-                  </p>
-                </div>
-              </div>
-            </div>
+            <ArtworkVerdict v-if="artworkReport" :report="artworkReport" />
           </template>
           <p v-else class="note">Upload a picture of one blank ticket to begin.</p>
         </div>
@@ -1691,19 +1650,12 @@ const printedSize = computed(() => {
 .tlist p { margin: 0 }
 
 /* ---- the artwork verdict ---- */
-.verdict { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px; background: var(--surface) }
-.verdict.ok { border-left: 3px solid var(--ok) }
-.verdict.warn { border-left: 3px solid var(--warn) }
-.vhead { display: flex; align-items: center; gap: 7px; margin: 0 0 10px }
 .vhead .dot { width: 9px; height: 9px; border-radius: 2px; background: var(--warn) }
 .verdict.ok .vhead .dot { background: var(--ok) }
-.vgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px }
 .vgrid p { margin: 0 }
 /* The magnitude before the precision: the figure is what the eye lands on and
  * the sentence under it is what makes it mean something. */
 .big { font-size: 1.3rem; font-weight: 600; margin: 3px 0 !important }
-.okt { color: var(--ok) }
-.badt { color: var(--bad) }
 
 /* ---- accepted shapes ---- */
 /*
