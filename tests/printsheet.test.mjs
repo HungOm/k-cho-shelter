@@ -26,10 +26,14 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sheetHTML } from '../src/lib/ticketsheet.js'
-import { DEFAULT_DESIGN } from '../src/lib/ticketdesign.js'
+import { DEFAULT_DESIGN, designFor } from '../src/lib/ticketdesign.js'
+import { elementLayerSVG } from '../src/lib/ticketart.js'
+import { sampleBook, sampleVerifyUrl, sampleFromSearch } from '../src/verify/sample.js'
+import { encode } from '../src/lib/qrcodegen.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
+const eq = (g, w, what) => { String(g) === String(w) ? pass++ : (fail++, console.log(`  FAIL ${what}: got ${g}, want ${w}`)) }
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
 const read = (f) => readFileSync(join(ROOT, f), 'utf8')
@@ -103,6 +107,82 @@ console.log('a sample sheet opens the dialog, because that is where PDF lives')
   // The real-ticket path keeps both, because there the two differ: one stamps
   // the batch as printed and the other deliberately does not.
   ok(/Open without marking printed/.test(print), 'a real batch still has a silent open')
+}
+
+console.log('the test page carries a QR that says something true')
+{
+  /*
+   * WHAT SHIPPED. printTest passed no qrUrl and no encoder, so it drew no QR
+   * at all — and nobody could tell, because the artwork has a code-looking
+   * square PRINTED INTO THE PICTURE. The paper looked right, the screen looked
+   * right, the suite was green, and what somebody scanned across a desk was a
+   * code for nothing. It also printed the raffle's own next four ticket
+   * numbers, which are real tickets somebody may be holding.
+   *
+   * WHY THE ASSERTION IS ABOUT THE LAYER and not the screen: the placeholder
+   * that hid the bug lives in the artwork, and the artwork is not in the
+   * layer. So the layer is the lowest place the absence is visible at all.
+   */
+  const design = designFor(null)
+  const book = sampleBook().slice(0, 4)
+  const layerFor = (t, withCode) => elementLayerSVG(
+    design,
+    { 'ticket.number': t.number, 'book.number': t.book, code: t.code },
+    withCode
+      ? { qrUrl: sampleVerifyUrl('https://x.org/v', t.number), encode, watermark: 'SAMPLE' }
+      : { watermark: 'SAMPLE' })
+
+  const rectsOf = (l) => (l.match(/<rect[^>]*>/g) || [])
+  const drawn = book.map((t) => rectsOf(layerFor(t, true)))
+
+  /*
+   * THE ONE THAT FAILS ON THE CODE THAT SHIPPED. A layer with an encoder
+   * carries two hundred-odd rects; the same layer without one carries none,
+   * because every rect in it IS the code.
+   */
+  for (const [i, r] of drawn.entries()) {
+    ok(r.length > 100, `${book[i].number} carries a real code (${r.length} modules drawn)`)
+  }
+  ok(rectsOf(layerFor(book[0], false)).length < 10,
+    'and the check would fail on the version that drew none — it is not vacuous')
+
+  /*
+   * FOUR TICKETS, FOUR CODES. Compared by GEOMETRY rather than by count: two
+   * different codes can have the same number of modules, so a distinct-counts
+   * test calls correct work a failure — which is how a guard gets switched
+   * off. Identical geometry is the real failure, and it cannot be innocent.
+   */
+  const shapes = drawn.map((r) => r.join('|'))
+  eq(new Set(shapes).size, shapes.length, 'each ticket gets its own code, not one repeated')
+
+  /*
+   * AND THE CODE SAYS SOMETHING TRUE. Well-formed is not the same as correct:
+   * a QR encoding the wrong address scans perfectly and lands nowhere.
+   */
+  for (const t of book) {
+    const url = sampleVerifyUrl('https://x.org/v', t.number)
+    eq(sampleFromSearch('?' + url.split('?')[1]), t.number,
+      `${t.number}'s code points at ${t.number}`)
+  }
+
+  /* No real ticket number reaches sample paper. */
+  const cfgPrefixed = book.filter((t) => !/^Sample-/.test(t.number))
+  eq(cfgPrefixed.length, 0, 'and the numbers on it are samples, not the next four real tickets')
+
+  /*
+   * AND printTest MUST ASK FOR ONE. Everything above proves the renderer CAN
+   * draw a code; the bug was that the test page never requested it. So the
+   * last assertion is about that function's own body — the two arguments
+   * whose absence was the whole defect, in the place they were missing from.
+   */
+  const src = read('src/components/TicketDesign.vue')
+  const fn = src.slice(src.indexOf('function printTest'), src.indexOf('const kb ='))
+  ok(fn.length > 200, 'printTest was found and read')
+  ok(/qrUrl:/.test(fn), 'printTest asks for a QR — its absence was the bug')
+  ok(/\bencode\b/.test(fn), 'and hands over the encoder that draws it')
+  ok(/sampleVerifyUrl/.test(fn), 'pointing at the sample marker')
+  ok(/sampleBook\(\)/.test(fn), 'for sample numbers rather than the next real four')
+  ok(/watermark:/.test(fn), 'with the watermark in the layer, which `layers` would otherwise replace')
 }
 
 console.log('every way in to printing offers the samples too')
