@@ -107,7 +107,7 @@ console.log('with no artwork yet, an organiser is told so and can upload')
 console.log('with artwork, the designer renders')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle,
+    drive: settle, renderReal: ['Inspector.vue'],
   })
   const text = visibleText(html)
 
@@ -140,7 +140,7 @@ console.log('with artwork, the designer renders')
 console.log('everything on the ticket is listed by a name somebody chose')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle,
+    drive: settle, renderReal: ['Inspector.vue'],
   })
   const text = visibleText(html)
   for (const name of ['Ticket number', 'Book number', "Buyer's name", 'Phone', 'Address', 'Sold by']) {
@@ -165,7 +165,7 @@ console.log('everything on the ticket is listed by a name somebody chose')
 console.log('every element is a box on the picture')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle,
+    drive: settle, renderReal: ['Inspector.vue'],
   })
 
   const boxes = html.match(/class="[^"]*\bebox\b[^"]*"/g) ?? []
@@ -207,7 +207,7 @@ console.log('every element is a box on the picture')
 console.log('picking one opens what it prints and where it sits')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' },
+    drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' }, renderReal: ['Inspector.vue'],
   })
   const text = visibleText(html)
   ok(/Selected/.test(text), 'the panel says it is describing one thing')
@@ -237,7 +237,7 @@ console.log('picking one opens what it prints and where it sits')
 console.log('the screen says what it is storing')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle,
+    drive: settle, renderReal: ['Inspector.vue'],
   })
   const text = visibleText(html)
   ok(/shares of the template/.test(text), 'the footer states that positions are shares')

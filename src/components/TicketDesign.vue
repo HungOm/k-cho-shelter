@@ -40,7 +40,7 @@ import {
   elementLayerSVG, placeElements, qrModuleMM, ticketVerifyUrl,
 } from '../lib/ticketart.js'
 import {
-  SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, normalElement, nextId, legacyFromElements,
+  SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, nameOf, normalElement, nextId, legacyFromElements,
 } from '../lib/ticketelements.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
@@ -50,6 +50,7 @@ import SheetTab from './ticketdesign/SheetTab.vue'
 import ShapesPanel from './ticketdesign/ShapesPanel.vue'
 import TemplateRail from './ticketdesign/TemplateRail.vue'
 import ArtworkVerdict from './ticketdesign/ArtworkVerdict.vue'
+import Inspector from './ticketdesign/Inspector.vue'
 import Ink from './ui/Ink.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 /* Across into the check page's own folder on purpose: the sample book and the
@@ -187,12 +188,6 @@ function trouble(el) {
 }
 
 /** What an element is called on screen. Never its id, never a model key. */
-function nameOf(el) {
-  if (!el) return ''
-  if (el.kind === 'text') return el.text ? `“${el.text}”` : 'Words you type'
-  if (el.kind === 'code') return 'Check code'
-  return SOURCE[el.source]?.name ?? 'A field'
-}
 
 const TAG = { field: 'FLD', code: 'QR', text: 'TXT' }
 
@@ -1193,160 +1188,15 @@ const printedSize = computed(() => {
           </div>
 
           <!-- ---------- the panel ---------- -->
-          <aside class="panel">
-            <template v-if="chosen">
-              <div class="panelhead">
-                <div>
-                  <p class="rubric">Selected</p>
-                  <h3>{{ nameOf(chosen) }}</h3>
-                </div>
-                <button class="btn sm danger" :title="`Take ${nameOf(chosen)} off the ticket`"
-                        @click="removeElement(chosen.id)">Remove</button>
-              </div>
-
-              <div class="pgroup">
-                <label class="formrow">
-                  <span class="cap">What it prints</span>
-                  <span class="wrap">
-                    <select v-if="chosen.kind === 'field'" v-model="chosen.source">
-                      <option v-for="s in SOURCES" :key="s.id" :value="s.id">{{ s.name }}</option>
-                    </select>
-                    <input v-else-if="chosen.kind === 'text'" v-model="chosen.text" type="text"
-                           placeholder="The words to print">
-                    <input v-else type="text" value="The check code behind the QR" disabled
-                           title="A code element always prints this ticket's own check code">
-                  </span>
-                </label>
-                <p class="tiny muted">
-                  <template v-if="chosen.kind === 'field'">
-                    {{ SOURCE[chosen.source]?.why }}.
-                  </template>
-                  <template v-else-if="chosen.kind === 'text'">
-                    The same words on every ticket printed from this template.
-                  </template>
-                  <template v-else>
-                    Scanning it opens the public check page for this ticket.
-                  </template>
-                </p>
-              </div>
-
-              <div class="pgroup">
-                <h4 class="rubric">Its box</h4>
-                <div class="quad">
-                  <label class="formrow"><span class="cap">From left</span>
-                    <span class="wrap">
-                      <input type="number" step="0.1" :value="(chosen.box.left * 100).toFixed(1)"
-                             @input="chosen.box.left = Number($event.target.value) / 100">
-                      <span class="unit">%</span>
-                    </span>
-                  </label>
-                  <label class="formrow"><span class="cap">From top</span>
-                    <span class="wrap">
-                      <input type="number" step="0.1" :value="(chosen.box.top * 100).toFixed(1)"
-                             @input="chosen.box.top = Number($event.target.value) / 100">
-                      <span class="unit">%</span>
-                    </span>
-                  </label>
-                  <label class="formrow"><span class="cap">Width</span>
-                    <span class="wrap">
-                      <input type="number" step="0.1" :value="(chosen.box.width * 100).toFixed(1)"
-                             @input="chosen.box.width = Number($event.target.value) / 100">
-                      <span class="unit">%</span>
-                    </span>
-                  </label>
-                  <label class="formrow"><span class="cap">Height</span>
-                    <span class="wrap">
-                      <input type="number" step="0.1" :value="(chosen.box.height * 100).toFixed(1)"
-                             @input="chosen.box.height = Number($event.target.value) / 100">
-                      <span class="unit">%</span>
-                    </span>
-                  </label>
-                </div>
-                <p v-if="inPixels" class="mono tiny muted">
-                  {{ inPixels.x }}, {{ inPixels.y }} · {{ inPixels.w }} × {{ inPixels.h }} px
-                  <template v-if="mmPer">
-                    · {{ (inPixels.w * mmPer).toFixed(1) }} × {{ (inPixels.h * mmPer).toFixed(1) }} mm printed
-                  </template>
-                </p>
-                <p class="tiny muted">The bottom edge is the line the lettering sits on.</p>
-              </div>
-
-              <div v-if="chosen.kind !== 'code'" class="pgroup">
-                <h4 class="rubric">How it sits</h4>
-                <div class="seg">
-                  <button v-for="a in ALIGN" :key="a.id" type="button" class="segbtn"
-                          :class="{ on: chosen.align === a.id }"
-                          @click="chosen.align = a.id">{{ a.name }}</button>
-                </div>
-                <!-- A colour needs the swatch, the hex and the dropper side by side;
-                     squeezed into half a 300px column the hex was truncated. -->
-                <Ink v-model="chosen.ink" label="Colour" :swatches="swatches"
-                     :can-drop="canDrop" @pick="dropper((c) => { chosen.ink = c })" />
-                <div class="sitrow">
-                  <label class="formrow"><span class="cap">Lettering</span>
-                    <span class="wrap">
-                      <select v-model="chosen.family">
-                        <option v-for="f in FAMILIES" :key="f.id" :value="f.id">{{ f.name }}</option>
-                      </select>
-                    </span>
-                  </label>
-                  <label class="choice bold">
-                    <input v-model="chosen.weight" type="checkbox" true-value="bold" false-value="regular">
-                    Bold
-                  </label>
-                </div>
-                <p class="tiny muted">{{ FAMILIES.find((f) => f.id === chosen.family)?.why }}</p>
-              </div>
-
-              <div v-if="chosen.kind !== 'code'" class="pgroup">
-                <h4 class="rubric">When the text is too long</h4>
-                <div class="seg">
-                  <button v-for="o in OVERFLOW" :key="o.id" type="button" class="segbtn"
-                          :class="{ on: chosen.overflow === o.id }"
-                          :title="o.why" @click="chosen.overflow = o.id">{{ o.name }}</button>
-                </div>
-                <div v-if="fitReport" class="report" :class="fitReport.tone">
-                  <b>{{ fitReport.head }}</b>
-                  <p>{{ fitReport.body }}</p>
-                </div>
-              </div>
-
-              <div v-else class="pgroup">
-                <h4 class="rubric">The code</h4>
-                <label class="choice">
-                  <input v-model="chosen.backing" type="checkbox">
-                  <span>White behind it
-                    <span class="why">The artwork prints its own placeholder code here; one drawn over another scans as neither.</span>
-                  </span>
-                </label>
-                <p v-if="qrDensity" class="tiny" :class="qrDensity.ok ? 'muted' : 'bad'">
-                  At {{ design.sheet.widthMM }} mm wide each square of the code prints
-                  {{ qrDensity.mm.toFixed(2) }} mm across.
-                  <template v-if="!qrDensity.ok">
-                    Small enough that some phones will struggle — make the box bigger.
-                  </template>
-                  <template v-else>That reads reliably.</template>
-                </p>
-              </div>
-
-              <div class="pgroup saving">
-                <h4 class="rubric">What saving changes</h4>
-                <p class="tiny">
-                  The design belongs to the template, not to a ticket: everything printed or
-                  sent from now on draws from it, including digital tickets already issued.
-                  Paper already printed keeps what it was printed with.
-                </p>
-              </div>
-            </template>
-
-            <div v-else class="nothing">
-              <p class="rubric">Nothing selected</p>
-              <p class="tiny muted">
-                Click a box on the ticket, or a name in the list, to change what it prints
-                and where it sits.
-              </p>
-            </div>
-          </aside>
+          <!--
+            THE INSPECTOR. Thirty-one reads of the selected element, four of
+            the report about it, and one measurement off the sheet — the rest
+            of what it needs are constants it can import itself. Phase 2 of
+            STUDIO-PLAN: one panel whose contents are whatever is selected,
+            rather than a panel per tab.
+          -->
+          <Inspector :element="chosen" :report="fitReport" :sheet-width-m-m="design.sheet.widthMM"
+                     :qr-density="qrDensity" @remove="removeElement" />
         </template>
 
         <p v-else class="note">
@@ -1615,7 +1465,6 @@ const printedSize = computed(() => {
 .readout b { color: var(--text) }
 
 /* ---- the panel ---- */
-.panelhead { display: flex; align-items: flex-start; gap: 8px }
 .panelhead h3 { margin: 2px 0 0; font-size: .95rem }
 /* Paper is chosen by its shape, so the shapes are the control. */
 /*

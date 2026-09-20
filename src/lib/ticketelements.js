@@ -114,6 +114,24 @@ const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0))
 const share = (v) => Math.round(clamp01(v) * 1e7) / 1e7
 
 /** A box of shares, clamped and rounded, with a positive extent. */
+/**
+ * WHAT TO CALL AN ELEMENT ON SCREEN.
+ *
+ * Lives here rather than in a component because two of them ask now — the
+ * element list and the inspector — and a name that differs between the list
+ * you click and the panel that opens is a name that makes somebody doubt
+ * they clicked the right thing.
+ *
+ * Typed words are quoted so that an empty one still reads as a thing rather
+ * than as a blank: "Words you type" is a placeholder, “Sold by” is a value.
+ */
+export function nameOf(el) {
+  if (!el) return ''
+  if (el.kind === 'text') return el.text ? `“${el.text}”` : 'Words you type'
+  if (el.kind === 'code') return 'Check code'
+  return SOURCE[el.source]?.name ?? 'A field'
+}
+
 export function normalBox(box) {
   const left = share(box?.left)
   const top = share(box?.top)
