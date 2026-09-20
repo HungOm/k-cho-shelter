@@ -12,8 +12,8 @@
  * and cannot be proved genuine, so there is nothing honest to show: it is
  * listed by number instead, with the reason.
  */
-import { ref, computed, onMounted } from 'vue'
-import { state, api, toast } from '../../lib/store.js'
+import { ref, computed, watch, onMounted } from 'vue'
+import { state, api, toast, go, NO_ROOM_WHY } from '../../lib/store.js'
 import { designFor, stubShare } from '../../lib/ticketdesign.js'
 import { numberLayerSVG, ticketVerifyUrl, digitalCardSVG, CARD } from '../../lib/ticketart.js'
 import { encode } from '../../lib/qrcodegen.js'
@@ -37,9 +37,33 @@ const verifyBase = computed(() => {
   return set || ((typeof location === 'undefined' ? '' : location.origin) + '/v')
 })
 
+/*
+ * Card 8a titles this "Book-004 · the buyer's ticket" and puts the run and the
+ * count underneath. The old title said "As it will print", which described the
+ * preview rather than what an organiser opened it for.
+ */
 const title = computed(() => (props.payload?.book
-  ? `Book ${props.payload.book}`
+  ? `${props.payload.book} \u00b7 the buyer's ticket`
   : String(props.payload?.number ?? 'Ticket')))
+
+const range = computed(() => {
+  const list = tickets.value
+  if (!list.length) return ''
+  const sold = list.filter(isSold).length
+  const run = list.length > 1 ? `${list[0].number} \u2014 ${list[list.length - 1].number}` : list[0].number
+  return `${run} \u00b7 ${sold} sold`
+})
+
+/*
+ * ONE TICKET AT A TIME, with a pager. The modal used to stack every ticket in
+ * the book down one column — ten cards, ten print previews and ten sets of
+ * buttons — so finding the one somebody asked about meant scrolling past nine.
+ * 8a pages them: "1 of 10", and the buttons always in the same place.
+ */
+const at = ref(0)
+const current = computed(() => tickets.value[at.value] ?? null)
+watch(tickets, () => { at.value = 0 })
+const step = (d) => { at.value = Math.min(tickets.value.length - 1, Math.max(0, at.value + d)) }
 
 function layerFor(t) {
   return numberLayerSVG(design.value, t.number, {
@@ -172,6 +196,13 @@ function cardValues(t) {
     thanks: THANKS_EN,
     link: ticketVerifyUrl(verifyBase.value, t.number, t.code).replace(/^https?:\/\//, ''),
   }
+}
+
+/* Close first: leaving a modal open over the screen it just navigated to is
+   how a sheet ends up floating above an unrelated page. */
+function toStudio() {
+  emit('close')
+  go('ticketdesign')
 }
 
 const cardFor = (t) => digitalCardSVG(design.value, cardValues(t), {
@@ -366,7 +397,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Sheet :title="title" subtitle="As it will print" wide @close="emit('close')">
+  <Sheet :title="title" :subtitle="range" wide @close="emit('close')">
     <p v-if="busy" class="muted">Drawing…</p>
     <p v-else-if="err" class="note bad">{{ err }}</p>
 
@@ -382,7 +413,21 @@ onMounted(async () => {
         </template>
       </p>
 
-      <div v-for="t in tickets" :key="t.number" class="one">
+      <!--
+        The pager, as 8a draws it: "1 of 10" between two arrows. Hidden for a
+        single ticket, where a pager would be furniture.
+      -->
+      <div v-if="tickets.length > 1" class="pager">
+        <button class="btn sm ghost" :disabled="at === 0"
+                :title="at === 0 ? 'This is the first' : 'The one before'"
+                @click="step(-1)">&lsaquo;</button>
+        <span class="data">{{ at + 1 }} of {{ tickets.length }}</span>
+        <button class="btn sm ghost" :disabled="at >= tickets.length - 1"
+                :title="at >= tickets.length - 1 ? 'This is the last' : 'The next one'"
+                @click="step(1)">&rsaquo;</button>
+      </div>
+
+      <div v-for="t in (current ? [current] : [])" :key="t.number" class="one">
         <div class="ticketpreview">
           <img :src="result.template.url" alt="">
           <div class="overlay" v-html="layerFor(t)"></div>
@@ -406,20 +451,69 @@ onMounted(async () => {
           cropped. See digitalCardSVG.
         -->
         <div class="send" :class="{ off: !!cannotSend(t) }">
-          <div class="sendhead">
-            <b class="mono">{{ t.number }}</b>
-            <span class="grow"></span>
-            <span v-if="isSold(t)" class="pill ok">sold</span>
-            <span v-else class="pill">not sold yet</span>
-          </div>
-
+          <!--
+            Two columns, as 8a draws it: the keepsake on the left and what is
+            known about this ticket on the right. The number and the sold state
+            used to sit in a header above the card — the card says both, so the
+            header was the card read aloud.
+          -->
           <div class="card" v-html="cardFor(t)"></div>
+
+          <aside class="rail">
+            <p class="rubric">This ticket</p>
+            <!--
+              A facts table, label left and value right, which is the shape the
+              system gives every derived-from-nothing fact. Absent values print
+              an em dash rather than nothing, so a missing phone is visibly
+              missing rather than a row that failed to render.
+            -->
+            <dl class="facts">
+              <div class="fact"><dt>Buyer</dt><dd>{{ t.buyer?.name || '\u2014' }}</dd></div>
+              <div class="fact"><dt>Phone</dt><dd class="data">{{ t.buyer?.phone || '\u2014' }}</dd></div>
+              <div class="fact"><dt>Seller</dt><dd>{{ t.buyer?.seller || '\u2014' }}</dd></div>
+              <div class="fact"><dt>Code</dt><dd class="data">{{ t.code || '\u2014' }}</dd></div>
+            </dl>
 
           <p class="tiny muted">
             The buyer&rsquo;s name is printed on it, so a copy passed to someone else is
             visibly not theirs. Their phone, area and seller stay on the stub and are
             never sent.
           </p>
+
+          <!--
+            Card 8a's "Look" block: what this card is currently wearing, and
+            where to change it. Status, not controls — a modal about one ticket
+            is not the place that owns the raffle's appearance, so the chips
+            read and the links travel.
+
+            THE MOCKUP'S THIRD CHIP IS "Motto on", AND IT IS NOT DRAWN HERE.
+            `digitalCardSVG` does render `values.motto`, and `cardValues` does
+            pass `state.cfg.motto` — but nothing anywhere SETS it: no Setup
+            field, no branding API field, no column. A chip reading "Motto off"
+            beside a link to a page with no motto field is a dead end wearing
+            the costume of state. The field is handed out as its own piece.
+          -->
+          <section class="look">
+            <p class="rubric">Look</p>
+            <ul class="chips">
+              <li class="chip">
+                <span class="swatch" :style="{ background: state.cfg?.brandColor || 'var(--brand)' }"></span>
+                Raffle colour
+              </li>
+              <li class="chip" :class="{ off: !state.cfg?.logo }">{{ state.cfg?.logo ? 'Logo' : 'No logo' }}</li>
+            </ul>
+            <p class="tiny muted">
+              Set in Setup &rarr; how this raffle looks.
+              <!--
+                Disabled with the reason rather than hidden, per permissionui —
+                the studio needs a tablet or a computer, and a seller on a phone
+                who is told why is not a seller who thinks the app is broken.
+              -->
+              <button type="button" class="linky" :disabled="!state.roomy"
+                      :title="state.roomy ? 'Open the ticket studio' : NO_ROOM_WHY"
+                      @click="toStudio">Design it in the studio &rarr;</button>
+            </p>
+          </section>
 
           <button class="btn primary wide" :disabled="!!cannotSend(t) || sharing === t.number"
                   :title="cannotSend(t) || 'Send this ticket and its check link to the buyer'"
@@ -441,6 +535,7 @@ onMounted(async () => {
             an unprinted book.
           </p>
           <p v-if="shareNote[t.number]" class="note tiny">{{ shareNote[t.number] }}</p>
+          </aside>
         </div>
       </div>
     </template>
@@ -462,14 +557,66 @@ onMounted(async () => {
  * stacked under it is how the mockup reads — a row of equal buttons beside a
  * picture makes the picture look like an illustration of them.
  */
-.send { display: flex; flex-direction: column; gap: 8px; margin-top: 10px;
+.send { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px;
+        align-items: start; margin-top: 10px;
         padding-top: 12px; border-top: 1px solid var(--border) }
+/* One column on a phone: 300px of rail beside a card leaves neither room. */
+@media (max-width: 720px) { .send { grid-template-columns: minmax(0, 1fr) } }
 .send.off { opacity: .6 }
 .send p { margin: 0 }
-.sendhead { display: flex; align-items: center; gap: 8px }
-.sendhead .grow { flex: 1; min-width: 0 }
+.rail { display: flex; flex-direction: column; gap: 8px; min-width: 0 }
+
+/*
+ * The "Look" block. A quiet group, not a card: it is the fourth container in a
+ * 300px rail, and a fifth rounded box would make the rail read as a stack of
+ * equals with nothing saying which part is the ticket's facts and which is the
+ * raffle's appearance. A rule above it and a rubric is enough separation.
+ */
+.look { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border) }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+  font-size: .8rem; color: var(--text); background: var(--surface-2);
+}
+/* Absent, not broken — the raffle simply has no logo yet. */
+.chip.off { color: var(--muted); background: none }
+.swatch { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18) }
+
+/* A link that is a button because it navigates the app rather than an href. */
+.linky {
+  border: 0; background: none; padding: 0; font: inherit; color: var(--brand);
+  cursor: pointer; text-align: left;
+}
+.linky:hover:not(:disabled) { text-decoration: underline }
+.linky:disabled { color: var(--muted); cursor: not-allowed; text-decoration: none }
+.linky:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px }
 .send .wide { width: 100% }
-.card { border-radius: 8px; overflow: hidden; box-shadow: var(--shadow) }
+
+/* The pager. Centred above the card, because it is about the card and not
+   about the book — the run and the count are in the sheet's subtitle. */
+.pager { display: flex; align-items: center; justify-content: center; gap: 10px;
+         margin-bottom: 12px }
+
+.rubric { font-size: .68rem; font-weight: 600; letter-spacing: .07em;
+          text-transform: uppercase; color: var(--muted) }
+.facts { margin: 0 }
+.fact { display: flex; align-items: baseline; gap: 12px;
+        padding: 8px 0; border-top: 1px solid var(--border) }
+.fact dt { color: var(--muted); font-size: .86rem; flex: 1; min-width: 0 }
+.fact dd { margin: 0; font-weight: 600; text-align: right; min-width: 0;
+           overflow-wrap: anywhere }
+/*
+ * Top of its column, and the slack below it is deliberate.
+ *
+ * The rail is the taller column — four facts, a privacy note, the Look block
+ * and three actions — and the card cannot be made to match it: at 1.5:1 a card
+ * tall enough to reach the last button would have to be wider than the sheet.
+ * Centring it was tried and is worse: the card drops past the rail's first row
+ * and the two columns lose the shared top edge that says they are one panel.
+ * An asymmetric panel with a short column is ordinary; a floating card is not.
+ */
+.card { border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); align-self: start }
 .card :deep(svg) { display: block; width: 100%; height: auto }
 /* The fallback is information, not a warning: it is what happens next, and a
  * red note would read as something having gone wrong before it has. */
