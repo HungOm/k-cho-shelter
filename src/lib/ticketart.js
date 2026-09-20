@@ -1110,10 +1110,13 @@ export function digitalCardSVG(design, values = {}, opts = {}) {
    * a roundel, which is a mark rather than an apology for not having one.
    */
   const initial = (org || event || '?').trim().charAt(0).toUpperCase()
+  /* A rounded tile rather than a hairline circle: 8a draws the mark as a solid
+   * object, which reads as an emblem where an outline reads as a placeholder. */
   const mark = logo
-    ? `<image href="${esc(logo)}" x="64" y="52" width="76" height="76" preserveAspectRatio="xMidYMid meet"/>`
-    : `<circle cx="102" cy="90" r="38" fill="none" stroke="${hair}" stroke-width="2"/>`
-      + t(initial, 102, 104, 42, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')
+    ? `<rect x="64" y="52" width="76" height="76" rx="20" fill="rgba(255,255,255,.10)"/>`
+      + `<image href="${esc(logo)}" x="72" y="60" width="60" height="60" preserveAspectRatio="xMidYMid meet"/>`
+    : `<rect x="64" y="52" width="76" height="76" rx="20" fill="rgba(255,255,255,.10)"/>`
+      + t(initial, 102, 104, 40, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')
 
   /* The serial and the motto take the ticket's own gold — --ticket-gold, which
    * style.css says is the printed ticket's colour and never chrome. Only on a
@@ -1126,9 +1129,11 @@ export function digitalCardSVG(design, values = {}, opts = {}) {
 
   /* A chip, not a word in the corner: the mock puts the state where a ticket
    * puts it, and "SOLD" is the one fact a buyer checks before anything else. */
+  /* Outlined rather than filled, as 8a draws it. A solid gold lozenge competes
+   * with the serial, which is the one thing on the card that should be loudest. */
   const chip = sold
-    ? `<rect x="${W - 232}" y="56" width="168" height="52" rx="26" fill="${gold}"/>`
-      + t('SOLD', W - 148, 92, 26, paper, TEXT_FAMILY, 'text-anchor="middle" font-weight="700" letter-spacing="2"')
+    ? `<rect x="${W - 232}" y="56" width="168" height="52" rx="26" fill="none" stroke="${gold}" stroke-width="2"/>`
+      + t('SOLD', W - 148, 92, 24, gold, TEXT_FAMILY, 'text-anchor="middle" font-weight="700" letter-spacing="2"')
     : ''
 
   /* Three facts on one line, evenly spaced, because they answer three
@@ -1146,17 +1151,36 @@ export function digitalCardSVG(design, values = {}, opts = {}) {
    * This is what makes a rectangle read as a ticket.
    */
   const tearY = 628
-  const notchMask = `<mask id="notch"><rect width="${W}" height="${H}" fill="#fff"/>`
+  const R = 28
+  const notchMask = `<mask id="notch"><rect width="${W}" height="${H}" rx="${R}" fill="#fff"/>`
     + `<circle cx="0" cy="${tearY}" r="18" fill="#000"/><circle cx="${W}" cy="${tearY}" r="18" fill="#000"/></mask>`
+
+  /*
+   * THE THREE THINGS THAT MAKE IT A KEEPSAKE RATHER THAN A PANEL, all from 8a.
+   * A foil rule along the top edge; a diagonal weave at a few per cent, which
+   * is what stops a large flat field looking like a screen; and the ticket
+   * glyph as a watermark, large and faint, bottom right.
+   */
+  const weave = `<pattern id="weave" width="18" height="18" patternUnits="userSpaceOnUse" `
+    + `patternTransform="rotate(-24)"><line x1="0" y1="0" x2="0" y2="18" `
+    + `stroke="rgba(255,255,255,.035)" stroke-width="7"/></pattern>`
+  const foil = `<rect x="${R}" y="0" width="${W - R * 2}" height="7" fill="${gold}"/>`
+  const watermark = `<g opacity=".05" transform="translate(${W - 360} ${H - 430}) scale(4.3)">`
+    + `<path d="M8 14h84a8 8 0 0 1 8 8v16a14 14 0 0 0 0 28v16a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V66a14 14 0 0 0 0-28V22a8 8 0 0 1 8-8z" `
+    + `fill="none" stroke="${ink}" stroke-width="6"/></g>`
   /* Drawn INSIDE the group and after the paper. Outside it the paper covers it,
    * which is how the first version shipped a tear line nobody could see. */
   const tearLine = `<line x1="100" y1="${tearY}" x2="${W - 100}" y2="${tearY}" stroke="${hair}" `
     + `stroke-width="2" stroke-dasharray="10 8"/>`
 
   return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
+    + `<defs>${weave}</defs>`
     + notchMask
     + `<g mask="url(#notch)">`
-    + `<rect width="${W}" height="${H}" fill="${paper}"/>`
+    + `<rect width="${W}" height="${H}" rx="${R}" fill="${paper}"/>`
+    + `<rect width="${W}" height="${H}" rx="${R}" fill="url(#weave)"/>`
+    + watermark
+    + foil
     + tearLine
     + mark
     + t(org, 166, 84, 38, ink, TEXT_FAMILY, 'font-weight="700"')
