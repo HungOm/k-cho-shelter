@@ -1042,6 +1042,17 @@ export function elementLayerSVG(design, values = {}, opts = {}) {
 export const CARD = { width: 1200, height: 760 }
 
 /*
+ * Card 8b draws the same ticket three ways, all from the one brand colour:
+ * Grand (landscape, foil rule, serif number, watermark), Certificate (light
+ * stock, tinted border, seal) and Stub (portrait, phone-shaped, number first).
+ *
+ * Grand is the in-app keepsake. Stub is the one to send: a chat is a phone, so
+ * portrait fills the screen where landscape letterboxes, and the number leads
+ * because the number is what gets read down a telephone.
+ */
+export const CARD_STUB = { width: 1080, height: 1920 }
+
+/*
  * WHAT GOES ON IT, and why each line earns its place.
  *
  * A digital ticket is a receipt and a claim check at once, so it answers the
@@ -1073,6 +1084,91 @@ export const CARD = { width: 1200, height: 760 }
  * reason brand.js gives: an organisation picking a colour is not picking a
  * contrast ratio, and white on pale yellow is unreadable in sunlight.
  */
+/*
+ * THE STUB TREATMENT — card 8b, portrait, number first.
+ *
+ * Shares the Grand card's values and its gold; differs in shape and in what it
+ * leads with. No foil rule: 8b gives that to Grand alone.
+ */
+export function stubCardSVG(design, values = {}, opts = {}) {
+  const { width: W, height: H } = CARD_STUB
+  const paper = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
+  const ink = String(values.ink || '#ffffff')
+  const white = ink.toLowerCase() === '#ffffff'
+  const quiet = white ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.62)'
+  const hair = white ? 'rgba(255,255,255,.28)' : 'rgba(0,0,0,.22)'
+  const gold = white ? '#ffe9a3' : ink
+
+  const s = (v) => String(v ?? '').trim()
+  const t = (str, x, y, size, fill, family, extra = '') => (str
+    ? `<text x="${round(x)}" y="${round(y)}" font-family='${family}' font-size="${round(size)}" `
+      + `fill="${fill}" ${extra} xml:space="preserve">${esc(str)}</text>`
+    : '')
+  const cap = (str, x, y) => t(str, x, y, 26, quiet, TEXT_FAMILY, 'letter-spacing="3"')
+
+  const number = s(values.number)
+  const org = s(values.org)
+  const logo = s(values.logo)
+  const initial = (org || '?').charAt(0).toUpperCase()
+  const motto = s(values.motto)
+  /* One line of facts rather than a column: 8b's stub reads
+     "John Kui · RM 10.00 · Book-004". */
+  const facts = [s(values.name), s(values.price), s(values.book)].filter(Boolean).join('  ·  ')
+
+  const mark = logo
+    ? `<rect x="72" y="72" width="84" height="84" rx="22" fill="rgba(255,255,255,.10)"/>`
+      + `<image href="${esc(logo)}" x="81" y="81" width="66" height="66" preserveAspectRatio="xMidYMid meet"/>`
+    : `<rect x="72" y="72" width="84" height="84" rx="22" fill="rgba(255,255,255,.10)"/>`
+      + t(initial, 114, 128, 44, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')
+
+  const chip = values.sold
+    ? `<rect x="${W - 232}" y="82" width="160" height="52" rx="26" fill="none" stroke="${gold}" stroke-width="2"/>`
+      + t('SOLD', W - 152, 118, 24, gold, TEXT_FAMILY, 'text-anchor="middle" font-weight="700" letter-spacing="2"')
+    : ''
+
+  /* The QR sits with the number rather than at the top: on a phone the thumb is
+     at the bottom, and the code is the thing somebody holds up to be scanned. */
+  /* Beside the number rather than under the motto: at the bottom it sat across
+     the rule that separates the ticket from what the raffle says for itself. */
+  const qr = { enabled: true, x: W - 302, y: H - 660, size: 230, ecc: 'M', backing: true }
+  const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
+
+  const weave = `<pattern id="sweave" width="18" height="18" patternUnits="userSpaceOnUse" `
+    + `patternTransform="rotate(-24)"><line x1="0" y1="0" x2="0" y2="18" `
+    + `stroke="rgba(255,255,255,.035)" stroke-width="7"/></pattern>`
+  /* Centred and large enough to hold the upper two-thirds. Portrait leaves a
+     tall gap between the masthead and the number; the watermark is what makes
+     that space read as a ticket face rather than as nothing. */
+  const watermark = `<g opacity=".055" transform="translate(190 620) scale(7)">`
+    + `<path d="M8 14h84a8 8 0 0 1 8 8v16a14 14 0 0 0 0 28v16a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V66a14 14 0 0 0 0-28V22a8 8 0 0 1 8-8z" `
+    + `fill="none" stroke="${ink}" stroke-width="6"/></g>`
+
+  const R = 40
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
+    + `<defs>${weave}</defs>`
+    + `<rect width="${W}" height="${H}" rx="${R}" fill="${paper}"/>`
+    + `<rect width="${W}" height="${H}" rx="${R}" fill="url(#sweave)"/>`
+    + watermark
+    + mark
+    + t(org, 180, 128, 38, ink, TEXT_FAMILY, 'font-weight="700"')
+    + chip
+
+    /* NUMBER FIRST is the whole of this treatment, so it takes the lower half
+       where a thumb is and where the eye lands last. */
+    + cap('TICKET NUMBER', 72, H - 620)
+    + t(number, 72, H - 500, 104, gold, FONT.family, 'font-weight="700"')
+    + t(facts, 72, H - 420, 32, ink, TEXT_FAMILY)
+
+    + code
+    + t(code ? 'Scan to check this ticket' : '', W - 187, H - 400, 22, quiet, TEXT_FAMILY, 'text-anchor="middle"')
+
+    + `<line x1="72" y1="${H - 330}" x2="${W - 72}" y2="${H - 330}" stroke="${hair}" stroke-width="2"/>`
+    + t(motto ? `\u201C${motto}\u201D` : '', 72, H - 270, 32, gold, FONT.family, 'font-style="italic"')
+    + t(s(values.thanks), 72, motto ? H - 220 : H - 270, 30, ink, TEXT_FAMILY)
+    + t(s(values.link), 72, H - 90, 22, quiet, FONT.family)
+    + '</svg>'
+}
+
 export function digitalCardSVG(design, values = {}, opts = {}) {
   const { width: W, height: H } = CARD
   const paper = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'

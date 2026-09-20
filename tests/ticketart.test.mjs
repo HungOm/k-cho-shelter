@@ -25,6 +25,7 @@ import { join } from 'node:path'
 import {
   FONT, SPACING, advanceOf, checkSerial, place, placeFitted, placeBoth, numberLayerSVG, qrModuleMM,
   placeBook, placeBuyer, measurable, TEXT_FAMILY,
+  stubCardSVG, CARD_STUB,
 } from '../src/lib/ticketart.js'
 import { sheetHTML, pageFit, PAGE } from '../src/lib/ticketsheet.js'
 
@@ -710,6 +711,42 @@ console.log('a box that spans the tear is refused, because it would be torn in h
   eq(validateElements([box(0.4, 0.288)], 0.688).length, 0, 'ending exactly on the tear is fine')
   /* Older callers pass no stub share; the check is skipped rather than guessed. */
   eq(validateElements([box(0.353, 0.349)]).length, 0, 'and with no tear given it says nothing')
+}
+
+console.log('the stub treatment is portrait and leads with the number')
+{
+  /*
+   * Card 8b: "Stub — portrait, phone-shaped, number first". It is the one to
+   * send, because a chat is a phone: portrait fills the screen where landscape
+   * letterboxes, and the number is what gets read down a telephone.
+   */
+  const svg = stubCardSVG(null, {
+    number: 'KS-00031', name: 'John Kui', org: 'Fundraising Raffle',
+    price: 'RM 10.00', book: 'Book-004', sold: true,
+    motto: 'Love is patient, love is kind', brand: '#0e2a30', ink: '#ffffff',
+    thanks: 'Thank you.', link: 'example.org/v/?KS-00031.ABC',
+  }, {})
+
+  ok(svg.includes(`viewBox="0 0 ${CARD_STUB.width} ${CARD_STUB.height}"`), 'it is the stub size')
+  ok(CARD_STUB.height > CARD_STUB.width, 'which is portrait')
+  ok(svg.includes('KS-00031'), 'the number is on it')
+  ok(svg.includes('TICKET NUMBER'), 'under its label')
+  ok(/John Kui\s+·\s+RM 10\.00\s+·\s+Book-004/.test(svg),
+     'and the three facts run as one line, as 8b draws them')
+  ok(svg.includes('SOLD'), 'a sold ticket says so')
+  ok(!stubCardSVG(null, { number: 'KS-1' }, {}).includes('SOLD'), 'and an unsold one does not')
+
+  /*
+   * THE RULE MUST CLEAR THE QR. The first version put the QR at the foot and
+   * drew the motto's rule straight across it — a line through a QR is a QR that
+   * may not scan. Both are absolute coordinates in one viewBox, so the overlap
+   * is arithmetic even though the render is a string.
+   */
+  const qrY = CARD_STUB.height - 660
+  const qrBottom = qrY + 230
+  const ruleY = Number((svg.match(/<line x1="72" y1="(\d+)"/) || [])[1])
+  ok(ruleY > qrBottom, `the rule sits clear of the QR (${ruleY} against ${qrBottom})`)
+  ok(ruleY < CARD_STUB.height, 'and inside the card')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
