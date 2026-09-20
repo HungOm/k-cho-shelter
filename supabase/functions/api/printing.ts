@@ -56,6 +56,64 @@ export const MAX_PER_PRINT = 200
 /** Rows per insert. Postgres is happy with far more; the wire is the limit. */
 const CHUNK = 500
 
+/**
+ * WHICH ARTWORK TO PRINT ON, AND WHAT TO DO WHEN THE SETTING HAS GONE.
+ *
+ * `TICKET_ARTWORK_ID` lives in `config`; the artwork itself lives in
+ * `ticket_templates`. A reset empties the first and leaves the second, so a
+ * raffle ends up holding artwork it can no longer name — and this screen said
+ * "There is no ticket artwork yet", which is FALSE and sends somebody off to
+ * upload a second copy of the picture they already have.
+ *
+ * A setting that points at nothing is not the same as having nothing, and the
+ * two must not share a sentence.
+ *
+ * ONE IS ADOPTED; SEVERAL ARE NOT. With exactly one template there is nothing
+ * to choose, so the setting is repaired in place and printing carries on. With
+ * several, picking one would be guessing which paper this raffle prints on —
+ * a physical decision, expensive to get wrong, and nobody's to make silently.
+ *
+ * templates.ts already does exactly this on upload, adopting the new artwork
+ * when the configured id is blank OR DANGLING. This is the same rule on the
+ * read side, which is where a reset leaves the damage.
+ */
+async function activeTemplateId(
+  ctx: Ctx, cfg: Record<string, string>, opts: { requireRow?: boolean } = {},
+): Promise<string> {
+  /*
+   * `requireRow` separates the two callers, and they genuinely differ.
+   * renderTickets DRAWS, so a named artwork that is no longer there is nothing
+   * to print onto. generateTickets only mints codes; it checks artwork exists
+   * so it cannot hand out codes for tickets nobody could print, and has never
+   * needed the row itself. Requiring it there would be a stricter rule than
+   * the one that was agreed, smuggled in under a repair.
+   */
+  const want = String(cfg.TICKET_ARTWORK_ID ?? '')
+  const { data, error } = await ctx.supabaseAdmin
+    .from('ticket_templates').select('id').order('uploaded_at', { ascending: false })
+  if (error) throw new ApiError('QUERY_FAILED', error.message)
+  const ids = (data ?? []).map((r: Record<string, unknown>) => String(r.id ?? ''))
+
+  if (want && (ids.includes(want) || !opts.requireRow)) return want
+
+  if (ids.length === 1) {
+    const { error: wErr } = await ctx.supabaseAdmin
+      .from('config').upsert([{ key: 'TICKET_ARTWORK_ID', value: ids[0] }], { onConflict: 'key' })
+    if (wErr) throw new ApiError('QUERY_FAILED', wErr.message)
+    return ids[0]
+  }
+
+  if (!ids.length) {
+    throw new ApiError('NO_TEMPLATE',
+      'There is no ticket artwork yet, so tickets cannot be printed. ' +
+      'Upload it on the Ticket Studio screen first.')
+  }
+
+  throw new ApiError('NO_TEMPLATE_CHOSEN',
+    `${ids.length} ticket artworks are stored and none of them is the chosen one. ` +
+    'Open Ticket Studio and pick which one this raffle prints on.')
+}
+
 async function currentConfig(ctx: Ctx): Promise<Record<string, string>> {
   const { data } = await ctx.supabaseAdmin.from('config').select('key,value')
   const out: Record<string, string> = {}
@@ -185,12 +243,7 @@ export async function generateTickets(p: Record<string, unknown>, user: AppUser,
    * would be minting something nobody can use, and the screen that would then
    * offer to print them has nothing to print onto.
    */
-  const templateId = String(cfg.TICKET_ARTWORK_ID ?? '')
-  if (!templateId) {
-    throw new ApiError('NO_TEMPLATE',
-      'There is no ticket artwork yet, so tickets cannot be printed. ' +
-      'Upload it on the Ticket Studio screen first.')
-  }
+  const templateId = await activeTemplateId(ctx, cfg)
 
   const { rows: scope, more } = await resolveScope(p, ctx, MAX_PER_CALL)
   if (!scope.length) {
@@ -291,12 +344,7 @@ export async function generateTickets(p: Record<string, unknown>, user: AppUser,
 export async function renderTickets(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const cfg = await currentConfig(ctx)
 
-  const templateId = String(cfg.TICKET_ARTWORK_ID ?? '')
-  if (!templateId) {
-    throw new ApiError('NO_TEMPLATE',
-      'There is no ticket artwork yet, so tickets cannot be printed. ' +
-      'Upload it on the Ticket Studio screen first.')
-  }
+  const templateId = await activeTemplateId(ctx, cfg, { requireRow: true })
   const { data: tpl, error: tplErr } = await ctx.supabaseAdmin
     .from('ticket_templates')
     .select('id,name,content_type,width_px,height_px,url,design')

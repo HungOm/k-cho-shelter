@@ -358,6 +358,9 @@ export const MY_ERRORS = {
   BAD_DESIGN: 'ဒီဇိုင်း အတိုင်းအတာ မမှန်ပါ',
   TEMPLATE_NOT_FOUND: 'ထိုလက်မှတ်ပုံ မတွေ့ပါ — စာမျက်နှာ ပြန်ဖွင့်ပါ',
   NO_TEMPLATE: 'လက်မှတ်ပုံ မရှိသေးပါ — အရင်တင်ပါ',
+  /* Composed, not written by a Burmese reader — like the rest of this file.
+     "Several artworks are stored; none is chosen. Pick one." */
+  NO_TEMPLATE_CHOSEN: 'လက်မှတ်ပုံ အများရှိသည် — မည်သည့်ပုံကို သုံးမည် ရွေးပါ',
   // Dates and deadlines. Short on purpose: the English underneath carries the
   // detail, and a gloss that runs to three lines stops being a gloss.
   BAD_DATE: 'ရက်စွဲကို ဖတ်၍ မရပါ',

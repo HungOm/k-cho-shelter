@@ -1486,8 +1486,45 @@ async function readConfig(ctx: Ctx): Promise<Record<string, string>> {
     const { data } = await ctx.supabaseAdmin.from('config').select('key,value')
     const out: Record<string, string> = {}
     for (const r of data ?? []) out[r.key] = r.value
+    await adoptLoneArtwork(ctx, out)
     return out
   })
+}
+
+/*
+ * AN ARTWORK THE RAFFLE HOLDS AND CAN NO LONGER NAME.
+ *
+ * `TICKET_ARTWORK_ID` is in `config`; the picture is in `ticket_templates`. A
+ * reset empties the first and leaves the second, so the raffle keeps its
+ * artwork and forgets which one it was — and every screen then reported "there
+ * is no ticket artwork yet", which is FALSE. An organiser reading it uploads a
+ * second copy of the picture they already have.
+ *
+ * HERE, NOT AT THE POINT OF USE, because the CLIENT decides whether to offer
+ * printing at all: configPayload turns this key into `ticketArtwork`, and
+ * PrintTickets shows its refusal without ever asking the server. Healing only
+ * inside the print handler would fix an action nobody could reach.
+ *
+ * ONE IS ADOPTED, SEVERAL ARE NOT. With exactly one template there is nothing
+ * to choose. With several, picking would be guessing which paper this raffle
+ * prints on — expensive to get wrong and nobody's to decide silently; the
+ * print handler refuses those by name instead. templates.ts already adopts on
+ * upload when the id is blank or dangling; this is the same rule on the read.
+ *
+ * SILENT ON FAILURE. This runs inside the config cache loader, which every
+ * request passes through. A raffle whose artwork cannot be looked up is a
+ * raffle that should still load.
+ */
+async function adoptLoneArtwork(ctx: Ctx, cfg: Record<string, string>) {
+  if (String(cfg.TICKET_ARTWORK_ID ?? '')) return
+  try {
+    const { data } = await ctx.supabaseAdmin.from('ticket_templates').select('id').limit(2)
+    const ids = (data ?? []).map((r: Record<string, unknown>) => String(r.id ?? ''))
+    if (ids.length !== 1) return
+    cfg.TICKET_ARTWORK_ID = ids[0]
+    await ctx.supabaseAdmin
+      .from('config').upsert([{ key: 'TICKET_ARTWORK_ID', value: ids[0] }], { onConflict: 'key' })
+  } catch { /* the raffle still loads without its artwork named */ }
 }
 
 async function activeTickets(ctx: Ctx): Promise<number> {

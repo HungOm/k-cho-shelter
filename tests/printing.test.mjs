@@ -49,25 +49,52 @@ function world(opts = {}) {
     config: baseConfig({ TICKET_ARTWORK_ID: opts.noArtwork ? '' : 'tpl-1', TOTAL_TICKETS: '20', ...(opts.cfg ?? {}) }),
     tickets, books, audit_log: [],
     agents: [{ agent_id: 'A001', name: 'Daw Hla Seller', phone: '0125559999', active: true }],
-    ticket_templates: opts.noTemplateRow ? [] : [TEMPLATE],
+    ticket_templates: opts.noTemplateRow ? [] : (opts.templates ?? [TEMPLATE]),
     ticket_codes: opts.codes ?? [],
   })
 }
 const render = (w, p) => printing.renderTickets(p, users.admin, w.ctx)
 const generate = (w, p) => printing.generateTickets(p, users.admin, w.ctx)
 
-console.log('with no artwork there is nothing to draw onto')
+/*
+ * THREE STATES, NOT TWO, and the middle one is what a reset leaves behind.
+ *
+ * TICKET_ARTWORK_ID is in config and the picture is in ticket_templates, so
+ * emptying config leaves a raffle holding artwork it can no longer name. That
+ * used to report "There is no ticket artwork yet", which is false and sends
+ * somebody to upload a second copy of what they already have.
+ *
+ * This block previously asserted the refusal for a world with an EMPTY id and
+ * ONE template — which is not "no artwork", it is artwork that is not named.
+ * The assertion was written from the code rather than from the situation.
+ */
+console.log('artwork the raffle holds is told apart from artwork it does not have')
 {
-  const w = world({ noArtwork: true })
-  const e = await errOf(() => render(w, { book: 'Book-0001' }))
-  eq(e.code, 'NO_TEMPLATE', 'it refuses')
+  // Nothing at all: the only case where "there is none" is true.
+  const none = world({ noArtwork: true, noTemplateRow: true })
+  const e = await errOf(() => render(none, { book: 'Book-0001' }))
+  eq(e.code, 'NO_TEMPLATE', 'with no templates at all it refuses')
   ok(/Ticket Studio/.test(e.message), 'and says where to fix it')
 
-  // The setting names an artwork that has been removed — a different failure
-  // from never having had one, and it says so rather than crashing on a null.
+  // The setting names an artwork that has been removed — still nothing to draw
+  // onto, and it says so rather than crashing on a null.
   const gone = world({ noTemplateRow: true })
   eq(await codeOf(() => render(gone, { book: 'Book-0001' })), 'NO_TEMPLATE',
-    'and an artwork that has been removed is the same refusal, not a crash')
+    'an artwork that has been removed is the same refusal, not a crash')
+
+  // ONE template and no id: adopted rather than refused, and written back so
+  // the next read does not have to work it out again.
+  const lone = world({ noArtwork: true })
+  const drawn = await render(lone, { book: 'Book-0001' })
+  ok(Array.isArray(drawn.notGenerated), 'one unnamed artwork is adopted, not refused')
+  eq(lone.config('TICKET_ARTWORK_ID'), 'tpl-1',
+     'and the setting is repaired, so it is named from then on')
+
+  // SEVERAL and no id: choosing would be guessing which paper this prints on.
+  const many = world({ noArtwork: true, templates: [TEMPLATE, { ...TEMPLATE, id: 'tpl-2' }] })
+  const pick = await errOf(() => render(many, { book: 'Book-0001' }))
+  eq(pick.code, 'NO_TEMPLATE_CHOSEN', 'several unnamed artworks are refused by name')
+  ok(/none of them is the chosen one/.test(pick.message), 'and the refusal says why')
 }
 
 console.log('only tickets that have been generated can be drawn')
