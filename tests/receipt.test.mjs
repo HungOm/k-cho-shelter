@@ -113,8 +113,38 @@ console.log('4. the public endpoint answers for every ticket on it, and says not
   ok(/ticket_receipt_items/.test(body), 'it reads the receipt\'s ticket list')
   ok(/number: String\(t\.number\)/.test(body) && /sold: SOLD\.includes/.test(body),
      'and answers with the number and whether it is recorded sold')
-  for (const forbidden of ['buyer_', 'phone', 'sold_by', 'agents']) {
+  /*
+   * NAMED, NOT NEGATED — and this guard caught its own author, which is the best
+   * argument for the conversion there is.
+   *
+   * A flat ban on `buyer_` was right while every route here answered a stranger.
+   * It stopped being right when the buyer's own copy arrived on the receipt
+   * route, and then it failed for a reason that had nothing to do with what it
+   * exists to prevent: `?t=` had not changed at all.
+   *
+   * The deeper problem is that a source scan cannot see routes. It reads one
+   * file answering two questions, so "this string is absent" cannot mean
+   * "absent from the ticket reply". What it CAN do is name the fields the file
+   * may mention at all, and leave which-reply-carries-which to the response
+   * assertions in tests/verify, which check the ?t= body key by key and would
+   * fail the day buyer_name joined it.
+   *
+   * Do not add `buyer_` to an exceptions list here. The guard reads text, so an
+   * exception on the prefix re-admits every buyer field on every route, which is
+   * the hole the named form exists to close.
+   */
+  const ALLOWED_BUYER = ['buyer_name']
+  for (const m of body.matchAll(/buyer_[a-z_]+/g)) {
+    ok(ALLOWED_BUYER.includes(m[0]),
+       `${m[0]} is a buyer field this function may mention — only buyer_name is`)
+  }
+  for (const forbidden of ['sold_by', 'agents']) {
     ok(!body.includes(forbidden), `and never mentions ${forbidden}, for a receipt or anything else`)
+  }
+  /* Lower-case only, deliberately: ORG_PHONE is the raffle's own published
+   * office number and travels on ?about. A buyer's or a seller's does not. */
+  for (const m of body.matchAll(/[a-z_]*phone[a-z_]*/g)) {
+    ok(false, `${m[0]} is a telephone number this function may not carry`)
   }
   // An unknown receipt answers like a wrong one: telling them apart is help for
   // somebody guessing codes.
