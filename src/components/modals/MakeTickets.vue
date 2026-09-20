@@ -175,7 +175,7 @@ async function release() {
           <input id="rt" v-model="target" class="xl" inputmode="numeric"
                  :placeholder="String(current + 1000)">
           <p v-if="adding" class="hint">
-            That makes <b>{{ adding.toLocaleString() }}</b> more
+            That makes <b class="data">{{ adding.toLocaleString() }}</b> more
             ({{ Math.ceil(adding / perBook) }} books).
           </p>
         </div>
@@ -197,7 +197,7 @@ async function release() {
 
         <div v-if="preview && !problem" class="field">
           <label for="rc">
-            Type <b>{{ wanted.toLocaleString() }}</b> to confirm
+            Type <b class="data">{{ wanted.toLocaleString() }}</b> to confirm
           </label>
           <input id="rc" v-model="typed" inputmode="numeric" autocomplete="off"
                  :placeholder="String(wanted)">
@@ -232,7 +232,7 @@ async function release() {
 }
 .now > div { background: var(--surface-2); border-radius: var(--r-sm); padding: 12px 14px; }
 .now span { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; }
-.now b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.now b { font-size: 1.25rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .note.plain { background: var(--surface-2); color: var(--muted); }
 .ok { text-align: center; padding: 18px 0 10px; }

@@ -177,7 +177,7 @@ async function sell() {
       </div>
       <div v-else-if="count" class="note info">
         <b>{{ count }} {{ count === 1 ? 'book' : 'books' }}</b> ·
-        {{ tickets }} tickets · <b>{{ money(amount, cfg.currency) }}</b>
+        {{ tickets }} tickets · <b class="data">{{ money(amount, cfg.currency) }}</b>
       </div>
 
       <!-- Ten tickets at once out of paper somebody else is carrying. The names

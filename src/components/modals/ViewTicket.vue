@@ -381,7 +381,7 @@ onMounted(async () => {
           <div class="overlay" v-html="layerFor(t)"></div>
         </div>
         <p class="tiny muted">
-          <b>{{ t.number }}</b> · {{ t.book }} · {{ t.status || 'Available' }}
+          <b class="data">{{ t.number }}</b> · {{ t.book }} · {{ t.status || 'Available' }}
           · generated {{ t.generatedAt ? date(t.generatedAt) : '—' }}
           · <template v-if="t.printedAt">printed {{ date(t.printedAt) }}</template>
             <template v-else>not printed yet</template>
@@ -467,7 +467,7 @@ onMounted(async () => {
 /* The fallback is information, not a warning: it is what happens next, and a
  * red note would read as something having gone wrong before it has. */
 .fallback { border-left: 3px solid var(--info); background: var(--info-soft); color: var(--info) }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .ticketpreview { position: relative; width: 100%; border: 1px solid var(--border); border-radius: 6px; overflow: hidden }
 .ticketpreview img { display: block; width: 100%; height: auto }
 .ticketpreview .overlay { position: absolute; inset: 0 }

@@ -162,7 +162,7 @@ async function save() {
         <input id="ap" v-model="target" class="xl" inputmode="numeric"
                :placeholder="String(live)">
         <p v-if="change > 0" class="hint">
-          That puts <b>{{ change.toLocaleString() }}</b> more into play
+          That puts <b class="data">{{ change.toLocaleString() }}</b> more into play
           ({{ bookCount }} {{ bookCount === 1 ? 'book' : 'books' }}).
         </p>
         <p v-else-if="change < 0" class="hint warnish">
@@ -206,7 +206,7 @@ async function save() {
 .now > div { background: var(--surface-2); border-radius: var(--r-sm); padding: 12px 14px; }
 .now > div.hi { background: var(--brand-soft); }
 .now span { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; }
-.now b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.now b { font-size: 1.25rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .hint.warnish { color: var(--warn-ink, var(--muted)); }
 .note.plain { background: var(--surface-2); color: var(--muted); }

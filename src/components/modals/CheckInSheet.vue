@@ -180,8 +180,17 @@ function print() {
             <td class="n">{{ b.sold }}</td>
             <td class="n">{{ b.available }}</td>
             <td class="n">{{ b.reserved || '' }}</td>
+            <!--
+              THE WORD, NOT ONLY THE RED. This cell showed a date and coloured
+              it when the book was late, so "late" was carried by the colour and
+              by nothing else — and this is a sheet that gets PRINTED and handed
+              across a table. On the office mono printer every date in the
+              column comes out identical, so an overdue book and one due next
+              month are the same cell. The colour stays as emphasis; the word is
+              what survives the photocopier.
+            -->
             <td class="n" :class="b.daysOverdue > 0 ? 'bad' : ''">
-              {{ b.due ? date(b.due) : '—' }}
+              {{ b.due ? date(b.due) : '—' }}<template v-if="b.daysOverdue > 0"> · late</template>
             </td>
           </tr>
         </tbody>
@@ -339,7 +348,11 @@ h3 { margin: 18px 0 6px; font-size: .9rem; text-transform: uppercase; letter-spa
 .tbl { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: .88rem; }
 .tbl th, .tbl td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: left; }
 .tbl th { font-weight: 600; color: var(--muted); font-size: .78rem; }
-.tbl .n { text-align: right; }
+.tbl .n { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+/* The same decision one row up: every figure on a printed sheet is read
+   against something physical, whether it sits in the table or in the
+   summary above it. One rule rather than a class on each <b>. */
+.f b { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .pair td:first-child { color: var(--muted); }
 
 .said { margin: 10px 0 0; padding-left: 10px; border-left: 2px solid var(--border); font-style: italic; }

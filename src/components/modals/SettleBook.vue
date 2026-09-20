@@ -484,11 +484,11 @@ async function settle() {
            a tap, and the organiser is still free to type whatever was actually
            put on the table. -->
       <div v-if="alreadyIn > 0.005" class="note warn" style="margin-top:8px">
-        <b>{{ money(alreadyIn, currency) }} already handed in</b>, against no book —
+        <b class="data">{{ money(alreadyIn, currency) }} already handed in</b>, against no book —
         {{ props.book.agentName || 'they' }} paid it while still selling.
         <div class="small" style="margin-top:4px">
-          This book comes to <b>{{ money(due, currency) }}</b>.
-          <template v-if="standing"> They owe <b>{{ money(standing.owed, currency) }}</b> in
+          This book comes to <b class="data">{{ money(due, currency) }}</b>.
+          <template v-if="standing"> They owe <b class="data">{{ money(standing.owed, currency) }}</b> in
           total.</template>
           Do not take it twice.
         </div>
@@ -537,8 +537,8 @@ async function settle() {
     </div>
 
     <div :class="['note', paid !== '' && Math.abs(diff) > 0.005 ? 'warn' : 'info']">
-      <b>{{ sold }}</b> sold · should be <b>{{ money(due, currency) }}</b>
-      <template v-if="paid !== ''"> · handed in <b>{{ money(paidNum, currency) }}</b></template>
+      <b>{{ sold }}</b> sold · should be <b class="data">{{ money(due, currency) }}</b>
+      <template v-if="paid !== ''"> · handed in <b class="data">{{ money(paidNum, currency) }}</b></template>
       <div v-if="paid !== '' && Math.abs(diff) > 0.005" style="margin-top:4px">
         <b>{{ diff > 0 ? 'Too much' : 'Short' }} by {{ money(Math.abs(diff), currency) }}</b>
       </div>

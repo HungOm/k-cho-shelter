@@ -488,7 +488,7 @@ function explain(err) {
 .now > div { background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 14px; }
 .now > div.bad b { color: var(--bad); }
 .now span { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; }
-.now b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.now b { font-size: 1.25rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 h4 { margin: 20px 0 4px; }
 .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .row.end { justify-content: flex-end; margin-top: 12px; }

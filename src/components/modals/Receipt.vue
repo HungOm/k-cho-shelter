@@ -288,6 +288,18 @@ const waLink = computed(() => {
 .facts { display: grid; gap: 12px; }
 .f { display: flex; justify-content: space-between; gap: 14px; }
 .f span { color: var(--muted); }
+/*
+ * THIS SHEET IS COMPARED AGAINST PAPER. It is the handover receipt that goes
+ * across the table with the books, and every figure on it — the count, the
+ * worth, the dates and the serial range below — is read against something
+ * physical rather than skimmed. Tabular figures so the column of counts lines
+ * up on the digit, and the data face so 00831 cannot be misread as 00881.
+ */
+.f b { font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
+.tablewrap td { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+/* The book's own name is an identity, not a measurement, so it keeps the
+   reading face and only the numbers beside it change. */
+.tablewrap td:first-child { font-family: inherit; }
 .sign { display: flex; gap: 28px; margin-top: 40px; }
 .sign > div { flex: 1; }
 .sign span { display: block; border-top: 1.5px solid var(--text); margin-bottom: 6px; }

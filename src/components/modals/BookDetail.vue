@@ -423,7 +423,7 @@ const showHistory = ref(false)
 .facts { display: grid; gap: 14px; }
 .f { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
 .f span { color: var(--muted); }
-.f b { text-align: right; }
+.f b { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 /* The sentence under a figure that would otherwise be read as a debt. Full
    width and left-aligned, because it is prose and the rows above are a table. */
 .f.why { display: block; }

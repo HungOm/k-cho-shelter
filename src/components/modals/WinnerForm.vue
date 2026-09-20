@@ -175,7 +175,7 @@ function explain(err) {
 
       <!-- Who this is, before it is written down. -->
       <div v-if="ticket && eligible" class="note info">
-        <b>{{ ticket.number }}</b> — {{ ticket.name || 'no name written down' }}
+        <b class="data">{{ ticket.number }}</b> — {{ ticket.name || 'no name written down' }}
         <template v-if="ticket.phone"> · {{ ticket.phone }}</template>
         <div v-if="!contactable" class="small" style="margin-top:4px">
           This ticket has no name or phone against it. It can still be recorded,
@@ -184,7 +184,7 @@ function explain(err) {
       </div>
 
       <div v-else-if="ticket" class="note bad">
-        <b>{{ ticket.number }}</b> is {{ ticket.status.toLowerCase() }}, so it was never
+        <b class="data">{{ ticket.number }}</b> is {{ ticket.status.toLowerCase() }}, so it was never
         in the draw. Only a ticket somebody bought can win.
       </div>
 

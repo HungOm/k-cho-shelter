@@ -275,7 +275,7 @@ async function send() {
         <div v-for="b in lines" :key="b.book" class="bk">
           <div class="spread">
             <span>
-              <b>{{ b.book }}</b>
+              <b class="data">{{ b.book }}</b>
               <span class="sub"> {{ b.firstTicket }}–{{ b.lastTicket }}</span>
             </span>
             <span class="sub">
@@ -417,7 +417,7 @@ async function send() {
   display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
   padding: 8px 0;
 }
-.sum b { font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+.sum b { font-size: 1.05rem; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .sum.sub { padding-top: 0; }
 .sum.sub span, .sum.sub b { font-size: .84rem; color: var(--muted); font-weight: 600; }
 /* The line that answers the question, so it is the one that looks like an

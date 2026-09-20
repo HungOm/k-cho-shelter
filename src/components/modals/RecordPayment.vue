@@ -110,7 +110,7 @@ async function save() {
          @close="emit('close')">
 
     <p class="muted small lead">
-      They owe <b>{{ money(owed, currency) }}</b> across
+      They owe <b class="data">{{ money(owed, currency) }}</b> across
       {{ seller?.booksOut || 0 }} {{ seller?.booksOut === 1 ? 'book' : 'books' }} still out.
     </p>
 
