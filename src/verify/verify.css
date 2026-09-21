@@ -201,7 +201,7 @@ body {
  * wide the page is.
  */
 h1, .note, .state, .stamp, .about, .my, .en,
-.privacy, .todo, .why h2, .why p { overflow-wrap: anywhere; word-break: normal }
+.todo { overflow-wrap: anywhere; word-break: normal }
 
 /*
  * WHO IS ANSWERING. A heading, not a banner: the verdict below it is what
@@ -402,50 +402,18 @@ h1 { font-size: 19px; margin: 0 0 12px }
 .warn .state { color: var(--warn) }
 .note { margin: 16px 0 0; font-size: 13px; color: var(--muted); text-align: left }
 
-/*
- * WHAT THIS PAGE WILL NEVER SHOW.
- *
- * Divided off by a rule rather than a box: it is a statement about the page
- * itself, not another fact about the ticket, and putting it in a tinted panel
- * would make it read as a second verdict.
- */
-/*
- * WHAT THIS PAGE WILL NEVER SHOW.
- *
- * It was divided off by a rule, on the argument that a tinted panel would make
- * it read as a second verdict. The mockup draws it as a quiet bordered box
- * instead, and the argument survives the change: it takes no tone colour and no
- * mark, so it is plainly furniture rather than an answer. A box also stops it
- * running into the facts above it now that those are ruled rows — two
- * consecutive hairlines read as a table that lost its last row.
- */
-.privacy {
-  margin: 16px 0 0; padding: 12px 14px;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  background: var(--bg);
-  font-size: 12px; color: var(--muted); text-align: left;
-}
-/* What to do about a refusal. Inside the card, because it is part of the
- * answer rather than context for it. */
-/* Out of the card and onto the page, directly above the buttons it is telling
-   somebody to press — so it takes the page's own side margin rather than the
-   card's inner one. */
+/* What to do about a refusal: out of the card and onto the page, directly
+   above the buttons it is telling somebody to press — so it takes the page's
+   own side margin rather than the card's inner one. */
 .todo { margin: 16px 4px 0; font-size: 14px; font-weight: 600; text-align: left; line-height: 1.5 }
 
 /*
- * WHY EVERY FAILURE READS THE SAME. Outside the card and quieter than it, for
- * the same reason `.about` is: it explains the verdict, it is not one.
+ * `.privacy` AND `.why` WERE HERE and their markup is gone — the buyer-privacy
+ * paragraph and the section explaining why every failure answers the same.
+ * Removed 2026-09-21 with the sentence they styled; a rule left behind for
+ * markup nobody emits is the kind of thing a later reader restores the markup
+ * to satisfy. See the note above `brandCheck` in strings.js for the reasoning.
  */
-.why {
-  margin: 16px 0 0; padding: 14px 16px;
-  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
-}
-.why h2 {
-  margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--muted);
-}
-.why h2 .my { text-transform: none; letter-spacing: 0; font-size: 12px; opacity: 1 }
-.why p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.55 }
 /*
  * THE FOOT OF EVERY VERDICT: when it was checked, and whose raffle it is.
  *

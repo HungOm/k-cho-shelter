@@ -152,13 +152,26 @@ console.log('Burmese comes first, and one function decides it')
 }
 
 /*
- * WHAT THE PAGE SAYS ABOUT ITSELF.
+ * WHAT THE PAGE SAYS ABOUT ITSELF — AND WHAT IT STOPPED SAYING.
  *
- * Three things a stranger cannot work out from a verdict card, each of which
- * was missing until the page was redesigned around the question "what does
- * somebody standing in a hall actually need to be told".
+ * This block used to pin three things the page volunteered: who is answering,
+ * that a buyer is never shown, and why every failure answers the same. Two of
+ * the three came off on 2026-09-21 on the user's instruction — the page is a
+ * verdict on a ticket, not an essay about itself, and a stranger deciding
+ * whether to hand over ten ringgit was reading six lines in two languages
+ * about the endpoint's threat model.
+ *
+ * SO THE PINS INVERT RATHER THAN DISAPPEAR. A removal with a reason is worth
+ * as much protection as an addition with one: the arguments for both
+ * paragraphs were good, they are written down in strings.js, and somebody will
+ * make them again. Restoring either is a decision, not a tidy-up.
+ *
+ * WHAT THEY CLAIMED IS STILL TRUE AND STILL GUARDED ELSEWHERE. tests/verify
+ * fails if the endpoint ever mentions a buyer, and the identical answer for
+ * every failure is enforced in supabase/functions/verify/index.ts. Nothing was
+ * traded away; the narration was.
  */
-console.log('it says who is answering, what it will not show, and why it says so little')
+console.log('it names who is answering, and no longer explains itself')
 {
   const main = readFileSync(join(ROOT, 'src/verify/main.js'), 'utf8')
   const strings = readFileSync(join(ROOT, 'src/verify/strings.js'), 'utf8')
@@ -167,44 +180,44 @@ console.log('it says who is answering, what it will not show, and why it says so
   ok(/render\(html\)\s*\{[\s\S]{0,140}topbar\(\)/.test(main),
     'and does it for every answer, not only the good one')
 
-  /*
-   * The privacy line is the page stating a promise the architecture already
-   * keeps: verify/index.ts may touch two columns of tickets and one of
-   * ticket_codes, and tests/verify.test.mjs fails if it ever mentions a buyer.
-   * A stranger has no way to know that, and is entitled to be told.
-   */
-  ok(/privacyNote/.test(main) && /privacyNote/.test(strings), 'it says the buyer is never shown')
+  /* Deleted, not orphaned: a string nothing renders is one a later reader
+     wires back up believing it was meant to be there. */
+  for (const gone of ['privacyNote', 'whyOneAnswer', 'whyOneAnswerNote', 'photocopy']) {
+    ok(!new RegExp(`^\\s*${gone}:`, 'm').test(strings), `${gone} is gone from strings.js`)
+    ok(!new RegExp(`say\\('${gone}'\\)`).test(main), `and nothing renders ${gone}`)
+  }
+  ok(!/class="privacy"|class="why"/.test(main), 'and neither block is emitted')
 
   /*
-   * Every refusal carries the explanation. A number never issued, a ticket
-   * never printed and a code out by one character all answer identically so
-   * that the page cannot be used to map the raffle — which reads as ignorance
-   * unless the page says it is a refusal.
+   * A VERIFIED TICKET NOW CARRIES NO SENTENCE UNDER THE VERDICT, so panel()
+   * has to be able to be given nothing. An empty key printing an empty <p> is
+   * the same bug as printing the caveat — a margin held open by nothing.
    */
+  ok(/\$\{noteKey \? `<p class="note">/.test(main),
+    'an empty note prints nothing rather than an empty paragraph')
+  ok(/body\.state === 'unsold' \? 'unsoldNote' : ''/.test(main),
+    'and a sold ticket is given no note at all')
+
   /*
-   * Counted per RENDER CALL rather than by how close the two happen to sit.
-   * The old form required `whyOneAnswer()` within 160 characters of the
-   * panel, which was true until a refusal grew a third thing between them —
-   * the contact buttons — and then reported a missing explanation that was
-   * three lines further down. The rule was never about adjacency: it is that
-   * no refusal reaches the screen without the paragraph saying why the page
-   * answers every failure the same way.
+   * WHAT SURVIVED ON A REFUSAL, because the trim must not have taken the
+   * useful half with the explanatory one. The link is what somebody reads
+   * down a telephone to the office; without it the page says no and gives
+   * them nothing to say no ABOUT.
    */
   const calls = main.split('render(').slice(1)
   const refusals = calls.filter((c) => /panel\('bad'/.test(c.slice(0, 400)))
-  const explained = refusals.filter((c) => /whyOneAnswer\(\)/.test(c.slice(0, 900)))
   ok(refusals.length >= 3, `every way of failing is covered (${refusals.length} refusal paths)`)
-  eq(explained.length, refusals.length,
-     'and every one of them explains why it says nothing more')
+  eq(refusals.filter((c) => /linkScanned\(\)/.test(c.slice(0, 400))).length, refusals.length,
+     'and every one of them shows the link it was actually given')
 
   /*
-   * "Could not check" must NOT carry it. The explanation is about refusing to
-   * leak which numbers exist; on a page that simply could not reach the server
-   * it would be answering a question nobody asked, about a verdict that was
-   * never given.
+   * A CHECK THAT COULD NOT BE MADE IS STILL NOT A REFUSAL. It was pinned by
+   * the absence of the explanation, which is no longer a distinction that
+   * exists; the distinction that always mattered is the tone, because red
+   * accuses the person holding the paper and amber does not.
    */
-  ok(!/cannotCheck'\)\s*\+\s*whyOneAnswer/.test(main),
-    'but a failed check is not dressed up as a refusal')
+  ok(/panel\('warn', 'cannotCheck'/.test(main), 'a failed check is amber, never red')
+  ok(!/panel\('bad', 'cannotCheck'/.test(main), 'and is never dressed up as a forgery')
 }
 
 /*

@@ -15,11 +15,15 @@
  *
  * `whatThisIs` HAS now been reviewed — the user supplied both halves on
  * 2026-09-20 and they are in verbatim. Do not reword either without them. The
- * keys added with the page's redesign
- * — brandCheck, privacyNote, whyOneAnswer, whyOneAnswerNote, showSeller,
- * aboutMore — were written the same way and have had the same amount of native
- * review, which is none. The English in each is the sentence that was meant; if
- * the two ever disagree, the English is the one to correct the Burmese against.
+ * keys added with the page's redesign — brandCheck, showSeller, aboutMore —
+ * were written the same way and have had the same amount of native review,
+ * which is none. The English in each is the sentence that was meant; if the two
+ * ever disagree, the English is the one to correct the Burmese against.
+ *
+ * AND NOTHING HERE IS SHORTENED BY REWORDING. Where a line has been cut down
+ * it is by deleting a WHOLE SENTENCE that already stood in both halves. A
+ * clause trimmed by somebody who does not read Burmese is a new sentence
+ * wearing an old one's clothes, and nobody would know to send it for review.
  */
 export const S = {
   checking: { en: 'Checking this ticket…', my: 'အသိအမှတ်ကို စစ်ဆေးနေသည်…' },
@@ -30,16 +34,19 @@ export const S = {
    * These read "This is a real ticket" and "This is not a valid ticket", and
    * card 4i draws "Verified ticket" and "Not verified". The difference is not
    * tone. "Real" is a statement about the object in somebody's hand, which
-   * this page cannot make — a genuine ticket can be photocopied, and the note
-   * below says so in the same breath. What the page can actually attest is
-   * that it checked the number against the raffle's records and they matched.
+   * this page cannot make — a genuine ticket can be photocopied, and no page
+   * can tell from a number whether the paper in front of somebody is the one
+   * it was printed on. What the page can actually attest is that it checked
+   * the number against the raffle's records and they matched.
    * "Verified" says that and claims nothing more; "real" over-claims on the
    * one page whose whole value is that it does not.
    *
    * The negative matters more. "This is not a valid ticket" tells somebody
    * holding paper that their paper is fake, when the same page is returned for
    * a number never issued, a book never printed and a code altered by one
-   * character — see whyOneAnswer(). "Not verified" is what actually happened.
+   * character, which the endpoint answers identically on purpose so that it
+   * cannot be used to map the raffle. "Not verified" is what happened; the
+   * page no longer explains why, and the note above brandCheck says so.
    *
    * THE BURMESE IS COMPOSED, not written by a reader of it, like the rest of
    * this file: အတည်ပြု is "confirm/verify". It wants checking by somebody who
@@ -113,8 +120,16 @@ export const S = {
     en: 'If you have paid for this ticket, the sale has not reached the raffle’s records yet. Ask the person who sold it to you.',
     my: 'ငွေပေးပြီးပါက အရောင်းမှတ်တမ်း မရောက်သေးပါ။ ရောင်းချသူ္ကို မေးပါ။',
   },
+  /*
+   * THE ENGLISH CARRIED A THIRD CLAUSE THE BURMESE NEVER DID — "or the number
+   * may have been typed wrongly" — so the two halves had been saying different
+   * amounts to different readers since the line was written. Dropping it makes
+   * them one sentence again, and the link that was actually scanned is printed
+   * directly above this, which answers "did I mistype it" better than a
+   * sentence raising the possibility.
+   */
   notGenuineNote: {
-    en: 'The code on this ticket does not match anything in the raffle. It may be a copy, or the number may have been typed wrongly.',
+    en: 'The code on this ticket does not match anything in the raffle. It may be a copy.',
     my: 'ဤလက်မှတ်ပါကုဒ်သည် မှတ်တမ်းနှင့် မကိုက်ညီပါ။ မိတ္တူ ဖြစ်နိုင်ပါသည်။',
   },
   cannotCheckNote: {
@@ -193,33 +208,25 @@ export const S = {
   brandCheck: { en: 'Ticket check', my: 'လက်မှတ် စစ်ဆေးရန်' },
 
   /*
-   * THE PROMISE THE ARCHITECTURE ALREADY KEEPS, said out loud.
+   * THREE ENTRIES CAME OUT OF HERE ON 2026-09-21 — `privacyNote`,
+   * `whyOneAnswer` with its note, and `photocopy` — on the instruction that
+   * this page be a professional interface rather than a set of long
+   * explanations. Each was true, each was well argued in the comment that went
+   * with it, and each was the page explaining ITSELF to somebody who had asked
+   * it one question about a piece of paper in their hand.
    *
-   * The verify function may touch two columns of `tickets` and one of
+   * NOTHING THEY SAID STOPPED BEING TRUE. The buyer's name is still never
+   * shown — verify/index.ts may touch two columns of `tickets` and one of
    * `ticket_codes`, and tests/verify.test.mjs fails if it ever mentions a
-   * buyer. A stranger cannot know that. Somebody who has just scanned a
-   * stranger's ticket — or had theirs scanned by somebody else — is entitled to
-   * be told that pointing a phone at a QR code does not reveal who bought it.
-   */
-  privacyNote: {
-    en: 'The buyer’s name and phone number are never shown on this page.',
-    my: 'ဝယ်ယူသူ၏ အမည်နှင့် ဖုန်းနံပါတ်ကို ဤစာမျက်နှာတွင် ဘယ်သောအခါမျှ မပြသပါ။',
-  },
-
-  /*
-   * WHY ONE ANSWER FITS EVERY FAILURE.
+   * buyer. Every failure still answers identically so the page cannot be used
+   * to map which numbers exist. A genuine ticket can still be photocopied and
+   * the draw is still settled by the records. What went is the narration.
    *
-   * The endpoint answers identically for a number that was never issued, a
-   * ticket never printed, and a code out by one character — deliberately, so it
-   * cannot be used to map which numbers exist. Unexplained, that reads as a
-   * page that does not know very much. Explained, it reads as a page that is
-   * refusing to help somebody forging tickets, which is what it is.
+   * Written down because the argument for each was good enough that somebody
+   * will make it again, and the answer is that being right is not the same as
+   * being worth the reader's attention at the moment they are deciding whether
+   * to hand over ten ringgit.
    */
-  whyOneAnswer: { en: 'Why it says nothing more', my: 'ဤထက်ပို၍ မဖော်ပြရခြင်း အကြောင်းရင်း' },
-  whyOneAnswerNote: {
-    en: 'A number that was never issued, a ticket that was never printed, and a code changed by one character all get this same answer. Any difference between them could be used to work out which ticket numbers exist.',
-    my: 'မထုတ်ဝေဖူးသော နံပါတ်၊ မပုံနှိပ်ရသေးသော လက်မှတ်နှင့် စာလုံးတစ်လုံး ပြောင်းလဲထားသော ကုဒ်တို့အားလုံးသည် တူညီသော အဖြေကိုသာ ရရှိပါသည်။ ကွာခြားမှုရှိပါက မည်သည့်လက်မှတ်နံပါတ်များ ရှိသည်ကို ရှာဖွေရန် အသုံးပြုနိုင်ပါသည်။',
-  },
 
   /* What to actually do about it, which the refusal on its own does not say. */
   /*
@@ -264,14 +271,17 @@ export const S = {
    * turns a page anybody can print into something that vouches for itself.
    */
   sampleHead: { en: 'This is a sample ticket', my: 'ဤသည်မှာ နမူနာလက်မှတ် ဖြစ်ပါသည်' },
+  /*
+   * THE CLOSING SENTENCE WENT — "A real ticket has a number without the word
+   * Sample in it." The card it appears on is watermarked SAMPLE four times over
+   * and its number reads SAMPLE-0001, so the sentence was describing what the
+   * reader was already looking at. Deleted WHOLE in both halves rather than
+   * reworded, for the reason at the top of this file.
+   */
   sampleNote: {
-    en: 'It was printed to show what a ticket looks like. It is not entered in the raffle, it cannot win a prize, and it is not for sale. A real ticket has a number without the word Sample in it.',
-    my: 'လက်မှတ်ပုံစံ ပြသရန်အတွက်သာ ရိုက်နှိပ်ထားခြင်း ဖြစ်ပါသည်။ ကံစမ်းမဲတွင် ပါဝင်ခြင်း မရှိပါ၊ ဆုမဲ ပေါက်နိုင်ခွင့် မရှိပါ၊ ရောင်းချရန်လည်း မဟုတ်ပါ။ စစ်မှန်သော လက်မှတ်တွင် Sample ဟူသော စာလုံး ပါဝင်မည် မဟုတ်ပါ။',
+    en: 'It was printed to show what a ticket looks like. It is not entered in the raffle, it cannot win a prize, and it is not for sale.',
+    my: 'လက်မှတ်ပုံစံ ပြသရန်အတွက်သာ ရိုက်နှိပ်ထားခြင်း ဖြစ်ပါသည်။ ကံစမ်းမဲတွင် ပါဝင်ခြင်း မရှိပါ၊ ဆုမဲ ပေါက်နိုင်ခွင့် မရှိပါ၊ ရောင်းချရန်လည်း မဟုတ်ပါ။',
   },
 
   checkedAt: { en: 'Checked', my: 'စစ်ဆေးချိန်' },
-  photocopy: {
-    en: 'A genuine ticket can still be photocopied — the draw is settled by the charity\'s own records, not by a printed ticket.',
-    my: 'မှန်ကန်သည့် လက်မှတ်ကိုလည်း မိတ္တူကူးနိုင်သည်။ ဆုရာကို မှတ်တမ်းဖြင့်သာ ဆုံးဖြတ်ပါသည်။',
-  },
 }

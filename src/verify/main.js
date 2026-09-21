@@ -285,14 +285,6 @@ async function loadAbout() {
 }
 
 /*
- * WHY EVERY FAILURE LOOKS THE SAME, shown on every failure.
- *
- * The endpoint answers identically for a number never issued, a ticket never
- * printed and a code out by one character, so that it cannot be used to map the
- * raffle. Unexplained that reads as a page that does not know much; explained,
- * it reads as a page refusing to help somebody forging tickets.
- */
-/*
  * WHAT WAS ACTUALLY SCANNED, shown back on a failure.
  *
  * This is the line somebody reads down a telephone to the office, and it is the
@@ -324,13 +316,30 @@ function linkScanned() {
   </section>`
 }
 
-function whyOneAnswer() {
-  return `<section class="why">
-    <h2>${say('whyOneAnswer')}</h2>
-    <p>${say('whyOneAnswerNote')}</p>
-  </section>`
-}
+/*
+ * THE PARAGRAPH THAT USED TO SIT HERE IS GONE, and the reason is worth
+ * keeping so it is not rebuilt.
+ *
+ * Every failure answers identically — a number never issued, a ticket never
+ * printed, a code out by one character — so that this page cannot be used to
+ * map which ticket numbers exist. That is still true and is still enforced in
+ * supabase/functions/verify/index.ts. What went is the SECTION EXPLAINING IT
+ * to the person holding the ticket: six lines in two languages, about the
+ * page's own threat model, on a screen somebody is reading while deciding
+ * whether to hand over ten ringgit.
+ *
+ * A security property does not need narrating to be real, and narrating it
+ * here served the page's self-image rather than the reader. Removed on the
+ * user's instruction, 2026-09-21, with the photocopy caveat and the privacy
+ * note, for the same reason: this is an answer, not an essay.
+ */
 
+/*
+ * `noteKey` MAY BE EMPTY, and an empty one prints nothing rather than an empty
+ * paragraph. A verified ticket has no sentence under it any more — the verdict,
+ * the number and the status are the whole of the answer — so the slot has to be
+ * genuinely absent, not a <p> with nothing in it holding its own margin open.
+ */
 function panel(tone, headKey, noteKey, extra = '') {
   const mark = tone === 'good' ? '✓' : tone === 'bad' ? '✗' : tone === 'sample' ? '✱' : '!'
   /*
@@ -364,7 +373,7 @@ function panel(tone, headKey, noteKey, extra = '') {
       </div>
       <div class="body">
         ${extra}
-        <p class="note">${say(noteKey)}</p>
+        ${noteKey ? `<p class="note">${say(noteKey)}</p>` : ''}
       </div>
     </div>`
 }
@@ -420,7 +429,7 @@ async function run() {
 
   const p = params()
   if (!p) {
-    render(panel('bad', 'notGenuine', 'malformedNote', linkScanned()) + whyOneAnswer())
+    render(panel('bad', 'notGenuine', 'malformedNote', linkScanned()))
     return
   }
 
@@ -442,7 +451,7 @@ async function run() {
      * page. From where the person is standing those are the same thing, and the
      * distinction would only be useful to somebody probing the endpoint.
      */
-    if (res.status === 400) { render(panel('bad', 'notGenuine', 'malformedNote', linkScanned()) + whyOneAnswer()); return }
+    if (res.status === 400) { render(panel('bad', 'notGenuine', 'malformedNote', linkScanned())); return }
     if (!res.ok || !body || body.ok !== true) { render(panel('warn', 'cannotCheck', 'cannotCheckNote')); return }
   } catch {
     // No signal, or the function is down. Not the same as a forged ticket, and
@@ -469,7 +478,6 @@ async function run() {
     render(panel('bad', 'notGenuine', 'notGenuineNote', linkScanned())
       + todo
       + `<div class="acts-slot">${actions()}</div>`
-      + whyOneAnswer()
       + `<div class="orgfoot-slot" data-at="${escapeHtml(new Date().toISOString())}" data-contact="0">${orgFoot(new Date().toISOString(), false)}</div>`)
     return
   }
@@ -520,16 +528,23 @@ async function run() {
     const details = `
       ${band}
       <p class="state">${say('receiptCount').replace(/\{n\}/g, String(body.count ?? 0))}</p>
-      <ul class="tickets">${list}</ul>
-      <p class="privacy">${say('privacyNote')}</p>`
+      <ul class="tickets">${list}</ul>`
     render(panel(anyVoid ? 'warn' : 'good', 'receiptGenuine',
-                 anyUnsold ? 'unsoldNote' : 'photocopy', details)
+                 anyUnsold ? 'unsoldNote' : '', details)
       + `<div class="orgfoot-slot" data-at="${escapeHtml(body.checkedAt)}" data-contact="1">${orgFoot(body.checkedAt, true)}</div>`)
     return
   }
 
   const stateKey = body.state === 'sold' ? 'sold' : body.state === 'void' ? 'void' : 'unsold'
-  const noteKey = body.state === 'unsold' ? 'unsoldNote' : 'photocopy'
+  /*
+   * A VERIFIED TICKET NOW SAYS NOTHING UNDER THE VERDICT, and that is the
+   * point of it. It used to carry a caveat — a genuine ticket can still be
+   * photocopied, the draw is settled by the records — which is true, and which
+   * took the answer somebody came for and argued with it in the same breath.
+   * The one state that still gets a sentence is `unsold`, because that one is
+   * not self-explanatory and there is something for the reader to DO about it.
+   */
+  const noteKey = body.state === 'unsold' ? 'unsoldNote' : ''
   const tone = body.state === 'void' ? 'warn' : 'good'
 
   /*
@@ -555,8 +570,7 @@ async function run() {
         <dt>${say('statusLabel')}</dt>
         <dd class="state">${say(stateKey)}</dd>
       </div>
-    </dl>
-    <p class="privacy">${say('privacyNote')}</p>`
+    </dl>`
 
   render(panel(tone, 'genuine', noteKey, details)
     + `<div class="orgfoot-slot" data-at="${escapeHtml(body.checkedAt)}" data-contact="1">${orgFoot(body.checkedAt, true)}</div>`)
