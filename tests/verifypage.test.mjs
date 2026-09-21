@@ -58,8 +58,37 @@ console.log('it imports nothing from the app')
       ...[...src.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]),
     ]
     for (const spec of specifiers) {
-      ok(!spec.startsWith('../lib/') && !spec.includes('/lib/'),
-        `${f} does not reach into the app's lib (found ${spec})`)
+      /*
+       * A LEAF IS ALLOWED; A DOOR IS NOT.
+       *
+       * This read "nothing from ../lib/, ever", and the sentence at the top of
+       * this file says why: one import drags in the store, the Supabase
+       * client, the sign-in flow and twenty thousand tickets, and the page
+       * still works on a laptop.
+       *
+       * But the thing that does that is the TRANSITIVE CLOSURE, not the
+       * directory. `ticketspans.js` folds a buyer's ticket numbers into books
+       * and spans, imports nothing at all, and is about a kilobyte — and the
+       * page needs exactly it, because the card in somebody's chat and this
+       * page have to describe one purchase the same way. Copying it into
+       * src/verify/ to satisfy a rule about a folder name would have given
+       * this raffle two of them, drifting.
+       *
+       * So the rule is now the property it was always standing in for: a lib
+       * module may be imported only if it imports NOTHING. That is checked by
+       * reading the file, so it cannot be satisfied by a promise — and a leaf
+       * that later grows an import fails here, where the sentence explaining
+       * why is.
+       */
+      if (spec.startsWith('../lib/') || spec.includes('/lib/')) {
+        const leafPath = join(ROOT, 'src/lib', spec.split('/lib/')[1])
+        const leaf = existsSync(leafPath) ? readFileSync(leafPath, 'utf8') : null
+        ok(leaf !== null, `${f} imports a lib file that exists (${spec})`)
+        const its = [...(leaf ?? '').matchAll(/^\s*(?:import|export)\b[^;\n]*?\bfrom\s*['"]([^'"]+)['"]/gm)]
+        ok(its.length === 0,
+          `${f} imports ${spec}, which must import nothing itself `
+          + `(it imports ${its.map((m) => m[1]).join(', ') || 'nothing'})`)
+      }
       for (const banned of BANNED) {
         ok(!spec.includes(banned), `${f} does not import ${banned}`)
       }

@@ -190,8 +190,33 @@ function compareNumbers(a, b) {
   return x.ord - y.ord
 }
 
+/*
+ * THE PUNCTUATION IS THE CALLER'S, AND THERE IS ONE REASON FOR IT.
+ *
+ * The digital card draws its headline in the serial-number face, and that face
+ * is the one this app has MEASURED — `FONT.advance` in ticketart.js, read out
+ * of the font file — because a number whose width is unknown cannot be shrunk
+ * to fit a box. The measured set is A-Z, the figures, space, hyphen, full stop,
+ * slash and hash. An en dash, a middle dot, a comma and a plus sign are not in
+ * it, and `advanceOf` refuses rather than guessing.
+ *
+ * So the card asks for `MEASURABLE`, which says the same thing in glyphs the
+ * font has widths for, and everything else — the check page, the WhatsApp
+ * message — takes the defaults and reads properly. The CONTENT is identical
+ * either way, which is the part that matters and the reason this lives here
+ * rather than being punctuated twice in two files.
+ */
+export const MEASURABLE = {
+  dash: ' - ',
+  /* A pair is drawn as a range here rather than listed, because the comma that
+     makes a list readable is one of the glyphs with no measured width. */
+  pair: ' - ',
+  join: '  /  ',
+  more: (n) => `AND ${n} MORE`,
+}
+
 /** One chunk, in the words a buyer reads. */
-export function chunkText(chunk) {
+export function chunkText(chunk, { dash = ' – ', pair = ', ' } = {}) {
   if (chunk.kind === 'book') return chunk.book
   if (chunk.count === 1) return chunk.from
   /*
@@ -199,8 +224,8 @@ export function chunkText(chunk) {
    * `KS-00023, KS-00024` and says less plainly that there are two of them.
    * Three is where a span starts being shorter than the thing it replaces.
    */
-  if (chunk.count === 2) return `${chunk.from}, ${chunk.to}`
-  return `${chunk.from} – ${chunk.to}`
+  if (chunk.count === 2) return `${chunk.from}${pair}${chunk.to}`
+  return `${chunk.from}${dash}${chunk.to}`
 }
 
 /**
@@ -214,17 +239,19 @@ export function chunkText(chunk) {
  *          when it is thirty tickets is the page misleading the person it is
  *          addressed to.
  */
-export function describeSpans(chunks, { max = 3, more = (n) => `+${n} more` } = {}) {
+export function describeSpans(chunks, opts = {}) {
+  const { max = 3, join = ' · ', more = (n) => `+${n} more` } = opts
   const all = chunks ?? []
   const tickets = all.reduce((n, c) => n + c.count, 0)
+  const write = (c) => chunkText(c, opts)
   if (all.length <= max) {
-    return { text: all.map(chunkText).join(' · '), shown: all.length, hidden: 0, tickets }
+    return { text: all.map(write).join(join), shown: all.length, hidden: 0, tickets }
   }
   const shown = all.slice(0, max)
   const rest = all.slice(max)
   const hidden = rest.reduce((n, c) => n + c.count, 0)
   return {
-    text: [...shown.map(chunkText), more(hidden)].join(' · '),
+    text: [...shown.map(write), more(hidden)].join(join),
     shown: shown.length,
     hidden,
     tickets,

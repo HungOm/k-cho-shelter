@@ -201,10 +201,18 @@ export const api = async () => ({})
   ok(/Gold supporter/.test(text), 'and the supporter band, read from _shared/ranks.ts')
   ok(/4 books/.test(text), 'counted in books, from this raffle\'s own book size')
   /*
-   * And the action that makes the band checkable. Its label carries the count
-   * because the count is the whole difference between it and the send above it.
+   * And the action that makes the band checkable.
+   *
+   * IT WAS TWO BUTTONS AND IS NOW ONE. "Send on WhatsApp" sent a picture of
+   * this ticket and "Send their receipt" sent a link covering everything the
+   * buyer held — two artefacts for one person, which is what a digital ticket
+   * being one-per-buyer exists to stop. The label carries the count because
+   * that is what is about to be sent, and this fixture's buyer holds
+   * forty-one, so a label that had quietly gone back to naming one ticket
+   * would fail here rather than passing on the word alone.
    */
-  ok(/Send their receipt/.test(text), 'and the buyer\'s own receipt can be sent')
+  ok(/Send their digital ticket/.test(text), 'and the buyer\'s digital ticket can be sent')
+  ok(/41 tickets/.test(text), 'saying how many of them it covers')
   ok(/41 tickets/.test(text), 'covering every ticket that buyer holds')
 }
 

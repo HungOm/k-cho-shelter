@@ -124,8 +124,22 @@ const PARTS = {
       px: [64, 52, 600, 76], textual: true, weight: 'bold' },
     { id: 'status', role: 'gold', name: 'Sold chip', kind: 'label', what: 'top right',
       px: [968, 56, 168, 52] },
+    /*
+     * 760 WIDE, NOT 420, AND A SINGLE TICKET CANNOT TELL.
+     *
+     * A serial is about 320 px at 76 pt, so 420 was the box drawn round one.
+     * A digital ticket covering a whole holding puts a DESCRIPTION here —
+     * `Book-0001 / KS-00023 - KS-00025 / AND 5 MORE` — and that box is what
+     * decides how much of it gets named rather than counted. At 420 a mixed
+     * holding degraded to one book and a number; at 760 it names three parts
+     * of itself and still clears the QR at x=884 by forty pixels.
+     *
+     * Invisible on a single ticket: this part is left-aligned, so its text
+     * hangs off `box.left` and the width is only the measure — which is why
+     * the golden renders in tests/cardlayout did not move.
+     */
     { id: 'number', role: 'gold', name: 'Ticket number', kind: 'ticket', what: 'the largest thing on the card',
-      px: [64, 196, 420, 124], textual: true, family: 'number', weight: 'bold' },
+      px: [64, 196, 760, 124], textual: true, family: 'number', weight: 'bold' },
     { id: 'buyer', role: 'ink', name: 'Buyer name', kind: 'name', what: 'whose ticket this is',
       px: [64, 356, 560, 130], textual: true, weight: 'bold' },
     { id: 'facts', role: 'ink', name: 'Price & book', kind: 'money', what: 'three facts on one line',

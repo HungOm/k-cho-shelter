@@ -26,6 +26,19 @@
 import { S } from './strings.js'
 import { sampleFromSearch } from './sample.js'
 import { telOf, emailOf, siteOf, dialOf } from './contacts.js'
+/*
+ * WHAT ONE BUYER HOLDS, FOLDED INTO SPANS. Imported rather than repeated here
+ * so that the card in somebody's chat and this page describe one purchase the
+ * same way — a buyer comparing the two is the whole audience for this page.
+ * It imports nothing itself, so it costs this page about a kilobyte and
+ * cannot drag the app in behind it; see tests/verifypage.
+ *
+ * NO BOOKS ARE PASSED, deliberately. Folding `Book-0001` out of ten numbers
+ * needs the book's own size, which lives behind the sign-in this page does not
+ * have. So spans only — `KS-00001 – KS-00010` says the same thing about what
+ * somebody holds without this function learning anything it should not.
+ */
+import { spansOf, describeSpans } from '../lib/ticketspans.js'
 
 const root = document.getElementById('app')
 
@@ -501,6 +514,22 @@ async function run() {
       const key = t.void ? 'void' : t.sold ? 'sold' : 'unsold'
       return `<li><b>${escapeHtml(String(t.number))}</b><span>${say(key)}</span></li>`
     }).join('')
+    /*
+     * THE SAME LINE THAT IS ON THE CARD, above the list rather than instead of
+     * it. Forty-one rows is the truth and is not readable; `Book-0001 ·
+     * KS-00023 – KS-00025` is readable and is the same truth, and somebody
+     * checking their own tickets wants to recognise the shape of their
+     * purchase before they read forty-one numbers.
+     *
+     * NO WORDS IN IT, which is why it needs no entry in strings.js: every
+     * chunk is a ticket number or a pair of them. `max` is the number of
+     * chunks there are, so nothing is ever counted instead of named — the
+     * card abbreviates because a card has edges; this page does not.
+     */
+    const chunks = spansOf((body.tickets || []).map((t) => ({ number: t.number })), [])
+    const spanLine = chunks.length > 1
+      ? `<p class="spans data">${escapeHtml(describeSpans(chunks, { max: chunks.length }).text)}</p>`
+      : ''
     const anyVoid = (body.tickets || []).some((t) => t.void)
     const anyUnsold = (body.tickets || []).some((t) => !t.sold && !t.void)
     /*
@@ -528,6 +557,7 @@ async function run() {
     const details = `
       ${band}
       <p class="state">${say('receiptCount').replace(/\{n\}/g, String(body.count ?? 0))}</p>
+      ${spanLine}
       <ul class="tickets">${list}</ul>`
     render(panel(anyVoid ? 'warn' : 'good', 'receiptGenuine',
                  anyUnsold ? 'unsoldNote' : '', details)

@@ -12,11 +12,15 @@
  * and cannot be proved genuine, so there is nothing honest to show: it is
  * listed by number instead, with the reason.
  */
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { state, api, toast, go, goStudio } from '../../lib/store.js'
 import { designFor, stubShare } from '../../lib/ticketdesign.js'
 import { rankFor, rankCount } from '../../lib/ranks.js'
 import { numberLayerSVG, ticketVerifyUrl, receiptVerifyUrl, cardSVG, CARD_DESIGNS, CARD } from '../../lib/ticketart.js'
+/* What one buyer holds, folded into books and spans — see ticketspans.js. One
+   definition, so the card, the message and the check page cannot describe the
+   same purchase three different ways. */
+import { spansOf } from '../../lib/ticketspans.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { date } from '../../lib/format.js'
 import { inkFor } from '../../lib/brand.js'
@@ -200,21 +204,66 @@ function ticketsHeldBy(t) {
 const bandFor = (t) =>
   rankFor(ticketsHeldBy(t).length, Number(state.cfg?.ticketsPerBook ?? 0))
 
+/*
+ * WHAT THIS BUYER HOLDS, AS BOOKS AND SPANS.
+ *
+ * A digital ticket is one per buyer and carries everything they have, so the
+ * card's headline is a description of a SET rather than a number. The folding
+ * needs the raffle's books, because a book is a book when the buyer holds
+ * every ticket in it — never because ten numbers happen to run on. See
+ * ticketspans.js, and `halfofeachbook` in its suite for the case that makes
+ * the difference.
+ */
+function holdingOf(t) {
+  const numbers = ticketsHeldBy(t)
+  if (numbers.length < 2) return { chunks: [], tickets: numbers.length }
+  const byNumber = new Map((state.tickets || []).map((x) => [String(x.number), x]))
+  const rows = numbers.map((n) => ({ number: n, book: byNumber.get(n)?.book ?? '' }))
+  const chunks = spansOf(rows, state.books || [])
+  return { chunks, tickets: numbers.length }
+}
+
+/*
+ * THE CODE THIS BUYER'S DIGITAL TICKET IS BEHIND, once it has been minted.
+ *
+ * It cannot be known before: the code is the server's to issue, and issuing
+ * one on opening a modal would be a write for looking. So the preview shows
+ * THIS TICKET until somebody sends, and what is sent — and shown afterwards —
+ * is the buyer's whole holding behind its own QR. The button says which,
+ * with the count in it, so nothing about that is a surprise.
+ */
+const minted = ref({})
+
 function cardValues(t) {
   const c = state.cfg || {}
   const brand = String(c.brandColor || '').trim()
   const band = bandFor(t)
+  /*
+   * ONE TICKET UNTIL THIS BUYER'S DIGITAL TICKET HAS BEEN MINTED, and their
+   * whole holding after. The card takes `spans` and decides for itself: absent
+   * or covering one, it draws exactly the card it always drew.
+   */
+  const code = String(minted.value[t.number] ?? '')
+  const held = code ? holdingOf(t) : { chunks: [], tickets: 1 }
+  const many = held.tickets > 1
+  const each = Number(c.ticketPrice ?? 0)
   return {
     number: t.number,
+    spans: held.chunks,
     name: t.buyer?.name ?? '',
     org: String(c.orgName ?? '').trim(),
     event: String(c.eventName ?? '').trim(),
     drawOn: c.drawDate ? date(c.drawDate) : '',
-    price: c.ticketPrice ? `${c.currency ?? ''} ${c.ticketPrice}`.trim() : '',
+    /* WHAT THEY PAID, which on a holding is what they paid for all of it. A
+     * per-ticket price beside "TICKETS 10" would read as the total and be out
+     * by a factor of ten on the one number a buyer checks. */
+    price: each ? `${c.currency ?? ''} ${many ? each * held.tickets : each}`.trim() : '',
     /* Card 8a puts three facts on one line — what it cost, which book, when it
      * sold. `soldAt` is rendered only if the payload carries it; a fact that is
-     * absent draws nothing rather than an empty label. */
-    book: t.book ?? '',
+     * absent draws nothing rather than an empty label. On a holding the middle
+     * fact is a COUNT: "which book" stops having one answer, and the card
+     * swaps it for the number of tickets when `spans` says so. */
+    book: many ? '' : (t.book ?? ''),
     soldOn: t.soldAt ? date(t.soldAt) : '',
     sold: isSold(t),
     motto: String(c.motto ?? '').trim(),
@@ -228,7 +277,12 @@ function cardValues(t) {
     ink: inkFor(brand) || '#ffffff',
     logo: logoUri.value,
     thanks: THANKS_EN,
-    link: ticketVerifyUrl(verifyBase.value, t.number, t.code).replace(/^https?:\/\//, ''),
+    /* The address in words under the QR, and it has to be the SAME address the
+       QR carries — a holding's card showing one ticket's link beside a code
+       that opens the whole holding is two answers to one question. */
+    link: (code
+      ? receiptVerifyUrl(verifyBase.value, code)
+      : ticketVerifyUrl(verifyBase.value, t.number, t.code)).replace(/^https?:\/\//, ''),
   }
 }
 
@@ -295,11 +349,18 @@ const cardNote = computed(
  * picker above was removed for, rebuilt one layer down. Blank means the
  * standard card, which is what every raffle has until somebody moves a part.
  */
-const cardFor = (t) => cardSVG(cardStyle.value, cardValues(t), {
-  qrUrl: ticketVerifyUrl(verifyBase.value, t.number, t.code),
-  encode,
-  layout: state.cfg?.cardLayout,
-})
+const cardFor = (t) => {
+  const code = String(minted.value[t.number] ?? '')
+  return cardSVG(cardStyle.value, cardValues(t), {
+    /* One QR for everything they hold, once there is a code for it. Until
+       then this is the card for this ticket and carries the ticket's own. */
+    qrUrl: code
+      ? receiptVerifyUrl(verifyBase.value, code)
+      : ticketVerifyUrl(verifyBase.value, t.number, t.code),
+    encode,
+    layout: state.cfg?.cardLayout,
+  })
+}
 
 /*
  * The card, rasterised for sharing.
@@ -352,80 +413,72 @@ const THANKS_MY = 'ဝယ်ယူသူအားပေးမှုအတွက�
 const THANKS_EN = 'Thank you — this keeps the shelter open.'
 
 function messageFor(t) {
-  return [t.number, THANKS_MY, THANKS_EN, ticketVerifyUrl(verifyBase.value, t.number, t.code)].join('\n')
-}
-
-/*
- * THE BUYER'S OWN LINK, and the reason it has to exist at all.
- *
- * Every ticket carries a QR, and that QR is PRINTED ON IT — so it authenticates
- * the ticket and never the person, and the public answer it gets is genuine or
- * not and nothing else. Price, book, draw date, what somebody paid and the
- * supporter band are all on the other side of that line: they belong to the
- * buyer, and §4i ruled that they travel on the token only the buyer holds.
- *
- * That token is `ticket_receipts.code`. It is minted per set, printed on
- * nothing, and the only way to have one is to have been sent one. Until now
- * nothing sent one. `make_receipt` was registered as a write and called by no
- * screen; `?r=CODE` had a complete server and a complete page and no traffic,
- * so every fact that ruling moved to the receipt view had been moved somewhere
- * unreachable — including, as of this week, the thank-you on the card.
- *
- * ONE LINK FOR EVERYTHING THEY HOLD, not one per ticket. A buyer who took ten
- * tickets was sent ten pictures and ten QR codes and had to check them one at a
- * time, which is the case makeReceipt was written for. The set is their sold
- * tickets, found by telephone number — never by name, because two buyers called
- * "Ma Hla" are two people. With no number recorded there is no set, so the
- * receipt covers this ticket alone: a receipt for one is still a receipt, and
- * it is better than silently grouping strangers.
- */
-function receiptSet(t) {
-  const held = ticketsHeldBy(t)
-  return held.length ? held : [String(t.number)]
-}
-
-function receiptMessage(count, url) {
+  const code = String(minted.value[t.number] ?? '')
+  const held = code ? holdingOf(t) : { tickets: 1 }
+  /* The picture is the nicety; this line is what actually lets them check it
+     later, so it names the same thing the QR opens and never a subset of it. */
   return [
-    count > 1 ? `${count} tickets` : '1 ticket',
-    THANKS_MY,
-    THANKS_EN,
-    url,
+    held.tickets > 1 ? `${held.tickets} tickets` : t.number,
+    THANKS_MY, THANKS_EN,
+    code ? receiptVerifyUrl(verifyBase.value, code)
+      : ticketVerifyUrl(verifyBase.value, t.number, t.code),
   ].join('\n')
 }
 
-async function sendReceipt(t) {
-  shareNote.value = { ...shareNote.value, [t.number]: '' }
-  sharing.value = t.number
-  try {
-    const numbers = receiptSet(t)
-    /*
-     * The same set always mints the same code — makeReceipt looks for an
-     * existing receipt covering exactly these tickets before making one. So
-     * pressing this twice sends the buyer the same link rather than a second
-     * artefact they have to work out which of is theirs.
-     */
-    const made = await api('make_receipt', { ticketNumbers: numbers })
-    /*
-     * THE COUNT COMES BACK FROM THE SERVER, and it is not always the one that
-     * went out. A digital ticket is one per buyer covering everything they
-     * hold, so the server widens the set it is given to the buyer's whole
-     * holding — which is what makes the link keep up after a sale this screen
-     * has not loaded yet. Reporting the number we SENT would have told an
-     * organiser "3 tickets" about a link that lists fourteen.
-     */
-    const count = Number(made.count ?? numbers.length)
-    const url = receiptVerifyUrl(verifyBase.value, made.code)
-    window.open(`https://wa.me/?text=${encodeURIComponent(receiptMessage(count, url))}`,
-                '_blank', 'noopener')
-    shareNote.value = { ...shareNote.value, [t.number]: count > 1
-      ? `One link covering all ${count} of this buyer's tickets is in the message.`
-      : 'The buyer\u2019s own link is in the message. It shows what they paid and which book, which the printed QR does not.' }
-  } catch (e) {
-    shareNote.value = { ...shareNote.value, [t.number]: e.message }
-    if (e.code) toast(e.message, 'bad', e.code)
-  } finally {
-    sharing.value = ''
-  }
+/*
+ * THE BUYER'S DIGITAL TICKET, MINTED BEFORE IT IS DRAWN.
+ *
+ * One per buyer, covering everything they hold, behind one code — so the code
+ * has to exist before the card can carry it, and only the server issues one.
+ * Pressing send is the moment: a code issued on OPENING a modal would be a
+ * write for looking at something.
+ *
+ * THE SAME BUYER ALWAYS GETS THE SAME CODE. `make_receipt` is keyed on their
+ * telephone number now, replaces the item list and recomputes the band, so
+ * sending again after another sale hands them a link they already have that
+ * now covers more. That is the whole of "regenerated".
+ *
+ * IT FAILS LOUDLY RATHER THAN QUIETLY SENDING LESS. If the code cannot be
+ * issued, the alternative is a picture of ONE ticket handed to somebody who
+ * bought ten, captioned as their digital ticket. An organiser standing in
+ * front of that buyer can press again; they cannot un-send a card that
+ * understated what somebody paid for.
+ */
+async function mintHolding(t) {
+  const numbers = ticketsHeldBy(t)
+  if (numbers.length < 2) return
+  const made = await api('make_receipt', { ticketNumbers: numbers })
+  minted.value = { ...minted.value, [t.number]: String(made.code) }
+  await nextTick()
+}
+
+/*
+ * THE BUYER'S OWN TOKEN IS NOT THE ONE PRINTED, and that split is the whole of
+ * why a digital ticket may say what a printed one may not.
+ *
+ * Every ticket carries a QR and that QR is PRINTED ON IT — so it authenticates
+ * the ticket and never the person, and the public answer it gets is genuine or
+ * not and nothing else. Price, book, draw date, what somebody paid and the
+ * supporter band are on the other side of that line: they belong to the buyer,
+ * and §4i ruled that they travel on the token only the buyer holds.
+ *
+ * That token is `ticket_receipts.code`. It is printed on nothing, and the only
+ * way to have one is to have been sent one — a property of the system rather
+ * than a policy laid over it. It is keyed on the BUYER now rather than on a set
+ * of tickets, so one person has one of them for as long as they hold anything.
+ * See mintHolding above, and the migration of 2026-09-21.
+ *
+ * `receiptSet`, `receiptMessage` and `sendReceipt` were here and are gone.
+ * They sent that link ON ITS OWN, from a second button, beside a first button
+ * that sent a picture of ONE ticket — two artefacts for one buyer, which is
+ * exactly what one-digital-ticket-per-buyer exists to stop. The link travels
+ * inside `messageFor` with the picture now, every time, and the count in the
+ * button's label says what is about to go.
+ */
+
+/** How many tickets this buyer holds, for a label that says what will be sent. */
+function heldCount(t) {
+  return ticketsHeldBy(t).length || 1
 }
 
 /*
@@ -486,6 +539,7 @@ async function send(t) {
   shareNote.value = { ...shareNote.value, [t.number]: '' }
   sharing.value = t.number
   try {
+    await mintHolding(t)
     const blob = await pictureOf(t)
     const file = new File([blob], `${t.number}.jpg`, { type: 'image/jpeg' })
     if (canHandFileToAnApp(file)) {
@@ -706,28 +760,29 @@ onMounted(async () => {
             break to tell them apart.
           -->
           <div class="doing">
-            <button class="btn primary wide" :disabled="!!cannotSend(t) || sharing === t.number"
-                    :title="cannotSend(t) || 'Send this ticket and its check link to the buyer'"
-                    @click="send(t)">
-              {{ sharing === t.number ? 'Working…' : 'Send on WhatsApp' }}
-            </button>
             <!--
-              THE BUYER'S OWN LINK. Secondary, not primary: the everyday act on
-              this screen is handing somebody their ticket, and this is the
-              thing you send once so they can check the lot afterwards.
+              ONE BUTTON WHERE THERE WERE TWO, and the model is the reason.
+              "Send on WhatsApp" sent a picture of THIS TICKET, and "Send their
+              receipt" sent a link covering everything the buyer held. Under
+              one-digital-ticket-per-buyer those are not two things — the
+              picture and the link are one artefact, and the message has always
+              carried the address the QR opens. Two buttons for it read as a
+              choice, and the wrong half of that choice hands somebody who
+              bought ten tickets a picture of one.
 
-              It carries the count in its label because the count is the whole
-              difference between it and the button above — "Send their receipt"
-              beside "Send on WhatsApp" reads as two ways to do one thing, and
-              "· 4 tickets" says in three characters what a sentence underneath
-              would have said and nobody would have read.
+              THE COUNT IS IN THE LABEL because it is what is about to happen,
+              and whoever presses this is standing in front of the buyer. It
+              says in three characters what a sentence underneath would have
+              said and nobody would have read.
             -->
-            <button class="btn wide" :disabled="!!cannotSend(t) || sharing === t.number"
-                    :title="cannotSend(t) || (receiptSet(t).length > 1
-                      ? 'One link covering every ticket this buyer holds, showing what they paid and which books'
-                      : 'The buyer\u2019s own link: what they paid and which book, which the printed QR never shows')"
-                    @click="sendReceipt(t)">
-              Send their receipt<template v-if="receiptSet(t).length > 1"> &middot; {{ receiptSet(t).length }} tickets</template>
+            <button class="btn primary wide" :disabled="!!cannotSend(t) || sharing === t.number"
+                    :title="cannotSend(t) || (heldCount(t) > 1
+                      ? 'One picture and one link covering every ticket this buyer holds'
+                      : 'Send this ticket and its check link to the buyer')"
+                    @click="send(t)">
+              <template v-if="sharing === t.number">Working&hellip;</template>
+              <template v-else>Send their digital ticket<template
+                v-if="heldCount(t) > 1"> &middot; {{ heldCount(t) }} tickets</template></template>
             </button>
             <button class="btn wide" :disabled="!!cannotSend(t) || sharing === t.number"
                     :title="cannotSend(t) || 'Save the card as a picture'"

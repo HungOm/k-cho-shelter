@@ -398,6 +398,15 @@ h1 { font-size: 19px; margin: 0 0 12px }
 .tickets span { color: var(--muted); font-size: 13px; text-align: right }
 
 .state { margin: 0; font-weight: 600 }
+/*
+ * THE SHAPE OF THE PURCHASE, over the list of it. Quiet and in the figure
+ * face: it is a restatement of the rows below rather than a fact of its own,
+ * and a reader who wants the numbers is about to get all of them.
+ */
+.spans {
+  margin: 6px 0 0; font-size: 13px; color: var(--muted);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
 .good .state { color: var(--ok) }
 .warn .state { color: var(--warn) }
 .note { margin: 16px 0 0; font-size: 13px; color: var(--muted); text-align: left }

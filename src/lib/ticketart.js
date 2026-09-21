@@ -39,6 +39,13 @@ import { stubShare } from './ticketdesign.js'
 import { partBoxes, CARD, CARD_CERT, CARD_STUB } from './cardelements.js'
 
 export { CARD, CARD_CERT, CARD_STUB }
+/*
+ * WHAT ONE BUYER HOLDS, FOLDED INTO BOOKS AND SPANS. A digital ticket is one
+ * per buyer and covers everything they have, so the line under TICKETS is a
+ * description of a set rather than a number. The folding is in cardelements'
+ * neighbour `ticketspans.js`, which imports nothing and so cannot cycle back.
+ */
+import { describeSpans, MEASURABLE } from './ticketspans.js'
 
 /*
  * THE FONT, AND WHY ITS NUMBERS ARE IN HERE.
@@ -1212,6 +1219,47 @@ function bandLine(values, { x, y, size, ink, quiet, anchor = '' }) {
 }
 
 /*
+ * THE HEADLINE OF A DIGITAL TICKET THAT COVERS MORE THAN ONE TICKET.
+ *
+ * A single ticket's number is short and known: `KS-00042` is four and a bit
+ * ems whatever the raffle. A HOLDING is not — it might be `Book-0001`, or
+ * `KS-00006 - KS-00015`, or six books and nine loose numbers — and it has to
+ * land inside the box the organiser drew for it, at a size somebody can read
+ * across a room.
+ *
+ * SO THE ABBREVIATION IS WHAT MAKES IT FIT, rather than the type size alone.
+ * `describeSpans` already names as many chunks as it is given room for and
+ * counts the rest; this asks it for the most detailed line that still fits,
+ * and steps down — six chunks, five, four — until one does. The result is a
+ * line that is always whole sentences and never a shrunk-to-illegible one,
+ * and the tickets that fell off the end are on the check page behind the QR.
+ *
+ * MEASURED, NOT ESTIMATED, which is the only reason any of this is possible:
+ * the serial face is the one whose advance widths this file has read out of
+ * the font, and `MEASURABLE` exists so the punctuation is glyphs that face has
+ * widths for. A line it cannot measure is drawn at the floor size rather than
+ * guessed at — smaller than it needed to be is a card somebody can still read.
+ */
+const HEADLINE_FLOOR = 0.45
+
+function holdingHeadline(chunks, room, size) {
+  const total = chunks.reduce((n, c) => n + c.count, 0)
+  const floor = size * HEADLINE_FLOOR
+  let last = null
+  for (let max = chunks.length; max >= 1; max -= 1) {
+    const { text } = describeSpans(chunks, { ...MEASURABLE, max })
+    if (!measurable(text, 'bold')) continue
+    const w = advanceOf(text, 'bold')
+    const fitted = w > 0 ? room / w : size
+    last = { text, size: Math.min(size, fitted), total }
+    if (fitted >= floor) return last
+  }
+  /* Nothing fitted, or nothing could be measured. The shortest line this
+     holding has, at the smallest size this card will set. */
+  return last ?? { text: `${total}`, size: floor, total }
+}
+
+/*
  * THE COLOURS A CARD PRINTS IN, worked out once and exported.
  *
  * All three renderers derived these from the raffle's brand colour, in three
@@ -1309,6 +1357,10 @@ export function certificateCardSVG(values = {}, opts = {}) {
   const motto = s(values.motto)
   const logo = s(values.logo)
   const initial = (org || '?').charAt(0).toUpperCase()
+  /* One ticket, or everything one buyer holds — see digitalCardSVG. */
+  const chunks = Array.isArray(values.spans) ? values.spans : []
+  const totalHeld = chunks.reduce((n, c) => n + (c?.count ?? 0), 0)
+  const many = totalHeld > 1
 
   const M = P.masthead
   const N = P.number
@@ -1345,8 +1397,15 @@ export function certificateCardSVG(values = {}, opts = {}) {
     <rect width="${W}" height="${H}" fill="${stock}"/>
     ${border}
     ${M.on ? t(org, ax(M), M.y + 30 * M.k, 30 * M.k, paint(M, quiet), fam(M), ext(M, `letter-spacing="${round(6 * M.k)}"`)) : ''}
-    ${M.on ? t('TICKET', ax(M), M.y + 92 * M.k, 22 * M.k, quiet, TEXT_FAMILY, sub(M, `letter-spacing="${round(8 * M.k)}"`)) : ''}
-    ${N.on ? t(number, ax(N), N.y + 92 * N.k, 92 * N.k, paint(N, ink), fam(N), ext(N, `letter-spacing="${round(4 * N.k)}"`)) : ''}
+    ${M.on ? t(many ? 'TICKETS' : 'TICKET', ax(M), M.y + 92 * M.k, 22 * M.k, quiet, TEXT_FAMILY, sub(M, `letter-spacing="${round(8 * M.k)}"`)) : ''}
+    ${N.on ? (() => {
+      const h = many ? holdingHeadline(chunks, N.w, 92 * N.k) : null
+      /* The letter-spacing goes with the holding line. Four points of tracking
+         on a serial is what makes a number read as a serial; on a sentence
+         naming three books it is what stops it fitting. */
+      return t(h ? h.text : number, ax(N), N.y + 92 * N.k, h ? h.size : 92 * N.k,
+        paint(N, ink), fam(N), ext(N, h ? '' : `letter-spacing="${round(4 * N.k)}"`))
+    })() : ''}
     ${N.on ? `<line x1="${round(bx(N) + 150 * N.k)}" y1="${round(N.y + 134 * N.k)}" x2="${round(bx(N) + 450 * N.k)}" y2="${round(N.y + 134 * N.k)}" stroke="${rule}" stroke-width="1"/>` : ''}
     ${B.on ? t('Issued to', ax(B), B.y + 22 * B.k, 22 * B.k, quiet, TEXT_FAMILY, sub(B, `letter-spacing="${round(3 * B.k)}"`)) : ''}
     ${B.on ? t(name, ax(B), B.y + 82 * B.k, 46 * B.k, paint(B, ink), fam(B), ext(B)) : ''}
@@ -1387,9 +1446,17 @@ export function stubCardSVG(values = {}, opts = {}) {
   const logo = s(values.logo)
   const initial = (org || '?').charAt(0).toUpperCase()
   const motto = s(values.motto)
+  /* One ticket, or everything one buyer holds — see digitalCardSVG. */
+  const chunks = Array.isArray(values.spans) ? values.spans : []
+  const totalHeld = chunks.reduce((n, c) => n + (c?.count ?? 0), 0)
+  const many = totalHeld > 1
   /* One line of facts rather than a column: 8b's stub reads
-     "John Kui · RM 10.00 · Book-004". */
-  const facts = [s(values.name), s(values.price), s(values.book)].filter(Boolean).join('  ·  ')
+     "John Kui · RM 10.00 · Book-004". A holding says how many instead of which
+     book, for the reason the Grand card's fact row does. */
+  const facts = [
+    s(values.name), s(values.price),
+    many ? `${totalHeld} tickets` : s(values.book),
+  ].filter(Boolean).join('  ·  ')
 
   const M = P.masthead
   const N = P.number
@@ -1471,8 +1538,12 @@ export function stubCardSVG(values = {}, opts = {}) {
      * The thumb argument does not hold either. Thumb reach is for things you
      * press; a ticket number is read, and a QR is held up to somebody else.
      */
-    + (N.on ? cap(N, 'TICKET NUMBER', 26) : '')
-    + (N.on ? t(number, ax(N), N.y + 186 * N.k, 140 * N.k, paint(N, gold), fam(N), ext(N)) : '')
+    + (N.on ? cap(N, many ? 'TICKETS' : 'TICKET NUMBER', 26) : '')
+    + (N.on ? (() => {
+      const h = many ? holdingHeadline(chunks, N.w, 140 * N.k) : null
+      return t(h ? h.text : number, ax(N), N.y + 186 * N.k, h ? h.size : 140 * N.k,
+        paint(N, gold), fam(N), ext(N))
+    })() : '')
     + (F.on ? t(facts, ax(F), F.y + 34 * F.k, 34 * F.k, paint(F, ink), fam(F), ext(F)) : '')
     /* In the 120px between the facts line and the rule, not appended to the
        facts: `name · price · book · GOLD SUPPORTER` would bury a thank-you in
@@ -1482,7 +1553,8 @@ export function stubCardSVG(values = {}, opts = {}) {
     + `<line x1="72" y1="780" x2="${W - 72}" y2="780" stroke="${hair}" stroke-width="2"/>`
 
     + code
-    + t(code ? 'Scan to check this ticket' : '', bx(C) + 170 * C.k, C.y + 400 * C.k, 24 * C.k, quiet, TEXT_FAMILY, 'text-anchor="middle"')
+    + t(code ? (many ? 'Scan to check these tickets' : 'Scan to check this ticket') : '',
+      bx(C) + 170 * C.k, C.y + 400 * C.k, 24 * C.k, quiet, TEXT_FAMILY, 'text-anchor="middle"')
 
     + `<line x1="72" y1="${H - 520}" x2="${W - 72}" y2="${H - 520}" stroke="${hair}" stroke-width="2"/>`
     + (MO.on ? t(motto ? `“${motto}”` : '', ax(MO), MO.y + 34 * MO.k, 34 * MO.k, paint(MO, gold), fam(MO), `${anch(MO)}font-style="italic"${bold(MO) ? ' ' + bold(MO) : ''}`) : '')
@@ -1573,6 +1645,19 @@ export function digitalCardSVG(values = {}, opts = {}) {
   const link = s(values.link)
   const logo = s(values.logo)
 
+  /*
+   * ONE TICKET, OR EVERYTHING ONE BUYER HOLDS.
+   *
+   * `values.spans` is the folded holding — see ticketspans.js. Absent, this is
+   * the card for a single ticket and draws exactly what it always drew, which
+   * is why the golden renders in tests/cardlayout are unchanged. Present and
+   * covering more than one, the number becomes a description of a set and the
+   * fact row swaps BOOK for a count: which book is no longer one answer.
+   */
+  const chunks = Array.isArray(values.spans) ? values.spans : []
+  const totalHeld = chunks.reduce((n, c) => n + (c?.count ?? 0), 0)
+  const many = totalHeld > 1
+
   /* The number is the one string whose width is known, so it is the only one in
    * the measured stack. Everything else may be Burmese — Myanmar chain, and no
    * width pinned, which is the bug that printed "Klang" as "K l a n g". */
@@ -1651,7 +1736,11 @@ export function digitalCardSVG(values = {}, opts = {}) {
    * different questions — what it cost, which book it came from, when it sold. */
   const F = P.facts
   const facts = F.on
-    ? [price && ['PRICE', price], book && ['BOOK', book], soldOn && ['SOLD', soldOn]].filter(Boolean)
+    ? [
+      price && ['PRICE', price],
+      many ? ['TICKETS', String(totalHeld)] : (book && ['BOOK', book]),
+      soldOn && ['SOLD', soldOn],
+    ].filter(Boolean)
     : []
   const factLeft = bx(F)
   const factRow = facts.map(([label, value], i) =>
@@ -1728,8 +1817,15 @@ export function digitalCardSVG(values = {}, opts = {}) {
     + chip
     + `<line x1="64" y1="168" x2="${W - 64}" y2="168" stroke="${hair}" stroke-width="2"/>`
 
-    + (N.on ? cap(N, 'TICKET NUMBER', 30) : '')
-    + (N.on ? t(number, ax(N), N.y + 114 * N.k, 76 * N.k, paint(N, gold), fam(N), `${anch(N)}${bold(N)}`) : '')
+    + (N.on ? cap(N, many ? 'TICKETS' : 'TICKET NUMBER', 30) : '')
+    + (N.on ? (() => {
+      /* The box the organiser drew is the room there is. Widen it in the
+         studio and a holding gets more of its detail named rather than
+         counted — the one control on that tab whose effect is the words. */
+      const h = many ? holdingHeadline(chunks, N.w, 76 * N.k) : null
+      return t(h ? h.text : number, ax(N), N.y + 114 * N.k, h ? h.size : 76 * N.k,
+        paint(N, gold), fam(N), `${anch(N)}${bold(N)}`)
+    })() : '')
 
     + (B.on && name ? cap(B, 'ISSUED TO', 30) : '')
     + (B.on ? t(name, ax(B), B.y + 82 * B.k, 42 * B.k, paint(B, ink), fam(B), `${anch(B)}${bold(B)}`) : '')
@@ -1755,7 +1851,8 @@ export function digitalCardSVG(values = {}, opts = {}) {
       : ''))
 
     + code
-    + t(code ? 'Scan to check this ticket' : '', bx(C) + 118 * C.k, C.y + 278 * C.k, 22 * C.k, quiet, TEXT_FAMILY, 'text-anchor="middle"')
+    + t(code ? (many ? 'Scan to check these tickets' : 'Scan to check this ticket') : '',
+      bx(C) + 118 * C.k, C.y + 278 * C.k, 22 * C.k, quiet, TEXT_FAMILY, 'text-anchor="middle"')
 
     + `</g>`
     /* Below the tear: the stub half — what the raffle says for itself. */
