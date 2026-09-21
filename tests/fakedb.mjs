@@ -992,50 +992,54 @@ export function fakeDb(seed = {}) {
       /*
        * THE BUYER'S DIGITAL TICKET, MODELLED RATHER THAN STUBBED.
        *
-       * What `makeReceipt` is tested for is exactly what this writes: one code
-       * per buyer that does not change, an item list REPLACED rather than
-       * appended to, and a band rewritten each time. A stub handing back a
-       * code would let all three assertions pass against a database where the
-       * items never changed — the fake disproving the thing it exists to
-       * check. The transaction itself is Postgres's business; what is mirrored
-       * here is which rows end up present.
+       * Two functions, and between them they are the whole model: a token
+       * against a telephone number, and a LIVE resolution of that token to
+       * whatever the buyer holds at the moment somebody asks. Nothing stores
+       * what it covers, so the thing worth mirroring here is that `holding_of`
+       * answers from `tickets` and not from a list written earlier — a stub
+       * returning a fixed set would let every assertion about a holding
+       * keeping up pass against a database where it did not.
        */
-      if (fn === 'upsert_holding_tx') {
+      if (fn === 'ensure_holding_tx') {
         const phone = String(args.p_phone ?? '').trim()
         if (!phone) {
           return Promise.resolve({ data: null, error: { message: 'a digital ticket needs a buyer' } })
         }
-        const idxs = (args.p_idxs ?? []).map(Number)
-        if (!idxs.length) {
-          return Promise.resolve({ data: null, error: { message: 'a digital ticket needs at least one ticket' } })
-        }
         db.tables.ticket_receipts = db.tables.ticket_receipts ?? []
-        db.tables.ticket_receipt_items = db.tables.ticket_receipt_items ?? []
-        let head = db.tables.ticket_receipts.find((r) => String(r.buyer_phone ?? '') === phone)
-        let made = false
-        if (!head) {
-          head = {
-            code: String(args.p_code), created_at: new Date().toISOString(),
-            created_by: String(args.p_user ?? ''), buyer_phone: phone,
-            rank: args.p_rank ?? null, rank_tickets: args.p_rank_tickets ?? null,
-          }
-          db.tables.ticket_receipts.push(head)
-          made = true
-        } else {
-          head.rank = args.p_rank ?? null
-          head.rank_tickets = args.p_rank_tickets ?? null
+        const there = db.tables.ticket_receipts.find((r) => String(r.buyer_phone ?? '') === phone)
+        if (there) {
+          return Promise.resolve({ data: [{ holding_code: there.code, was_created: false }], error: null })
         }
-        const keep = new Set(idxs)
-        db.tables.ticket_receipt_items = db.tables.ticket_receipt_items
-          .filter((it) => String(it.code) !== head.code || keep.has(Number(it.ticket_idx)))
-        for (const idx of idxs) {
-          const there = db.tables.ticket_receipt_items
-            .some((it) => String(it.code) === head.code && Number(it.ticket_idx) === idx)
-          if (!there) db.tables.ticket_receipt_items.push({ code: head.code, ticket_idx: idx })
-        }
-        return Promise.resolve({
-          data: [{ holding_code: head.code, was_created: made }], error: null,
+        db.tables.ticket_receipts.push({
+          code: String(args.p_code), created_at: new Date().toISOString(),
+          created_by: String(args.p_user ?? ''), buyer_phone: phone,
         })
+        return Promise.resolve({ data: [{ holding_code: String(args.p_code), was_created: true }], error: null })
+      }
+      if (fn === 'holding_of') {
+        const code = String(args.p_code ?? '')
+        const limit = Number(args.p_limit ?? 1000)
+        const head = (db.tables.ticket_receipts ?? []).find((r) => String(r.code) === code)
+        if (!head) return Promise.resolve({ data: [], error: null })
+        const phone = String(head.buyer_phone ?? '').trim()
+        const KEPT = ['Sold', 'Donated', 'Void']
+        const rows = phone
+          ? (db.tables.tickets ?? []).filter((t) =>
+            String(t.buyer_phone ?? '').trim() === phone && KEPT.includes(String(t.status)))
+          /* A receipt minted before the model changed: a fixed set, still
+             answered, through the items nobody writes any more. */
+          : (db.tables.ticket_receipt_items ?? [])
+            .filter((i) => String(i.code) === code)
+            .map((i) => (db.tables.tickets ?? []).find((t) => Number(t.idx) === Number(i.ticket_idx)))
+            .filter(Boolean)
+        const out = [...rows]
+          .sort((a, b) => Number(a.idx) - Number(b.idx))
+          .slice(0, Math.max(1, limit))
+          .map((t) => ({
+            idx: t.idx, number: t.number, status: t.status,
+            buyer_name: t.buyer_name ?? '', amount: t.amount ?? null, book_idx: t.book_idx ?? null,
+          }))
+        return Promise.resolve({ data: out, error: null })
       }
       if (fn === 'active_books') return Promise.resolve({ data: 0, error: null })
 

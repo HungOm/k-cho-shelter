@@ -15,8 +15,14 @@
  * green, and the tickets that fell off the end are simply not mentioned to the
  * person checking whether they own them.
  *
- * So the bound is one constant, imported by both. `make_receipt` refuses above
- * it — while the organiser is standing there and can do something — and the
- * page reads exactly that many, so a list it returns is always whole.
+ * So the bound is one constant, imported by both.
+ *
+ * A THOUSAND, WHICH IS A HUNDRED BOOKS. It was three hundred while the set was
+ * stored and an organiser was refused at the moment of minting — a refusal
+ * somebody could act on. The set is resolved live now, so there is no moment
+ * to refuse at: a buyer who quietly passes the bound would have their list cut
+ * short by a page that gave no sign of it. The bound is therefore set where no
+ * community raffle reaches it rather than where somebody has to be told about
+ * it, and the count beside the list is the true one either way.
  */
-export const HOLDING_MAX_TICKETS = 300
+export const HOLDING_MAX_TICKETS = 1000

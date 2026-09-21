@@ -46,6 +46,12 @@ import { canonicalNumber, equalCodes, looksLikeCode } from '../_shared/ticketcod
  * does not look it. See _shared/holding.ts.
  */
 import { HOLDING_MAX_TICKETS } from '../_shared/holding.ts'
+/*
+ * The supporter ladder, the same module the api side reads. It is a fact about
+ * a COUNT and names nobody, so it crosses this line freely — what never
+ * crossed it is how the count was arrived at, and that is now `holding_of`.
+ */
+import { rankFor } from '../_shared/ranks.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any } }
 
@@ -68,6 +74,9 @@ async function numbering(ctx: Ctx) {
   const value = {
     prefix: map.TICKET_PREFIX ?? '',
     digits: Number(map.TICKET_DIGITS ?? 5) || 5,
+    /* How many tickets make a book, which is what turns a count into a
+       supporter band. A fact about the raffle, not about any buyer. */
+    perBook: Number(map.TICKETS_PER_BOOK ?? 0) || 0,
     /*
      * WHO TO TELL, when the answer on this page is "no".
      *
@@ -229,23 +238,13 @@ export default {
     if (receiptCode) {
       if (!looksLikeCode(receiptCode)) return reply({ ok: false, reason: 'malformed' }, 400)
 
-      const { data: items, error: itemErr } = await ctx.supabaseAdmin
-        .from('ticket_receipt_items').select('ticket_idx').eq('code', receiptCode)
-        .limit(HOLDING_MAX_TICKETS)
-      if (itemErr) return reply({ ok: false, reason: 'unavailable' }, 503)
-
-      const idxs = (items ?? []).map((r: Record<string, unknown>) => Number(r.ticket_idx))
-      if (!idxs.length) {
-        return reply({ ok: true, genuine: false, checkedAt: new Date().toISOString() })
-      }
-
       /*
        * THE BUYER'S OWN COPY, AND WHY THIS ROUTE MAY CARRY IT.
        *
-       * A receipt code is minted per purchase, printed on nothing, and reaches
-       * the buyer only inside the digital ticket they are sent. The only way to
-       * hold one is to have been sent one — a property of the system rather
-       * than a policy laid over it.
+       * A digital ticket's code is printed on nothing and reaches the buyer
+       * only inside the picture they are sent. The only way to hold one is to
+       * have been sent one — a property of the system rather than a policy
+       * laid over it.
        *
        * The ticket's own code is the opposite. It is PRINTED ON THE PAPER, so
        * anybody holding the ticket, a photograph of it, or standing behind
@@ -255,15 +254,28 @@ export default {
        *
        * buyer_name is on the printed ticket already — it is the whole reason a
        * copy passed to somebody else is visibly not theirs — so showing it to
-       * whoever was sent the receipt tells them nothing they are not holding.
-       * buyer_phone and buyer_zone are on no ticket and are not selected;
-       * tests/verify names the buyer fields this file may mention at all.
+       * whoever was sent the code tells them nothing they are not holding.
+       *
+       * RESOLVED LIVE, THROUGH A FUNCTION, AND THIS FILE STILL NAMES NO BUYER.
+       *
+       * A digital ticket is one per buyer and covers everything they hold, so
+       * answering it means asking WHOSE code this is — a join on
+       * `buyer_phone`, which this file may not write and should not be able
+       * to. `holding_of` does the join behind SECURITY DEFINER and hands back
+       * ticket rows; the telephone number never leaves it. So what a buyer
+       * holds is answered as of this scan rather than as of the last time an
+       * organiser pressed send, and tests/verify goes on refusing this file
+       * the column it always refused it.
        */
       const rcfg = await numbering(ctx)
       const { data: on, error: tErr } = await ctx.supabaseAdmin
-        .from('tickets').select('number,status,buyer_name,amount,book_idx')
-        .in('idx', idxs).order('idx')
+        .rpc('holding_of', { p_code: receiptCode, p_limit: HOLDING_MAX_TICKETS })
       if (tErr) return reply({ ok: false, reason: 'unavailable' }, 503)
+
+      const rows = (on ?? []) as Array<Record<string, unknown>>
+      if (!rows.length) {
+        return reply({ ok: true, genuine: false, checkedAt: new Date().toISOString() })
+      }
 
       const SOLD = ['Sold', 'Donated']
       const bookOf = (n: unknown) => {
@@ -272,42 +284,41 @@ export default {
           ? rcfg.bookPrefix + String(i).padStart(rcfg.bookDigits, '0')
           : ''
       }
-      const tickets = (on ?? []).map((t: Record<string, unknown>) => ({
+      const tickets = rows.map((t: Record<string, unknown>) => ({
         number: String(t.number),
         sold: SOLD.includes(String(t.status)),
         book: bookOf(t.book_idx),
         /* Blank rather than zero when nothing was recorded: "RM 0.00" is a
          * statement about a donation, and an unknown is not one. */
         paid: t.amount == null ? '' : String(t.amount),
-        // A cancelled ticket on a receipt is the one line somebody must not
-        // miss, and "not sold" would be the wrong sentence for it.
+        // A cancelled ticket on a digital ticket is the one line somebody must
+        // not miss, and "not sold" would be the wrong sentence for it.
         void: String(t.status) === 'Void',
       }))
-      /* One name for the receipt rather than one per line: a receipt is one
-       * purchase by one person, and repeating it down ten tickets would read as
-       * ten separate claims about who they belong to. */
-      const buyer = String((on ?? []).find((t: Record<string, unknown>) =>
+      /* One name for the whole thing rather than one per line: it is one
+       * person's holding, and repeating it down ten tickets would read as ten
+       * separate claims about who they belong to. */
+      const buyer = String(rows.find((t: Record<string, unknown>) =>
         String(t.buyer_name ?? '').trim())?.buyer_name ?? '').trim()
 
       /*
-       * THE SUPPORTER BAND, READ RATHER THAN WORKED OUT.
+       * THE SUPPORTER BAND, WORKED OUT RATHER THAN READ.
        *
-       * A band is a fact about how many tickets somebody holds, and this
-       * function may not learn that: it is allowed `buyer_name` and nothing
-       * else, so it cannot identify a buyer well enough to count their tickets
-       * — and it should not be able to. The count happened on the api side when
-       * the receipt was minted, and what is stored here is a word and a number
-       * that name nobody: 'gold', 41.
+       * It used to be stored on the row and frozen at mint, because this
+       * function could not count a buyer's tickets without becoming able to
+       * identify them. `holding_of` removed that: the rows above are this
+       * buyer's current tickets and they name nobody, so the count is here to
+       * be made and the band is what somebody holds TODAY. A buyer who reaches
+       * Diamond is Diamond the next time anybody scans, instead of being shown
+       * the band they had when a picture was sent.
        *
-       * Null for every receipt minted before the column existed, and for a
-       * buyer with no telephone number recorded. Nothing is shown for those.
-       * It is never computed from `count` above as a fallback: that count is
-       * this receipt, and the band is the buyer.
+       * REFUSED RATHER THAN DEFAULTED, still. With no tickets-per-book there
+       * is no way to turn a count into books, and the obvious fallback prints
+       * the bottom rung on the card of the raffle's largest supporter — see
+       * _shared/ranks.ts, which returns null for exactly that reason.
        */
-      const { data: head } = await ctx.supabaseAdmin
-        .from('ticket_receipts').select('rank,rank_tickets').eq('code', receiptCode).limit(1)
-      const band = (head ?? [])[0] ?? null
-      const rank = String(band?.rank ?? '')
+      const sold = tickets.filter((t) => t.sold).length
+      const band = rankFor(sold, rcfg.perBook)
 
       return reply({
         ok: true,
@@ -316,7 +327,7 @@ export default {
         count: tickets.length,
         tickets,
         buyer,
-        ...(rank ? { rank, rankTickets: Number(band?.rank_tickets ?? 0) } : {}),
+        ...(band ? { rank: band.id, rankTickets: band.tickets } : {}),
         drawDate: rcfg.drawDate,
         checkedAt: new Date().toISOString(),
       })

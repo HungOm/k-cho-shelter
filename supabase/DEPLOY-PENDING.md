@@ -27,6 +27,38 @@ pushes, and because two of the failures below were found the expensive way.
 **Nothing here is a request to deploy.** It is what to check and in what order
 when somebody decides to.
 
+## 2026-09-21 — the digital ticket, in two parts
+
+**The `rank` column stopped being required.** `Could not find the 'rank' column
+of 'ticket_receipts' in the schema cache` was `make_receipt` writing a column
+`20260921100000` had not put there yet. Nothing writes it now and nothing reads
+it: the supporter band is worked out live from what a buyer holds, by the check
+page, from rows `holding_of` hands it. That migration is still worth applying —
+it is in the directory and `db push` will take it — but the error it caused is
+fixed by deploying the FUNCTION, not by the migration.
+
+**What production needs, in this order.**
+
+| What | How | Why it has to go first |
+|---|---|---|
+| `20260921120000` | `supabase db push --linked` | `CARD_LAYOUT`, for the studio's Digital ticket tab |
+| `20260921140000` | the same push | `buyer_phone` on `ticket_receipts` and the unique index — a digital ticket is keyed on the buyer |
+| `20260921160000` | the same push | `holding_of` and `ensure_holding_tx`. **Read its own header before deploying**: `holding_of` is SECURITY DEFINER and the migration revokes EXECUTE from `public`, `anon` and `authenticated`. If that revoke does not apply, anybody with the anon key can read a buyer's name and what they paid by guessing a code |
+| Edge Function `api` | `supabase functions deploy api` | `make_receipt` calls `ensure_holding_tx` |
+| Edge Function `verify` | `supabase functions deploy verify` | it calls `holding_of`. **There are two functions and deploying `api` does not deploy this one** |
+
+**The window, if the order slips.** Deploy the functions before the migrations
+and every send fails with "unknown function ensure_holding_tx", which is loud
+and harmless. Apply the migrations and deploy `api` but not `verify`, and a
+buyer scanning their own link gets "could not check" — the old code reads
+`ticket_receipt_items`, which nothing writes any more. That one is quiet from
+the organiser's side and is the reason `verify` is on this list in its own row.
+
+**Re-derive before acting**, as the whole of this file says. `supabase
+migration list --linked` for the rows, `supabase functions list` for the two
+functions, and after they go out download `verify` and grep it for
+`holding_of` — a string literal this commit adds and which exists nowhere else.
+
 ## 2026-09-21 — the digital ticket's layout opens a new gap
 
 `660e9c5` gives Ticket Studio's "Digital ticket" tab a real designer, and the

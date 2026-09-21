@@ -602,12 +602,19 @@ create table if not exists ticket_receipts (
   created_at timestamptz not null default now(),
   created_by text not null default '',
   /*
-   * THE SUPPORTER BAND, FROZEN AT MINT. Worked out from the tickets the buyer
-   * held at the time, here rather than recomputed on demand because the page
-   * that states it in public is forbidden to touch a buyer's telephone number
-   * and so cannot count their tickets. Null means it was not worked out — no
-   * number recorded, or a receipt older than the column — and nothing is shown
-   * for it. A default would have written the bottom rung onto every receipt.
+   * THE SUPPORTER BAND, AND NOTHING WRITES IT ANY MORE.
+   *
+   * It was frozen at mint, because the page that states a band in public is
+   * forbidden to touch a buyer's telephone number and so could not count their
+   * tickets. `holding_of` resolves a code to its buyer inside the database, so
+   * that page counts rows which name nobody and works the band out from what
+   * somebody holds TODAY — a buyer who reaches Diamond is Diamond the next time
+   * anybody scans, rather than being shown the band they had when a picture
+   * was sent.
+   *
+   * KEPT RATHER THAN DROPPED. Any raffle that minted receipts while this was
+   * being written has real answers in here, and a column holding real answers
+   * is not dropped to tidy up. Nothing reads them; nothing writes them.
    */
   rank         text,
   rank_tickets integer,

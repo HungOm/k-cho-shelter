@@ -224,15 +224,35 @@ function holdingOf(t) {
 }
 
 /*
- * THE CODE THIS BUYER'S DIGITAL TICKET IS BEHIND, once it has been minted.
+ * THE CODE THIS BUYER'S DIGITAL TICKET IS BEHIND.
  *
- * It cannot be known before: the code is the server's to issue, and issuing
- * one on opening a modal would be a write for looking. So the preview shows
- * THIS TICKET until somebody sends, and what is sent — and shown afterwards —
- * is the buyer's whole holding behind its own QR. The button says which,
- * with the count in it, so nothing about that is a surprise.
+ * ASKED FOR AS SOON AS THERE IS A TICKET TO ASK ABOUT, so that what is on
+ * screen is what would be sent. The first version issued the code on SEND, on
+ * the grounds that issuing one when a modal opens is a write for looking — and
+ * the cost of that was a preview showing ticket KS-00001 to somebody about to
+ * hand over a card covering ten. An organiser cannot check a picture they are
+ * not being shown.
+ *
+ * IT IS CHEAP BECAUSE THERE IS ALMOST NOTHING TO WRITE. A digital ticket is a
+ * code against a telephone number and nothing else; what it covers is resolved
+ * when somebody scans it. So this is one row, once, for a buyer who has never
+ * had one — every later open reads that same row back, the audit trail records
+ * only the creation, and nothing about the holding is stored to go stale.
+ *
+ * IT FAILS QUIETLY HERE AND LOUDLY ON SEND. Opening a modal must not throw a
+ * red error over a screen somebody is reading; the card falls back to this
+ * ticket, which is true, and `send` asks again where a failure is something
+ * the organiser needs to know about before handing anything over.
  */
 const minted = ref({})
+
+async function ensureHolding(t) {
+  if (!t || minted.value[t.number] || ticketsHeldBy(t).length < 2) return
+  try {
+    const made = await api('make_receipt', { ticketNumbers: ticketsHeldBy(t) })
+    minted.value = { ...minted.value, [t.number]: String(made.code) }
+  } catch { /* the single ticket's card stands; send() reports it properly */ }
+}
 
 function cardValues(t) {
   const c = state.cfg || {}
@@ -449,6 +469,10 @@ async function mintHolding(t) {
   if (numbers.length < 2) return
   const made = await api('make_receipt', { ticketNumbers: numbers })
   minted.value = { ...minted.value, [t.number]: String(made.code) }
+  /* The card is redrawn from `minted`, and the picture is rasterised from the
+     card. Without this the JPEG is made from the markup that was on screen a
+     tick ago — the single ticket — and the organiser watches the preview
+     change into something other than what they just sent. */
   await nextTick()
 }
 
@@ -593,6 +617,11 @@ async function savePicture(t) {
   }
 }
 
+/* Paging is paging between BUYERS as often as between tickets — a book sold
+   to four people is four holdings — so each one is asked for as it is reached
+   rather than only the first. Already-known codes short-circuit. */
+watch(current, (t) => { ensureHolding(t) })
+
 onMounted(async () => {
   const scope = props.payload?.book
     ? { book: props.payload.book }
@@ -604,6 +633,9 @@ onMounted(async () => {
      * blank book is the other screen, and it asks separately.
      */
     result.value = await api('render_tickets', { ...scope, withBuyer: true })
+    /* The buyer's own code, so the card on screen is the card that goes. */
+    await nextTick()
+    ensureHolding(current.value)
   } catch (e) {
     err.value = e.message
     if (e.code) toast(e.message, 'bad', e.code)

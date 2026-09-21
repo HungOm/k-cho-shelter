@@ -1312,40 +1312,98 @@ revoke all on ticket_custody from anon, authenticated;
 
 -- ============ THE BUYER'S OWN DIGITAL TICKET ============
 --
--- One per buyer, not one per purchase. Written whole because the three
--- statements below are one fact: a failure between the DELETE and the INSERT
--- would leave a live code with no items, and the public check page answers a
--- code with no items by telling a real buyer their tickets are not verified.
--- See the migration of the same name for the model this replaced.
+-- One per buyer, and what it covers is never stored. `holding_of` resolves a
+-- code to the buyer behind it and answers with the tickets they hold AT THE
+-- MOMENT somebody scans, so nothing has to refresh it and no sale path has to
+-- remember a second table. The check page may not touch a telephone number —
+-- tests/verify refuses it that column — so the join lives in here, behind
+-- SECURITY DEFINER, and the page receives ticket numbers and nothing else.
+-- See the migration of the same name.
+
 /*
- * The holding, written whole.
+ * EXECUTE IS REVOKED FROM EVERYBODY AND GRANTED TO ONE ROLE, and on a SECURITY
+ * DEFINER function that is not a precaution, it is the whole of its safety.
  *
- * `p_code` is a freshly generated code the caller has ready; it is used ONLY
- * when this buyer has no holding yet. A buyer who already has one keeps the
- * code they were sent, which is the whole point — the link in their chat has
+ * Postgres grants EXECUTE to PUBLIC on a new function. Every other routine in
+ * this database is SECURITY INVOKER, so row-level security answers for them
+ * even if a browser calls one directly — `sell_books` reached from the
+ * `authenticated` role simply writes nothing. This one runs as its owner and
+ * RLS does not apply to it, so a PUBLIC grant would let anybody with the
+ * anon key read a buyer's name and what they paid by guessing a code, going
+ * round the endpoint that exists to rate the guessing.
+ *
+ * `search_path` is pinned for the same family of reason: a definer function
+ * that resolves `tickets` through a caller-controlled path is resolving
+ * somebody else's table.
+ */
+create or replace function holding_of(p_code text, p_limit integer default 1000)
+returns table (
+  idx        integer,
+  number     text,
+  status     text,
+  buyer_name text,
+  amount     numeric,
+  book_idx   integer
+)
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select q.idx, q.number, q.status, q.buyer_name, q.amount, q.book_idx
+    from (
+      -- A LIVE HOLDING: every ticket the buyer behind this code holds now.
+      -- Void is included deliberately: a cancelled ticket was theirs, and the
+      -- check page has a line for it that a buyer must not miss.
+      select t.idx, t.number, t.status, t.buyer_name, t.amount, t.book_idx
+        from ticket_receipts r
+        join tickets t on t.buyer_phone = r.buyer_phone
+       where r.code = p_code
+         and r.buyer_phone <> ''
+         and t.status in ('Sold', 'Donated', 'Void')
+
+      union all
+
+      -- A RECEIPT MINTED BEFORE THE MODEL CHANGED: a fixed set, still answered.
+      select t.idx, t.number, t.status, t.buyer_name, t.amount, t.book_idx
+        from ticket_receipts r
+        join ticket_receipt_items ri on ri.code = r.code
+        join tickets t on t.idx = ri.ticket_idx
+       where r.code = p_code
+         and r.buyer_phone = ''
+    ) q
+   order by q.idx
+   limit greatest(1, coalesce(p_limit, 1000));
+$$;
+
+revoke all on function holding_of(text, integer) from public;
+revoke all on function holding_of(text, integer) from anon, authenticated;
+grant execute on function holding_of(text, integer) to service_role;
+
+/*
+ * THE TOKEN, AND ONLY THE TOKEN.
+ *
+ * All a buyer's digital ticket needs written down is an unguessable code
+ * against their telephone number. What it covers is worked out above; what
+ * band they are is worked out from that. So this creates a row if there is not
+ * one and otherwise hands back the code they already have — which is the
+ * property the whole model rests on, because the link in somebody's chat has
  * to go on being the right link after they buy more.
  */
-create or replace function upsert_holding_tx(
-  p_phone        text,
-  p_idxs         integer[],
-  p_code         text,
-  p_user         text,
-  p_rank         text,
-  p_rank_tickets integer
+create or replace function ensure_holding_tx(
+  p_phone text,
+  p_code  text,
+  p_user  text
 ) returns table (holding_code text, was_created boolean) as $$
 declare
   found_code text;
-  made       boolean := false;
   phone      text := btrim(coalesce(p_phone, ''));
 begin
-  -- Refused rather than defaulted. A holding with no buyer is a receipt, and
-  -- the caller has a separate path for that; silently accepting '' here would
-  -- pool every buyer with no number recorded into one shared digital ticket.
+  -- Refused rather than defaulted: '' is the absence of an identity, and
+  -- accepting it would pool every buyer with no number recorded into one
+  -- shared digital ticket listing each other's tickets.
   if phone = '' then
     raise exception 'a digital ticket needs a buyer';
-  end if;
-  if p_idxs is null or array_length(p_idxs, 1) is null then
-    raise exception 'a digital ticket needs at least one ticket';
   end if;
 
   select r.code into found_code
@@ -1354,33 +1412,10 @@ begin
    limit 1;
 
   if found_code is null then
-    insert into ticket_receipts (code, created_by, buyer_phone, rank, rank_tickets)
-      values (p_code, coalesce(p_user, ''), phone, p_rank, p_rank_tickets);
-    found_code := p_code;
-    made := true;
+    insert into ticket_receipts (code, created_by, buyer_phone)
+      values (p_code, coalesce(p_user, ''), phone);
+    return query select p_code, true;
   else
-    -- The band travels with the holding, so it is rewritten every time the
-    -- holding is. See the note at the top about why it is stored at all.
-    update ticket_receipts r
-       set rank = p_rank, rank_tickets = p_rank_tickets
-     where r.code = found_code;
+    return query select found_code, false;
   end if;
-
-  /*
-   * ADD BEFORE REMOVE would be the other order and is the wrong one here only
-   * because both are inside one transaction anyway — so the order is chosen
-   * for clarity instead: what is no longer held goes, then what is held
-   * arrives. `on conflict do nothing` makes the second half idempotent, which
-   * matters because the common case is a holding that grew by one book and
-   * whose other forty rows are already exactly right.
-   */
-  delete from ticket_receipt_items ri
-   where ri.code = found_code
-     and not (ri.ticket_idx = any(p_idxs));
-
-  insert into ticket_receipt_items (code, ticket_idx)
-  select found_code, i from unnest(p_idxs) i
-  on conflict (code, ticket_idx) do nothing;
-
-  return query select found_code, made;
 end $$ language plpgsql;

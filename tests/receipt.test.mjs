@@ -42,6 +42,17 @@ const world = () => fakeDb({
 
 const boss = { email: 'boss@x.com', role: 'admin', isAdmin: true, isSuperAdmin: true, agentId: null }
 const codeOf = async (fn) => { try { await fn(); return 'no error' } catch (e) { return e.code } }
+/*
+ * WHAT A CODE ANSWERS WITH, asked the way the public check page asks it —
+ * through `holding_of`, which resolves the code to its buyer inside the
+ * database. Every assertion about what a digital ticket covers goes through
+ * here rather than through a table, because a table is not where the answer
+ * lives any more.
+ */
+const resolve = async (w, code) => {
+  const { data } = await w.ctx.supabaseAdmin.rpc('holding_of', { p_code: code, p_limit: 1000 })
+  return data ?? []
+}
 
 /*
  * A SECOND WORLD, because the model turns on WHOSE tickets these are and the
@@ -73,9 +84,16 @@ console.log('1. one code stands for everything that buyer holds')
   ok(/^[0-9A-Z]{8,32}$/.test(r.code), `and the code looks like a code (${r.code})`)
 
   eq(w.table('ticket_receipts').length, 1, 'one header row')
-  eq(w.table('ticket_receipt_items').length, 10, 'and one item per ticket held')
   eq(w.table('ticket_receipts')[0].created_by, 'boss@x.com', 'naming who issued it')
   eq(w.table('ticket_receipts')[0].buyer_phone, '0125550100', 'and whose it is')
+  /*
+   * AND NOTHING ELSE IS WRITTEN. What the code covers is not stored: it is
+   * resolved to the buyer and answered from `tickets` at the moment somebody
+   * scans. An item list would be a second answer to that question, and it
+   * would be the one that went stale.
+   */
+  eq(w.table('ticket_receipt_items').length, 0, 'and no list of what it covers')
+  eq((await resolve(w, r.code)).length, 10, 'because the code answers with the buyer\'s ten')
 }
 
 /*
@@ -121,20 +139,24 @@ console.log('2. one code per buyer, and it survives the holding changing')
    */
   Object.assign(w.db.tables.tickets.find((t) => t.number === 'KS-00010'),
                 { buyer_name: 'Ko Zaw', buyer_phone: '0125550100' })
-  const grown = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
-  eq(grown.code, first.code, 'the link in their chat is still the right link')
-  eq(grown.count, 7, 'and it now covers seven')
-  eq(w.table('ticket_receipt_items').filter((i) => i.code === first.code).length, 7,
-    'seven items, not thirteen — replaced rather than added to')
+  /*
+   * NOBODY HAD TO PRESS ANYTHING. The code is not asked for again here — the
+   * link already in the buyer's chat is resolved exactly as a scan would
+   * resolve it, and it answers with seven. That is the whole difference
+   * between a stored set and a live one, and it is the assertion that would
+   * have failed on every version of this before today.
+   */
+  eq((await resolve(w, first.code)).length, 7, 'the link already sent now answers with seven')
 
-  /* And it shrinks the same way, which is the case an append-only write would
-     have got wrong while looking perfectly correct on the way up. */
+  /* And it shrinks the same way, which is the case a stored list would have
+     got wrong while looking perfectly correct on the way up. */
   Object.assign(w.db.tables.tickets.find((t) => t.number === 'KS-00010'),
                 { buyer_name: '', buyer_phone: '', status: 'Available' })
-  const shrunk = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
-  eq(shrunk.count, 6, 'a ticket that is no longer theirs comes off it')
-  eq(w.table('ticket_receipt_items').filter((i) => i.code === first.code).length, 6,
-    'and comes off the items too')
+  eq((await resolve(w, first.code)).length, 6, 'a ticket that is no longer theirs comes off it')
+  const asked = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
+  eq(asked.code, first.code, 'and the code is still the same code')
+  eq(asked.count, 6, 'reporting what they hold now')
+  eq(w.table('ticket_receipt_items').length, 0, 'with nothing written down about it')
 }
 
 console.log('2b. a digital ticket belongs to one buyer')
@@ -203,7 +225,18 @@ console.log('4. the public endpoint answers for every ticket on it, and says not
   const src = readFileSync(new URL('../supabase/functions/verify/index.ts', import.meta.url), 'utf8')
   const body = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-  ok(/ticket_receipt_items/.test(body), 'it reads the receipt\'s ticket list')
+  /*
+   * IT ASKS A FUNCTION, AND THAT IS THE POINT OF THE FUNCTION.
+   *
+   * Answering a digital ticket means asking whose code it is — a join on
+   * `buyer_phone`, which this file may not write and the guard below refuses
+   * it. `holding_of` does that join behind SECURITY DEFINER and hands back
+   * ticket rows, so the set is resolved LIVE and the telephone number never
+   * leaves the database. A version of this file that went back to reading a
+   * stored item list would be reading something that had gone stale.
+   */
+  ok(/holding_of/.test(body), 'it resolves the code through holding_of')
+  ok(!/ticket_receipt_items/.test(body), 'and never from a stored list of what it covered')
   ok(/number: String\(t\.number\)/.test(body) && /sold: SOLD\.includes/.test(body),
      'and answers with the number and whether it is recorded sold')
   /*
@@ -241,7 +274,7 @@ console.log('4. the public endpoint answers for every ticket on it, and says not
   }
   // An unknown receipt answers like a wrong one: telling them apart is help for
   // somebody guessing codes.
-  ok(/if \(!idxs\.length\) \{[\s\S]{0,120}genuine: false/.test(body),
+  ok(/if \(!rows\.length\) \{[\s\S]{0,120}genuine: false/.test(body),
      'an unknown code is refused in the same shape as a wrong one')
 }
 

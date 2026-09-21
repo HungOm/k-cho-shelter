@@ -25,7 +25,6 @@
  */
 import { ApiError, type AppUser } from './gate.ts'
 import { newCode, DEFAULT_LENGTH } from '../_shared/ticketcode.ts'
-import { rankFor } from '../_shared/ranks.ts'
 /* The one bound the check page and this function have to agree about. */
 import { HOLDING_MAX_TICKETS } from '../_shared/holding.ts'
 
@@ -545,7 +544,8 @@ function wireTemplate(t: Record<string, unknown>) {
  * identity to hold the set against, so that case keeps the old behaviour — a
  * one-off receipt for exactly the tickets named, with no buyer on it. Pooling
  * every phone-less sale into one shared digital ticket is the same mistake
- * bandFor refuses below, and it would hand strangers each other's numbers.
+ * `holding_of` refuses the same thing for the same reason, and it would hand
+   * strangers each other's ticket numbers.
  *
  * TICKETS FROM TWO DIFFERENT BUYERS ARE REFUSED rather than silently split or
  * silently merged. One set, one buyer, or say so.
@@ -585,8 +585,8 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
 
   /*
    * WHOSE IS THIS SET. Distinct numbers, not "the first one found" — the old
-   * bandFor took the first non-blank and would have been perfectly happy to
-   * band one buyer's holding using another's count.
+   * the band lookup that used to live here took the first non-blank and would
+   * have been perfectly happy to band one buyer's holding by another's count.
    */
   const phones = [...new Set(wanted
     .map((n) => String(found.get(n)!.buyer_phone ?? '').trim())
@@ -627,58 +627,58 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
     .from('tickets').select('idx,number')
     .eq('buyer_phone', phone).in('status', SOLD)
     .order('idx', { ascending: true })
-    .limit(HOLDING_MAX_TICKETS + 1)
+    .limit(HOLDING_MAX_TICKETS)
   if (mineErr) throw new ApiError('QUERY_FAILED', mineErr.message)
 
   const held = (mine ?? []) as Array<Record<string, unknown>>
-  if (held.length > HOLDING_MAX_TICKETS) {
-    /*
-     * REFUSED WHILE SOMEBODY CAN ACT ON IT. The public check page reads exactly
-     * HOLDING_MAX_TICKETS items, so a larger holding would be listed there
-     * short by however many fell off the end — a green verdict over an
-     * incomplete list, which is the one failure on that page that does not
-     * look like one.
-     */
-    throw new ApiError('RANGE_TOO_LARGE',
-      `This buyer holds ${held.length} tickets and a digital ticket lists at most `
-      + `${HOLDING_MAX_TICKETS}. Tell whoever runs the raffle before sending it.`,
-      { held: held.length, max: HOLDING_MAX_TICKETS })
-  }
 
-  const idxs = held.map((t) => Number(t.idx)).sort((a, b) => a - b)
   const numbers = held.map((t) => String(t.number))
-  const band = await bandFor(ctx, phone)
 
-  const { data: out, error: upErr } = await ctx.supabaseAdmin.rpc('upsert_holding_tx', {
+  /*
+   * ONLY THE TOKEN IS WRITTEN. What this code covers is not stored anywhere:
+   * `holding_of` resolves it to the buyer and answers with the tickets they
+   * hold at the moment somebody scans. So there is no item list to keep in
+   * step, no sale path that has to remember a second table, and no window in
+   * which a link lists what somebody held last week.
+   *
+   * The band is not stored either. It used to be frozen here because the check
+   * page could not count a buyer's tickets without becoming able to identify
+   * them; that page counts the rows `holding_of` gives it now, so the band is
+   * worked out from what they hold today.
+   *
+   * WHAT IS RETURNED IS STILL THE WHOLE HOLDING, because the screen that
+   * called this puts the count on a button somebody is about to press in front
+   * of the buyer. It is read here and stored nowhere.
+   */
+  const { data: out, error: upErr } = await ctx.supabaseAdmin.rpc('ensure_holding_tx', {
     p_phone: phone,
-    p_idxs: idxs,
     p_code: newCode(await codeLength(ctx)),
     p_user: user.email,
-    p_rank: band?.id ?? null,
-    p_rank_tickets: band?.tickets ?? null,
   })
   if (upErr) throw new ApiError('QUERY_FAILED', upErr.message)
   const row = (Array.isArray(out) ? out[0] : out) as Record<string, unknown> | undefined
   const code = String(row?.holding_code ?? '')
   if (!code) throw new ApiError('QUERY_FAILED', 'The digital ticket could not be written.')
 
-  await ctx.supabaseAdmin.from('audit_log').insert({
-    action: 'MAKE_RECEIPT',
-    details: {
-      code,
-      tickets: numbers.length,
-      rank: band?.id ?? '',
-      created: !!row?.was_created,
-    },
-    email: user.email,
-  })
+  /*
+   * LOGGED ONLY WHEN ONE WAS MADE. This action is now called whenever the
+   * buyer's card is LOOKED AT, so that the picture on screen is the picture
+   * that would be sent; logging every one of those would bury the entries that
+   * record something happening under a trail of somebody scrolling.
+   */
+  if (row?.was_created) {
+    await ctx.supabaseAdmin.from('audit_log').insert({
+      action: 'MAKE_RECEIPT',
+      details: { code, tickets: numbers.length },
+      email: user.email,
+    })
+  }
 
   return {
     code,
     tickets: numbers,
     count: numbers.length,
     created: !!row?.was_created,
-    rank: band?.id ?? '',
   }
 }
 
@@ -691,40 +691,13 @@ async function codeLength(ctx: Ctx) {
 }
 
 /*
- * HOW MANY TICKETS THIS BUYER HOLDS, AND WHICH BAND THAT IS.
+ * `bandFor` WAS HERE AND THE BAND IS NOT STORED ANY MORE.
  *
- * Keyed on the telephone number, not the name. Two buyers called "Ma Hla" are
- * two people and a ladder that merged them would hand one of them the other's
- * standing; a blank number is not an identity at all, so it gets no band rather
- * than being pooled with every other blank — which would make "no number
- * recorded" the largest supporter in the raffle.
- *
- * Returns null whenever it cannot answer, and every caller writes that through
- * as null. A missing band shows nothing; it never falls back to the bottom rung
- * — see _shared/ranks.ts, which refuses for the same reason.
+ * It counted a buyer's tickets and froze the answer onto the row, because the
+ * public check page could not count without becoming able to identify
+ * somebody. `holding_of` resolves a code to its buyer inside the database, so
+ * that page counts rows which name nobody and works the band out from what
+ * they hold today — see the migration of 2026-09-21 and the note in
+ * verify/index.ts. A stored band was a second answer to a question with a live
+ * one, and it was the answer that went stale.
  */
-async function bandFor(ctx: Ctx, phone: string) {
-  /*
-   * GIVEN THE BUYER RATHER THAN GUESSING ONE. This used to take the ticket
-   * indexes and pick the FIRST non-blank telephone number among them, which on
-   * a set belonging to two people would have banded one buyer's holding by the
-   * other's count. The caller now establishes who the set belongs to — and
-   * refuses a mixed one — so there is nothing left to guess at.
-   */
-  if (!phone) return null
-
-  /*
-   * Counted at the database rather than pulled back and measured here: a buyer
-   * with two hundred tickets would otherwise be two hundred rows fetched to
-   * learn one number, on a request whose job is to mint a code.
-   */
-  const { count, error } = await ctx.supabaseAdmin
-    .from('tickets').select('idx', { count: 'exact', head: true })
-    .eq('buyer_phone', phone).in('status', ['Sold', 'Donated'])
-  if (error) return null
-
-  const { data: cfgRows } = await ctx.supabaseAdmin
-    .from('config').select('key,value').eq('key', 'TICKETS_PER_BOOK')
-  const perBook = Number((cfgRows ?? [])[0]?.value ?? 0)
-  return rankFor(Number(count ?? 0), perBook)
-}
