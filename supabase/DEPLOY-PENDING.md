@@ -27,6 +27,38 @@ pushes, and because two of the failures below were found the expensive way.
 **Nothing here is a request to deploy.** It is what to check and in what order
 when somebody decides to.
 
+## 2026-09-21 — the digital ticket's layout opens a new gap
+
+`660e9c5` gives Ticket Studio's "Digital ticket" tab a real designer, and the
+arrangement is stored in a new config key. The client half of that is already
+on its way to Pages, because a push is a deploy of the client; the other two
+halves are not.
+
+| What | Where | Why it has to go first |
+|---|---|---|
+| migration `20260921120000_the_card_a_buyer_is_sent_can_be_designed.sql` | `supabase db push --linked` | seeds `CARD_LAYOUT`. The function's `writeConfig` upserts, so it would create the row anyway — but `configPayload` reading a key nobody has described is how a config row ends up with no explanation of itself |
+| Edge Function `api` | `supabase functions deploy api` | `setCardDesign` has to ACCEPT `cardLayout`, and `configPayload` has to SEND it back |
+
+**What the window actually looks like, which is better than usual but still
+wrong.** The deployed function ignores a parameter it does not know, so a save
+succeeds, writes the treatment and the motto, and returns a config with no
+`cardLayout` in it. `loadCard` then resolves the standard parts again — so the
+organiser watches their arrangement snap back to standard while a toast says
+"Digital ticket saved". Visible rather than silent, and still a lost afternoon
+for whoever is arranging a card.
+
+**Nothing a buyer holds is affected either way.** The standard layout draws
+every card exactly as it was drawn before this commit —
+`tests/cardlayout.test.mjs` holds a golden fixture rendered from the old
+renderers to prove it — so a raffle that never opens the tab is unchanged, and
+one whose save did not stick is unchanged too.
+
+**Re-derive before acting**, as the whole of this file says. `supabase
+migration list --linked` for the first row and `supabase functions list` for
+the second; and after the function goes out, download it and grep for
+`BAD_CARD_LAYOUT`, which is a string literal this commit adds and which exists
+nowhere else.
+
 ## What was true when this was last checked
 
 A handover document goes wrong by going stale invisibly, so every claim below is
