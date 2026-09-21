@@ -63,13 +63,14 @@ ok(!!seed, 'the config seed block was found in schema.sql')
  * is exact rather than a lower bound, since a broken parse returns zero and a
  * `>=` would let that through as "no keys lost".
  *
- * 36: the 29 that were here, plus ORG_PHONE, ORG_EMAIL and ORG_WEBSITE — added
+ * 37: the 29 that were here, plus ORG_PHONE, ORG_EMAIL and ORG_WEBSITE — added
  * when the public check page needed somewhere for "call the office" to point —
  * plus ORG_ABOUT_MY and ORG_ABOUT_EN, which let an organiser write the sentence
  * that page carries under every verdict instead of shipping one raffle's, plus
- * CARD_DESIGN and MOTTO, which the digital ticket reads.
+ * CARD_DESIGN and MOTTO, which the digital ticket reads, plus CARD_LAYOUT,
+ * which holds the parts of that card an organiser has moved in the studio.
  */
-ok(Object.keys(seed ?? {}).length === 36, `36 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
+ok(Object.keys(seed ?? {}).length === 37, `37 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
 
 /*
  * AND THE KEYS THE SERVER ACTUALLY READS ARE ALL THERE — which a count cannot

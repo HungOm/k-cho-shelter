@@ -24,6 +24,21 @@ import { valueFor } from './ticketelements.js'
 // For the boundary between the ticket and its stub. Imported rather than
 // copied — see watermarkSVG, where the copy is what went wrong.
 import { stubShare } from './ticketdesign.js'
+/*
+ * WHERE EVERY PART OF THE DIGITAL CARD SITS. The three card renderers at the
+ * bottom of this file used to carry about ninety hard-coded coordinates each;
+ * they now ask `partBoxes` for a part's position, size and scale, and draw the
+ * part's contents relative to that. The standard layout in `cardelements.js`
+ * holds the same numbers that were here, which is why the golden test in
+ * `tests/cardlayout.test.mjs` can prove the cards did not change.
+ *
+ * ONE DIRECTION ONLY: the three card SIZES live over there too, because this
+ * file importing them back would be a cycle with a `const` in it. See the note
+ * at the top of that file.
+ */
+import { partBoxes, CARD, CARD_CERT, CARD_STUB } from './cardelements.js'
+
+export { CARD, CARD_CERT, CARD_STUB }
 
 /*
  * THE FONT, AND WHY ITS NUMBERS ARE IN HERE.
@@ -1060,7 +1075,8 @@ export function elementLayerSVG(design, values = {}, opts = {}) {
  * ink the stub is printed in — on this artwork that is the green of the main
  * half — and the lettering is the ink the number is printed in.
  */
-export const CARD = { width: 1200, height: 760 }
+/* The shape itself is in cardelements.js, with the layout that measures
+ * against it, and is re-exported at the top of this file. */
 
 /*
  * Card 8b draws the same ticket three ways, all from the one brand colour:
@@ -1071,7 +1087,7 @@ export const CARD = { width: 1200, height: 760 }
  * portrait fills the screen where landscape letterboxes, and the number leads
  * because the number is what gets read down a telephone.
  */
-export const CARD_STUB = { width: 1080, height: 1920 }
+/* CARD_STUB's measurements are in cardelements.js beside its layout. */
 
 /*
  * WHAT GOES ON IT, and why each line earns its place.
@@ -1127,7 +1143,7 @@ export const CARD_STUB = { width: 1080, height: 1920 }
  * Stub run the name into a facts line. Both are how the card distinguishes a
  * keepsake from a receipt.
  */
-export const CARD_CERT = { width: 1200, height: 850 }
+/* CARD_CERT's measurements are in cardelements.js beside its layout. */
 
 /* A pale wash of the brand for the stock, and a deeper one for rules. Computed
  * rather than configured: an organisation choosing a colour has not chosen a
@@ -1195,46 +1211,96 @@ function bandLine(values, { x, y, size, ink, quiet, anchor = '' }) {
     + `</text>`
 }
 
+/*
+ * THE COLOURS A CARD PRINTS IN, worked out once and exported.
+ *
+ * All three renderers derived these from the raffle's brand colour, in three
+ * copies of the same few lines. They are exported now for a fourth reader: the
+ * studio's inspector, which offers a colour per part and has to show what that
+ * part is ALREADY printed in when nobody has overridden it. It showed #FFFFFF
+ * — a sensible-looking fallback, and a lie beside a gold motto.
+ *
+ * NONE OF IT IS CONFIGURABLE and that is the point. An organisation picks one
+ * colour; the ink on it, the quiet grey, the hairline and the gold are
+ * consequences of that choice, measured for readability rather than chosen.
+ * See brand.js for the same argument about the ink.
+ */
+export function cardPalette(treatment, values = {}) {
+  const brand = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
+  if (treatment === 'certificate') {
+    const stock = mixHex(brand, '#ffffff', 0.94)
+    const ratio = (a, b) => {
+      const [hi, lo] = [lumOf(a), lumOf(b)].sort((x, y) => y - x)
+      return (hi + 0.05) / (lo + 0.05)
+    }
+    let ink = brand
+    for (let step = 0; step < 20 && ratio(ink, stock) < 4.5; step += 1) {
+      ink = mixHex(brand, '#000000', (step + 1) * 0.05)
+    }
+    return {
+      paper: stock,
+      ink,
+      quiet: mixHex(ink, stock, 0.42),
+      hair: mixHex(ink, stock, 0.62),
+      gold: ink,
+    }
+  }
+  const ink = String(values.ink || '#ffffff')
+  const white = ink.toLowerCase() === '#ffffff'
+  return {
+    paper: brand,
+    ink,
+    quiet: white ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.62)',
+    hair: white ? 'rgba(255,255,255,.28)' : 'rgba(0,0,0,.22)',
+    gold: white ? '#ffe9a3' : ink,
+  }
+}
+
 export function certificateCardSVG(values = {}, opts = {}) {
   const { width: W, height: H } = CARD_CERT
-  const brand = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
-
+  /* Where each part sits — see the note in digitalCardSVG and cardelements.js. */
+  const P = partBoxes('certificate', opts.layout)
   /*
-   * The stock is nearly white — a 6% wash, enough that it is not a browser
-   * default and not so much that a printer spends ink on it.
-   */
-  const stock = mixHex(brand, '#ffffff', 0.94)
-  /*
-   * THE INK IS DARKENED UNTIL IT MEASURES, not until a threshold says so.
+   * THE STOCK IS NEARLY WHITE — a 6% wash, enough that it is not a browser
+   * default and not so much that a printer spends ink on it — AND THE INK IS
+   * DARKENED UNTIL IT MEASURES 4.5:1 ON IT, not until a threshold says so.
    *
    * A luminance cutoff was the obvious way and it was wrong twice out of seven:
    * a mid green at 3.3:1 and a mid blue at 4.0:1 both sat under the bar while
    * passing the test, because "is this colour light" is not the question. The
    * question is whether THIS ink on THIS stock clears 4.5:1, and that is
-   * measurable, so it is measured — step the brand toward black until it does.
+   * measurable, so it is measured.
    *
    * It matters more here than on the other two treatments because this is the
    * one that gets printed, photocopied, and read in a hall by somebody who has
-   * kept it in a pocket.
+   * kept it in a pocket. The arithmetic itself is in `cardPalette` above, which
+   * the studio reads too.
    */
-  const ratio = (a, b) => {
-    const [hi, lo] = [lumOf(a), lumOf(b)].sort((x, y) => y - x)
-    return (hi + 0.05) / (lo + 0.05)
-  }
-  let ink = brand
-  for (let step = 0; step < 20 && ratio(ink, stock) < 4.5; step += 1) {
-    ink = mixHex(brand, '#000000', (step + 1) * 0.05)
-  }
-  const quiet = mixHex(ink, stock, 0.42)
-  const rule = mixHex(ink, stock, 0.62)
+  const { paper: stock, ink, quiet, hair: rule } = cardPalette('certificate', values)
 
   const s = (v) => String(v ?? '').trim()
   const t = (str, x, y, size, fill, family, extra = '') => (str
     ? `<text x="${round(x)}" y="${round(y)}" font-family='${family}' font-size="${round(size)}" `
       + `fill="${fill}" ${extra} xml:space="preserve">${esc(str)}</text>`
     : '')
-  const mid = (str, y, size, fill, family, extra = '') =>
-    t(str, W / 2, y, size, fill, family, `text-anchor="middle" ${extra}`)
+  /*
+   * `mid` WAS A HELPER THAT CENTRED EVERYTHING ON W/2, which is what this
+   * treatment does and why the alignment control on it has somewhere to go.
+   * A part's own alignment answers the same question now, so a line is placed
+   * against ITS box rather than against the card — and an organiser who drags
+   * the buyer's name left gets a left-aligned certificate instead of a name
+   * that has quietly stayed in the middle.
+   */
+  const anch = (p) => (p.align === 'centre' ? 'text-anchor="middle" ' : p.align === 'right' ? 'text-anchor="end" ' : '')
+  const ax = (p) => p.x + (p.align === 'centre' ? p.w / 2 : p.align === 'right' ? p.w : 0)
+  const bx = (p) => p.x + (p.align === 'centre' ? (p.w - p.own) / 2 : p.align === 'right' ? p.w - p.own : 0)
+  const fam = (p) => (p.family === 'number' ? FONT.family : TEXT_FAMILY)
+  const bold = (p) => (p.weight === 'bold' ? 'font-weight="700"' : '')
+  const paint = (p, role) => p.ink || role
+  const ext = (p, ...more) => `${anch(p)}${[bold(p), ...more].filter(Boolean).join(' ')}`
+  /* A run the part does not govern — a caption over a serial, the word TICKET
+     over the number. It takes the alignment and nothing else. */
+  const sub = (p, more = '') => `${anch(p)}${more}`
 
   const org = s(values.org)
   const number = s(values.number)
@@ -1243,6 +1309,12 @@ export function certificateCardSVG(values = {}, opts = {}) {
   const motto = s(values.motto)
   const logo = s(values.logo)
   const initial = (org || '?').charAt(0).toUpperCase()
+
+  const M = P.masthead
+  const N = P.number
+  const B = P.buyer
+  const PR = P.price
+  const MO = P.motto
 
   /* A double rule inset from the trim, which is what says "certificate" before
    * a word has been read. The inner one is hairline so the pair reads as one
@@ -1257,27 +1329,30 @@ export function certificateCardSVG(values = {}, opts = {}) {
    * not — the same fallback the other two use, so a raffle with no logo gets a
    * mark rather than a hole.
    */
-  const seal = `<circle cx="${W - 190}" cy="${H - 178}" r="76" fill="none" stroke="${rule}" stroke-width="2"/>`
-    + `<circle cx="${W - 190}" cy="${H - 178}" r="64" fill="none" stroke="${rule}" stroke-width="1"/>`
+  const SE = P.seal
+  const seal = !SE.on ? '' : (
+    `<circle cx="${round(SE.x + 76 * SE.k)}" cy="${round(SE.y + 76 * SE.k)}" r="${round(76 * SE.k)}" fill="none" stroke="${rule}" stroke-width="2"/>`
+    + `<circle cx="${round(SE.x + 76 * SE.k)}" cy="${round(SE.y + 76 * SE.k)}" r="${round(64 * SE.k)}" fill="none" stroke="${rule}" stroke-width="1"/>`
     + (logo
-      ? `<image href="${esc(logo)}" x="${W - 234}" y="${H - 222}" width="88" height="88" preserveAspectRatio="xMidYMid meet"/>`
-      : t(initial, W - 190, H - 156, 52, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"'))
+      ? `<image href="${esc(logo)}" x="${round(SE.x + 32 * SE.k)}" y="${round(SE.y + 32 * SE.k)}" width="${round(88 * SE.k)}" height="${round(88 * SE.k)}" preserveAspectRatio="xMidYMid meet"/>`
+      : t(initial, SE.x + 76 * SE.k, SE.y + 98 * SE.k, 52 * SE.k, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')))
 
-  const qr = { enabled: true, x: 96, y: H - 268, size: 172, ecc: 'M', backing: false }
+  const C = P.code
+  const qr = { enabled: C.on, x: bx(C), y: C.y, size: 172 * C.k, ecc: 'M', backing: false }
   const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
     <rect width="${W}" height="${H}" fill="${stock}"/>
     ${border}
-    ${mid(org, 152, 30, quiet, TEXT_FAMILY, 'letter-spacing="6"')}
-    ${mid('TICKET', 214, 22, quiet, TEXT_FAMILY, 'letter-spacing="8"')}
-    ${mid(number, 318, 92, ink, FONT.family, 'font-weight="700" letter-spacing="4"')}
-    <line x1="${W / 2 - 150}" y1="360" x2="${W / 2 + 150}" y2="360" stroke="${rule}" stroke-width="1"/>
-    ${mid('Issued to', 418, 22, quiet, TEXT_FAMILY, 'letter-spacing="3"')}
-    ${mid(name, 478, 46, ink, TEXT_FAMILY)}
-    ${bandLine(values, { x: W / 2, y: 516, size: 20, ink, quiet, anchor: 'text-anchor="middle"' })}
-    ${mid(price, values.rankName ? 560 : 534, 26, quiet, FONT.family)}
-    ${motto ? mid(motto, 622, 24, quiet, TEXT_FAMILY, 'font-style="italic"') : ''}
+    ${M.on ? t(org, ax(M), M.y + 30 * M.k, 30 * M.k, paint(M, quiet), fam(M), ext(M, `letter-spacing="${round(6 * M.k)}"`)) : ''}
+    ${M.on ? t('TICKET', ax(M), M.y + 92 * M.k, 22 * M.k, quiet, TEXT_FAMILY, sub(M, `letter-spacing="${round(8 * M.k)}"`)) : ''}
+    ${N.on ? t(number, ax(N), N.y + 92 * N.k, 92 * N.k, paint(N, ink), fam(N), ext(N, `letter-spacing="${round(4 * N.k)}"`)) : ''}
+    ${N.on ? `<line x1="${round(bx(N) + 150 * N.k)}" y1="${round(N.y + 134 * N.k)}" x2="${round(bx(N) + 450 * N.k)}" y2="${round(N.y + 134 * N.k)}" stroke="${rule}" stroke-width="1"/>` : ''}
+    ${B.on ? t('Issued to', ax(B), B.y + 22 * B.k, 22 * B.k, quiet, TEXT_FAMILY, sub(B, `letter-spacing="${round(3 * B.k)}"`)) : ''}
+    ${B.on ? t(name, ax(B), B.y + 82 * B.k, 46 * B.k, paint(B, ink), fam(B), ext(B)) : ''}
+    ${B.on ? bandLine(values, { x: ax(B), y: B.y + 120 * B.k, size: 20 * B.k, ink, quiet, anchor: anch(B).trim() }) : ''}
+    ${PR.on ? t(price, ax(PR), PR.y + (values.rankName ? 52 : 26) * PR.k, 26 * PR.k, paint(PR, quiet), fam(PR), ext(PR)) : ''}
+    ${motto && MO.on ? t(motto, ax(MO), MO.y + 24 * MO.k, 24 * MO.k, paint(MO, quiet), fam(MO), ext(MO, 'font-style="italic"')) : ''}
     ${code}
     ${seal}
   </svg>`
@@ -1285,19 +1360,27 @@ export function certificateCardSVG(values = {}, opts = {}) {
 
 export function stubCardSVG(values = {}, opts = {}) {
   const { width: W, height: H } = CARD_STUB
-  const paper = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
-  const ink = String(values.ink || '#ffffff')
-  const white = ink.toLowerCase() === '#ffffff'
-  const quiet = white ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.62)'
-  const hair = white ? 'rgba(255,255,255,.28)' : 'rgba(0,0,0,.22)'
-  const gold = white ? '#ffe9a3' : ink
+  /* Where each part sits — see the note in digitalCardSVG and cardelements.js. */
+  const P = partBoxes('stub', opts.layout)
+  const { paper, ink, quiet, hair, gold } = cardPalette('stub', values)
 
   const s = (v) => String(v ?? '').trim()
   const t = (str, x, y, size, fill, family, extra = '') => (str
     ? `<text x="${round(x)}" y="${round(y)}" font-family='${family}' font-size="${round(size)}" `
       + `fill="${fill}" ${extra} xml:space="preserve">${esc(str)}</text>`
     : '')
-  const cap = (str, x, y) => t(str, x, y, 26, quiet, TEXT_FAMILY, 'letter-spacing="3"')
+
+  const anch = (p) => (p.align === 'centre' ? 'text-anchor="middle" ' : p.align === 'right' ? 'text-anchor="end" ' : '')
+  const ax = (p) => p.x + (p.align === 'centre' ? p.w / 2 : p.align === 'right' ? p.w : 0)
+  const bx = (p) => p.x + (p.align === 'centre' ? (p.w - p.own) / 2 : p.align === 'right' ? p.w - p.own : 0)
+  const fam = (p) => (p.family === 'number' ? FONT.family : TEXT_FAMILY)
+  const bold = (p) => (p.weight === 'bold' ? 'font-weight="700"' : '')
+  const paint = (p, role) => p.ink || role
+  const ext = (p, ...more) => `${anch(p)}${[bold(p), ...more].filter(Boolean).join(' ')}`
+  const op = (v) => String(round(v, 4)).replace(/^0\./, '.')
+  const cap = (p, str, dy) =>
+    t(str, ax(p), p.y + dy * p.k, 26 * p.k, quiet, TEXT_FAMILY,
+      `${anch(p)}letter-spacing="${round(3 * p.k)}"`)
 
   const number = s(values.number)
   const org = s(values.org)
@@ -1308,15 +1391,30 @@ export function stubCardSVG(values = {}, opts = {}) {
      "John Kui · RM 10.00 · Book-004". */
   const facts = [s(values.name), s(values.price), s(values.book)].filter(Boolean).join('  ·  ')
 
-  const mark = logo
-    ? `<rect x="72" y="72" width="84" height="84" rx="22" fill="rgba(255,255,255,.10)"/>`
-      + `<image href="${esc(logo)}" x="81" y="81" width="66" height="66" preserveAspectRatio="xMidYMid meet"/>`
-    : `<rect x="72" y="72" width="84" height="84" rx="22" fill="rgba(255,255,255,.10)"/>`
-      + t(initial, 114, 128, 44, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')
+  const M = P.masthead
+  const N = P.number
+  const F = P.facts
+  const MO = P.motto
+  const FO = P.footer
+  const wm = P.watermark
 
-  const chip = values.sold
-    ? `<rect x="${W - 232}" y="82" width="160" height="52" rx="26" fill="none" stroke="${gold}" stroke-width="2"/>`
-      + t('SOLD', W - 152, 118, 24, gold, TEXT_FAMILY, 'text-anchor="middle" font-weight="700" letter-spacing="2"')
+  const tile = `<rect x="${round(M.x)}" y="${round(M.y)}" width="${round(84 * M.k)}" `
+    + `height="${round(84 * M.k)}" rx="${round(22 * M.k)}" fill="rgba(255,255,255,.10)"/>`
+  const mark = !M.on ? '' : (logo
+    ? tile
+      + `<image href="${esc(logo)}" x="${round(M.x + 9 * M.k)}" y="${round(M.y + 9 * M.k)}" `
+      + `width="${round(66 * M.k)}" height="${round(66 * M.k)}" preserveAspectRatio="xMidYMid meet"/>`
+    : tile
+      + t(initial, M.x + 42 * M.k, M.y + 56 * M.k, 44 * M.k, paint(M, ink), TEXT_FAMILY,
+        'text-anchor="middle" font-weight="700"'))
+
+  const S = P.status
+  const chip = values.sold && S.on
+    ? `<rect x="${round(S.x)}" y="${round(S.y)}" width="${round(160 * S.k)}" `
+      + `height="${round(52 * S.k)}" rx="${round(26 * S.k)}" fill="none" stroke="${gold}" `
+      + `stroke-width="${round(2 * S.k)}"/>`
+      + t('SOLD', S.x + 80 * S.k, S.y + 36 * S.k, 24 * S.k, gold, TEXT_FAMILY,
+        `text-anchor="middle" font-weight="700" letter-spacing="${round(2 * S.k)}"`)
     : ''
 
   /* The QR sits with the number rather than at the top: on a phone the thumb is
@@ -1325,7 +1423,8 @@ export function stubCardSVG(values = {}, opts = {}) {
      the rule that separates the ticket from what the raffle says for itself. */
   /* Centred and large: with the number moved to the top this is the middle of
      the card, and a code held up to be scanned wants size over placement. */
-  const qr = { enabled: true, x: (W - 340) / 2, y: 900, size: 340, ecc: 'M', backing: true }
+  const C = P.code
+  const qr = { enabled: C.on, x: bx(C), y: C.y, size: 340 * C.k, ecc: 'M', backing: true }
   const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
 
   const weave = `<pattern id="sweave" width="18" height="18" patternUnits="userSpaceOnUse" `
@@ -1338,9 +1437,16 @@ export function stubCardSVG(values = {}, opts = {}) {
    * over the hole. The number leads now and the card is full top to bottom, so
    * this is a watermark doing a watermark's job.
    */
-  const watermark = `<g opacity=".055" transform="translate(190 780) scale(6)">`
-    + `<path d="M8 14h84a8 8 0 0 1 8 8v16a14 14 0 0 0 0 28v16a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V66a14 14 0 0 0 0-28V22a8 8 0 0 1 8-8z" `
-    + `fill="none" stroke="${ink}" stroke-width="6"/></g>`
+  const watermark = wm.on
+    ? `<g opacity="${op(wm.opacity)}" transform="translate(${round(wm.x)} ${round(wm.y)}) scale(${round(6 * wm.k, 4)})">`
+      + `<path d="M8 14h84a8 8 0 0 1 8 8v16a14 14 0 0 0 0 28v16a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V66a14 14 0 0 0 0-28V22a8 8 0 0 1 8-8z" `
+      + `fill="none" stroke="${paint(wm, ink)}" stroke-width="6"/></g>`
+    : ''
+
+  /* As on Grand: with no motto the two closing lines rise into its place
+     rather than leaving a gap that reads as something that failed to load. */
+  const mottoShown = !!motto && MO.on
+  const thanksY = mottoShown ? 34 : -36
 
   const R = 40
   return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
@@ -1349,7 +1455,7 @@ export function stubCardSVG(values = {}, opts = {}) {
     + `<rect width="${W}" height="${H}" rx="${R}" fill="url(#sweave)"/>`
     + watermark
     + mark
-    + t(org, 180, 128, 38, ink, TEXT_FAMILY, 'font-weight="700"')
+    + (M.on ? t(org, ax(M) + 108 * M.k, M.y + 56 * M.k, 38 * M.k, paint(M, ink), fam(M), ext(M)) : '')
     + chip
 
     /*
@@ -1365,23 +1471,23 @@ export function stubCardSVG(values = {}, opts = {}) {
      * The thumb argument does not hold either. Thumb reach is for things you
      * press; a ticket number is read, and a QR is held up to somebody else.
      */
-    + cap('TICKET NUMBER', 72, 400)
-    + t(number, 72, 560, 140, gold, FONT.family, 'font-weight="700"')
-    + t(facts, 72, 660, 34, ink, TEXT_FAMILY)
+    + (N.on ? cap(N, 'TICKET NUMBER', 26) : '')
+    + (N.on ? t(number, ax(N), N.y + 186 * N.k, 140 * N.k, paint(N, gold), fam(N), ext(N)) : '')
+    + (F.on ? t(facts, ax(F), F.y + 34 * F.k, 34 * F.k, paint(F, ink), fam(F), ext(F)) : '')
     /* In the 120px between the facts line and the rule, not appended to the
        facts: `name · price · book · GOLD SUPPORTER` would bury a thank-you in
        a list of measurements. */
-    + bandLine(values, { x: 72, y: 722, size: 26, ink: gold, quiet })
+    + (F.on ? bandLine(values, { x: ax(F), y: F.y + 96 * F.k, size: 26 * F.k, ink: gold, quiet, anchor: anch(F).trim() }) : '')
 
     + `<line x1="72" y1="780" x2="${W - 72}" y2="780" stroke="${hair}" stroke-width="2"/>`
 
     + code
-    + t(code ? 'Scan to check this ticket' : '', W / 2, 1300, 24, quiet, TEXT_FAMILY, 'text-anchor="middle"')
+    + t(code ? 'Scan to check this ticket' : '', bx(C) + 170 * C.k, C.y + 400 * C.k, 24 * C.k, quiet, TEXT_FAMILY, 'text-anchor="middle"')
 
     + `<line x1="72" y1="${H - 520}" x2="${W - 72}" y2="${H - 520}" stroke="${hair}" stroke-width="2"/>`
-    + t(motto ? `\u201C${motto}\u201D` : '', 72, H - 430, 34, gold, FONT.family, 'font-style="italic"')
-    + t(s(values.thanks), 72, motto ? H - 360 : H - 430, 32, ink, TEXT_FAMILY)
-    + t(s(values.link), 72, H - 90, 24, quiet, FONT.family)
+    + (MO.on ? t(motto ? `“${motto}”` : '', ax(MO), MO.y + 34 * MO.k, 34 * MO.k, paint(MO, gold), fam(MO), `${anch(MO)}font-style="italic"${bold(MO) ? ' ' + bold(MO) : ''}`) : '')
+    + (FO.on ? t(s(values.thanks), ax(FO), FO.y + thanksY * FO.k, 32 * FO.k, paint(FO, ink), fam(FO), ext(FO)) : '')
+    + (FO.on ? t(s(values.link), ax(FO), FO.y + 304 * FO.k, 24 * FO.k, quiet, FONT.family, anch(FO)) : '')
     + '</svg>'
 }
 
@@ -1432,10 +1538,26 @@ export function cardSVG(id, values = {}, opts = {}) {
 
 export function digitalCardSVG(values = {}, opts = {}) {
   const { width: W, height: H } = CARD
-  const paper = /^#[0-9a-f]{6}$/i.test(String(values.brand || '')) ? String(values.brand) : '#12343B'
-  const ink = String(values.ink || '#ffffff')
-  const quiet = ink.toLowerCase() === '#ffffff' ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.62)'
-  const hair = ink.toLowerCase() === '#ffffff' ? 'rgba(255,255,255,.28)' : 'rgba(0,0,0,.22)'
+  /*
+   * EVERY COORDINATE THIS FUNCTION USED TO CARRY NOW COMES FROM ONE PLACE.
+   *
+   * `partBoxes` answers where each named part of the card sits, how big it is
+   * and what scale its contents draw at — the standard layout until somebody
+   * moves something in the studio. What is left here is the DRAWING: what a
+   * masthead is made of, which run inside a part is the bold one, what hangs
+   * under the QR. That is the card's business; where it sits is a layout's.
+   *
+   * A PART'S `weight` AND `family` APPLY TO ITS PRINCIPAL RUN ONLY. The
+   * masthead is an organisation in bold with an event under it; the number is
+   * a caption over a serial. Giving the organiser one control per run would be
+   * thirty controls, and giving the caption the serial's lettering would set
+   * "TICKET NUMBER" in Times for no reason anybody asked for. So the control
+   * governs the line the part is named after, and its subordinate lines keep
+   * the treatment that distinguishes them from it.
+   */
+  const P = partBoxes('grand', opts.layout)
+
+  const { paper, ink, quiet, hair, gold } = cardPalette('grand', values)
 
   const s = (v) => String(v ?? '').trim()
   const number = s(values.number)
@@ -1458,7 +1580,30 @@ export function digitalCardSVG(values = {}, opts = {}) {
     ? `<text x="${round(x)}" y="${round(y)}" font-family='${family}' font-size="${round(size)}" `
       + `fill="${fill}" ${extra} xml:space="preserve">${esc(str)}</text>`
     : '')
-  const cap = (str, x, y) => t(str, x, y, 24, quiet, TEXT_FAMILY, 'letter-spacing="3"')
+
+  /*
+   * THE FOUR THINGS A PART'S SETTINGS TURN INTO.
+   *
+   * `anch`/`ax` align a single line inside its box the way any text box does:
+   * left is the box's left edge, centre is its middle with the anchor to
+   * match. `bx` is the same answer for a block that cannot be anchored —
+   * three columns of facts, or a QR — which has to be shifted whole instead.
+   * `ink` empty means "the colour this card prints that role in", which is
+   * computed from the raffle's brand and is not a value the layout could hold.
+   */
+  const anch = (p) => (p.align === 'centre' ? 'text-anchor="middle" ' : p.align === 'right' ? 'text-anchor="end" ' : '')
+  const ax = (p) => p.x + (p.align === 'centre' ? p.w / 2 : p.align === 'right' ? p.w : 0)
+  const bx = (p) => p.x + (p.align === 'centre' ? (p.w - p.own) / 2 : p.align === 'right' ? p.w - p.own : 0)
+  const fam = (p) => (p.family === 'number' ? FONT.family : TEXT_FAMILY)
+  const bold = (p) => (p.weight === 'bold' ? 'font-weight="700"' : '')
+  const paint = (p, role) => p.ink || role
+  /* A leading zero here would be a one-character difference in every card ever
+   * sent. `.05` is what the fixed opacity was written as, so `.05` it stays. */
+  const op = (v) => String(round(v, 4)).replace(/^0\./, '.')
+
+  const cap = (p, str, dy) =>
+    t(str, ax(p), p.y + dy * p.k, 24 * p.k, quiet, TEXT_FAMILY,
+      `${anch(p)}letter-spacing="${round(3 * p.k)}"`)
 
   /*
    * The mark. An organisation's own logo when there is one and it could be
@@ -1467,39 +1612,52 @@ export function digitalCardSVG(values = {}, opts = {}) {
    * a roundel, which is a mark rather than an apology for not having one.
    */
   const initial = (org || event || '?').trim().charAt(0).toUpperCase()
+  const m = P.masthead
   /* A rounded tile rather than a hairline circle: 8a draws the mark as a solid
    * object, which reads as an emblem where an outline reads as a placeholder. */
-  const mark = logo
-    ? `<rect x="64" y="52" width="76" height="76" rx="20" fill="rgba(255,255,255,.10)"/>`
-      + `<image href="${esc(logo)}" x="72" y="60" width="60" height="60" preserveAspectRatio="xMidYMid meet"/>`
-    : `<rect x="64" y="52" width="76" height="76" rx="20" fill="rgba(255,255,255,.10)"/>`
-      + t(initial, 102, 104, 40, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')
+  const tile = `<rect x="${round(m.x)}" y="${round(m.y)}" width="${round(76 * m.k)}" `
+    + `height="${round(76 * m.k)}" rx="${round(20 * m.k)}" fill="rgba(255,255,255,.10)"/>`
+  const mark = !m.on ? '' : (logo
+    ? tile
+      + `<image href="${esc(logo)}" x="${round(m.x + 8 * m.k)}" y="${round(m.y + 8 * m.k)}" `
+      + `width="${round(60 * m.k)}" height="${round(60 * m.k)}" preserveAspectRatio="xMidYMid meet"/>`
+    : tile
+      + t(initial, m.x + 38 * m.k, m.y + 52 * m.k, 40 * m.k, paint(m, ink), TEXT_FAMILY,
+        'text-anchor="middle" font-weight="700"'))
 
   /* The serial and the motto take the ticket's own gold — --ticket-gold, which
    * style.css says is the printed ticket's colour and never chrome. Only on a
    * dark face: on a light brand colour it would be unreadable, so the ink
-   * stands instead. */
-  const gold = ink.toLowerCase() === '#ffffff' ? '#ffe9a3' : ink
+   * stands instead. Worked out in `cardPalette` with the rest. */
 
-  const qr = { enabled: true, x: W - 316, y: 250, size: 236, ecc: 'M', backing: true }
+  const C = P.code
+  const qr = { enabled: C.on, x: bx(C), y: C.y, size: 236 * C.k, ecc: 'M', backing: true }
   const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
 
   /* A chip, not a word in the corner: the mock puts the state where a ticket
    * puts it, and "SOLD" is the one fact a buyer checks before anything else. */
   /* Outlined rather than filled, as 8a draws it. A solid gold lozenge competes
    * with the serial, which is the one thing on the card that should be loudest. */
-  const chip = sold
-    ? `<rect x="${W - 232}" y="56" width="168" height="52" rx="26" fill="none" stroke="${gold}" stroke-width="2"/>`
-      + t('SOLD', W - 148, 92, 24, gold, TEXT_FAMILY, 'text-anchor="middle" font-weight="700" letter-spacing="2"')
+  const S = P.status
+  const chip = sold && S.on
+    ? `<rect x="${round(S.x)}" y="${round(S.y)}" width="${round(168 * S.k)}" `
+      + `height="${round(52 * S.k)}" rx="${round(26 * S.k)}" fill="none" stroke="${gold}" `
+      + `stroke-width="${round(2 * S.k)}"/>`
+      + t('SOLD', S.x + 84 * S.k, S.y + 36 * S.k, 24 * S.k, gold, TEXT_FAMILY,
+        `text-anchor="middle" font-weight="700" letter-spacing="${round(2 * S.k)}"`)
     : ''
 
   /* Three facts on one line, evenly spaced, because they answer three
    * different questions — what it cost, which book it came from, when it sold. */
-  const facts = [
-    price && ['PRICE', price], book && ['BOOK', book], soldOn && ['SOLD', soldOn],
-  ].filter(Boolean)
+  const F = P.facts
+  const facts = F.on
+    ? [price && ['PRICE', price], book && ['BOOK', book], soldOn && ['SOLD', soldOn]].filter(Boolean)
+    : []
+  const factLeft = bx(F)
   const factRow = facts.map(([label, value], i) =>
-    cap(label, 64 + i * 224, 520) + t(value, 64 + i * 224, 566, 34, ink, TEXT_FAMILY)).join('')
+    t(label, factLeft + i * 224 * F.k, F.y + 24 * F.k, 24 * F.k, quiet, TEXT_FAMILY,
+      `letter-spacing="${round(3 * F.k)}"`)
+    + t(value, factLeft + i * 224 * F.k, F.y + 70 * F.k, 34 * F.k, paint(F, ink), fam(F), bold(F))).join('')
 
   /*
    * WHERE IT TEARS. Dashed, with the two notches genuinely cut out of the card
@@ -1517,18 +1675,43 @@ export function digitalCardSVG(values = {}, opts = {}) {
    * A foil rule along the top edge; a diagonal weave at a few per cent, which
    * is what stops a large flat field looking like a screen; and the ticket
    * glyph as a watermark, large and faint, bottom right.
+   *
+   * THE FOIL, THE WEAVE, THE TEAR AND THE HAIRLINE ARE THE `background` PART.
+   * They are emitted at four different points below rather than together,
+   * because z-order decides where a line goes in the stream and the hairline
+   * sits over the chip. A part is a thing you can move and hide, not a
+   * contiguous run of markup.
    */
+  const wm = P.watermark
   const weave = `<pattern id="weave" width="18" height="18" patternUnits="userSpaceOnUse" `
     + `patternTransform="rotate(-24)"><line x1="0" y1="0" x2="0" y2="18" `
     + `stroke="rgba(255,255,255,.035)" stroke-width="7"/></pattern>`
   const foil = `<rect x="${R}" y="0" width="${W - R * 2}" height="7" fill="${gold}"/>`
-  const watermark = `<g opacity=".05" transform="translate(${W - 360} ${H - 430}) scale(4.3)">`
-    + `<path d="M8 14h84a8 8 0 0 1 8 8v16a14 14 0 0 0 0 28v16a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V66a14 14 0 0 0 0-28V22a8 8 0 0 1 8-8z" `
-    + `fill="none" stroke="${ink}" stroke-width="6"/></g>`
+  const watermark = wm.on
+    ? `<g opacity="${op(wm.opacity)}" transform="translate(${round(wm.x)} ${round(wm.y)}) scale(${round(4.3 * wm.k, 4)})">`
+      + `<path d="M8 14h84a8 8 0 0 1 8 8v16a14 14 0 0 0 0 28v16a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V66a14 14 0 0 0 0-28V22a8 8 0 0 1 8-8z" `
+      + `fill="none" stroke="${paint(wm, ink)}" stroke-width="6"/></g>`
+    : ''
   /* Drawn INSIDE the group and after the paper. Outside it the paper covers it,
    * which is how the first version shipped a tear line nobody could see. */
   const tearLine = `<line x1="100" y1="${tearY}" x2="${W - 100}" y2="${tearY}" stroke="${hair}" `
     + `stroke-width="2" stroke-dasharray="10 8"/>`
+
+  const N = P.number
+  const B = P.buyer
+  const MO = P.motto
+  const FO = P.footer
+  /*
+   * THE FOOTER RISES WHEN THERE IS NO MOTTO, which is the one piece of
+   * automatic layout left on this card and is worth keeping. A blank line
+   * where a motto would be reads as something that failed to load; the two
+   * lines simply sit higher in their own box instead. It follows the block
+   * wherever the block is dragged, because it is an offset inside the part
+   * rather than a second position for it.
+   */
+  const mottoShown = !!motto && MO.on
+  const thanksY = mottoShown ? 30 : 4
+  const linkY = mottoShown ? 64 : 46
 
   return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
     + `<defs>${weave}</defs>`
@@ -1540,16 +1723,16 @@ export function digitalCardSVG(values = {}, opts = {}) {
     + foil
     + tearLine
     + mark
-    + t(org, 166, 84, 38, ink, TEXT_FAMILY, 'font-weight="700"')
-    + t(event, 166, 124, 28, quiet, TEXT_FAMILY)
+    + (m.on ? t(org, ax(m) + 102 * m.k, m.y + 32 * m.k, 38 * m.k, paint(m, ink), fam(m), `${anch(m)}${bold(m)}`) : '')
+    + (m.on ? t(event, ax(m) + 102 * m.k, m.y + 72 * m.k, 28 * m.k, quiet, TEXT_FAMILY, anch(m)) : '')
     + chip
     + `<line x1="64" y1="168" x2="${W - 64}" y2="168" stroke="${hair}" stroke-width="2"/>`
 
-    + cap('TICKET NUMBER', 64, 226)
-    + t(number, 64, 310, 76, gold, FONT.family, 'font-weight="700"')
+    + (N.on ? cap(N, 'TICKET NUMBER', 30) : '')
+    + (N.on ? t(number, ax(N), N.y + 114 * N.k, 76 * N.k, paint(N, gold), fam(N), `${anch(N)}${bold(N)}`) : '')
 
-    + (name ? cap('ISSUED TO', 64, 386) : '')
-    + t(name, 64, 438, 42, ink, TEXT_FAMILY, 'font-weight="700"')
+    + (B.on && name ? cap(B, 'ISSUED TO', 30) : '')
+    + (B.on ? t(name, ax(B), B.y + 82 * B.k, 42 * B.k, paint(B, ink), fam(B), `${anch(B)}${bold(B)}`) : '')
 
     /*
      * UNDER THE NAME, BECAUSE IT IS PART OF THE NAME. It sits in the 82px
@@ -1562,21 +1745,25 @@ export function digitalCardSVG(values = {}, opts = {}) {
      * glued to the row below. 34 above and 48 below puts it with the name,
      * which is what it is about.
      */
-    + bandLine(values, { x: 64, y: 472, size: 22, ink: gold, quiet })
+    + (B.on
+      ? bandLine(values, { x: ax(B), y: B.y + 116 * B.k, size: 22 * B.k, ink: gold, quiet, anchor: anch(B).trim() })
+      : '')
 
     + factRow
-    + (facts.length ? '' : (draw ? cap('DRAW', 64, 520) + t(draw, 64, 566, 34, ink, TEXT_FAMILY) : ''))
+    + (facts.length || !F.on ? '' : (draw
+      ? cap(F, 'DRAW', 24) + t(draw, ax(F), F.y + 70 * F.k, 34 * F.k, paint(F, ink), fam(F), `${anch(F)}${bold(F)}`)
+      : ''))
 
     + code
-    + t(code ? 'Scan to check this ticket' : '', W - 198, 528, 22, quiet, TEXT_FAMILY, 'text-anchor="middle"')
+    + t(code ? 'Scan to check this ticket' : '', bx(C) + 118 * C.k, C.y + 278 * C.k, 22 * C.k, quiet, TEXT_FAMILY, 'text-anchor="middle"')
 
     + `</g>`
     /* Below the tear: the stub half — what the raffle says for itself. */
-    + t(motto ? `“${motto}”` : '', 64, 664, 30, gold, FONT.family, 'font-style="italic"')
-    + t(s(values.thanks), 64, motto ? 702 : 676, 30, ink, TEXT_FAMILY)
+    + (MO.on ? t(motto ? `“${motto}”` : '', ax(MO), MO.y + 30 * MO.k, 30 * MO.k, paint(MO, gold), fam(MO), `${anch(MO)}font-style="italic"${bold(MO) ? ' ' + bold(MO) : ''}`) : '')
+    + (FO.on ? t(s(values.thanks), ax(FO), FO.y + thanksY * FO.k, 30 * FO.k, paint(FO, ink), fam(FO), `${anch(FO)}${bold(FO)}`) : '')
     /* The address in words as well as in the code: a QR that will not scan is
      * still a link somebody can type. Kept clear of the edge: at 752 its
-     * descenders sat on the card’s bottom border. */
-    + t(link, 64, motto ? 736 : 718, 22, quiet, FONT.family)
+     * descenders sat on the card's bottom border. */
+    + (FO.on ? t(link, ax(FO), FO.y + linkY * FO.k, 22 * FO.k, quiet, FONT.family, anch(FO)) : '')
     + '</svg>'
 }

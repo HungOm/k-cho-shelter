@@ -28,6 +28,18 @@ const num = (v: unknown, d: number) => {
  * divergences happened here, every one of them a key built one way and read
  * another.
  */
+/** A stored card layout, or nothing at all. Never throws — see the caller. */
+function parseLayout(raw: unknown): Record<string, unknown> {
+  const text = String(raw ?? '').trim()
+  if (!text) return {}
+  try {
+    const out = JSON.parse(text)
+    return out && typeof out === 'object' && !Array.isArray(out) ? out : {}
+  } catch {
+    return {}
+  }
+}
+
 export function configPayload(cfg: Record<string, string>) {
   const generated = num(cfg.TOTAL_TICKETS, 0)
   const activeRaw = num(cfg.ACTIVE_TICKETS, 0)
@@ -89,6 +101,19 @@ export function configPayload(cfg: Record<string, string>) {
        `motto` is drawn by all three cards and could be set nowhere at all. */
     cardDesign: cfg.CARD_DESIGN ?? '',
     motto: cfg.MOTTO ?? '',
+    /*
+     * WHERE THE PARTS OF THE DIGITAL CARD SIT, parsed here rather than on the
+     * client, so a row that got corrupted is one blank card layout instead of
+     * a JSON.parse throwing inside whichever screen happened to draw a ticket
+     * first. Blank and unparseable both mean the same thing and mean it
+     * safely: the standard layout, which is what every raffle had before the
+     * studio could move anything.
+     *
+     * It travels with the rest of config because ViewTicket, the studio and
+     * the WhatsApp picture all draw the same card and must not disagree about
+     * where its motto is. It is small — only the parts somebody has moved.
+     */
+    cardLayout: parseLayout(cfg.CARD_LAYOUT),
     projectCode: cfg.PROJECT_CODE ?? '',
     /*
      * Whether this raffle has artwork to print tickets from — a yes or no, not

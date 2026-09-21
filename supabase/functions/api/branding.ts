@@ -158,9 +158,69 @@ export async function setCardDesign(p: Record<string, unknown>, user: AppUser, c
     throw new ApiError('BAD_MOTTO', 'The motto cannot contain < or >.')
   }
 
-  await writeConfig(ctx, { CARD_DESIGN: design, MOTTO: motto })
+  /*
+   * WHERE THE PARTS OF THE CARD SIT, when the organiser has moved any.
+   *
+   * Absent means "do not touch it", not "clear it". The treatment and the
+   * motto can be saved by a screen that never opened the layout — and an
+   * older bundle posts neither — so a missing key has to leave the stored
+   * layout alone. `null` is the explicit way back to the standard card.
+   *
+   * VALIDATED THE WAY `setTemplateDesign` VALIDATES A PRINTED DESIGN, and for
+   * the same reason: the shape, the size and whether every number is a real
+   * number. What a sensible box IS belongs to `cardelements.js`, which draws
+   * the card and is the only thing that can say — and which refuses a bad
+   * value on the way IN as well, so a layout that got past this is still drawn
+   * at its standard position rather than off the card.
+   */
+  let layout: unknown
+  if (p.cardLayout !== undefined) {
+    layout = p.cardLayout === null ? {} : p.cardLayout
+    if (!layout || typeof layout !== 'object' || Array.isArray(layout)) {
+      throw new ApiError('BAD_CARD_LAYOUT', 'That card layout could not be read.')
+    }
+    for (const [treatment, parts] of Object.entries(layout as Record<string, unknown>)) {
+      if (!ALLOWED.includes(treatment)) {
+        throw new ApiError('BAD_CARD_LAYOUT',
+          `${treatment} is not one of the ticket treatments (${ALLOWED.join(', ')}).`)
+      }
+      if (!parts || typeof parts !== 'object' || Array.isArray(parts)) {
+        throw new ApiError('BAD_CARD_LAYOUT', `The ${treatment} layout is not a set of parts.`)
+      }
+    }
+    // NaN survives JSON.stringify as null rather than failing, so a coordinate
+    // that is not a number has to be looked for rather than caught.
+    const numbersAreReal = (v: unknown): boolean => {
+      if (typeof v === 'number') return Number.isFinite(v)
+      if (Array.isArray(v)) return v.every(numbersAreReal)
+      if (v && typeof v === 'object') return Object.values(v).every(numbersAreReal)
+      return true
+    }
+    if (!numbersAreReal(layout)) {
+      throw new ApiError('BAD_CARD_LAYOUT', 'That card layout has a measurement that is not a number.')
+    }
+    const encoded = JSON.stringify(layout)
+    if (encoded.length > 8192) {
+      throw new ApiError('BAD_CARD_LAYOUT',
+        `That card layout is ${encoded.length} characters. The limit is 8192 — it holds ` +
+        'the parts somebody has moved, not the whole card.')
+    }
+  }
+
+  const rows: Record<string, string> = { CARD_DESIGN: design, MOTTO: motto }
+  if (layout !== undefined) {
+    /* An empty overlay is stored as the empty string rather than as "{}", so
+       "has this raffle designed its card" is the same question as "is this
+       value blank" — which is how every other config key answers it. */
+    const encoded = JSON.stringify(layout)
+    rows.CARD_LAYOUT = encoded === '{}' ? '' : encoded
+  }
+
+  await writeConfig(ctx, rows)
   await ctx.supabaseAdmin.from('audit_log').insert({
-    action: 'SET_CARD_DESIGN', details: { design, motto }, email: user.email,
+    action: 'SET_CARD_DESIGN',
+    details: { design, motto, layout: layout === undefined ? 'unchanged' : Object.keys(layout as object) },
+    email: user.email,
   })
   return { config: configPayload(await currentConfig(ctx)) }
 }

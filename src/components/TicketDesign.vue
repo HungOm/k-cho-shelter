@@ -38,9 +38,8 @@ import { state, api, setConfig, toast, isAdmin, setFocus, go, NO_ROOM_WHY } from
 import { designFor, validateDesign, stubShare } from '../lib/ticketdesign.js'
 import {
   elementLayerSVG, placeElements, qrModuleMM, ticketVerifyUrl,
-  cardSVG, CARD_DESIGNS, CARD,
 } from '../lib/ticketart.js'
-import { inkFor } from '../lib/brand.js'
+import { resolveParts, standardParts, layoutFrom } from '../lib/cardelements.js'
 import {
   SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, lockAxis, keepRatio, nameOf, normalElement, nextId, legacyFromElements,
 } from '../lib/ticketelements.js'
@@ -54,6 +53,7 @@ import ShapesPanel from './ticketdesign/ShapesPanel.vue'
 import TemplateRail from './ticketdesign/TemplateRail.vue'
 import ArtworkVerdict from './ticketdesign/ArtworkVerdict.vue'
 import Inspector from './ticketdesign/Inspector.vue'
+import DigitalTab from './ticketdesign/DigitalTab.vue'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
 import Icon from './ui/Icon.vue'
@@ -98,44 +98,159 @@ const TABS = [
 const tab = ref('place')
 
 /* ---------- card 8c: the digital ticket ---------- */
+/*
+ * THE CARD IS THREE THINGS NOW, WHERE IT WAS TWO.
+ *
+ * The treatment and the motto belong to the RAFFLE — one answer each, whatever
+ * treatment is on. The layout belongs to a TREATMENT: Grand's motto and Stub's
+ * motto are in different places on differently shaped cards, and an organiser
+ * who arranges one and then looks at another must not find the second one
+ * rearranged behind them.
+ *
+ * So `cardLayout` holds every treatment's overlay and `cardParts` holds the
+ * whole, resolved list for the one on screen. Switching treatment folds what
+ * is on screen back into the overlay before resolving the next — which is the
+ * step that, left out, silently discards the arrangement somebody just made.
+ */
 const MOTTO_MAX = 48
 const card = ref({ design: 'grand', motto: '' })
+const cardLayout = ref({})
+const cardParts = ref([])
 const cardSaving = ref(false)
 const mottoLeft = computed(() => MOTTO_MAX - (card.value.motto || '').length)
 const mottoOver = computed(() => mottoLeft.value < 0)
-const cardSize = computed(
-  () => CARD_DESIGNS.find(d => d.id === card.value.design)?.size || CARD,
-)
+
+/* How wide the picture is actually sent, which is what decides whether the QR
+   on it will scan. The template's own setting when there is one — the same
+   number ViewTicket rasterises at — and its fallback when there is not. */
+const cardSentWidth = computed(() => Number(design.value?.digital?.widthPx ?? 1200))
+
+/*
+ * EVERYTHING ABOUT THE CARD THAT CAN BE SAVED, as text that cannot alias.
+ *
+ * Declared here rather than beside the undo stack that uses it because
+ * `loadCard` runs from an immediate watcher during setup and reads it. A const
+ * declared further down would be in its temporal dead zone at that moment,
+ * which is a blank screen and one line in a console.
+ */
+const cardState = computed(() => JSON.stringify({
+  design: card.value.design,
+  motto: card.value.motto,
+  layout: layoutFrom(card.value.design, cardParts.value, cardLayout.value),
+}))
+const cardSavedState = ref('')
+const cardDirty = computed(() => cardState.value !== cardSavedState.value)
+
+/*
+ * ONE UNDO ENTRY PER GESTURE, the same rule and the same reasons as the
+ * printed side's: a drag fires the watcher on every pointermove, and an Undo
+ * that means "back up one pixel" is not an Undo. A drag marks its own start;
+ * anything typed coalesces into one entry per half second.
+ *
+ * ABOVE `loadCard`, WHICH IS NOT A TIDINESS MATTER. It runs from an immediate
+ * watcher during setup and calls `rebaseCard`, which assigns to `cardSnap`.
+ * Declared below, that is a write into a `let` still in its temporal dead
+ * zone: the whole screen throws in setup and renders as seven characters of
+ * empty shell, with "Unhandled error during execution of watcher callback" as
+ * the only clue and no mention of this file in it.
+ */
+const cardHistory = ref([])
+const cardDragging = ref(false)
+let cardSnap = ''
+let cardPush = 0
+let cardRestoring = false
 
 function loadCard() {
   card.value = {
     design: state.cfg?.cardDesign || 'grand',
     motto: state.cfg?.motto || '',
   }
+  const stored = state.cfg?.cardLayout
+  cardLayout.value = stored && typeof stored === 'object' ? JSON.parse(JSON.stringify(stored)) : {}
+  cardParts.value = resolveParts(card.value.design, cardLayout.value)
+  rebaseCard()
 }
 watch(() => state.cfg, loadCard, { immediate: true, deep: true })
 
-/* The real card, drawn from the raffle's own colour and a specimen ticket, so
-   what is on screen is the thing a buyer receives rather than a mock of it. */
-const cardPreview = computed(() => {
-  const c = state.cfg || {}
-  const brand = String(c.brandColor || '').trim()
-  return cardSVG(card.value.design, {
-    number: (c.ticketPrefix || '') + '1'.padStart(c.ticketDigits || 5, '0'),
-    name: 'A buyer', org: c.orgName || '', event: c.eventName || '',
-    price: c.ticketPrice ? `${c.currency ?? ''} ${c.ticketPrice}`.trim() : '',
-    book: (c.bookPrefix || 'Book-') + '1'.padStart(c.bookDigits || 4, '0'),
-    sold: true, motto: card.value.motto, brand,
-    ink: inkFor(brand) || '#ffffff',
-    thanks: 'Thank you — this keeps the shelter open.',
-  }, {})
+/*
+ * SWITCHING TREATMENT FOLDS BEFORE IT RESOLVES, and it folds against the
+ * treatment that was on screen rather than the one arriving. `layoutFrom` is
+ * told which treatment the parts belong to precisely so this cannot be got
+ * wrong silently — measured against the wrong standard, every part of a card
+ * looks changed and the whole layout would be written down as an override.
+ */
+watch(() => card.value.design, (now, was) => {
+  if (cardRestoring || !was || now === was) return
+  cardLayout.value = layoutFrom(was, cardParts.value, cardLayout.value)
+  cardParts.value = resolveParts(now, cardLayout.value)
 })
+
+function markCard() {
+  const now = cardState.value
+  cardHistory.value = [...cardHistory.value.slice(-(HISTORY_MAX - 1)), now]
+  cardSnap = now
+  cardPush = Date.now()
+}
+
+function rebaseCard() {
+  cardSnap = cardState.value
+  cardSavedState.value = cardSnap
+  cardHistory.value = []
+  cardPush = 0
+}
+
+watch([card, cardParts], () => {
+  if (cardRestoring) return
+  const now = cardState.value
+  if (now === cardSnap) return
+  if (!cardDragging.value && cardSnap && Date.now() - cardPush > 500) {
+    cardHistory.value = [...cardHistory.value.slice(-(HISTORY_MAX - 1)), cardSnap]
+    cardPush = Date.now()
+  }
+  cardSnap = now
+}, { deep: true })
+
+function applyCard(snap) {
+  cardRestoring = true
+  card.value.design = snap.design
+  card.value.motto = snap.motto
+  cardLayout.value = snap.layout
+  cardParts.value = resolveParts(snap.design, snap.layout)
+  nextTick(() => { cardRestoring = false })
+}
+
+function undoCard() {
+  const last = cardHistory.value[cardHistory.value.length - 1]
+  if (!last) return
+  applyCard(JSON.parse(last))
+  cardHistory.value = cardHistory.value.slice(0, -1)
+  cardSnap = last
+}
+
+function revertCard() {
+  applyCard(JSON.parse(cardSavedState.value))
+  cardHistory.value = []
+  cardSnap = cardSavedState.value
+}
+
+/* Back to the standard card — this treatment only. The others keep whatever
+   was arranged on them, because they are separate pieces of work. */
+function resetCard() {
+  markCard()
+  const rest = { ...cardLayout.value }
+  delete rest[card.value.design]
+  cardLayout.value = rest
+  cardParts.value = standardParts(card.value.design)
+}
 
 async function saveCard() {
   if (mottoOver.value) return toast(`The motto is ${-mottoLeft.value} characters over`, 'bad')
   cardSaving.value = true
   try {
-    const r = await api('set_card_design', { cardDesign: card.value.design, motto: card.value.motto })
+    const layout = layoutFrom(card.value.design, cardParts.value, cardLayout.value)
+    const r = await api('set_card_design', {
+      cardDesign: card.value.design, motto: card.value.motto, cardLayout: layout,
+    })
     if (r?.config) setConfig(r.config)
     loadCard()
     toast('Digital ticket saved', 'ok')
@@ -144,6 +259,14 @@ async function saveCard() {
     loadCard()
   } finally { cardSaving.value = false }
 }
+
+/* The tab itself owns the rasteriser for "Send a test", because it owns the
+   SVG that gets rasterised. The bar only presses the button, and reads back
+   whether it is still working — through a computed, because `digital` is null
+   until the tab is mounted and a template that reaches into it directly warns
+   on every other tab. */
+const digital = ref(null)
+const digitalBusy = computed(() => !!digital.value?.testing)
 
 const active = computed(() => templates.value.find((t) => t.id === activeId.value) || null)
 const elements = computed(() => design.value?.elements ?? [])
@@ -1378,12 +1501,18 @@ const printedSize = computed(() => {
         and "saved" needs no sentence because an idle Save button beside a
         time is already the message.
       -->
-      <span class="statetxt data" :class="{ unsaved: dirty }">
+      <span class="statetxt data"
+            :class="{ unsaved: tab === 'digital' ? cardDirty : dirty }">
         <!-- editedAt is set by the design watcher, which does not fire for
              every route a change can arrive by, so it can legitimately be
              empty while dirty is true. "edited " with nothing after it is
              worse than the sentence this replaced. -->
-        <template v-if="dirty">{{ editedAt ? `edited ${editedAt}` : 'not saved' }}</template>
+        <!-- THE STATUS FOLLOWS THE TAB, like the Save button beside it. It
+             said "saved" on the digital tab while a card sat unsaved, because
+             it was reading the template's dirty flag on a tab that does not
+             edit the template. -->
+        <template v-if="tab === 'digital'">{{ cardDirty ? 'not saved' : 'saved' }}</template>
+        <template v-else-if="dirty">{{ editedAt ? `edited ${editedAt}` : 'not saved' }}</template>
         <template v-else-if="saved">saved</template>
       </span>
 
@@ -1402,8 +1531,23 @@ const printedSize = computed(() => {
         this tab, the way Place's rulers are not.
       -->
       <template v-if="tab === 'digital'">
-        <button class="btn sm primary" :disabled="cardSaving || mottoOver"
-                :title="mottoOver ? 'The motto is over 48 characters' : 'Write the treatment and the motto onto the raffle'"
+        <!--
+          SEND A TEST, which 8c draws and which had nothing behind it. It
+          rasterises the card on screen and hands it to whatever this machine
+          shares with, or saves it when the machine has nothing — the same two
+          outcomes the buyer's own Send on WhatsApp has, for the same reason.
+          It is a test of the DESIGN, so it never touches the server and never
+          uses a real ticket number.
+        -->
+        <button class="btn sm" :disabled="digitalBusy"
+                title="Make the picture this design produces and share or save it, the way a real one goes out"
+                @click="digital?.sendTest()">
+          {{ digitalBusy ? 'Making…' : 'Send a test' }}
+        </button>
+        <button class="btn sm primary" :disabled="cardSaving || mottoOver || !cardDirty"
+                :title="mottoOver ? 'The motto is over 48 characters'
+                  : !cardDirty ? 'Nothing has changed since the last save'
+                  : 'Write the card onto the raffle'"
                 @click="saveCard">
           {{ cardSaving ? 'Saving…' : 'Save the card' }}
         </button>
@@ -1815,65 +1959,24 @@ const printedSize = computed(() => {
       <SheetTab v-else-if="tab === 'sheet'" :design="design" :active="active" :dpi="dpi" />
 
       <!--
-        CARD 8c — THE DIGITAL TICKET. Two columns like the rest of the studio:
-        what you can change on the left, the thing itself on the right, drawn
-        from the raffle's own colour and a specimen number so it is the card a
-        buyer receives rather than a picture of one.
+        CARD 8c — THE DIGITAL TICKET, and now the same three columns as the
+        rest of the studio: what is on the card, the card, and whatever is
+        selected. It was a treatment switch, a motto field and a picture — the
+        one tab showing the thing a buyer actually receives, and the one tab
+        you could not design.
 
-        NOT BUILT HERE, and named rather than left to be discovered: 8c also
-        draws a watermark picker with a strength slider, three toggles for the
-        price, the check link and the seller's name, and a "Send a test" button.
-        None of those has anything behind it — the cards read no such values —
-        so they would be controls that change nothing.
+        IT IS ITS OWN COMPONENT because it is a designer's worth of machinery —
+        a canvas with drag, resize, snap and a grid, a layer list, an inspector
+        — and almost none of it is shared with the printed side. A card part is
+        a composition this app owns; a printed element is a box somebody drew
+        on their own artwork. See src/lib/cardelements.js for the difference.
       -->
-      <div v-else class="studio digital">
-        <aside class="panel dpanel">
-          <p class="rubric">Treatment</p>
-          <div class="seg">
-            <button v-for="d in CARD_DESIGNS" :key="d.id" type="button" class="segbtn"
-                    :class="{ on: card.design === d.id }" :title="d.note"
-                    @click="card.design = d.id">{{ d.name }}</button>
-          </div>
-
-          <p class="rubric mt">Colour</p>
-          <p class="tiny muted">
-            <b class="data">{{ state.cfg?.brandColor || 'the standard colour' }}</b> —
-            taken from the raffle's theme. Change it in Setup and every ticket follows.
-          </p>
-
-          <div class="spread mt">
-            <label for="mtt" class="rubric" style="margin:0">Motto</label>
-            <span class="tiny" :class="mottoOver ? 'bad' : 'muted'">
-              {{ (card.motto || '').length }} / 48
-            </span>
-          </div>
-          <input id="mtt" v-model="card.motto" autocomplete="off"
-                 placeholder="e.g. Love is patient, love is kind">
-          <p class="tiny muted">
-            48 characters keeps it on one line at every size. Longer is refused,
-            not shrunk — shrinking changes the design where you cannot see it.
-          </p>
-
-          <!-- The save is in the bar with every other tab's, not down here. -->
-          <p class="tiny muted mt">
-            Sent as a picture on WhatsApp, and a check link if the phone cannot
-            make one. Never before the sale is recorded.
-          </p>
-        </aside>
-
-        <div class="stagewrap">
-          <div class="stagebar">
-            <span class="tiny muted">what the buyer receives</span>
-            <!-- The real size, read off the treatment being previewed, not the
-                 1080 × 1350 the mockup drew: these cards are landscape, and a
-                 number that does not describe the file is worse than none. -->
-            <span class="specs">{{ cardSize.width }} &times; {{ cardSize.height }} px</span>
-          </div>
-          <div class="dstage">
-            <div class="dcard" v-html="cardPreview"></div>
-          </div>
-        </div>
-      </div>
+      <DigitalTab
+        v-else ref="digital" :card="card" :parts="cardParts" :cfg="state.cfg"
+        :sent-width="cardSentWidth" :motto-max="MOTTO_MAX"
+        :swatches="swatches" :can-drop="canDrop"
+        @mark="markCard" @drag="(v) => { cardDragging = v }"
+        @pick-colour="dropper" />
 
       <!--
         THE FOOTER SAYS WHAT THE MODEL IS. It is one sentence and it is the
@@ -1882,15 +1985,34 @@ const printedSize = computed(() => {
         one particular file.
       -->
       <!--
-        SAME REASONING AS THE BAR'S BUTTONS, one line down. Undo, "Back to
-        saved" and "Back to standard" all act on the template's GEOMETRY, and
-        the sentence beside them is about placements being held as shares. On
-        the digital tab there is no geometry and nothing placed: pressing Undo
-        there takes back a change to a drawing you are not looking at, silently,
-        and "Back to standard" discards the whole design from a tab that does
-        not show it. The mockup draws no footer on 8c either.
+        SAME REASONING AS THE BAR'S BUTTONS, one line down: the footer carries
+        whichever set of three belongs to the tab you are on.
+
+        IT USED TO BE HIDDEN ON THE DIGITAL TAB, and the note here said why —
+        "there is no geometry and nothing placed", so Undo would have taken
+        back a change to a drawing you were not looking at. That was true of a
+        tab holding a treatment switch and a motto field. There is geometry
+        now, and a tab where you can drag ten things around and take none of
+        them back is the worse failure by a distance.
       -->
-      <footer v-if="tab !== 'digital'" class="footbar">
+      <footer v-if="tab === 'digital'" class="footbar">
+        <span class="tiny muted grow">
+          Held as shares of the card, so an arrangement survives a treatment
+          being redrawn — and only what you have MOVED is written down, so the
+          rest of the card keeps improving with the app.
+        </span>
+        <button class="btn sm ghost danger" :disabled="!cardParts.length"
+                :title="`Put every part of this card back where it started. The other two treatments keep whatever you have arranged on them. This cannot be undone.`"
+                @click="resetCard">Back to the standard card</button>
+        <span class="gap"></span>
+        <button class="btn sm ghost" :disabled="!cardDirty"
+                :title="cardDirty ? 'Throw away every change since the last save' : 'Nothing has changed since the last save'"
+                @click="revertCard">Back to saved</button>
+        <button class="btn sm" :disabled="!cardHistory.length"
+                :title="cardHistory.length ? 'Undo the last change' : 'Nothing to undo'"
+                @click="undoCard">Undo</button>
+      </footer>
+      <footer v-else class="footbar">
         <span class="tiny muted grow">
           Held as shares of the template and not as pixels, so the same design survives a
           redraw at any size — and a different charity's artwork starts from its own.
@@ -1921,37 +2043,14 @@ const printedSize = computed(() => {
 </template>
 
 <style scoped>
-/* 8c is two columns like the rest of the studio, but the right-hand side is a
-   card rather than an artboard: no rulers, no boxes, nothing to drag. */
-/* `.studio.digital`, NOT `.digital`. Both are one class, so `.studio`'s
-   `align-items: stretch` and `min-height: calc(100vh - 150px)` win on source
-   order — studio.css is imported in a later <style> block. The panel then grew
-   to most of the viewport and the card sat in a tall black void, which is the
-   exact bug this rule was written to fix and did not. Two classes outrank one
-   wherever the file sits. */
-.studio.digital {
-  display: grid; gap: 16px; grid-template-columns: 1fr;
-  align-items: start; min-height: 0;
-}
-@media (min-width: 1024px) { .studio.digital { grid-template-columns: 320px 1fr } }
-.dpanel { padding: 16px; overflow: visible }
-/* BELOW 1024 THE PANEL IS THE FULL WIDTH OF THE SCREEN, and these two are the
-   only controls in it. A segmented control stretched across 780px puts Grand,
-   Certificate and Stub a hand apart from each other, and a 48-character field
-   given the same width invites a sentence that will be refused. At desk width
-   the 320px column already does this; the cap is for the stacked layout. */
-.dpanel .seg { max-width: 380px }
-.dpanel input { max-width: 420px }
-/* Its own box rather than the studio's `.stage`: that one is sized for an
-   artboard you scroll and zoom, and a card is neither — it just needs to sit on
-   something and be the size it is. */
-.dstage {
-  display: flex; justify-content: center; padding: 22px;
-  background: var(--stage); border-radius: var(--r-sm);
-}
-.dcard { width: min(420px, 100%) }
-.dcard :deep(svg) { width: 100%; height: auto; display: block; border-radius: 10px }
-.mt { margin-top: 14px }
+/*
+ * 8c's own furniture went with it. The digital tab was two columns and a
+ * picture styled from here — `.studio.digital`, `.dpanel`, `.dstage`,
+ * `.dcard`, `.mt` — and it is now three columns in DigitalTab.vue, which
+ * carries its own. A child's markup does not take its parent's scoped styles
+ * with it, so leaving these behind would have left five inert rules that read
+ * as the live ones.
+ */
 </style>
 
 <style scoped src="./ticketdesign/studio.css"></style>

@@ -191,30 +191,44 @@ console.log('the action you cannot take back does not look like the one you can'
    * empty string. "three actions found ()" is what this looks like: not a
    * missing footer, a search that moved off it.
    */
-  const foot = (src.match(/<footer\b[^>]*class="footbar"[\s\S]*?<\/footer>/) || [''])[0]
-  ok(foot.length > 0, 'the footer is found')
-  ok(/Back to standard/.test(foot) && /Back to saved/.test(foot) && /Undo/.test(foot),
-    'all three actions are still offered')
   /*
-   * Matched as BUTTON ELEMENTS, not by slicing around a label. The first
-   * version cut the string at indexOf('Back to standard') — which found the
-   * comment above the button, not the button — and reported a correct file
-   * as failing. A test that reads markup has to match markup.
+   * EVERY FOOTER, NOT THE FIRST ONE. There are two now — the studio carries
+   * whichever set of three belongs to the tab you are on, and the digital
+   * tab's act on the CARD rather than on the template's geometry. `match`
+   * returned the first, so the day a second footer was added above it this
+   * assertion started reading the wrong screen's buttons and failing on a
+   * file that was correct. The rule is about weight and reversibility and
+   * applies to both, so both are checked.
    */
-  const buttons = [...foot.matchAll(/<button\b([\s\S]*?)>([\s\S]*?)<\/button>/g)]
-    .map((m) => ({ attrs: m[1], label: m[2].trim() }))
-  ok(buttons.length === 3, `three actions found (${buttons.map((b) => b.label).join(', ')})`)
-  const by = (label) => buttons.find((b) => b.label === label)
-  ok(/danger/.test(by('Back to standard').attrs), 'the one that cannot be undone is marked as dangerous')
-  ok(!/danger/.test(by('Back to saved').attrs), 'the one that only loses this sitting is not')
-  ok(!/danger/.test(by('Undo').attrs), 'and undo certainly is not')
-  /*
-   * A reason in the title, which is this repo's rule for a control whose
-   * consequence is not obvious from its label — the same rule permissionui
-   * enforces for controls somebody may not use.
-   */
-  ok(/cannot be undone/.test(foot), 'and it says so where somebody hovering will read it')
-  ok(/class="gap"/.test(foot), 'with a space between it and the two that are safe')
+  const feet = [...src.matchAll(/<footer\b[^>]*class="footbar"[\s\S]*?<\/footer>/g)].map((m) => m[0])
+  ok(feet.length >= 2, `both studio footers are found (${feet.length})`)
+  for (const foot of feet) {
+    ok(/Back to (standard|saved)/.test(foot) && /Undo/.test(foot),
+      'all three actions are still offered')
+    /*
+     * Matched as BUTTON ELEMENTS, not by slicing around a label. The first
+     * version cut the string at indexOf('Back to standard') — which found the
+     * comment above the button, not the button — and reported a correct file
+     * as failing. A test that reads markup has to match markup.
+     */
+    const buttons = [...foot.matchAll(/<button\b([\s\S]*?)>([\s\S]*?)<\/button>/g)]
+      .map((m) => ({ attrs: m[1], label: m[2].trim() }))
+    ok(buttons.length === 3, `three actions found (${buttons.map((b) => b.label).join(', ')})`)
+    /* The one that discards everything is whichever says "standard" — the
+       template's design, or this treatment's whole arrangement. */
+    const danger = buttons.find((b) => /standard/.test(b.label))
+    const by = (label) => buttons.find((b) => b.label === label)
+    ok(danger && /danger/.test(danger.attrs), 'the one that cannot be undone is marked as dangerous')
+    ok(!/danger/.test(by('Back to saved').attrs), 'the one that only loses this sitting is not')
+    ok(!/danger/.test(by('Undo').attrs), 'and undo certainly is not')
+    /*
+     * A reason in the title, which is this repo's rule for a control whose
+     * consequence is not obvious from its label — the same rule permissionui
+     * enforces for controls somebody may not use.
+     */
+    ok(/cannot be undone/.test(foot), 'and it says so where somebody hovering will read it')
+    ok(/class="gap"/.test(foot), 'with a space between it and the two that are safe')
+  }
 }
 
 console.log('the paper is named, chosen, and obeyed')

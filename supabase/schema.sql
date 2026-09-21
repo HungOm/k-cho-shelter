@@ -1539,7 +1539,8 @@ insert into config (key, value, notes) values
   -- artwork, no placements, no paper. Both blank on a fresh install, and blank
   -- means something specific in each case rather than "unset".
   ('CARD_DESIGN', '', 'Which of the three treatments the digital ticket is drawn in — grand, certificate or stub. Set in Ticket Studio on the "Digital ticket" tab. Blank means Grand, which is what a raffle that has never opened that tab gets.'),
-  ('MOTTO', '', 'One line printed on the digital ticket, under the buyer''s name. Blank prints no line at all. 48 characters is the limit and a longer one is refused rather than shrunk, because shrinking changes the card where nobody is looking.')
+  ('MOTTO', '', 'One line printed on the digital ticket, under the buyer''s name. Blank prints no line at all. 48 characters is the limit and a longer one is refused rather than shrunk, because shrinking changes the card where nobody is looking.'),
+  ('CARD_LAYOUT', '', 'Where the parts of the digital ticket sit, as JSON, for any part an organiser has MOVED in Ticket Studio. Only the differences are stored, keyed by treatment and then by part, so a raffle that has changed one line keeps every later improvement to the rest of the card. Blank means the standard layout of whichever treatment is chosen, which is what every raffle had before the tab could move anything.')
 on conflict (key) do nothing;
 
 /*

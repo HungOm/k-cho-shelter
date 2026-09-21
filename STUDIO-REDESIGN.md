@@ -498,7 +498,7 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 2a | 2 Studio | Artwork & paper — the verdict is the page | yes (72 confirmed) |
 | 7a | 2 Studio | Collapsed rail — Exit studio top left, hover or ⌘\ | yes (33dce6f, 008d630) |
 | 2b | 2 Studio | Print sheet — paper, how they sit, cut line | yes |
-| 8c | 2 Studio | Studio · Digital ticket **(future tab)** | yes (bdc639b) — less the watermark, the three toggles and "Send a test" |
+| 8c | 2 Studio | Studio · Digital ticket **(future tab)** | yes — rebuilt as a designer; see below |
 | 5a | 3 Books | Books — selection raises the bar that owns Print tickets | open with ceam-raffle-15's user |
 | 5b | 3 Books | Print tickets step 1 — batch, honest empty preview | yes (6678c2e) |
 | 5c | 3 Books | Print tickets step 2 — codes then paper as two steps | yes |
@@ -512,6 +512,57 @@ stores its body as escaped JSON, so `/` → `/` and `\"` → `"` first.
 | 8b | 7 Buyer | Three treatments of the same ticket, one brand colour | yes — all three in `ticketart.js`; `tests/ranks` renders each by name |
 | 4i | 7 Buyer | Ticket check — the public page | ticket-printing — **ruled, see below** |
 | 4e | 8 Draw | The draw — readiness as a checklist, prize form beside it | **yes** — `Draw.vue`, `PrizeForm.vue`, `WinnerForm.vue`; rendered and read 2026-09-21. The section below is about the BACKING, and is still worth reading before touching it |
+
+### 8c is a designer now, not a treatment picker
+
+Built 2026-09-21. The tab was a treatment switch, a motto field and a picture
+of the card. The other three tabs of the same studio are a designer — layers
+left, artboard middle, inspector right — and the one tab showing the thing a
+buyer **actually receives** had none of it.
+
+It is now the same three columns against a new model. `src/lib/cardelements.js`
+names the parts of each treatment and where they stand by default; the three
+renderers in `ticketart.js` ask it rather than carrying ninety hard-coded
+coordinates each; `DigitalTab.vue` moves them. Every part can be moved,
+resized, hidden, recoloured, realigned and given either face, and the QR is
+held square whichever handle is dragged.
+
+**Only the differences are stored** — `CARD_LAYOUT`, keyed by treatment then by
+part. A raffle that nudges the motto stores the motto's box and keeps every
+later improvement to the rest of the card. Blank is the standard layout, which
+`tests/cardlayout.test.mjs` proves is the card as it was drawn before any of
+this: the golden fixture beside it was rendered from `git show HEAD:…` of the
+old renderers, not from the new ones.
+
+**Also closed from 8c's own drawing:** the watermark strength slider (it is the
+watermark part's own opacity), and "Send a test", which rasterises the card on
+screen and shares or saves it. The price and check-link toggles the card drew
+are the eyes on the `Price & book` and `Thanks & link` rows — the same control,
+named for the part it governs.
+
+**Deliberately not built, and not oversights:**
+
+- **Nothing can be added.** No `+` on the layer list, no tool rail of shapes
+  down the left. A card part is a composition this app owns — the masthead is a
+  mark, an organisation and an event — and the list is fixed. The printed tab
+  adds elements because that ticket is somebody's artwork with fields dropped
+  on it; this one is our drawing. Forty free elements would be forty ways to
+  take the card apart and none to get it back.
+- **Nothing can be removed, only hidden**, from the eye on its row. Reversible
+  from the same control; removal would not be.
+- **"Show the seller's name" is not a toggle.** 8c draws one. The card carries
+  the buyer's name and nothing else about a person, and `digitalCardSVG` argues
+  it at length: it is a forwardable picture, and the phone, the area and the
+  seller live on the stub and stay there. Reversing that is a decision about
+  somebody's privacy, not a checkbox, and it is the organiser's to make out
+  loud.
+- **The measurements in the status bar are a readout, not fields.** The
+  inspector already carries four boxes that edit those four numbers; a second
+  set a foot away is the same control twice on one screen. The Place tab
+  settled the same question the same way.
+- **The card's colour is stated, not offered.** It comes from Setup, and the
+  sentence beside it says so. A second door to one value is how two screens end
+  up disagreeing about a raffle's colour.
 
 ### 4e is fully backed — do not half-build it
 

@@ -285,9 +285,20 @@ const cardNote = computed(
   () => CARD_DESIGNS.find(d => d.id === cardStyle.value)?.note || '',
 )
 
+/*
+ * THE ARRANGEMENT COMES FROM THE SAME PLACE THE TREATMENT DOES.
+ *
+ * The studio's Digital ticket tab can now move, resize, hide and recolour
+ * every part of this card, and what it saves is `state.cfg.cardLayout`. If it
+ * did not arrive here the studio would be a screen that changes a preview and
+ * nothing a buyer ever receives — which is exactly the fault the treatment
+ * picker above was removed for, rebuilt one layer down. Blank means the
+ * standard card, which is what every raffle has until somebody moves a part.
+ */
 const cardFor = (t) => cardSVG(cardStyle.value, cardValues(t), {
   qrUrl: ticketVerifyUrl(verifyBase.value, t.number, t.code),
   encode,
+  layout: state.cfg?.cardLayout,
 })
 
 /*
