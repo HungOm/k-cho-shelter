@@ -405,11 +405,20 @@ async function sendReceipt(t) {
      * artefact they have to work out which of is theirs.
      */
     const made = await api('make_receipt', { ticketNumbers: numbers })
+    /*
+     * THE COUNT COMES BACK FROM THE SERVER, and it is not always the one that
+     * went out. A digital ticket is one per buyer covering everything they
+     * hold, so the server widens the set it is given to the buyer's whole
+     * holding — which is what makes the link keep up after a sale this screen
+     * has not loaded yet. Reporting the number we SENT would have told an
+     * organiser "3 tickets" about a link that lists fourteen.
+     */
+    const count = Number(made.count ?? numbers.length)
     const url = receiptVerifyUrl(verifyBase.value, made.code)
-    window.open(`https://wa.me/?text=${encodeURIComponent(receiptMessage(numbers.length, url))}`,
+    window.open(`https://wa.me/?text=${encodeURIComponent(receiptMessage(count, url))}`,
                 '_blank', 'noopener')
-    shareNote.value = { ...shareNote.value, [t.number]: numbers.length > 1
-      ? `One link covering all ${numbers.length} of this buyer's tickets is in the message.`
+    shareNote.value = { ...shareNote.value, [t.number]: count > 1
+      ? `One link covering all ${count} of this buyer's tickets is in the message.`
       : 'The buyer\u2019s own link is in the message. It shows what they paid and which book, which the printed QR does not.' }
   } catch (e) {
     shareNote.value = { ...shareNote.value, [t.number]: e.message }

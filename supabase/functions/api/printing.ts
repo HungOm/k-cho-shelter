@@ -26,6 +26,8 @@
 import { ApiError, type AppUser } from './gate.ts'
 import { newCode, DEFAULT_LENGTH } from '../_shared/ticketcode.ts'
 import { rankFor } from '../_shared/ranks.ts'
+/* The one bound the check page and this function have to agree about. */
+import { HOLDING_MAX_TICKETS } from '../_shared/holding.ts'
 
 type Ctx = {
   supabaseAdmin: { from: (t: string) => any }
@@ -516,12 +518,37 @@ function wireTemplate(t: Record<string, unknown>) {
  * A book is ten. Level L would fit ten and would cost error correction on a
  * thing whose job is to still scan after a month in a pocket.
  *
- * THE SAME SET GIVES THE SAME CODE. Sending a buyer their receipt twice must
- * not mint a second one: a receipt is a thing they hold, and two codes for one
- * set is two artefacts where the buyer believes there is one. So an existing
- * receipt covering exactly these tickets — no more, no fewer — is returned as
- * it stands. "Exactly" is the whole of it: a receipt for nine of the ten is a
- * different receipt and must not be handed back for ten.
+ * ONE PER BUYER, NOT ONE PER PURCHASE — and this reverses what this function
+ * was built to do, so the old rule is worth stating before the new one.
+ *
+ * It used to deduplicate on the EXACT SET: an existing receipt covering these
+ * tickets and no others was handed back, and anything else minted a new code.
+ * That is right for a receipt, which is a record of one purchase on one day.
+ * It is wrong for a digital ticket. A buyer who takes a second book gets a
+ * second code under that rule, and their first link goes on showing a subset
+ * of what they hold — two artefacts where the buyer believes there is one,
+ * which is the failure the old rule was written to prevent, reached from the
+ * other side.
+ *
+ * So the key is the BUYER. Their telephone number, never their name: two
+ * buyers called "Ma Hla" are two people, and this app has refused to identify
+ * anybody by name since ranks.ts. One holding, one code, for as long as they
+ * hold anything.
+ *
+ * AND THE SET IS WIDENED TO EVERYTHING THEY HOLD. The caller names some of a
+ * buyer's tickets; what gets written is every sold ticket that buyer has. That
+ * is what makes "regenerated" true rather than aspirational — pressing send
+ * after a new sale picks the new tickets up, and a client working from a stale
+ * list cannot publish a holding that is missing half of itself.
+ *
+ * A BUYER WITH NO TELEPHONE NUMBER IS NOT A BUYER THIS CAN KEY ON. There is no
+ * identity to hold the set against, so that case keeps the old behaviour — a
+ * one-off receipt for exactly the tickets named, with no buyer on it. Pooling
+ * every phone-less sale into one shared digital ticket is the same mistake
+ * bandFor refuses below, and it would hand strangers each other's numbers.
+ *
+ * TICKETS FROM TWO DIFFERENT BUYERS ARE REFUSED rather than silently split or
+ * silently merged. One set, one buyer, or say so.
  *
  * ONLY TICKETS THAT ARE SOLD, and this is the rule the plan states for sending
  * a digital ticket at all. A receipt for a ticket nobody has bought is a
@@ -531,13 +558,13 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
   const asked = Array.isArray(p.ticketNumbers) ? p.ticketNumbers.map((n) => String(n).trim()) : []
   const wanted = [...new Set(asked.filter(Boolean))]
   if (!wanted.length) throw new ApiError('MISSING_FIELD', 'Which tickets?')
-  if (wanted.length > 200) {
+  if (wanted.length > HOLDING_MAX_TICKETS) {
     throw new ApiError('RANGE_TOO_LARGE',
-      'A receipt covers at most 200 tickets. Split it into more than one.')
+      `A digital ticket covers at most ${HOLDING_MAX_TICKETS} tickets.`)
   }
 
   const { data: rows, error } = await ctx.supabaseAdmin
-    .from('tickets').select('idx,number,status').in('number', wanted)
+    .from('tickets').select('idx,number,status,buyer_phone').in('number', wanted)
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   const found = new Map((rows ?? []).map((t: Record<string, unknown>) => [String(t.number), t]))
@@ -551,80 +578,116 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
   const unsold = wanted.filter((n) => !SOLD.includes(String(found.get(n)!.status)))
   if (unsold.length) {
     throw new ApiError('NOT_SOLD',
-      `A receipt is what a buyer is given after they have paid, and ${unsold[0]} is not ` +
+      `A digital ticket is what a buyer is given after they have paid, and ${unsold[0]} is not ` +
       `recorded as sold. ${unsold.length === 1 ? 'Write the sale down first.' : ''}`,
       { tickets: unsold })
   }
 
-  const idxs = wanted.map((n) => Number(found.get(n)!.idx)).sort((a, b) => a - b)
+  /*
+   * WHOSE IS THIS SET. Distinct numbers, not "the first one found" — the old
+   * bandFor took the first non-blank and would have been perfectly happy to
+   * band one buyer's holding using another's count.
+   */
+  const phones = [...new Set(wanted
+    .map((n) => String(found.get(n)!.buyer_phone ?? '').trim())
+    .filter((v) => v !== ''))]
+  if (phones.length > 1) {
+    throw new ApiError('MIXED_BUYERS',
+      'Those tickets belong to more than one buyer, and a digital ticket belongs to one. '
+      + 'Send each buyer their own.',
+      { buyers: phones.length })
+  }
+  const phone = phones[0] ?? ''
 
   /*
-   * An existing receipt for exactly this set, found by asking which receipts
-   * touch any of these tickets and then keeping the one whose size matches and
-   * whose every item is in the set. Two small queries rather than a hash column:
-   * a stored fingerprint is a second truth about the set, and it goes stale the
-   * first time somebody edits the items by hand.
+   * NO NUMBER RECORDED, so there is no buyer to key on and no way to widen the
+   * set to "everything they hold". A one-off code for exactly what was named
+   * is the honest answer, and it is what this function did for everybody until
+   * today. It is not reused, because there is nothing to recognise it by.
    */
-  const { data: touching } = await ctx.supabaseAdmin
-    .from('ticket_receipt_items').select('code,ticket_idx').in('ticket_idx', idxs)
-  const byCode = new Map<string, number[]>()
-  for (const r of (touching ?? []) as Array<Record<string, unknown>>) {
-    const c = String(r.code)
-    if (!byCode.has(c)) byCode.set(c, [])
-    byCode.get(c)!.push(Number(r.ticket_idx))
-  }
-  for (const [code, its] of byCode) {
-    if (its.length !== idxs.length) continue
-    const { count } = await ctx.supabaseAdmin
-      .from('ticket_receipt_items').select('ticket_idx', { count: 'exact', head: true }).eq('code', code)
-    if (Number(count ?? 0) !== idxs.length) continue
-    return { code, tickets: wanted, count: wanted.length, created: false }
-  }
-
-  const { data: cfgRows } = await ctx.supabaseAdmin
-    .from('config').select('key,value').eq('key', 'TICKET_CODE_LENGTH')
-  const length = Math.max(8, Math.min(32,
-    Number((cfgRows ?? [])[0]?.value ?? DEFAULT_LENGTH) || DEFAULT_LENGTH))
-
-  /*
-   * THE SUPPORTER BAND, WORKED OUT HERE AND NOWHERE ELSE.
-   *
-   * It belongs at mint for one reason: the public ticket-check page is the
-   * place that says it out loud, and that function is forbidden from touching a
-   * buyer's telephone number — tests/verify names buyer_name as the only buyer
-   * field it may carry. It cannot count a buyer's tickets without becoming able
-   * to identify them, and it should not become able to. So the count happens on
-   * the side that is already allowed to see the buyer, and what crosses to the
-   * public page is a word and a number that name nobody.
-   *
-   * Stored, not recomputed later. A receipt is a record of one purchase on one
-   * day; if the same buyer takes four more books next month, the next receipt
-   * carries the higher band and this one goes on saying what was true when it
-   * was handed over.
-   */
-  const band = await bandFor(ctx, idxs)
-
-  const code = newCode(length)
-  const { error: headErr } = await ctx.supabaseAdmin
-    .from('ticket_receipts').insert({
-      code,
-      created_by: user.email,
-      rank: band?.id ?? null,
-      rank_tickets: band?.tickets ?? null,
+  if (!phone) {
+    const idxs = wanted.map((n) => Number(found.get(n)!.idx)).sort((a, b) => a - b)
+    const code = newCode(await codeLength(ctx))
+    const { error: headErr } = await ctx.supabaseAdmin
+      .from('ticket_receipts').insert({ code, created_by: user.email })
+    if (headErr) throw new ApiError('QUERY_FAILED', headErr.message)
+    const { error: itemErr } = await ctx.supabaseAdmin
+      .from('ticket_receipt_items').insert(idxs.map((ticket_idx) => ({ code, ticket_idx })))
+    if (itemErr) throw new ApiError('QUERY_FAILED', itemErr.message)
+    await ctx.supabaseAdmin.from('audit_log').insert({
+      action: 'MAKE_RECEIPT',
+      details: { code, tickets: wanted.length, buyer: 'no number recorded' },
+      email: user.email,
     })
-  if (headErr) throw new ApiError('QUERY_FAILED', headErr.message)
+    return { code, tickets: wanted, count: wanted.length, created: true, rank: '' }
+  }
 
-  const { error: itemErr } = await ctx.supabaseAdmin
-    .from('ticket_receipt_items').insert(idxs.map((ticket_idx) => ({ code, ticket_idx })))
-  if (itemErr) throw new ApiError('QUERY_FAILED', itemErr.message)
+  /* Everything this buyer holds, which is what the digital ticket is. */
+  const { data: mine, error: mineErr } = await ctx.supabaseAdmin
+    .from('tickets').select('idx,number')
+    .eq('buyer_phone', phone).in('status', SOLD)
+    .order('idx', { ascending: true })
+    .limit(HOLDING_MAX_TICKETS + 1)
+  if (mineErr) throw new ApiError('QUERY_FAILED', mineErr.message)
+
+  const held = (mine ?? []) as Array<Record<string, unknown>>
+  if (held.length > HOLDING_MAX_TICKETS) {
+    /*
+     * REFUSED WHILE SOMEBODY CAN ACT ON IT. The public check page reads exactly
+     * HOLDING_MAX_TICKETS items, so a larger holding would be listed there
+     * short by however many fell off the end — a green verdict over an
+     * incomplete list, which is the one failure on that page that does not
+     * look like one.
+     */
+    throw new ApiError('RANGE_TOO_LARGE',
+      `This buyer holds ${held.length} tickets and a digital ticket lists at most `
+      + `${HOLDING_MAX_TICKETS}. Tell whoever runs the raffle before sending it.`,
+      { held: held.length, max: HOLDING_MAX_TICKETS })
+  }
+
+  const idxs = held.map((t) => Number(t.idx)).sort((a, b) => a - b)
+  const numbers = held.map((t) => String(t.number))
+  const band = await bandFor(ctx, phone)
+
+  const { data: out, error: upErr } = await ctx.supabaseAdmin.rpc('upsert_holding_tx', {
+    p_phone: phone,
+    p_idxs: idxs,
+    p_code: newCode(await codeLength(ctx)),
+    p_user: user.email,
+    p_rank: band?.id ?? null,
+    p_rank_tickets: band?.tickets ?? null,
+  })
+  if (upErr) throw new ApiError('QUERY_FAILED', upErr.message)
+  const row = (Array.isArray(out) ? out[0] : out) as Record<string, unknown> | undefined
+  const code = String(row?.holding_code ?? '')
+  if (!code) throw new ApiError('QUERY_FAILED', 'The digital ticket could not be written.')
 
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'MAKE_RECEIPT',
-    details: { code, tickets: wanted.length, rank: band?.id ?? '' },
+    details: {
+      code,
+      tickets: numbers.length,
+      rank: band?.id ?? '',
+      created: !!row?.was_created,
+    },
     email: user.email,
   })
 
-  return { code, tickets: wanted, count: wanted.length, created: true, rank: band?.id ?? '' }
+  return {
+    code,
+    tickets: numbers,
+    count: numbers.length,
+    created: !!row?.was_created,
+    rank: band?.id ?? '',
+  }
+}
+
+/* The code length this raffle writes, which is configured and capped. */
+async function codeLength(ctx: Ctx) {
+  const { data: cfgRows } = await ctx.supabaseAdmin
+    .from('config').select('key,value').eq('key', 'TICKET_CODE_LENGTH')
+  return Math.max(8, Math.min(32,
+    Number((cfgRows ?? [])[0]?.value ?? DEFAULT_LENGTH) || DEFAULT_LENGTH))
 }
 
 /*
@@ -640,12 +703,14 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
  * as null. A missing band shows nothing; it never falls back to the bottom rung
  * — see _shared/ranks.ts, which refuses for the same reason.
  */
-async function bandFor(ctx: Ctx, idxs: number[]) {
-  const { data: mine } = await ctx.supabaseAdmin
-    .from('tickets').select('buyer_phone').in('idx', idxs)
-  const phone = String((mine ?? [])
-    .map((t: Record<string, unknown>) => String(t.buyer_phone ?? '').trim())
-    .find((v: string) => v !== '') ?? '')
+async function bandFor(ctx: Ctx, phone: string) {
+  /*
+   * GIVEN THE BUYER RATHER THAN GUESSING ONE. This used to take the ticket
+   * indexes and pick the FIRST non-blank telephone number among them, which on
+   * a set belonging to two people would have banded one buyer's holding by the
+   * other's count. The caller now establishes who the set belongs to — and
+   * refuses a mixed one — so there is nothing left to guess at.
+   */
   if (!phone) return null
 
   /*

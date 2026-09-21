@@ -39,6 +39,13 @@
 import { withSupabase } from 'npm:@supabase/server'
 
 import { canonicalNumber, equalCodes, looksLikeCode } from '../_shared/ticketcode.ts'
+/*
+ * THE SAME BOUND `make_receipt` REFUSES ABOVE. A number written here and a
+ * number written there is how this page comes to list the first three hundred
+ * of four hundred tickets under a green verdict — an answer that is wrong and
+ * does not look it. See _shared/holding.ts.
+ */
+import { HOLDING_MAX_TICKETS } from '../_shared/holding.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any } }
 
@@ -223,7 +230,8 @@ export default {
       if (!looksLikeCode(receiptCode)) return reply({ ok: false, reason: 'malformed' }, 400)
 
       const { data: items, error: itemErr } = await ctx.supabaseAdmin
-        .from('ticket_receipt_items').select('ticket_idx').eq('code', receiptCode).limit(300)
+        .from('ticket_receipt_items').select('ticket_idx').eq('code', receiptCode)
+        .limit(HOLDING_MAX_TICKETS)
       if (itemErr) return reply({ ok: false, reason: 'unavailable' }, 503)
 
       const idxs = (items ?? []).map((r: Record<string, unknown>) => Number(r.ticket_idx))

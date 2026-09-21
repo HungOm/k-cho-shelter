@@ -612,8 +612,25 @@ create table if not exists ticket_receipts (
   rank         text,
   rank_tickets integer,
   constraint ticket_receipts_rank_known
-    check (rank is null or rank in ('faithful', 'silver', 'gold', 'diamond'))
+    check (rank is null or rank in ('faithful', 'silver', 'gold', 'diamond')),
+  /*
+   * WHOSE DIGITAL TICKET THIS IS, and the reason the row above stopped being
+   * frozen. A digital ticket is one per BUYER — never printed, covering
+   * everything they hold, updated as they buy more — so the set behind a code
+   * changes and the band with it. Keyed on the telephone number, never the
+   * name: two buyers called "Ma Hla" are two people.
+   *
+   * Blank means "no buyer on this row": every receipt minted before the model
+   * changed, and any set for a buyer with no number recorded. Those are never
+   * reused, which is why the unique index below is partial — '' is the absence
+   * of an identity and must not collide with itself.
+   */
+  buyer_phone  text not null default ''
 );
+
+create unique index if not exists ticket_receipts_one_per_buyer
+  on ticket_receipts (buyer_phone)
+  where buyer_phone <> '';
 
 create table if not exists ticket_receipt_items (
   code       text not null references ticket_receipts(code) on delete cascade,

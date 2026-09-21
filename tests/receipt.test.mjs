@@ -43,43 +43,136 @@ const world = () => fakeDb({
 const boss = { email: 'boss@x.com', role: 'admin', isAdmin: true, isSuperAdmin: true, agentId: null }
 const codeOf = async (fn) => { try { await fn(); return 'no error' } catch (e) { return e.code } }
 
-console.log('1. one code stands for the whole set')
+/*
+ * A SECOND WORLD, because the model turns on WHOSE tickets these are and the
+ * one above belongs entirely to one buyer. Six tickets to Ko Zaw, three to Ma
+ * Nu, and one sold with no telephone number recorded — which is not a buyer
+ * this can key on and has its own path.
+ */
+const crowd = () => fakeDb({
+  config: baseConfig({ TOTAL_TICKETS: '10', ACTIVE_TICKETS: '10', TICKETS_PER_BOOK: '10' }),
+  tickets: [
+    ...Array.from({ length: 6 }, (_, i) => ticket(i + 1)),
+    ...Array.from({ length: 3 }, (_, i) => ticket(i + 7, { buyer_name: 'Ma Nu', buyer_phone: '0125550200' })),
+    ticket(10, { buyer_name: 'Walk-in', buyer_phone: '' }),
+  ],
+  ticket_receipts: [],
+  ticket_receipt_items: [],
+})
+
+console.log('1. one code stands for everything that buyer holds')
 {
   const w = world()
+  /* Three named, ten written. The caller names SOME of a buyer's tickets; what
+     gets published is the buyer's holding, which is what makes the link keep
+     up with them rather than freezing at whatever the screen had loaded. */
   const r = await printing.makeReceipt(
     { ticketNumbers: ['KS-00001', 'KS-00002', 'KS-00003'] }, boss, w.ctx)
   ok(r.created, 'it was minted')
-  eq(r.count, 3, 'covering three tickets')
+  eq(r.count, 10, 'covering every ticket the buyer holds, not the three named')
   ok(/^[0-9A-Z]{8,32}$/.test(r.code), `and the code looks like a code (${r.code})`)
 
   eq(w.table('ticket_receipts').length, 1, 'one header row')
-  eq(w.table('ticket_receipt_items').length, 3, 'and one item per ticket')
+  eq(w.table('ticket_receipt_items').length, 10, 'and one item per ticket held')
   eq(w.table('ticket_receipts')[0].created_by, 'boss@x.com', 'naming who issued it')
+  eq(w.table('ticket_receipts')[0].buyer_phone, '0125550100', 'and whose it is')
 }
 
-console.log('2. the same set gives the same code, because a buyer holds one receipt')
+/*
+ * THE RULE THIS SECTION USED TO PIN WAS THE OPPOSITE ONE, and it is worth
+ * saying why rather than quietly swapping the assertions.
+ *
+ * It read "the same SET gives the same code": an existing receipt covering
+ * exactly these tickets came back, and a subset or a superset got its own.
+ * That is correct for a receipt — a record of one purchase on one day — and it
+ * is wrong for a digital ticket, which is one per BUYER and updated as they
+ * buy more. Under the old rule a buyer who took a second book got a second
+ * code, and their first link went on showing a subset of what they held: two
+ * artefacts where the buyer believes there is one, which is the failure the
+ * old rule was written to prevent, reached from the other side.
+ *
+ * So the subset and superset cases below now assert the reverse, deliberately.
+ */
+console.log('2. one code per buyer, and it survives the holding changing')
 {
-  const w = world()
-  const first = await printing.makeReceipt({ ticketNumbers: ['KS-00001', 'KS-00002'] }, boss, w.ctx)
-  // Sent again, in a different order, with a repeat in it — all the same set.
+  const w = crowd()
+  const first = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
+  eq(first.count, 6, 'one ticket named, six written')
+
   const again = await printing.makeReceipt(
     { ticketNumbers: ['KS-00002', 'KS-00001', 'KS-00002'] }, boss, w.ctx)
-  eq(again.code, first.code, 'the same receipt comes back')
+  eq(again.code, first.code, 'the same code comes back')
   ok(!again.created, 'rather than a second one being minted')
   eq(w.table('ticket_receipts').length, 1, 'and there is still one')
 
-  /*
-   * A DIFFERENT SET IS A DIFFERENT RECEIPT, and the subset is the case that
-   * would be wrong to reuse: handing back the two-ticket receipt for a request
-   * covering one of them would give the buyer a document claiming a ticket they
-   * did not ask about.
-   */
-  const subset = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
-  ok(subset.code !== first.code, 'a subset gets its own')
+  /* A SUBSET AND A SUPERSET ARE THE SAME BUYER, so both are the same holding.
+     This is the assertion that inverted; see the note above. */
+  const subset = await printing.makeReceipt({ ticketNumbers: ['KS-00003'] }, boss, w.ctx)
+  eq(subset.code, first.code, 'a subset of their tickets is still their digital ticket')
   const superset = await printing.makeReceipt(
     { ticketNumbers: ['KS-00001', 'KS-00002', 'KS-00003'] }, boss, w.ctx)
-  ok(superset.code !== first.code, 'and so does a superset')
-  eq(w.table('ticket_receipts').length, 3, 'three distinct sets, three receipts')
+  eq(superset.code, first.code, 'and so is a superset')
+  eq(w.table('ticket_receipts').length, 1, 'one buyer, one code, however it is asked for')
+
+  /*
+   * AND IT KEEPS UP. The buyer takes a seventh ticket and the SAME link now
+   * covers seven — the items replaced, not appended to, which is the half a
+   * stub would have let through.
+   */
+  Object.assign(w.db.tables.tickets.find((t) => t.number === 'KS-00010'),
+                { buyer_name: 'Ko Zaw', buyer_phone: '0125550100' })
+  const grown = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
+  eq(grown.code, first.code, 'the link in their chat is still the right link')
+  eq(grown.count, 7, 'and it now covers seven')
+  eq(w.table('ticket_receipt_items').filter((i) => i.code === first.code).length, 7,
+    'seven items, not thirteen — replaced rather than added to')
+
+  /* And it shrinks the same way, which is the case an append-only write would
+     have got wrong while looking perfectly correct on the way up. */
+  Object.assign(w.db.tables.tickets.find((t) => t.number === 'KS-00010'),
+                { buyer_name: '', buyer_phone: '', status: 'Available' })
+  const shrunk = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
+  eq(shrunk.count, 6, 'a ticket that is no longer theirs comes off it')
+  eq(w.table('ticket_receipt_items').filter((i) => i.code === first.code).length, 6,
+    'and comes off the items too')
+}
+
+console.log('2b. a digital ticket belongs to one buyer')
+{
+  const w = crowd()
+  const mine = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
+  const theirs = await printing.makeReceipt({ ticketNumbers: ['KS-00007'] }, boss, w.ctx)
+  ok(mine.code !== theirs.code, 'two buyers are two codes')
+  eq(w.table('ticket_receipts').length, 2, 'and two rows')
+  eq(theirs.count, 3, 'each covering only its own buyer')
+
+  /*
+   * REFUSED, NOT SPLIT AND NOT MERGED. A set spanning two buyers has no one
+   * owner, and either way of resolving it silently is wrong: merged, each
+   * buyer gets a link listing the other's tickets; split, the caller is told
+   * one code was made when two were.
+   */
+  eq(await codeOf(() => printing.makeReceipt(
+    { ticketNumbers: ['KS-00001', 'KS-00007'] }, boss, w.ctx)), 'MIXED_BUYERS',
+     'tickets belonging to two buyers are refused')
+  eq(w.table('ticket_receipts').length, 2, 'and nothing was written by the attempt')
+}
+
+console.log('2c. no telephone number is not an identity')
+{
+  const w = crowd()
+  /*
+   * There is nothing to key a holding on, so this keeps the old behaviour: a
+   * one-off code for exactly the tickets named, with no buyer on the row.
+   * Pooling every phone-less sale under one shared code would hand strangers
+   * each other's ticket numbers — the same argument bandFor makes for refusing
+   * to band them.
+   */
+  const one = await printing.makeReceipt({ ticketNumbers: ['KS-00010'] }, boss, w.ctx)
+  eq(one.count, 1, 'exactly what was named, never widened')
+  eq(w.table('ticket_receipts')[0].buyer_phone ?? '', '', 'and no buyer on the row')
+  const two = await printing.makeReceipt({ ticketNumbers: ['KS-00010'] }, boss, w.ctx)
+  ok(two.code !== one.code, 'there is nothing to recognise it by, so it is not reused')
 }
 
 console.log('3. a receipt is what a buyer gets after they have paid')

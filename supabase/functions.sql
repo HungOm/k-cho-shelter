@@ -1309,3 +1309,78 @@ select t.idx,
   ) m on true;
 
 revoke all on ticket_custody from anon, authenticated;
+
+-- ============ THE BUYER'S OWN DIGITAL TICKET ============
+--
+-- One per buyer, not one per purchase. Written whole because the three
+-- statements below are one fact: a failure between the DELETE and the INSERT
+-- would leave a live code with no items, and the public check page answers a
+-- code with no items by telling a real buyer their tickets are not verified.
+-- See the migration of the same name for the model this replaced.
+/*
+ * The holding, written whole.
+ *
+ * `p_code` is a freshly generated code the caller has ready; it is used ONLY
+ * when this buyer has no holding yet. A buyer who already has one keeps the
+ * code they were sent, which is the whole point — the link in their chat has
+ * to go on being the right link after they buy more.
+ */
+create or replace function upsert_holding_tx(
+  p_phone        text,
+  p_idxs         integer[],
+  p_code         text,
+  p_user         text,
+  p_rank         text,
+  p_rank_tickets integer
+) returns table (holding_code text, was_created boolean) as $$
+declare
+  found_code text;
+  made       boolean := false;
+  phone      text := btrim(coalesce(p_phone, ''));
+begin
+  -- Refused rather than defaulted. A holding with no buyer is a receipt, and
+  -- the caller has a separate path for that; silently accepting '' here would
+  -- pool every buyer with no number recorded into one shared digital ticket.
+  if phone = '' then
+    raise exception 'a digital ticket needs a buyer';
+  end if;
+  if p_idxs is null or array_length(p_idxs, 1) is null then
+    raise exception 'a digital ticket needs at least one ticket';
+  end if;
+
+  select r.code into found_code
+    from ticket_receipts r
+   where r.buyer_phone = phone
+   limit 1;
+
+  if found_code is null then
+    insert into ticket_receipts (code, created_by, buyer_phone, rank, rank_tickets)
+      values (p_code, coalesce(p_user, ''), phone, p_rank, p_rank_tickets);
+    found_code := p_code;
+    made := true;
+  else
+    -- The band travels with the holding, so it is rewritten every time the
+    -- holding is. See the note at the top about why it is stored at all.
+    update ticket_receipts r
+       set rank = p_rank, rank_tickets = p_rank_tickets
+     where r.code = found_code;
+  end if;
+
+  /*
+   * ADD BEFORE REMOVE would be the other order and is the wrong one here only
+   * because both are inside one transaction anyway — so the order is chosen
+   * for clarity instead: what is no longer held goes, then what is held
+   * arrives. `on conflict do nothing` makes the second half idempotent, which
+   * matters because the common case is a holding that grew by one book and
+   * whose other forty rows are already exactly right.
+   */
+  delete from ticket_receipt_items ri
+   where ri.code = found_code
+     and not (ri.ticket_idx = any(p_idxs));
+
+  insert into ticket_receipt_items (code, ticket_idx)
+  select found_code, i from unnest(p_idxs) i
+  on conflict (code, ticket_idx) do nothing;
+
+  return query select found_code, made;
+end $$ language plpgsql;

@@ -373,6 +373,10 @@ export const MY_ERRORS = {
   /* Composed, like the rest of this file. "The digital ticket's arrangement
      could not be read." The English under it says which part and why. */
   BAD_CARD_LAYOUT: 'ဒစ်ဂျစ်တယ်လက်မှတ် အစီအစဉ်ကို ဖတ်၍ မရပါ',
+  /* Composed, like the rest of this file. "Those tickets belong to more than
+     one buyer." A digital ticket belongs to one person; the English under it
+     says to send each buyer their own. */
+  MIXED_BUYERS: 'ထိုလက်မှတ်များသည် ဝယ်ယူသူ တစ်ဦးထက်ပိုသည်',
   NUMBERING_LOCKED: 'လက်မှတ်များ ရှိပြီးဖြစ်၍ နံပါတ်စနစ် ပြောင်း၍ မရပါ',
   BAD_PREFIX: 'ရှေ့ဆက်စာလုံး မသုံးနိုင်ပါ',
   NO_TEMPLATE_CHOSEN: 'လက်မှတ်ပုံ အများရှိသည် — မည်သည့်ပုံကို သုံးမည် ရွေးပါ',
