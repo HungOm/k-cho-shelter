@@ -25,6 +25,7 @@ import { encode } from '../../lib/qrcodegen.js'
 import { date } from '../../lib/format.js'
 import { inkFor } from '../../lib/brand.js'
 import Sheet from '../ui/Sheet.vue'
+import Icon from '../ui/Icon.vue'
 
 const props = defineProps({ payload: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['close', 'print', 'print-sample'])
@@ -512,6 +513,39 @@ function toCardStudio() {
 const cardStyle = computed(
   () => CARD_DESIGNS.find(d => d.id === state.cfg?.cardDesign)?.id || 'grand',
 )
+/*
+ * WHAT THIS CARD IS WEARING, AS ONE LINE.
+ *
+ * Five separate read-outs became five separate objects on screen, and objects
+ * in this app are pressable. As a sentence they are what they always were —
+ * facts — and the eye reads them in one pass instead of five.
+ *
+ * ABSENCE IS NAMED, not omitted. "no logo" in the quiet tone is the answer an
+ * organiser is looking for; dropping the item entirely would leave them
+ * counting what is missing.
+ *
+ * AND THE RUNGS ARE COUNTED. This said "& 4 more", which was hardcoded and
+ * happened to be right — the worst version of that bug, because it reads
+ * correctly until the day somebody changes the ladder, which is now a thing
+ * they can do.
+ */
+const wearing = computed(() => {
+  const cfg = state.cfg || {}
+  const rungs = ladder.value.length
+  return [
+    { text: `${cardName.value} card`, why: cardNote.value },
+    cfg.logo
+      ? { text: 'logo', why: 'The raffle\u2019s logo is printed on the card' }
+      : { text: 'no logo', off: true, why: 'No logo is printed on the card' },
+    cfg.motto
+      ? { text: 'motto', why: cfg.motto }
+      : { text: 'no motto', off: true, why: 'No motto is printed on the card' },
+    rungs
+      ? { text: `${topRung.value} ladder`, why: bandsNote.value }
+      : { text: 'no rungs', off: true, why: 'This raffle has no supporter rungs set' },
+  ]
+})
+
 const cardName = computed(
   () => CARD_DESIGNS.find(d => d.id === cardStyle.value)?.name || 'Grand',
 )
@@ -992,47 +1026,50 @@ onMounted(async () => {
             state. Ticket Studio · Digital ticket writes it, and the link below
             goes there, so the chip reports something a reader can act on.
           -->
+          <!--
+            WHAT THIS CARD IS WEARING — one line — AND THREE WAYS TO CHANGE IT.
+
+            It was five pills and three sentences, and the pills were the
+            problem. `.chip` in style.css is this app's PRESSABLE control: a
+            44px tap target with `cursor: pointer` and a hover that turns it
+            brand-coloured, and every other user of it is a <button> — Search's
+            "Try:" row, Approvals' reasons, SellTicket, TicketsInPlay. These
+            were <li>. The scoped block below restyled their padding and colour
+            and did not touch the cursor, the tap height or the hover, so the
+            panel showed five things the size of a button that lit up under the
+            pointer and did nothing. Shape promising an action that is not
+            there is the most direct way to break "don't make me think".
+
+            So the state is a line of text and the actions are buttons, which is
+            the distinction the old markup had backwards. The model is
+            unchanged and is still right: these READ, and the three controls
+            TRAVEL — a modal about one ticket does not own the raffle's
+            appearance.
+
+            THREE AND NOT TWO, because they go to three places: the treatment
+            and the motto are the card's and live in the studio; the colour and
+            the logo are the raffle's and live in Setup; the rungs are the
+            raffle's words for its supporters and live in their own card there.
+          -->
           <section class="look">
             <p class="rubric">Look</p>
-            <ul class="chips">
-              <li class="chip">
-                <span class="swatch" :style="{ background: state.cfg?.brandColor || 'var(--brand)' }"></span>
-                Raffle colour
-              </li>
-              <li class="chip" :class="{ off: !state.cfg?.logo }">{{ state.cfg?.logo ? 'Logo' : 'No logo' }}</li>
-              <li class="chip" :class="{ off: !state.cfg?.motto }"
-                  :title="state.cfg?.motto || 'No motto is printed on the card'">
-                {{ state.cfg?.motto ? 'Motto on' : 'No motto' }}
-              </li>
-              <!-- IN THE SAME ROW, not under a DESIGN rubric of its own. It
-                   was three buttons and it is one reading now, so it is the
-                   same job as the chips beside it — and a rubric plus a row
-                   holding one word spent two lines saying "Grand". It reads
-                   "Grand card" rather than "Grand" because a bare treatment
-                   name in a row of statements does not say what it is naming. -->
-              <li class="chip" :title="cardNote">{{ cardName }} card</li>
-              <!-- THE RAFFLE'S OWN WORDS FOR ITS SUPPORTERS, which is as much
-                   "what this raffle is wearing" as its colour is. It reports
-                   the ladder's TOP rung because that is the one an organiser
-                   recognises their choice by — "Pillar" says Community centre
-                   and "Cornerstone" says fellowship at a glance, where the
-                   bottom rung is "Friend" or "Well-wisher" in most of them. -->
-              <li class="chip" :title="bandsNote">{{ topRung }} &amp; 4 more</li>
-            </ul>
-            <!-- TWO LINKS, BECAUSE THEY GO TO TWO PLACES. Colour and logo are
-                 the raffle's, and live in Setup; the treatment and the motto
-                 are this card's, and live in the studio. One link covering
-                 both would be right about half the time. -->
-            <p class="links">
-              <button type="button" class="linky"
-                      title="Choose the treatment and the motto for the card a buyer receives"
-                      @click="toCardStudio">Ticket Studio &middot; Digital ticket &rarr;</button>
-              <button type="button" class="linky" title="Change the raffle's colour and logo"
-                      @click="toSetup">Colour and logo in Setup &rarr;</button>
-              <button type="button" class="linky"
-                      title="Choose what this raffle calls its supporters, and how many books each rung takes"
-                      @click="toSetup">What supporters are called &rarr;</button>
+            <p class="wearing">
+              <span class="swatch" :style="{ background: state.cfg?.brandColor || 'var(--brand)' }"></span>
+              <template v-for="(bit, i) in wearing" :key="bit.text">
+                <span v-if="i" class="sep">·</span><span :class="{ off: bit.off }"
+                      :title="bit.why">{{ bit.text }}</span>
+              </template>
             </p>
+            <div class="row wrap gap6">
+              <button type="button" class="btn sm"
+                      title="Choose the treatment and the motto for the card a buyer receives"
+                      @click="toCardStudio"><Icon name="design" :size="16" />Card</button>
+              <button type="button" class="btn sm" title="Change the raffle's colour and logo"
+                      @click="toSetup"><Icon name="image" :size="16" />Colour</button>
+              <button type="button" class="btn sm"
+                      title="Choose what this raffle calls its supporters, and how many books each rung takes"
+                      @click="toSetup"><Icon name="people" :size="16" />Supporters</button>
+            </div>
           </section>
 
           <!--
@@ -1139,27 +1176,26 @@ onMounted(async () => {
  * raffle's appearance. A rule above it and a rubric is enough separation.
  */
 .look { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border) }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none }
-.chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
-  font-size: .8rem; color: var(--text); background: var(--surface-2);
+/*
+ * A LINE, NOT PILLS. The five read-outs used `.chip`, which this scoped block
+ * restyled the padding and colour of and did NOT redeclare `cursor: pointer`,
+ * `min-height: 44px` or `.chip:hover` — so they kept the global control's tap
+ * height, pointer and brand-coloured hover while doing nothing at all.
+ */
+.wearing {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px;
+  margin: 0 0 10px; font-size: .82rem; color: var(--text); line-height: 1.7;
 }
 /* Absent, not broken — the raffle simply has no logo yet. */
-.chip.off { color: var(--muted); background: none }
-/* Two links, stacked, not a wrapped row: side by side they read as one
-   sentence broken in the middle, and at modal width the second wraps anyway. */
-.links { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 }
+.wearing .off { color: var(--muted) }
+.wearing .sep { color: var(--border) }
+.gap6 { gap: 6px }
+
 .swatch { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18) }
 
-/* A link that is a button because it navigates the app rather than an href. */
-.linky {
-  border: 0; background: none; padding: 0; font: inherit; color: var(--brand);
-  cursor: pointer; text-align: left;
-}
-.linky:hover:not(:disabled) { text-decoration: underline }
-.linky:disabled { color: var(--muted); cursor: not-allowed; text-decoration: none }
-.linky:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px }
+/* `.linky` went with the three stacked sentence-links it dressed. Left behind
+   it would be the mirror of the dead imports removed from TicketDesign today:
+   a name with nothing using it, which nothing in the toolchain reports. */
 .send .wide { width: 100% }
 
 /* The pager. Centred above the card, because it is about the card and not
