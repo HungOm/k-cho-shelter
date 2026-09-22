@@ -41,7 +41,7 @@ export const WRITES = new Set([
   // volunteer presses again.
   'offer_books', 'withdraw_offer', 'accept_offer', 'request_count_in',
   'record_winner', 'expand_tickets', 'set_active_tickets',
-  'set_ticket_ceiling', 'set_numbering', 'set_card_design', 'set_supporter_bands', 'roll_check_in', 'set_final_deadline', 'record_check_in',
+  'set_ticket_ceiling', 'set_numbering', 'set_card_design', 'set_supporter_bands', 'set_design_library', 'roll_check_in', 'set_final_deadline', 'record_check_in',
   'set_check_in_date', 'set_sales_close',
   'upload_logo', 'set_brand_color', 'set_org_contact', 'set_org_about',
   /*

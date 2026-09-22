@@ -74,7 +74,7 @@ ok(!!seed, 'the config seed block was found in schema.sql')
  * and IMPACT_LINE, which are the two sentences the Supporter card says that no
  * card said before it — what somebody could win, and what their money does.
  */
-ok(Object.keys(seed ?? {}).length === 40, `40 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
+ok(Object.keys(seed ?? {}).length === 41, `41 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
 
 /*
  * AND THE KEYS THE SERVER ACTUALLY READS ARE ALL THERE — which a count cannot

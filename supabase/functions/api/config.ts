@@ -13,6 +13,7 @@
 
 import { dayStart } from './deadlines.ts'
 import { DEFAULT_PRESET, ladderFrom } from '../_shared/ranks.ts'
+import { normalLibrary } from '../_shared/designlibrary.js'
 
 const num = (v: unknown, d: number) => {
   const n = parseInt(String(v ?? ''), 10)
@@ -181,6 +182,20 @@ export function configPayload(cfg: Record<string, string>) {
      * is called, and it is five short names.
      */
     supporterBands: parseBands(cfg.SUPPORTER_BANDS),
+    /*
+     * WHAT THIS RAFFLE HAS MADE ONCE AND WANTS AGAIN — saved shapes, named
+     * colours, named text styles. Normalised here rather than in the screen,
+     * for the same reason the ladder is: both sides read one definition, so a
+     * shape saved by the studio and a shape the server will accept cannot come
+     * to mean different things.
+     *
+     * It travels with the rest of config because the library is the raffle's,
+     * not a design's — the panel that places a saved badge is on the same
+     * screen as the one that saves it, and a second round trip to fetch it
+     * would put a spinner between drawing something and being able to reuse
+     * it.
+     */
+    designLibrary: normalLibrary(cfg.DESIGN_LIBRARY),
     projectCode: cfg.PROJECT_CODE ?? '',
     /*
      * Whether this raffle has artwork to print tickets from — a yes or no, not

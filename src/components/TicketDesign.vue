@@ -66,6 +66,7 @@ import {
 import {
   KINDS as DECO_KINDS, normalDecoration, nextDecoId, printWarnings,
 } from '../lib/designelements.js'
+import { placeShape, normalLibrary, nextLibId } from '../lib/designlibrary.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
@@ -76,6 +77,7 @@ import TemplateRail from './ticketdesign/TemplateRail.vue'
 import ArtworkVerdict from './ticketdesign/ArtworkVerdict.vue'
 import Inspector from './ticketdesign/Inspector.vue'
 import DecorationInspector from './ticketdesign/DecorationInspector.vue'
+import LibraryPanel from './ticketdesign/LibraryPanel.vue'
 import DigitalTab from './ticketdesign/DigitalTab.vue'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
@@ -694,6 +696,69 @@ const printRisks = computed(() => printWarnings(decorations.value, { printed: tr
  */
 function risksFor(d) {
   return d ? printWarnings([d], { printed: true }) : []
+}
+
+/* ---------- the library ---------- */
+
+const library = computed(() => normalLibrary(state.cfg?.designLibrary))
+const libBusy = ref(false)
+
+/*
+ * PLACED IN THE MIDDLE, AT A SIZE SOMEBODY CAN SEE AND THEN DRAG.
+ *
+ * Not at the pointer, because there is no pointer — this is a click in a rail
+ * two hundred pixels from the artboard. Not at the size it was saved, because a
+ * saved shape has no size: it holds its parts relative to its own bounds
+ * precisely so that where it lands is a decision made now.
+ *
+ * A fifth of the ticket, centred, and SELECTED — so the next thing that
+ * happens is a drag, which is what somebody placing a badge wants to do.
+ */
+function placeFromLibrary(shape) {
+  if (!design.value) return
+  mark()
+  const made = placeShape(shape, { left: 0.4, top: 0.35, width: 0.2, height: 0.3 }, nextDecoId)
+  design.value.decorations = [...decorations.value, ...made]
+  sel.value = made[0].id
+  also.value = made.slice(1).map((d) => d.id)
+}
+
+async function writeLibrary(next, said) {
+  libBusy.value = true
+  try {
+    const r = await api('set_design_library', { library: next })
+    if (r?.config) setConfig(r.config)
+    toast(said, 'ok')
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+  } finally { libBusy.value = false }
+}
+
+function saveToLibrary(shape) {
+  writeLibrary({ ...library.value, shapes: [...library.value.shapes, shape] },
+    `Saved “${shape.name}”`)
+}
+
+/*
+ * REMOVING FROM THE LIBRARY TAKES NOTHING OFF A TICKET, which the control says
+ * in its own hint. A shape placed on a design was copied at the moment it was
+ * placed — the library is where it came FROM, not where it lives — and a
+ * delete that also stripped every ticket that had ever used it would be the
+ * most expensive misunderstanding this panel could cause.
+ */
+function removeFromLibrary(id) {
+  writeLibrary({ ...library.value, shapes: library.value.shapes.filter((s) => s.id !== id) },
+    'Taken out of the library')
+}
+
+function useLibraryColour(value) {
+  const things = pickedThings.value
+  if (!things.length) { toast('Select something to give it that colour', 'warn'); return }
+  mark()
+  for (const t of things) {
+    if (t.fill) t.fill.colour = value
+    else t.ink = value
+  }
 }
 
 /*
@@ -2096,6 +2161,16 @@ const printedSize = computed(() => {
                 </template>
               </p>
             </div>
+
+            <!--
+              THE LIBRARY SITS BETWEEN DRAWING AND THE LAYER LIST, which is
+              where it is used from: you place something, and the next thing
+              you look at is the list it just joined.
+            -->
+            <LibraryPanel
+              :library="library" :selected="pickedDecos" :busy="libBusy"
+              @place="placeFromLibrary" @save="saveToLibrary"
+              @remove="removeFromLibrary" @use-colour="useLibraryColour" />
 
             <div class="block grow">
               <h3 class="rubric">

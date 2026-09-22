@@ -181,6 +181,18 @@ const CALLS = {
   /* Five rungs, lowest first, strictly ascending — the one shape the handler
      insists on, because rankFor takes the first threshold met from the top and
      a rung that is not above the one below it can never be returned. */
+  /* A library the server will accept: named, with pieces, and a colour it can
+     draw. The shape's parts are shares of the SHAPE, which is what makes it
+     placeable at any size — see designlibrary. */
+  set_design_library: {
+    library: {
+      shapes: [{ id: 's1', name: 'Corner rule', parts: [
+        { id: 'p1', kind: 'line', box: { left: 0, top: 0, width: 1, height: 0 } },
+      ] }],
+      colours: [{ id: 'c1', name: 'Press green', value: '#0d7a6f' }],
+      styles: [{ id: 't1', name: 'Heading', family: 'number', weight: 'bold' }],
+    },
+  },
   set_supporter_bands: {
     preset: 'shelter',
     rungs: [

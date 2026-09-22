@@ -18,6 +18,7 @@ import { ApiError, type AppUser } from './gate.ts'
 import { CARD_TREATMENT_IDS, isCardTreatment } from '../_shared/cardtreatments.js'
 import { configPayload } from './config.ts'
 import { PRESETS, SLOTS } from '../_shared/ranks.ts'
+import { libraryFaults, normalLibrary } from '../_shared/designlibrary.js'
 
 type Ctx = {
   supabaseAdmin: {
@@ -442,6 +443,50 @@ export async function setSupporterBands(p: Record<string, unknown>, user: AppUse
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'SET_SUPPORTER_BANDS',
     details: { preset, rungs: rungs.map((r) => `${r.name} @ ${r.minBooks}`) },
+    email: user.email,
+  })
+  return { config: configPayload(await currentConfig(ctx)) }
+}
+
+/*
+ * WHAT THIS RAFFLE KEEPS.
+ *
+ * Refused rather than repaired, and every fault named — the pair this repo
+ * settled on for the supporter ladder and for decorations, and for the same
+ * reason: the reading side normalises silently because it runs inside a screen
+ * drawing somebody's ticket, and a library quietly repaired on the way in is
+ * an organiser being shown a badge they did not save.
+ *
+ * WHOLE, NOT PATCHED. The panel sends the library it is holding, and this
+ * replaces the row. A per-item add and remove would be four more actions and
+ * four more races between two people with the same screen open; the library is
+ * small enough that sending all of it is simpler and cannot half-apply.
+ */
+export async function setDesignLibrary(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const faults = libraryFaults(p.library)
+  if (faults.length) throw new ApiError('BAD_LIBRARY', faults.join(' '), { faults })
+
+  const lib = normalLibrary(p.library)
+  const encoded = JSON.stringify(lib)
+  /*
+   * Bounded by the per-kind caps rather than by this number — 40 shapes of at
+   * most 12 pieces is the real ceiling, and a piece cannot carry a picture
+   * because an image refers to one already uploaded. This is the formality
+   * behind that, the same shape as the design limit in templates.ts.
+   */
+  if (encoded.length > 65536) {
+    throw new ApiError('BAD_LIBRARY',
+      `That library is ${encoded.length} characters. The limit is 65536.`)
+  }
+
+  /* An empty library is stored as the empty string rather than as three empty
+     lists, so "has this raffle saved anything" is the same question as "is
+     this value blank" — which is how every other config key answers it. */
+  const bare = !lib.shapes.length && !lib.colours.length && !lib.styles.length
+  await writeConfig(ctx, { DESIGN_LIBRARY: bare ? '' : encoded })
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SET_DESIGN_LIBRARY',
+    details: { shapes: lib.shapes.length, colours: lib.colours.length, styles: lib.styles.length },
     email: user.email,
   })
   return { config: configPayload(await currentConfig(ctx)) }

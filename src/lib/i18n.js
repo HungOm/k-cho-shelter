@@ -379,6 +379,7 @@ export const MY_ERRORS = {
      could not be read." The English under it says which part and why. */
   BAD_CARD_LAYOUT: 'ဒစ်ဂျစ်တယ်လက်မှတ် အစီအစဉ်ကို ဖတ်၍ မရပါ',
   BAD_BANDS: 'ထောက်ပံ့သူ အဆင့်များကို သိမ်း၍ မရပါ',
+  BAD_LIBRARY: 'သိမ်းထားသော ဒီဇိုင်းပစ္စည်းများကို သိမ်း၍ မရပါ',
   /* Composed, like the rest of this file. "Those tickets belong to more than
      one buyer." A digital ticket belongs to one person; the English under it
      says to send each buyer their own. */
