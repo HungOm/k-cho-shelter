@@ -10,6 +10,9 @@ import { state, setConfig, api, toast, isAdmin, isSuper, go } from '../lib/store
 import { money, date, dateTime, ROLE_WORDS, orgNameOf, APP_NAME } from '../lib/format.js'
 import { applyBrand, inkFor } from '../lib/brand.js'
 import { PRESETS, SLOTS, DEFAULT_BOOKS, presetById, ladderFrom } from '../lib/ranks.js'
+/* The rung's position as the buyer's card draws it, so Setup and the seal
+   cannot number one ladder two ways. */
+import { RUNG_NUMERAL } from '../lib/cardbadges.js'
 import { toPayload, reject as rejectLogo } from '../lib/logofile.js'
 import Logo from './ui/Logo.vue'
 
@@ -284,10 +287,6 @@ function loadNumbering() {
   }
 }
 watch(c, loadNumbering, { immediate: true })
-/* Immediate for the same reason as numbering: this screen mounts before
-   the config arrives on a cold load, so a one-shot read on mount leaves
-   every rung blank until something else happens to touch it. */
-watch(c, loadBands, { immediate: true })
 
 async function saveNumbering() {
   nbSaving.value = true
@@ -327,6 +326,31 @@ function loadBands() {
     : [...ladderFrom(stored)].reverse().map((r) => ({ name: r.name, minBooks: r.minBooks }))
   bands.value = { preset: String(stored?.preset ?? ''), rungs }
 }
+
+/*
+ * IMMEDIATE, AND BELOW `bands` RATHER THAN THIRTY LINES ABOVE IT.
+ *
+ * Immediate for the same reason as numbering: this screen mounts before the
+ * config arrives on a cold load, so a one-shot read on mount leaves every rung
+ * blank until something else happens to touch it.
+ *
+ * IT SAT BEFORE THE `const bands` IT ASSIGNS TO, and `immediate: true` means
+ * the callback runs SYNCHRONOUSLY during setup — inside that ref's temporal
+ * dead zone. `loadBands` has no early return, so it reached `bands.value` and
+ * threw on every single mount. Vue catches a watcher's error and reports it to
+ * the app's error handler, and this app installs none, so it was a console
+ * warning nobody was reading and nothing else at all.
+ *
+ * What it cost: the guard the comment above describes never once worked. On a
+ * cold load the rungs filled anyway, because `c` changes when config arrives
+ * and the watcher ran again properly — which is exactly why nobody saw it. On
+ * a warm navigation to Setup, with config already loaded and `c` never
+ * changing again, the editor would have kept `{ preset: '', rungs: [] }`.
+ *
+ * Found by rendering this card rather than by reading it, and it reproduces on
+ * HEAD as well as on this change, so it is not something today introduced.
+ */
+watch(c, loadBands, { immediate: true })
 
 /*
  * A preset fills the WORDS and leaves the thresholds alone. The two are
@@ -1442,11 +1466,24 @@ function details(d) {
       a particular buyer to Pillar.
     -->
     <div class="card">
-      <h3 style="margin:0 0 2px">What supporters are called</h3>
+      <h3 style="margin:0 0 2px">Supporter titles</h3>
+      <!--
+        A TITLE, NOT A SETTING, AND THE HEADING NOW SAYS SO.
+        This was "What supporters are called" over three lines of prose. Both
+        were accurate and both described a configuration screen. What these five
+        words actually are is the thing the raffle CALLS a person on the ticket
+        they keep and the page they scan — an honorific, conferred by what they
+        bought, and the only thing on any of these screens addressed to the
+        buyer rather than about them.
+
+        The one sentence that had to survive the cut is "counted, never given":
+        without it an organiser goes looking for the box that sets a particular
+        buyer to Pillar, which is the confusion the old paragraph existed to
+        prevent. It is four words now instead of two lines.
+      -->
       <p class="muted small" style="margin:0 0 12px">
-        Five rungs, printed on the digital ticket and on the page a buyer scans.
-        Who lands on which rung is <b>counted</b> from the tickets they hold &mdash;
-        never awarded, and there is no screen that sets one by hand.
+        Printed on the ticket they keep and the page they scan.
+        <b>Counted, never given by hand.</b>
       </p>
 
       <!-- THE PRESETS ARE A STARTING POINT AND SAY SO. They fill the words and
@@ -1475,8 +1512,21 @@ function details(d) {
                scoped stylesheet and does not exist out here, so it would have
                been a class that silently styled nothing. .data is the global
                utility that gives numerals the app's tabular face. -->
-          <span class="tiny muted data" style="width:2em">{{ i + 1 }}</span>
-          <input v-model="r.name" type="text" maxlength="24" class="grow"
+          <!--
+            THE SAME NUMERAL THE BUYER SEES. The seal on their card carries
+            I–V — see cardbadges.js, where it is the rung's position and the
+            one thing about a rung that is not free text. Showing the Arabic
+            index here and the Roman one there made them two different
+            numbering schemes for one ladder; an organiser typing "Pillar"
+            beside a V is looking at what the person will be wearing.
+          -->
+          <span class="rungmark" :title="'Rung ' + (i + 1) + ' of ' + bands.rungs.length">
+            {{ RUNG_NUMERAL[i] }}
+          </span>
+          <!-- Set as the title it is rather than as a settings value: this is
+               the word somebody is given, and an organiser choosing it should
+               see it at the weight it will be worn at. -->
+          <input v-model="r.name" type="text" maxlength="24" class="grow rungname"
                  :disabled="bandsSaving" :placeholder="'Rung ' + (i + 1)"
                  :aria-label="'What rung ' + (i + 1) + ' is called'">
           <input v-model.number="r.minBooks" type="number" min="0" step="1" inputmode="numeric"
@@ -1812,4 +1862,24 @@ function details(d) {
 .btn.danger { background: var(--bad); color: var(--bad-ink); border-color: var(--bad) }
 .btn.danger:disabled { opacity: .5 }
 .wide { width: 100%; margin-top: 10px }
+
+/*
+ * A SUPPORTER'S TITLE, SET AS ONE.
+ *
+ * These five inputs were the same weight as every other field on Setup, which
+ * is right for a number of books and wrong for the word a person is given. An
+ * organiser choosing between "Friend" and "Neighbour" is choosing what somebody
+ * reads on the ticket they keep, and should see it at the size it will be worn.
+ */
+.rungname {
+  font-size: 1.05rem; font-weight: 650; letter-spacing: -.01em;
+}
+/* The position, in the numerals the buyer's seal uses. Quiet, fixed width so
+   the five names start on one line however wide the numeral is — I and VIII
+   are not the same width and a ragged left edge defeats a ladder. */
+.rungmark {
+  width: 2.4em; flex: none; text-align: center;
+  font-size: .78rem; font-weight: 700; letter-spacing: .08em;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
 </style>
