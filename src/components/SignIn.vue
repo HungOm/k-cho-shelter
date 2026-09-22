@@ -141,8 +141,9 @@ onMounted(async () => {
         <p class="muted small">
           Nothing is wrong with the app — this account simply has no access yet.
         </p>
-        <button class="btn primary block" @click="emit('reset')">
-          Sign in with a different account
+        <button class="btn primary block" title="Sign in with a different account"
+                @click="emit('reset')">
+          Different account
         </button>
       </div>
 

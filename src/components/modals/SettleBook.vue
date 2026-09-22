@@ -442,8 +442,10 @@ async function settle() {
         <label for="su">Which tickets came back?</label>
         <textarea id="su" v-model="unsold" class="xl" :placeholder="example"></textarea>
         <div v-if="inBook.length" class="quick">
-          <button type="button" class="btn sm ghost" :disabled="allBack" @click="wholeBookBack">
-            The whole book came back
+          <button type="button" class="btn sm ghost" :disabled="allBack"
+                  title="The whole book came back — fill in every ticket still in it as unsold"
+                  @click="wholeBookBack">
+            All came back
           </button>
           <button type="button" class="btn sm ghost" :disabled="!unsold" @click="unsold = ''">
             Clear

@@ -500,10 +500,18 @@ const KINDS = {
     </div>
 
     <template #actions>
-      <a v-if="wa" class="btn" :href="wa" target="_blank" rel="noopener">Message on WhatsApp</a>
+      <a v-if="wa" class="btn" :href="wa" target="_blank" rel="noopener"
+         title="Message this seller on WhatsApp">WhatsApp</a>
       <a v-if="tel && canRing" class="btn ghost" :href="tel">{{ agent.phone }}</a>
-      <button v-if="canRecord" class="btn primary" @click="emit('record-payment', agent)">
-        Record money handed in
+      <!-- "Money handed in", not "Record payment": the two doors this app
+           counts money through are the book figure and money handed in BY
+           HAND, and a button that says only "payment" is the one somebody
+           presses for the wrong one. The verb moves to the title and to the
+           sheet it opens, which is titled with it. -->
+      <button v-if="canRecord" class="btn primary"
+              title="Record money handed in — it does not settle or close a book"
+              @click="emit('record-payment', agent)">
+        Money handed in
       </button>
       <button class="btn ghost" @click="emit('close')">Close</button>
     </template>

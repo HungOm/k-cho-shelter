@@ -2003,7 +2003,7 @@ const printedSize = computed(() => {
         </span>
         <button class="btn sm ghost danger" :disabled="!cardParts.length"
                 :title="`Put every part of this card back where it started. The other two treatments keep whatever you have arranged on them. This cannot be undone.`"
-                @click="resetCard">Back to the standard card</button>
+                @click="resetCard">Standard card</button>
         <span class="gap"></span>
         <button class="btn sm ghost" :disabled="!cardDirty"
                 :title="cardDirty ? 'Throw away every change since the last save' : 'Nothing has changed since the last save'"
@@ -2029,7 +2029,7 @@ const printedSize = computed(() => {
         -->
         <button class="btn sm ghost danger" :disabled="!design"
                 title="Discard the whole design and start from the standard one. This cannot be undone."
-                @click="resetDesign">Back to standard</button>
+                @click="resetDesign">Standard design</button>
         <span class="gap"></span>
         <button class="btn sm ghost" :disabled="!dirty"
                 :title="dirty ? 'Throw away every change since the last save' : 'Nothing has changed since the last save'"

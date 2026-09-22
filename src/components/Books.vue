@@ -72,16 +72,37 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
       <BookGrid :books="shown" @pick="b => emit('open-book', b)" />
     </div>
 
+    <!--
+      SIX BUTTONS THAT WERE SIX SENTENCES.
+      "Pass books to someone else", "Mark books brought back", "Put books back
+      on the shelf" — a row of prose, each one a line long, so the row read as
+      a paragraph with edges rather than as a set of things you can do. An icon
+      and two words is what a toolbar is for; the sentence is not deleted, it
+      moves to the `title`, and the sheet each one opens is still titled with
+      the full phrase, which is what BookAction.vue's map and the instruction
+      in SellTicket point at.
+
+      AND THE HEADING SAID NOTHING. "Other things you can do" names the leftovers
+      rather than the things — it is what a section is called when nobody
+      decided what belongs in it. What actually belongs here is every action
+      that takes SEVERAL books at once; the single-book versions of the same
+      three live in the book's own sheet.
+    -->
     <div v-if="isAdmin" class="card">
-      <h3>Other things you can do</h3>
+      <h3>Several books at once</h3>
       <div class="row wrap">
-        <button class="btn" @click="emit('transfer')">Pass books to someone else</button>
-        <button class="btn" @click="emit('return-books')">Mark books brought back</button>
-        <button class="btn" @click="emit('restock')">Put books back on the shelf</button>
-        <button class="btn" @click="emit('print-range')">Print tickets</button>
+        <button class="btn" title="Pass books to someone else — they stay out, just with a different person"
+                @click="emit('transfer')"><Icon name="people" :size="17" />Hand over</button>
+        <button class="btn" title="Mark books brought back — any tickets being held in them go back on the shelf"
+                @click="emit('return-books')"><Icon name="books" :size="17" />Brought back</button>
+        <button class="btn" title="Put books back on the shelf — unsold tickets in them go back into the office"
+                @click="emit('restock')"><Icon name="reset" :size="17" />Back on the shelf</button>
+        <button class="btn" title="Print a range of real tickets"
+                @click="emit('print-range')"><Icon name="print" :size="17" />Print</button>
         <button class="btn" title="Ten watermarked sample tickets. Not in the raffle, cannot be sold."
-                @click="emit('print-sample')">Print samples</button>
-        <button class="btn danger" @click="emit('mark')">Report books lost</button>
+                @click="emit('print-sample')"><Icon name="paper" :size="17" />Samples</button>
+        <button class="btn danger" title="Report books lost — the tickets in them cannot win"
+                @click="emit('mark')"><Icon name="missing" :size="17" />Report lost</button>
       </div>
     </div>
 

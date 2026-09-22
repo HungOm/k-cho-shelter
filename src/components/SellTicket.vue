@@ -120,7 +120,7 @@ watch(() => props.ticket, focusFirst, { immediate: true })
         <span class="helpword" :title="COUNTED_IN_HELP">counted in</span>.</b>
       Its money was settled when it came back, so nothing more can be sold from it —
       including this ticket, which came back unsold. To sell it, an organiser puts
-      the book back on the shelf first: <b>Books → Put books back on the shelf</b>.
+      the book back on the shelf first: <b>Books → Back on the shelf</b>.
       The tickets already sold from it keep their buyers.
     </div>
     <div v-else-if="!done && place?.status === 'Void' && !isSold(t)" class="note bad">

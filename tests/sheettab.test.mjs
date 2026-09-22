@@ -203,7 +203,12 @@ console.log('the action you cannot take back does not look like the one you can'
   const feet = [...src.matchAll(/<footer\b[^>]*class="footbar"[\s\S]*?<\/footer>/g)].map((m) => m[0])
   ok(feet.length >= 2, `both studio footers are found (${feet.length})`)
   for (const foot of feet) {
-    ok(/Back to (standard|saved)/.test(foot) && /Undo/.test(foot),
+    /* Re-aimed, not relaxed. The two discard buttons were "Back to standard"
+       and "Back to the standard card"; they are "Standard design" and
+       "Standard card" since the labels were shortened on 2026-09-22. The
+       invariant is unchanged and is the reason this exists: three actions, and
+       the one that cannot be undone marked as the one that cannot be undone. */
+    ok(/Standard (design|card)/.test(foot) && /Back to saved/.test(foot) && /Undo/.test(foot),
       'all three actions are still offered')
     /*
      * Matched as BUTTON ELEMENTS, not by slicing around a label. The first
@@ -216,7 +221,11 @@ console.log('the action you cannot take back does not look like the one you can'
     ok(buttons.length === 3, `three actions found (${buttons.map((b) => b.label).join(', ')})`)
     /* The one that discards everything is whichever says "standard" — the
        template's design, or this treatment's whole arrangement. */
-    const danger = buttons.find((b) => /standard/.test(b.label))
+    /* Case-insensitively: the word is what identifies this button, and
+       whether it starts the label is a matter of wording, not of meaning. A
+       case-sensitive match here failed a correct file the day "Back to the
+       standard card" became "Standard card". */
+    const danger = buttons.find((b) => /standard/i.test(b.label))
     const by = (label) => buttons.find((b) => b.label === label)
     ok(danger && /danger/.test(danger.attrs), 'the one that cannot be undone is marked as dangerous')
     ok(!/danger/.test(by('Back to saved').attrs), 'the one that only loses this sitting is not')

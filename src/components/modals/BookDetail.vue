@@ -364,7 +364,8 @@ const showHistory = ref(false)
       <button v-if="isAdmin" class="btn" :disabled="!hasArtwork"
               title="Ten watermarked sample tickets. Not in the raffle, cannot be sold."
               @click="emit('print-sample')">Print samples</button>
-      <button class="btn" @click="showHistory = true">Where it has been</button>
+      <button class="btn" title="Every hand this book has passed through"
+              @click="showHistory = true">Where it has been</button>
       <!-- Shown and DISABLED rather than hidden, when this person cannot sell
            from this book. Hiding it makes the app look different to different
            people for no stated reason; letting them press it makes the server
@@ -398,11 +399,17 @@ const showHistory = ref(false)
            Nothing has been accepted, so nothing has to come back: the books go
            straight to the shelf and the seller's request closes as cancelled. -->
       <button v-if="isAdmin && book.status === 'Offered'" class="btn primary"
-              @click="emit('withdraw-offer', book)">Take the offer back</button>
+              title="Take the offer back — nothing has been accepted, so the books go straight to the shelf"
+              @click="emit('withdraw-offer', book)">Take it back</button>
 
       <button v-if="canRecount" class="btn" @click="emit('settle', book)">Count it in again</button>
+      <!-- The same words as the Books toolbar, shortened the same way: the
+           sentence is in the title and the sheet keeps the full phrase. A
+           button and the instruction that sends somebody to it must read the
+           same, which is why SellTicket's "Books → …" moved with it. -->
       <button v-if="canShelve" :class="['btn', frozen > 0 ? 'primary' : '']"
-              @click="emit('restock', book)">Put it back on the shelf</button>
+              title="Put it back on the shelf — unsold tickets go back into the office"
+              @click="emit('restock', book)">Back on the shelf</button>
 
       <!-- GHOST, not another button. Four controls of identical weight is a row
            with no answer to "what am I meant to do here", and the browser's

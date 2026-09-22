@@ -352,7 +352,7 @@ export const api = async () => ({})
   }
   const said = visibleText(await renderScreen('src/components/modals/BookDetail.vue',
     detailStore, { props: { book: BOOK } }))
-  ok(/Put it back on the shelf/.test(said), 'the book sheet carries the way out')
+  ok(/Back on the shelf/.test(said), 'the book sheet carries the way out')
   ok(/10 tickets in this book never sold/.test(said),
      'and says what happened to the tickets, which is the question somebody arrives with')
   ok(/keeps its buyer/.test(said), 'and that the sales in it are not touched by putting it back')
@@ -361,7 +361,7 @@ export const api = async () => ({})
   // beside the one that performs it.
   const out = visibleText(await renderScreen('src/components/modals/BookDetail.vue',
     detailStore, { props: { book: { ...BOOK, status: 'Out', countedIn: false, available: 10 } } }))
-  ok(!/Put it back on the shelf/.test(out), 'a book still out does not offer it')
+  ok(!/Back on the shelf/.test(out), 'a book still out does not offer it')
   ok(!/never sold/.test(out), 'and is not described as stuck')
 
   const app = read('src/App.vue')

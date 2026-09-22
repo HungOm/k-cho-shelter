@@ -327,8 +327,10 @@ function explain(err) {
           <input v-model="moveNote" class="mt6" placeholder="Why — the hall is booked" autocomplete="off">
           <div class="row mt6">
             <button class="btn sm ghost" @click="moving = null">Cancel</button>
-            <button class="btn sm ghost" :disabled="busy" @click="applyMove(true)">
-              Put it back on the rhythm
+            <button class="btn sm ghost" :disabled="busy"
+                    title="Put it back on the rhythm — this round returns to the regular interval"
+                    @click="applyMove(true)">
+              Back to the rhythm
             </button>
           </div>
           <p class="hint">
