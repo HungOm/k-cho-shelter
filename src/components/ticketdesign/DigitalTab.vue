@@ -34,6 +34,7 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { cardSVG, cardPalette, CARD_DESIGNS, ticketVerifyUrl } from '../../lib/ticketart.js'
 import { CARD_SIZES, layoutFrom } from '../../lib/cardelements.js'
+import { boundsOf, alignBoxes, distributeBoxes } from '../../lib/arrange.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { inkFor } from '../../lib/brand.js'
 import Icon from '../ui/Icon.vue'
@@ -136,7 +137,39 @@ const palette = computed(() => cardPalette(props.card.design, specimen.value))
 
 /* ---------- the list ---------- */
 
+/*
+ * A PRIMARY SELECTION AND THE OTHERS — the same two refs as the printed tab,
+ * and the same reason: the inspector edits ONE part's colour and lettering,
+ * while align and distribute act on everything and do not care which was
+ * clicked first.
+ *
+ * WHAT THIS TAB CANNOT OFFER, and the list is a fact about the model rather
+ * than a gap. `EDITABLE` in cardelements.js is seven fields — box, enabled,
+ * align, ink, family, weight, opacity — so there is no order to change, nothing
+ * to duplicate and nothing to delete. A card part is hidden from its own eye
+ * and put back from the same control. Drawing a Duplicate here would be a
+ * control over machinery that does not exist, which this screen has declined
+ * twice before.
+ */
 const sel = ref('')
+const also = ref([])
+
+const picked = computed(() => {
+  const live = new Set(props.parts.filter((p) => !p.locked).map((p) => p.id))
+  const out = []
+  for (const id of [sel.value, ...also.value]) {
+    if (id && live.has(id) && !out.includes(id)) out.push(id)
+  }
+  return out
+})
+/* In the model's own order, never the order somebody clicked — see the printed
+   tab, where the same list feeds distribute's sort. */
+const pickedParts = computed(() => {
+  const want = new Set(picked.value)
+  return props.parts.filter((p) => want.has(p.id))
+})
+const many = computed(() => picked.value.length > 1)
+
 const chosen = computed(() => props.parts.find((p) => p.id === sel.value) || null)
 const watermark = computed(() => props.parts.find((p) => p.id === 'watermark') || null)
 const shown = computed(() => props.parts.filter((p) => p.enabled !== false).length)
@@ -145,7 +178,52 @@ const shown = computed(() => props.parts.filter((p) => p.enabled !== false).leng
    every drawing program reads: what is nearest the eye is nearest the top. */
 const layers = computed(() => [...props.parts].reverse())
 
-function pick(id) { sel.value = id }
+function pick(id, add = false) {
+  const part = props.parts.find((p) => p.id === id)
+  /* The background is the card itself. It can be the primary so the inspector
+     can say what it is, but it cannot join a multi-selection — aligning the
+     card to itself is the kind of button that does nothing and looks broken. */
+  if (add && (!part || part.locked)) return
+  if (!add) { sel.value = id; also.value = [] } else if (id === sel.value) {
+    sel.value = also.value[0] || ''
+    also.value = also.value.slice(1)
+  } else if (also.value.includes(id)) {
+    also.value = also.value.filter((x) => x !== id)
+  } else if (sel.value) {
+    also.value = [...also.value, sel.value]
+    sel.value = id
+  } else {
+    sel.value = id
+  }
+}
+
+/*
+ * ARRANGING, against the same arithmetic the printed tab uses. One box aligns
+ * to the card; several align to each other.
+ */
+const alignWithin = () => (many.value
+  ? boundsOf(pickedParts.value.map((p) => p.box))
+  : { left: 0, top: 0, width: 1, height: 1 })
+
+function alignPicked(edge) {
+  if (!pickedParts.value.length) return
+  emit('mark')
+  const out = alignBoxes(pickedParts.value.map((p) => p.box), edge, alignWithin())
+  pickedParts.value.forEach((p, i) => { p.box.left = out[i].left; p.box.top = out[i].top })
+}
+
+function distributePicked(axis) {
+  if (pickedParts.value.length < 3) return
+  emit('mark')
+  const out = distributeBoxes(pickedParts.value.map((p) => p.box), axis)
+  pickedParts.value.forEach((p, i) => { p.box.left = out[i].left; p.box.top = out[i].top })
+}
+
+const whyNoSelection = computed(() => (picked.value.length ? '' : 'Nothing is selected'))
+const whyNotDistribute = computed(() => (
+  picked.value.length >= 3 ? ''
+    : picked.value.length ? 'Spacing needs three or more — shift-click to add to the selection'
+      : 'Nothing is selected'))
 
 /* ---------- the canvas ---------- */
 
@@ -248,11 +326,18 @@ function perShare() {
 function startMove(part, ev) {
   if (part.locked || part.enabled === false || asSent.value) return
   ev.stopPropagation()
+
+  /* Shift selects and does not drag — see the printed tab. */
+  if (ev.shiftKey || ev.metaKey) { pick(part.id, true); return }
+
   emit('mark')
   emit('drag', true)
-  sel.value = part.id
+  if (!picked.value.includes(part.id)) pick(part.id)
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
-  drag.value = { mode: 'move', id: part.id, px: ev.clientX, py: ev.clientY, box: { ...part.box } }
+  drag.value = {
+    mode: 'move', id: part.id, px: ev.clientX, py: ev.clientY, box: { ...part.box },
+    group: pickedParts.value.filter((p) => p.id !== part.id).map((p) => ({ id: p.id, box: { ...p.box } })),
+  }
 }
 
 function startResize(part, corner, ev) {
@@ -285,6 +370,17 @@ function onPointerMove(ev) {
     const wantY = st.box.top + dy
     part.box.left = share(Math.abs(left - wantX) <= Math.abs(right - wantX) ? left : right)
     part.box.top = share(Math.abs(top - wantY) <= Math.abs(bottom - wantY) ? top : bottom)
+
+    /* The rest of the selection follows the primary's SETTLED position, not the
+       pointer delta: snapping moves the primary further than the pointer went,
+       and the raw delta would shear the group apart by the snap distance every
+       time it caught. Same reasoning as the printed tab. */
+    for (const g of st.group || []) {
+      const other = props.parts.find((p) => p.id === g.id)
+      if (!other) continue
+      other.box.left = share(g.box.left + (part.box.left - st.box.left))
+      other.box.top = share(g.box.top + (part.box.top - st.box.top))
+    }
     return
   }
 
@@ -463,7 +559,8 @@ defineExpose({ sendTest, testing })
         <li v-for="p in layers" :key="p.id"
             :class="{ on: sel === p.id, off: p.enabled === false }">
           <Icon :name="p.kind" :size="15" class="kind" :class="p.kind" :title="p.what" />
-          <button type="button" class="elname" @click="pick(p.id)">{{ p.name }}</button>
+          <button type="button" class="elname"
+                  @click="pick(p.id, $event.shiftKey || $event.metaKey)">{{ p.name }}</button>
           <!--
             THE BACKGROUND HAS NO EYE AND SAYS WHY, rather than having one that
             does nothing or none at all with no explanation. This is the rule
@@ -508,6 +605,45 @@ defineExpose({ sendTest, testing })
       <span v-if="testNote" class="tiny muted">{{ testNote }}</span>
     </div>
 
+    <!--
+      THE ARRANGE RAIL, and it is SHORTER THAN THE PLACE TAB'S ON PURPOSE.
+
+      Five tools, not eleven. A card part cannot be reordered, duplicated or
+      deleted — `EDITABLE` in cardelements.js is seven fields and none of them
+      is a position in the stack — so drawing those four here would be controls
+      over machinery that does not exist. The parts are hidden from their own
+      eye in the layer list and put back from the same control, which is the
+      reversible version of removing one.
+
+      It is hidden in "Preview as sent", where there is nothing to arrange:
+      that mode exists to show the card with none of the studio on top.
+    -->
+    <div class="withrail">
+    <ToolBar v-if="!asSent" label="Arrange" vertical>
+      <span class="tgroup">
+        <ToolButton icon="align" label="Align left" :why="whyNoSelection"
+                    :hint="many ? 'Line the selected parts up on their left edges'
+                                : 'Put this part against the left edge of the card'"
+                    @click="alignPicked('left')" />
+        <ToolButton icon="position" label="Centre across" :why="whyNoSelection"
+                    :hint="many ? 'Centre the selected parts on each other, across'
+                                : 'Centre this part across the card'"
+                    @click="alignPicked('centre')" />
+        <ToolButton icon="size" label="Centre down" :why="whyNoSelection"
+                    :hint="many ? 'Centre the selected parts on each other, down'
+                                : 'Centre this part down the card'"
+                    @click="alignPicked('middle')" />
+      </span>
+      <span class="tgroup">
+        <ToolButton icon="distribute" label="Space across" :why="whyNotDistribute"
+                    hint="Even gaps between the selected parts, left to right. The outermost two stay where they are."
+                    @click="distributePicked('across')" />
+        <ToolButton icon="margins" label="Space down" :why="whyNotDistribute"
+                    hint="Even gaps between the selected parts, top to bottom"
+                    @click="distributePicked('down')" />
+      </span>
+    </ToolBar>
+
     <div ref="stage" class="stage" :class="{ sent: asSent }">
       <!--
         AS SENT: the card at the width a chat gives it, on something that is
@@ -541,7 +677,7 @@ defineExpose({ sendTest, testing })
           ref="frame" class="frame"
           :style="{ width: frameWidth + 'px', height: Math.round(frameWidth * (size.height / size.width)) + 'px' }"
           @pointermove="onPointerMove" @pointerup="endPointer" @pointercancel="endPointer"
-          @pointerdown="sel = ''">
+          @pointerdown="sel = ''; also = []">
           <div class="cardart" v-html="preview"></div>
 
           <!-- The guides sit over the card and under the boxes: they are
@@ -558,8 +694,9 @@ defineExpose({ sendTest, testing })
           <div
             v-for="p in parts" :key="p.id"
             class="ebox"
-            :class="{ on: sel === p.id, off: p.enabled === false, locked: p.locked,
-                      faint: sel !== p.id, hidden: !showAllBoxes && sel !== p.id }"
+            :class="{ on: sel === p.id, too: also.includes(p.id), off: p.enabled === false,
+                      locked: p.locked, faint: !picked.includes(p.id),
+                      hidden: !showAllBoxes && !picked.includes(p.id) }"
             :style="{ left: pc(p.box.left), top: pc(p.box.top), width: pc(p.box.width), height: pc(p.box.height) }"
             :title="p.locked ? `${p.name} is the card itself` : `${p.name} — drag to move, or use the arrow keys`"
             @pointerdown="startMove(p, $event)">
@@ -567,12 +704,14 @@ defineExpose({ sendTest, testing })
               type="button" class="grab" :aria-label="p.name"
               :disabled="p.locked"
               :title="p.locked ? `${p.name} is the card itself` : `${p.name} — drag to move, or use the arrow keys`"
-              @keydown="onKey" @click.stop="pick(p.id)"></button>
+              @keydown="onKey" @click.stop="pick(p.id, $event.shiftKey || $event.metaKey)"></button>
             <!-- The name on the selected box, as card 8c draws it: at a zoom
                  that fits a 1920px card, a highlighted rectangle is not
                  self-evidently the thing named in the list. -->
             <span v-if="sel === p.id" class="boxtag">{{ p.name }}</span>
-            <template v-if="sel === p.id && !p.locked">
+            <!-- Handles on the primary alone: eight grips on each of five
+                 selected boxes is forty over one card. -->
+            <template v-if="sel === p.id && !many && !p.locked">
               <span v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
                     class="hdl" :class="c"
                     @pointerdown="startResize(p, c, $event)"></span>
@@ -581,6 +720,7 @@ defineExpose({ sendTest, testing })
         </div>
       </template>
     </div>
+    </div><!-- .withrail -->
 
     <p v-if="drawError" class="note bad tiny">Nothing could be drawn: {{ drawError }}</p>
 
@@ -754,6 +894,14 @@ defineExpose({ sendTest, testing })
 .ebox.hidden { outline: 0; box-shadow: none }
 .ebox.off { cursor: not-allowed; outline-style: dotted; opacity: .55 }
 .ebox.locked { cursor: default; outline-color: rgba(255, 255, 255, .18); box-shadow: none }
+/* The others in a multi-selection: the same amber says "selected", a thinner
+   line says "and the panel is about the other one". Declared BEFORE .on so a
+   part that is both primary and — impossibly — also, still reads as primary. */
+.ebox.too {
+  outline: 1px solid #ffb300;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .4);
+  background: rgba(255, 179, 0, .06);
+}
 .ebox.on {
   outline: 2px solid #ffb300;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .55);

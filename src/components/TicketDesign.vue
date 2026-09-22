@@ -176,6 +176,9 @@ const cardDirty = computed(() => cardState.value !== cardSavedState.value)
  * the only clue and no mention of this file in it.
  */
 const cardHistory = ref([])
+/* The card's half of the same fork — see `future` on the printed side for why
+   an undo you cannot reverse stops being pressed at all. */
+const cardFuture = ref([])
 const cardDragging = ref(false)
 let cardSnap = ''
 let cardPush = 0
@@ -209,6 +212,7 @@ watch(() => card.value.design, (now, was) => {
 function markCard() {
   const now = cardState.value
   cardHistory.value = [...cardHistory.value.slice(-(HISTORY_MAX - 1)), now]
+  cardFuture.value = []
   cardSnap = now
   cardPush = Date.now()
 }
@@ -217,6 +221,7 @@ function rebaseCard() {
   cardSnap = cardState.value
   cardSavedState.value = cardSnap
   cardHistory.value = []
+  cardFuture.value = []
   cardPush = 0
 }
 
@@ -226,6 +231,7 @@ watch([card, cardParts], () => {
   if (now === cardSnap) return
   if (!cardDragging.value && cardSnap && Date.now() - cardPush > 500) {
     cardHistory.value = [...cardHistory.value.slice(-(HISTORY_MAX - 1)), cardSnap]
+    cardFuture.value = []
     cardPush = Date.now()
   }
   cardSnap = now
@@ -243,14 +249,25 @@ function applyCard(snap) {
 function undoCard() {
   const last = cardHistory.value[cardHistory.value.length - 1]
   if (!last) return
+  cardFuture.value = [...cardFuture.value.slice(-(HISTORY_MAX - 1)), cardState.value]
   applyCard(JSON.parse(last))
   cardHistory.value = cardHistory.value.slice(0, -1)
   cardSnap = last
 }
 
+function redoCard() {
+  const next = cardFuture.value[cardFuture.value.length - 1]
+  if (!next) return
+  cardHistory.value = [...cardHistory.value.slice(-(HISTORY_MAX - 1)), cardState.value]
+  applyCard(JSON.parse(next))
+  cardFuture.value = cardFuture.value.slice(0, -1)
+  cardSnap = next
+}
+
 function revertCard() {
   applyCard(JSON.parse(cardSavedState.value))
   cardHistory.value = []
+  cardFuture.value = []
   cardSnap = cardSavedState.value
 }
 
@@ -1218,7 +1235,10 @@ function onFocusKey(e) {
   }
   if (cmd && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault()
-    undo()
+    /* ⇧⌘Z for redo, which is what this platform's own apps use. Ctrl+Y is the
+       Windows spelling and is not bound: this screen is a Mac-first organiser's
+       tool and a second binding nobody presses is a second thing to keep. */
+    if (e.shiftKey) redo(); else undo()
     return
   }
   if (e.key === 'Escape' && picked.value.length) {
@@ -1422,6 +1442,21 @@ async function saveDesign() {
  * what it does rather than sharing a button with this.
  */
 const history = ref([])
+/*
+ * WHAT UNDO TOOK, so it can be put back.
+ *
+ * The stack was pop-only: a step undone was gone, and the only way back was to
+ * redo the work by hand. That is a worse trap than it looks on a design screen,
+ * because undo is how somebody EXPLORES — press it, look, decide you preferred
+ * the other one — and an undo you cannot reverse turns a cheap look into a
+ * commitment. So people stop pressing it, which is the same as not having it.
+ *
+ * A NEW ACTION FORKS THE TIMELINE AND THIS EMPTIES. Keeping it would offer a
+ * redo that reinstates a state the current one never came from, which is the
+ * one thing worse than no redo at all: it silently discards whatever was done
+ * in between.
+ */
+const future = ref([])
 const HISTORY_MAX = 50
 let restoring = false
 
@@ -1442,6 +1477,7 @@ function mark() {
   if (!design.value) return
   const snap = JSON.stringify(design.value)
   history.value = [...history.value.slice(-(HISTORY_MAX - 1)), snap]
+  future.value = []
   lastSnap = snap
   lastPush = Date.now()
 }
@@ -1449,6 +1485,7 @@ function mark() {
 function rebase() {
   lastSnap = design.value ? JSON.stringify(design.value) : ''
   history.value = []
+  future.value = []
   lastPush = 0
 }
 
@@ -1473,6 +1510,7 @@ watch(design, () => {
    */
   if (!drag.value && lastSnap && Date.now() - lastPush > 500) {
     history.value = [...history.value.slice(-(HISTORY_MAX - 1)), lastSnap]
+    future.value = []
     lastPush = Date.now()
   }
   lastSnap = snap
@@ -1482,9 +1520,21 @@ function undo() {
   const last = history.value[history.value.length - 1]
   if (!last) return
   restoring = true
+  future.value = [...future.value.slice(-(HISTORY_MAX - 1)), JSON.stringify(design.value)]
   design.value = JSON.parse(last)
   history.value = history.value.slice(0, -1)
   lastSnap = last
+  nextTick(() => { restoring = false })
+}
+
+function redo() {
+  const next = future.value[future.value.length - 1]
+  if (!next) return
+  restoring = true
+  history.value = [...history.value.slice(-(HISTORY_MAX - 1)), JSON.stringify(design.value)]
+  design.value = JSON.parse(next)
+  future.value = future.value.slice(0, -1)
+  lastSnap = next
   nextTick(() => { restoring = false })
 }
 
@@ -2300,6 +2350,9 @@ const printedSize = computed(() => {
         <button class="btn sm" :disabled="!cardHistory.length"
                 :title="cardHistory.length ? 'Undo the last change' : 'Nothing to undo'"
                 @click="undoCard">Undo</button>
+                <button class="btn sm" :disabled="!cardFuture.length"
+                :title="cardFuture.length ? 'Put back what Undo took \u2014 \u21e7\u2318Z' : 'Nothing to redo'"
+                @click="redoCard">Redo</button>
       </footer>
       <footer v-else class="footbar">
         <span class="tiny muted grow">
@@ -2324,8 +2377,14 @@ const printedSize = computed(() => {
                 :title="dirty ? 'Throw away every change since the last save' : 'Nothing has changed since the last save'"
                 @click="revertToSaved">Back to saved</button>
         <button class="btn sm" :disabled="!history.length"
-                :title="history.length ? 'Undo the last change' : 'Nothing to undo'"
+                :title="history.length ? 'Undo the last change — \u2318Z' : 'Nothing to undo'"
                 @click="undo">Undo</button>
+        <!-- Beside Undo rather than hidden behind the shortcut. A redo nobody
+             can see is one nobody knows exists, and the whole reason it is here
+             is to make pressing Undo a cheap look rather than a commitment. -->
+        <button class="btn sm" :disabled="!future.length"
+                :title="future.length ? 'Put back what Undo took — \u21e7\u2318Z' : 'Nothing to redo'"
+                @click="redo">Redo</button>
       </footer>
     </template>
   </section>

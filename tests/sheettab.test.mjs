@@ -208,8 +208,9 @@ console.log('the action you cannot take back does not look like the one you can'
        "Standard card" since the labels were shortened on 2026-09-22. The
        invariant is unchanged and is the reason this exists: three actions, and
        the one that cannot be undone marked as the one that cannot be undone. */
-    ok(/Standard (design|card)/.test(foot) && /Back to saved/.test(foot) && /Undo/.test(foot),
-      'all three actions are still offered')
+    ok(/Standard (design|card)/.test(foot) && /Back to saved/.test(foot)
+       && /Undo/.test(foot) && /Redo/.test(foot),
+      'all four actions are still offered')
     /*
      * Matched as BUTTON ELEMENTS, not by slicing around a label. The first
      * version cut the string at indexOf('Back to standard') — which found the
@@ -218,7 +219,19 @@ console.log('the action you cannot take back does not look like the one you can'
      */
     const buttons = [...foot.matchAll(/<button\b([\s\S]*?)>([\s\S]*?)<\/button>/g)]
       .map((m) => ({ attrs: m[1], label: m[2].trim() }))
-    ok(buttons.length === 3, `three actions found (${buttons.map((b) => b.label).join(', ')})`)
+    /*
+     * FOUR SINCE 2026-09-22, WHEN UNDO GAINED ITS OPPOSITE. The stack was
+     * pop-only, so an undone step was gone — which matters more on a design
+     * screen than it sounds, because undo is how somebody EXPLORES, and an
+     * undo you cannot reverse turns a cheap look into a commitment. People
+     * stop pressing it, which is the same as not having it.
+     *
+     * The count stays exact rather than becoming a minimum. Its job is not to
+     * know the number: it is to fail when a button arrives in this row without
+     * anybody deciding where it sits relative to the one that cannot be taken
+     * back, which is what every assertion below is about.
+     */
+    ok(buttons.length === 4, `four actions found (${buttons.map((b) => b.label).join(', ')})`)
     /* The one that discards everything is whichever says "standard" — the
        template's design, or this treatment's whole arrangement. */
     /* Case-insensitively: the word is what identifies this button, and
@@ -230,6 +243,13 @@ console.log('the action you cannot take back does not look like the one you can'
     ok(danger && /danger/.test(danger.attrs), 'the one that cannot be undone is marked as dangerous')
     ok(!/danger/.test(by('Back to saved').attrs), 'the one that only loses this sitting is not')
     ok(!/danger/.test(by('Undo').attrs), 'and undo certainly is not')
+    ok(!/danger/.test(by('Redo').attrs), 'nor the one that puts back what undo took')
+    /* Redo sits AFTER Undo. Before it, the eye meets the two in the order they
+       can never be used in — there is nothing to redo until something has been
+       undone. */
+    ok(buttons.findIndex((b) => b.label === 'Redo')
+       > buttons.findIndex((b) => b.label === 'Undo'),
+      'and it comes after undo, which is the only order they can be used in')
     /*
      * A reason in the title, which is this repo's rule for a control whose
      * consequence is not obvious from its label — the same rule permissionui
