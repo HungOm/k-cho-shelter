@@ -24,6 +24,14 @@
  * it is by deleting a WHOLE SENTENCE that already stood in both halves. A
  * clause trimmed by somebody who does not read Burmese is a new sentence
  * wearing an old one's clothes, and nobody would know to send it for review.
+ *
+ * `sold`, `unsold` and `void` were shortened on 2026-09-22 and did not break
+ * that rule, because they were not reworded at all: all three are single
+ * clauses with no sentence to delete, so instead of trimming them they were
+ * REPLACED WITH THE APP'S OWN PAIRS, copied verbatim from STATUS_WORDS and
+ * i18n.js. No Burmese was composed. A native reader checking them should check
+ * i18n.js, where the same two words have always been what the raffle calls
+ * these states — and a change there is a change here, which verifypage pins.
  */
 export const S = {
   checking: { en: 'Checking this ticket…', my: 'အသိအမှတ်ကို စစ်ဆေးနေသည်…' },
@@ -56,9 +64,39 @@ export const S = {
   notGenuine: { en: 'Not verified', my: 'အတည်မပြုနိုင်ပါ' },
   cannotCheck: { en: 'Could not check this ticket', my: 'စစ်ဆေး၍ မရပါ' },
 
-  sold: { en: 'Recorded as sold', my: 'ရောင်းပြီးအဖြစ် မှတ်တမ်းရှိသည်' },
-  unsold: { en: 'Not recorded as sold yet', my: 'ရောင်းပြီးသည်ဟု မှတ်တမ်းမရှိသေးပါ' },
-  void: { en: 'This ticket was cancelled', my: 'ဤလက်မှတ်ကို ပယ်ဖျက်ပြီးဖြစ်သည်' },
+  /*
+   * THREE STATES, THREE WORDS — AND THEY ARE THE APP'S OWN WORDS, NOT NEW ONES.
+   *
+   * These read "Recorded as sold", "Not recorded as sold yet" and "This ticket
+   * was cancelled". On one ticket that is a sentence; on a receipt it is the
+   * same sentence in two languages on every row, so a buyer holding forty-one
+   * tickets read eighty-two lines of prose carrying three facts. The mark
+   * beside each one already says which state it is at a glance, and `unsoldNote`
+   * already carries the only explanation a reader can act on.
+   *
+   * WHAT THEY WERE REPLACED WITH IS NOT A TRIM. The rule at the top of this
+   * file forbids shortening a Burmese line by cutting a clause out of it, and
+   * these three are single clauses with nothing to delete. So nothing was
+   * reworded: each pair is COPIED VERBATIM from the app's own vocabulary, where
+   * it is what every screen has always called these states —
+   * STATUS_WORDS in src/lib/format.js for the English, src/lib/i18n.js for the
+   * Burmese.
+   *
+   * Which makes the page agree with the app instead of having a second opinion.
+   * A buyer reading "ရောင်းပြီး" here and an organiser reading "ရောင်းပြီး" on
+   * their screen are now looking at the same word about the same ticket, and
+   * that matters most on the telephone call where one of them reads it to the
+   * other.
+   *
+   * THEY ARE COPIES, because this page may not import the app's i18n — it is
+   * four hundred entries that reach the store, and tests/verifypage fails the
+   * build if this page ever imports its way into src/lib. Copies drift, so
+   * verifypage asserts these three pairs still match i18n.js character for
+   * character, reading both as TEXT rather than importing either.
+   */
+  sold: { en: 'Sold', my: 'ရောင်းပြီး' },
+  unsold: { en: 'Not sold yet', my: 'မရောင်းရသေးပါ' },
+  void: { en: 'Cancelled', my: 'ပယ်ဖျက်ပြီး' },
 
   ticketNo: { en: 'Ticket number', my: 'လက်မှတ်အမှတ်' },
 

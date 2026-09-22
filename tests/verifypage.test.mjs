@@ -484,5 +484,59 @@ console.log('a failure shows what was actually scanned')
     'and shows it raw — a tidied link could make a wrong number look right')
 }
 
+/*
+ * ONE WORD FOR A STATE, ON BOTH SIDES OF THE SIGN-IN.
+ *
+ * The check page used to say "Recorded as sold" where every screen in the app
+ * says "Sold". Two vocabularies for one fact, and the moment they are read to
+ * each other — a buyer on the telephone to the office, both looking at a
+ * screen — the difference is somebody wondering whether they are looking at
+ * the same ticket. Shortened on 2026-09-22 by COPYING the app's own pairs
+ * rather than by rewording the Burmese, which strings.js's header forbids.
+ *
+ * WHY A TEST AND NOT AN IMPORT. This page may not import src/lib — the whole
+ * of the suite above exists to stop that — so the pairs are copies, and copies
+ * drift. This reads both files as TEXT, which is the one way to compare them
+ * without the page importing anything.
+ *
+ * MUTATION CHECK: change either half of `sold` in strings.js, or the 'Sold'
+ * line in i18n.js, and this goes red naming the key. It cannot pass vacuously:
+ * the parse is asserted to have found all three pairs before any comparing
+ * happens, which is the failure mode a regex over a source file has.
+ */
+console.log('the public page and the app call a ticket state the same thing')
+{
+  const strings = read('src/verify/strings.js')
+  const i18n = read('src/lib/i18n.js')
+  const format = read('src/lib/format.js')
+
+  /* key on the verify page -> the English the app uses for that state */
+  const SAME = { sold: 'Sold', unsold: 'Not sold yet', void: 'Cancelled' }
+
+  /* The app's own list, so a state renamed there is caught here rather than
+     silently leaving this test comparing a word nothing uses any more. */
+  const words = format.slice(format.indexOf('STATUS_WORDS'), format.indexOf('}', format.indexOf('STATUS_WORDS')))
+  for (const en of Object.values(SAME)) {
+    ok(words.includes(`'${en}'`), `STATUS_WORDS still calls a state ${en}`)
+  }
+
+  const onPage = {}
+  for (const key of Object.keys(SAME)) {
+    const m = new RegExp(`^\\s*${key}: \\{ en: '([^']*)', my: '([^']*)' \\},`, 'm').exec(strings)
+    if (m) onPage[key] = { en: m[1], my: m[2] }
+  }
+  /* The enumeration proved before it is used: a regex that stops matching
+     would otherwise loop zero times and pass having compared nothing. */
+  eq(Object.keys(onPage).length, 3, 'all three state strings were found on the check page')
+
+  for (const [key, en] of Object.entries(SAME)) {
+    if (!onPage[key]) continue
+    eq(onPage[key].en, en, `the check page calls '${key}' what the app calls it`)
+    const m = new RegExp(`^\\s*'${en}': '([^']*)',`, 'm').exec(i18n)
+    ok(m, `i18n.js still translates ${en}`)
+    if (m) eq(onPage[key].my, m[1], `and the Burmese for '${key}' is i18n's, character for character`)
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

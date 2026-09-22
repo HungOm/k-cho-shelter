@@ -233,9 +233,24 @@ h1, .note, .state, .stamp, .about, .my, .en,
  * The Burmese is not dropped to save a line. A reader who needs "official" said
  * to them is more likely to be the one reading the Burmese, not less.
  */
+/*
+ * 1.2 IS A LATIN HEADING'S LINE-HEIGHT AND THIS BLOCK IS NOT LATIN.
+ *
+ * Both of these carried `line-height: 1.2`, which is the right number for a
+ * tight English heading and too small for Padauk: Myanmar stacks its marks
+ * above and below the letter, so the ink of a line is taller than its box.
+ * At 15px/18px the marks on လက်မှတ် စစ်ဆေးရန် landed ON the descenders of
+ * "CEA Malaysia Shelter Fund" above it, and တရားဝင် … မှု on "Ticket check" —
+ * the raffle's own name, overprinted, at the top of the page whose whole job
+ * is to look like it can be trusted.
+ *
+ * Found by rendering the page at phone width and zooming into the header; it
+ * is invisible in the CSS and invisible at desk width in a screenshot you do
+ * not enlarge.
+ */
 .brandwrap { display: flex; flex-direction: column; min-width: 0; gap: 2px }
-.brand { min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.2 }
-.service { font-size: 11px; color: var(--muted); line-height: 1.2 }
+.brand { min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.45 }
+.service { font-size: 11px; color: var(--muted); line-height: 1.5 }
 .service .my { opacity: .6 }
 
 /*
@@ -402,6 +417,42 @@ h1 { font-size: 19px; margin: 0 0 12px }
    edge: read as a pair they are one answer, and the eye finds the colour
    first and the sentence second. */
 .tickets .st { justify-content: flex-end }
+
+/*
+ * A STATE IS A WORD NOW, SO IT STOPS BEING TWO LINES.
+ *
+ * `.ws` keeps the language pair stacked everywhere else on this page, and that
+ * is right where the pair is a sentence. In this list it was "ရောင်းပြီး" over
+ * "Sold" — two lines, 19.5px each, to say one word twice — and it set the
+ * height of every row: 55px × 41 tickets is a page somebody scrolls past their
+ * own ticket looking for. Side by side the row is 35px and a receipt of
+ * fourteen fits a phone screen instead of one and a half.
+ *
+ * NOTHING IS DROPPED AND NOTHING IS REORDERED. Burmese still first, English
+ * still there, both still inside `.ws`, the mark still aria-hidden beside them
+ * — the pair reads the same to a screen reader and down a telephone. Only the
+ * axis changed.
+ *
+ * AND IT WRAPS. If a longer word arrives — a translation this file has not
+ * seen, or a state added later — the pair falls back to the two lines it came
+ * from rather than pushing the ticket number out of the row. That is the
+ * failure direction to design for: the number is the one string somebody reads
+ * back to the office.
+ */
+/*
+ * `.tickets .st .ws`, NOT `.tickets .ws`, AND THE THIRD CLASS IS THE WHOLE
+ * RULE. `.st .ws { display: block }` is declared further down this file with
+ * the same specificity, so the later one wins and this laid out as a block —
+ * with the two spans set `inline` and no whitespace between them in the
+ * markup, the page rendered "ရောင်းပြီးSold", one word in two alphabets. It
+ * looked like a missing space and was a losing selector. Same family as the
+ * `.tickets span` / `.mark-sold` collision pinned below: two correct rules,
+ * and only the pair wrong.
+ */
+.tickets .st .ws { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 7px }
+.tickets .st .ws .my, .tickets .st .ws .en { display: inline }
+/* The English is the second reading of the same word, not a second fact. */
+.tickets .st .ws .en { opacity: .75 }
 
 /*
  * THE THREE MARKS.
