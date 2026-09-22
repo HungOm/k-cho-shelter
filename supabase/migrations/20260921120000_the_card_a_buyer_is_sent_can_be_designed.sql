@@ -30,6 +30,19 @@
  * than thrown on — see `parseLayout` in config.ts, which is deliberately
  * incapable of failing inside a screen that is drawing somebody's ticket.
  */
-insert into config (key, value, description) values
+/*
+ * `notes`, NOT `description`, and this migration shipped with the wrong one.
+ *
+ * `db push` stopped here with `column "description" of relation "config" does
+ * not exist`, having already applied the migration before it — so the database
+ * was left half-way through a batch, which is the expensive kind of mistake
+ * rather than an embarrassing one. Every other migration in this directory
+ * says `notes` and so does the table; this was a column name written from
+ * memory and never executed against anything.
+ *
+ * tests/migrationsql.test.mjs now reads the columns out of schema.sql and
+ * fails on any insert here that names one the table has not got.
+ */
+insert into config (key, value, notes) values
   ('CARD_LAYOUT', '', 'Where the parts of the digital ticket sit, as JSON, for any part an organiser has MOVED in Ticket Studio. Only the differences are stored, keyed by treatment and then by part, so a raffle that has changed one line keeps every later improvement to the rest of the card. Blank means the standard layout of whichever treatment is chosen, which is what every raffle had before the tab could move anything.')
 on conflict (key) do nothing;
