@@ -174,6 +174,29 @@ const PATHS = {
    */
   fit:       'M4.5 5.5v13M19.5 5.5v13M8.5 12h7M10.2 9.8 8 12l2.2 2.2M13.8 9.8 16 12l-2.2 2.2',
 
+  /*
+   * THE TOOL RAIL, 2026-09-22. Five drawings the studio needed and did not have.
+   *
+   * Everything else the rail asks for was already here and unused — `position`
+   * for move, `align`, `layers` for order, `hand` for pan, `size`, `type`,
+   * `image`, `trash`, `arrowUp`/`arrowDown`. Eighteen drawings were waiting for
+   * a toolbar that had never been built, which is why this group is five and
+   * not twenty.
+   *
+   * `select` is the pointer every editor in the world draws, and that is the
+   * argument for it: it is the one tool whose meaning a volunteer already
+   * knows before they read anything. `shape` is a square and a circle
+   * overlapping, not one or the other, because the tool places either. `lock`
+   * is the padlock rather than a crossed-out handle — a locked element is not
+   * a forbidden one, it is a fixed one. `distribute` is two rails with a box
+   * between them, which is the space being shared rather than the objects.
+   */
+  select:    'M6.5 4 18 12.4h-5.6l2.6 6.1-2.4 1-2.6-6.1-3.5 3.6Z',
+  shape:     'M4 4.5h9.5v9.5H4zM20 15a5 5 0 1 1-10 0 5 5 0 0 1 10 0Z',
+  duplicate: 'M9 3.5h10A1.5 1.5 0 0 1 20.5 5v10M5 7.5h9A1.5 1.5 0 0 1 15.5 9v9a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V9A1.5 1.5 0 0 1 5 7.5Z',
+  lock:      'M6.5 10.5h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1ZM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3',
+  distribute:'M3.5 4.5v15M20.5 4.5v15M9 8.5h6v7H9z',
+
   // --- the studio: putting it on paper ---------------------------------
   print:     'M7.5 9.5v-5h9v5M7.5 17.5H6A1.6 1.6 0 0 1 4.4 16v-4.4A1.6 1.6 0 0 1 6 10h12a1.6 1.6 0 0 1 1.6 1.6V16a1.6 1.6 0 0 1-1.6 1.5h-1.5M7.5 14.5h9v5h-9z',
   paper:     'M6.5 3.5h7l4.5 4.5v11a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5ZM13.5 3.5V8h4.5',

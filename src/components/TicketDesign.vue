@@ -74,6 +74,8 @@ import DigitalTab from './ticketdesign/DigitalTab.vue'
  * which is the half of the extraction bug this side owned. */
 import Icon from './ui/Icon.vue'
 import Toggle from './ui/Toggle.vue'
+import ToolBar from './ui/ToolBar.vue'
+import ToolButton from './ui/ToolButton.vue'
 import { paletteOf, inkDesign, usable } from '../lib/artworkpalette.js'
 /* Across into the check page's own folder on purpose: the sample book and the
  * page that answers a sample QR have to agree, and that page may not import
@@ -1779,29 +1781,20 @@ const printedSize = computed(() => {
                 arrangement: what the artboard IS on the left, what you can do
                 to it on the right.
               -->
-              <div class="tools">
-                <button
-                  type="button" class="tool" :class="{ on: snapping }"
-                  :aria-pressed="String(snapping)"
-                  title="Line a box up with the edges of the other boxes as you drag it"
-                  @click="snapping = !snapping">
-                  <Icon name="magnet" :size="15" />Snap
-                </button>
-                <button
-                  type="button" class="tool" :class="{ on: gridding }"
-                  :aria-pressed="String(gridding)"
-                  title="Line a box up with a 2 mm grid on the ticket itself, so a row of fields is square to the paper rather than to each other"
-                  @click="gridding = !gridding">
-                  <Icon name="grid" :size="15" />Grid {{ GRID_MM }} mm
-                </button>
-                <button
-                  type="button" class="tool" :class="{ on: showLongest }"
-                  :aria-pressed="String(showLongest)"
-                  title="Draw the longest value each field will ever hold, so a box that is too small shows it here rather than on the printed ticket"
-                  @click="showLongest = !showLongest">
-                  <Icon name="type" :size="15" />Longest entry
-                </button>
-              </div>
+              <ToolBar label="Canvas tools">
+                <ToolButton
+                  icon="magnet" label="Snap" wide :size="15" :active="snapping"
+                  hint="Line a box up with the edges of the other boxes as you drag it"
+                  @click="snapping = !snapping" />
+                <ToolButton
+                  icon="grid" :label="`Grid ${GRID_MM} mm`" wide :size="15" :active="gridding"
+                  hint="Line a box up with a 2 mm grid on the ticket itself, so a row of fields is square to the paper rather than to each other"
+                  @click="gridding = !gridding" />
+                <ToolButton
+                  icon="type" label="Longest entry" wide :size="15" :active="showLongest"
+                  hint="Draw the longest value each field will ever hold, so a box that is too small shows it here rather than on the printed ticket"
+                  @click="showLongest = !showLongest" />
+              </ToolBar>
             </div>
 
             <div ref="stage" class="stage">
@@ -2272,17 +2265,10 @@ const printedSize = computed(() => {
  * that trade is the right one. 30px of height still clears a finger on the
  * tablet that is the smallest thing this screen will run on.
  */
-.tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap }
-.tool {
-  display: inline-flex; align-items: center; gap: 6px;
-  min-height: 30px; padding: 4px 8px;
-  border: 0; background: none; cursor: pointer;
-  font: inherit; font-size: .74rem; color: var(--muted);
-  border-radius: 7px; white-space: nowrap;
-}
-.tool.on { color: var(--brand) }
-.tool:hover { background: var(--surface-2) }
-.tool:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
+/* .tools and .tool were declared HERE and again, identically, in
+   DigitalTab.vue. Both are ui/ToolBar.vue and ui/ToolButton.vue now, and the
+   reasoning above moved into ToolButton with them — including the part this
+   bar was right about, which is that a tool carrying its WORD needs no fill. */
 
 /* --stage, not --surface-2: the artboard sits ON something, and in dark mode
  * that something has to be BELOW the panels rather than level with them --

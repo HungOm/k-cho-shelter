@@ -38,6 +38,8 @@ import { encode } from '../../lib/qrcodegen.js'
 import { inkFor } from '../../lib/brand.js'
 import Icon from '../ui/Icon.vue'
 import Toggle from '../ui/Toggle.vue'
+import ToolBar from '../ui/ToolBar.vue'
+import ToolButton from '../ui/ToolButton.vue'
 import CardInspector from './CardInspector.vue'
 
 const props = defineProps({
@@ -606,23 +608,20 @@ defineExpose({ sendTest, testing })
       </template>
       <template v-else>Nothing selected.</template>
       <span class="grow"></span>
-      <span class="tools">
-        <button type="button" class="tool" :class="{ on: snapping }" :aria-pressed="String(snapping)"
-                title="Line a part up with the edges and middles of the other parts as you drag it"
-                @click="snapping = !snapping">
-          <Icon name="magnet" :size="15" />Snap
-        </button>
-        <button type="button" class="tool" :class="{ on: gridding }" :aria-pressed="String(gridding)"
-                :title="`Line a part up with an ${GRID_PX} px grid on the card itself, so a column of them is square to the picture rather than to each other`"
-                @click="gridding = !gridding">
-          <Icon name="grid" :size="15" />Grid {{ GRID_PX }} px
-        </button>
-        <button type="button" class="tool" :class="{ on: asSent }" :aria-pressed="String(asSent)"
-                title="The card at the size a chat gives it, with nothing of the studio on top"
-                @click="asSent = !asSent">
-          <Icon name="preview" :size="15" />Preview as sent
-        </button>
-      </span>
+      <ToolBar label="Canvas tools">
+        <ToolButton
+          icon="magnet" label="Snap" wide :size="15" :active="snapping"
+          hint="Line a part up with the edges and middles of the other parts as you drag it"
+          @click="snapping = !snapping" />
+        <ToolButton
+          icon="grid" :label="`Grid ${GRID_PX} px`" wide :size="15" :active="gridding"
+          :hint="`Line a part up with an ${GRID_PX} px grid on the card itself, so a column of them is square to the picture rather than to each other`"
+          @click="gridding = !gridding" />
+        <ToolButton
+          icon="preview" label="Preview as sent" wide :size="15" :active="asSent"
+          hint="The card at the size a chat gives it, with nothing of the studio on top"
+          @click="asSent = !asSent" />
+      </ToolBar>
     </p>
   </div>
 
@@ -803,17 +802,8 @@ defineExpose({ sendTest, testing })
 }
 .zbtn:hover { border-color: var(--brand) }
 .zval { min-width: 42px; text-align: center; font-size: .76rem }
-.tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap }
-.tool {
-  display: inline-flex; align-items: center; gap: 6px;
-  min-height: 30px; padding: 4px 8px;
-  border: 0; background: none; cursor: pointer;
-  font: inherit; font-size: .74rem; color: var(--muted);
-  border-radius: 7px; white-space: nowrap;
-}
-.tool.on { color: var(--brand) }
-.tool:hover { background: var(--surface-2) }
-.tool:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
+/* .tools and .tool lived here AND in TicketDesign.vue, ten identical lines in
+   two files. Both are ui/ToolBar.vue and ui/ToolButton.vue now. */
 
 @media (max-width: 1023px) {
   .rail, .panel { max-height: none }
