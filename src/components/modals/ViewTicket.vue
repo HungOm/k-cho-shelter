@@ -1055,12 +1055,20 @@ onMounted(async () => {
             <p class="rubric">Look</p>
             <p class="wearing">
               <span class="swatch" :style="{ background: state.cfg?.brandColor || 'var(--brand)' }"></span>
-              <template v-for="(bit, i) in wearing" :key="bit.text">
-                <span v-if="i" class="sep">·</span><span :class="{ off: bit.off }"
-                      :title="bit.why">{{ bit.text }}</span>
-              </template>
+              <!-- NO SEPARATORS. A middot between four facts in a 300px rail
+                   is a character that has to wrap somewhere, and both places
+                   are wrong: as a sibling it orphans at the end of a line, and
+                   glued to the item after it, it leads the next one. Spacing
+                   separates them at every width and cannot break. -->
+              <span v-for="bit in wearing" :key="bit.text" class="bit"
+                    :class="{ off: bit.off }" :title="bit.why">{{ bit.text }}</span>
             </p>
-            <div class="row wrap gap6">
+            <!-- THREE EQUAL COLUMNS, NOT A WRAPPING ROW. At rail width the
+                 three came to about 298px against 300 of room, so they wrapped
+                 2 and 1 and read as ragged rather than as a set. A grid makes
+                 them one object, and it cannot go ragged at a width nobody
+                 tested. -->
+            <div class="goto">
               <button type="button" class="btn sm"
                       title="Choose the treatment and the motto for the card a buyer receives"
                       @click="toCardStudio"><Icon name="design" :size="16" />Card</button>
@@ -1068,7 +1076,7 @@ onMounted(async () => {
                       @click="toSetup"><Icon name="image" :size="16" />Colour</button>
               <button type="button" class="btn sm"
                       title="Choose what this raffle calls its supporters, and how many books each rung takes"
-                      @click="toSetup"><Icon name="people" :size="16" />Supporters</button>
+                      @click="toSetup"><Icon name="people" :size="16" />Rungs</button>
             </div>
           </section>
 
@@ -1183,13 +1191,18 @@ onMounted(async () => {
  * height, pointer and brand-coloured hover while doing nothing at all.
  */
 .wearing {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px;
-  margin: 0 0 10px; font-size: .82rem; color: var(--text); line-height: 1.7;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px;
+  margin: 0 0 10px; font-size: .82rem; color: var(--text); line-height: 1.8;
 }
-/* Absent, not broken — the raffle simply has no logo yet. */
+/* Each reading is one unbreakable unit, so the line wraps BETWEEN facts rather
+   than inside one — "Grand" over "card" is two answers to one question. */
+.wearing .bit { white-space: nowrap }
+/* Absent, not broken — the raffle simply has no logo yet. It is also what
+   tells the four apart without a separator: what IS set reads at full
+   strength, what is not reads quiet. */
 .wearing .off { color: var(--muted) }
-.wearing .sep { color: var(--border) }
-.gap6 { gap: 6px }
+.goto { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px }
+.goto .btn { padding-left: 8px; padding-right: 8px }
 
 .swatch { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18) }
 
