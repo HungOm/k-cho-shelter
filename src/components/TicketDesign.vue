@@ -39,15 +39,31 @@ import { designFor, validateDesign, stubShare } from '../lib/ticketdesign.js'
 import {
   elementLayerSVG, placeElements, qrModuleMM, ticketVerifyUrl,
 } from '../lib/ticketart.js'
-import { resolveParts, standardParts, layoutFrom } from '../lib/cardelements.js'
+/* CARD_TREATMENTS so the footer can COUNT the treatments rather than state a
+   number. It said "the other two" and was correct until a fourth treatment
+   landed, at which point it was a sentence quietly telling somebody the wrong
+   thing about what a destructive button spares. */
+import { resolveParts, standardParts, layoutFrom, CARD_TREATMENTS } from '../lib/cardelements.js'
+/*
+ * SOURCES, SOURCE, OVERFLOW, ALIGN AND Dim WENT OUT WITH THE PANELS THAT USED
+ * THEM and the import lines stayed behind — each of the five appeared exactly
+ * once in this file, on the line importing it.
+ *
+ * Harmless to run and worth deleting anyway, because it is the same defect as
+ * the one this file's own comment below records in the other direction: a name
+ * and a use that have stopped agreeing, with nothing that notices. `<Ink>` sat
+ * in a template unimported and a text element had no colour control for as long
+ * as that file existed; these are imports with no template. eslint cannot see
+ * either inside <script setup>, so the only thing between them and the next
+ * reader is somebody looking.
+ */
 import {
-  SOURCES, SOURCE, OVERFLOW, ALIGN, FAMILIES, lockAxis, keepRatio, nameOf, normalElement, nextId, legacyFromElements,
+  FAMILIES, lockAxis, keepRatio, nameOf, normalElement, nextId, legacyFromElements,
 } from '../lib/ticketelements.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
 import { blankArtboardFile } from '../lib/blankticket.js'
-import Dim from './ui/Dim.vue'
 import SheetTab from './ticketdesign/SheetTab.vue'
 import ShapesPanel from './ticketdesign/ShapesPanel.vue'
 import TemplateRail from './ticketdesign/TemplateRail.vue'
@@ -2002,7 +2018,7 @@ const printedSize = computed(() => {
           rest of the card keeps improving with the app.
         </span>
         <button class="btn sm ghost danger" :disabled="!cardParts.length"
-                :title="`Put every part of this card back where it started. The other two treatments keep whatever you have arranged on them. This cannot be undone.`"
+                :title="`Put every part of this card back where it started. The other ${CARD_TREATMENTS.length - 1} treatments keep whatever you have arranged on them. This cannot be undone.`"
                 @click="resetCard">Standard card</button>
         <span class="gap"></span>
         <button class="btn sm ghost" :disabled="!cardDirty"
