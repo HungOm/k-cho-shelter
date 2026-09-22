@@ -17,6 +17,7 @@
  * level L would fit it only by giving up the error correction that keeps a QR
  * scanning after a month in a wallet. One code of fixed size holds any number.
  */
+import { readFileSync } from 'node:fs'
 import { setEnv, loadModule } from './loadts.mjs'
 import { fakeDb, baseConfig } from './fakedb.mjs'
 
@@ -178,6 +179,80 @@ console.log('2b. a digital ticket belongs to one buyer')
     { ticketNumbers: ['KS-00001', 'KS-00007'] }, boss, w.ctx)), 'MIXED_BUYERS',
      'tickets belonging to two buyers are refused')
   eq(w.table('ticket_receipts').length, 2, 'and nothing was written by the attempt')
+}
+
+console.log('2d. a buyer is a name AND a number, because a phone is shared')
+{
+  /*
+   * A HOUSEHOLD OR A SHOP SHARES ONE TELEPHONE NUMBER. Keyed on the number
+   * alone — which is what the first version of this did — everybody who bought
+   * through that phone gets ONE digital ticket listing each other's tickets.
+   * That is a disclosure: somebody scanning their own card would be shown what
+   * their mother or the person behind the counter had bought.
+   */
+  const w = fakeDb({
+    config: baseConfig({ TOTAL_TICKETS: '6', ACTIVE_TICKETS: '6', TICKETS_PER_BOOK: '10' }),
+    tickets: [
+      ticket(1), ticket(2),                                        // Ko Zaw
+      ticket(3, { buyer_name: 'Ma Nu' }),                          // same phone
+      ticket(4, { buyer_name: 'ko  zaw' }),                        // Ko Zaw, typed again
+      ticket(5, { buyer_name: 'Ko Zaw ' }),                        // and again
+      ticket(6, { buyer_name: 'Ma Nu' }),
+    ],
+    ticket_receipts: [],
+    ticket_receipt_items: [],
+  })
+  const zaw = await printing.makeReceipt({ ticketNumbers: ['KS-00001'] }, boss, w.ctx)
+  const nu = await printing.makeReceipt({ ticketNumbers: ['KS-00003'] }, boss, w.ctx)
+  ok(zaw.code !== nu.code, 'two people on one telephone are two digital tickets')
+  eq(w.table('ticket_receipts').length, 2, 'and two rows')
+
+  /*
+   * AND THE NAME IS COMPARED, NOT MATCHED. "Ko Zaw", "ko  zaw" and "Ko Zaw "
+   * are one person every time — a name written on a phone, at a table, by
+   * different sellers. Keyed on the literal text they would be three
+   * holdings and three QR codes, which is the failure the whole model exists
+   * to remove.
+   */
+  eq(zaw.count, 4, 'case and spacing do not split one buyer — all four are his')
+  eq(nu.count, 2, 'and the other buyer keeps their own two')
+  const again = await printing.makeReceipt({ ticketNumbers: ['KS-00004'] }, boss, w.ctx)
+  eq(again.code, zaw.code, 'a ticket carrying the other spelling is the same holding')
+
+  /* What the link answers with, which is the half a buyer actually sees. */
+  const seen = (await resolve(w, zaw.code)).map((t) => t.number)
+  eq(seen.join(), 'KS-00001,KS-00002,KS-00004,KS-00005', 'the link lists that buyer\'s four')
+  ok(!seen.includes('KS-00003'), 'and never the other person on the same telephone')
+
+  /* Named against each other rather than assumed: a set spanning both is one
+     telephone number and two buyers, and must be refused like any other. */
+  eq(await codeOf(() => printing.makeReceipt(
+    { ticketNumbers: ['KS-00001', 'KS-00003'] }, boss, w.ctx)), 'MIXED_BUYERS',
+     'and a set covering both is refused, one phone or not')
+}
+
+console.log('2e. the three folds of a name agree')
+{
+  /*
+   * `buyer_key` in SQL, `buyerKey` in the api, `bkey` in the fake. Three
+   * copies of one rule, and they decide whether a row already exists — so
+   * disagreeing they would let two rows exist for one buyer, or refuse a row
+   * for two. Checked against the inputs that actually occur rather than
+   * asserted to be identical, because they are three languages.
+   */
+  const sql = readFileSync(new URL(
+    '../supabase/migrations/20260921180000_a_buyer_is_a_name_and_a_number_together.sql',
+    import.meta.url), 'utf8')
+  ok(/lower\(btrim\(regexp_replace\(coalesce\(p_name, ''\), '\\s\+', ' ', 'g'\)\)\)/.test(sql),
+    'the SQL folds case, collapses whitespace and trims')
+  const shared = readFileSync(new URL(
+    '../supabase/functions/_shared/holding.ts', import.meta.url), 'utf8')
+  ok(/replace\(\/\\s\+\/g, ' '\)\.trim\(\)\.toLowerCase\(\)/.test(shared),
+    'and the api does the same three things in the same order')
+  const client = readFileSync(new URL(
+    '../src/components/modals/ViewTicket.vue', import.meta.url), 'utf8')
+  ok(/replace\(\/\\s\+\/g, ' '\)\.trim\(\)\.toLowerCase\(\)/.test(client),
+    'and so does the screen that decides what to send')
 }
 
 console.log('2c. no telephone number is not an identity')

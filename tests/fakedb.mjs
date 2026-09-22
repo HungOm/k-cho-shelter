@@ -574,6 +574,13 @@ class Query {
  * — a test that has to describe sixteen config rows to check one refusal stops
  * being read.
  */
+/*
+ * TWO WRITINGS OF ONE NAME, FOLDED TO ONE — `buyer_key` in SQL, `buyerKey` in
+ * the api, and this. A digital ticket is keyed on a telephone number AND a
+ * name, and the three folds have to agree or one buyer gets two codes.
+ */
+const bkey = (n) => String(n ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+
 export function fakeDb(seed = {}) {
   const db = {
     tables: {
@@ -1000,19 +1007,23 @@ export function fakeDb(seed = {}) {
        * returning a fixed set would let every assertion about a holding
        * keeping up pass against a database where it did not.
        */
+      /* The same fold `buyer_key` applies in SQL and `buyerKey` applies in the
+         api. Three copies of one rule, which tests/receipt checks agree. */
       if (fn === 'ensure_holding_tx') {
         const phone = String(args.p_phone ?? '').trim()
         if (!phone) {
           return Promise.resolve({ data: null, error: { message: 'a digital ticket needs a buyer' } })
         }
+        const name = String(args.p_name ?? '').trim()
         db.tables.ticket_receipts = db.tables.ticket_receipts ?? []
-        const there = db.tables.ticket_receipts.find((r) => String(r.buyer_phone ?? '') === phone)
+        const there = db.tables.ticket_receipts.find((r) =>
+          String(r.buyer_phone ?? '') === phone && bkey(r.buyer_name) === bkey(name))
         if (there) {
           return Promise.resolve({ data: [{ holding_code: there.code, was_created: false }], error: null })
         }
         db.tables.ticket_receipts.push({
           code: String(args.p_code), created_at: new Date().toISOString(),
-          created_by: String(args.p_user ?? ''), buyer_phone: phone,
+          created_by: String(args.p_user ?? ''), buyer_phone: phone, buyer_name: name,
         })
         return Promise.resolve({ data: [{ holding_code: String(args.p_code), was_created: true }], error: null })
       }
@@ -1025,7 +1036,9 @@ export function fakeDb(seed = {}) {
         const KEPT = ['Sold', 'Donated', 'Void']
         const rows = phone
           ? (db.tables.tickets ?? []).filter((t) =>
-            String(t.buyer_phone ?? '').trim() === phone && KEPT.includes(String(t.status)))
+            String(t.buyer_phone ?? '').trim() === phone
+            && bkey(t.buyer_name) === bkey(head.buyer_name)
+            && KEPT.includes(String(t.status)))
           /* A receipt minted before the model changed: a fixed set, still
              answered, through the items nobody writes any more. */
           : (db.tables.ticket_receipt_items ?? [])

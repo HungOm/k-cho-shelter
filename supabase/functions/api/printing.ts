@@ -26,7 +26,7 @@
 import { ApiError, type AppUser } from './gate.ts'
 import { newCode, DEFAULT_LENGTH } from '../_shared/ticketcode.ts'
 /* The one bound the check page and this function have to agree about. */
-import { HOLDING_MAX_TICKETS } from '../_shared/holding.ts'
+import { HOLDING_MAX_TICKETS, buyerKey } from '../_shared/holding.ts'
 
 type Ctx = {
   supabaseAdmin: { from: (t: string) => any }
@@ -564,7 +564,7 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
   }
 
   const { data: rows, error } = await ctx.supabaseAdmin
-    .from('tickets').select('idx,number,status,buyer_phone').in('number', wanted)
+    .from('tickets').select('idx,number,status,buyer_phone,buyer_name').in('number', wanted)
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   const found = new Map((rows ?? []).map((t: Record<string, unknown>) => [String(t.number), t]))
@@ -584,20 +584,38 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
   }
 
   /*
-   * WHOSE IS THIS SET. Distinct numbers, not "the first one found" — the old
-   * the band lookup that used to live here took the first non-blank and would
-   * have been perfectly happy to band one buyer's holding by another's count.
+   * WHOSE IS THIS SET, AND A BUYER IS BOTH HALVES.
+   *
+   * The number alone pools a household or a shop — everyone who bought
+   * through one telephone would share a digital ticket listing each other's
+   * tickets. The name alone pools two people called Ma Hla. Together they are
+   * as close as a hand-written raffle gets.
+   *
+   * THE NAME IS COMPARED, NOT MATCHED, and `buyerKey` is the same fold the
+   * database indexes on: case, runs of whitespace, trimmed. "Ko Zaw" and "ko
+   * zaw" are one buyer, because they are, and because keying on the literal
+   * text would hand that person two QR codes.
+   *
+   * DISTINCT KEYS, not "the first one found" — the band lookup that used to
+   * live here took the first non-blank and would have been perfectly happy to
+   * band one buyer's holding by another's count.
    */
-  const phones = [...new Set(wanted
-    .map((n) => String(found.get(n)!.buyer_phone ?? '').trim())
-    .filter((v) => v !== ''))]
-  if (phones.length > 1) {
+  const buyers = new Map<string, { phone: string; name: string }>()
+  for (const n of wanted) {
+    const row = found.get(n)!
+    const phone_ = String(row.buyer_phone ?? '').trim()
+    if (!phone_) continue
+    const name_ = String(row.buyer_name ?? '').trim()
+    buyers.set(`${phone_}\u0000${buyerKey(name_)}`, { phone: phone_, name: name_ })
+  }
+  if (buyers.size > 1) {
     throw new ApiError('MIXED_BUYERS',
       'Those tickets belong to more than one buyer, and a digital ticket belongs to one. '
       + 'Send each buyer their own.',
-      { buyers: phones.length })
+      { buyers: buyers.size })
   }
-  const phone = phones[0] ?? ''
+  const who = [...buyers.values()][0] ?? { phone: '', name: '' }
+  const phone = who.phone
 
   /*
    * NO NUMBER RECORDED, so there is no buyer to key on and no way to widen the
@@ -622,15 +640,24 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
     return { code, tickets: wanted, count: wanted.length, created: true, rank: '' }
   }
 
-  /* Everything this buyer holds, which is what the digital ticket is. */
+  /*
+   * Everything this buyer holds, which is what the digital ticket is.
+   *
+   * The telephone number narrows it at the database and the NAME is compared
+   * here, because the fold is a function Postgres has and PostgREST cannot
+   * reach through a filter. One buyer's tickets is a short list either way,
+   * and narrowing on the indexed column first is what keeps it short.
+   */
   const { data: mine, error: mineErr } = await ctx.supabaseAdmin
-    .from('tickets').select('idx,number')
+    .from('tickets').select('idx,number,buyer_name')
     .eq('buyer_phone', phone).in('status', SOLD)
     .order('idx', { ascending: true })
     .limit(HOLDING_MAX_TICKETS)
   if (mineErr) throw new ApiError('QUERY_FAILED', mineErr.message)
 
-  const held = (mine ?? []) as Array<Record<string, unknown>>
+  const key = buyerKey(who.name)
+  const held = ((mine ?? []) as Array<Record<string, unknown>>)
+    .filter((t) => buyerKey(String(t.buyer_name ?? '')) === key)
 
   const numbers = held.map((t) => String(t.number))
 
@@ -652,6 +679,7 @@ export async function makeReceipt(p: Record<string, unknown>, user: AppUser, ctx
    */
   const { data: out, error: upErr } = await ctx.supabaseAdmin.rpc('ensure_holding_tx', {
     p_phone: phone,
+    p_name: who.name,
     p_code: newCode(await codeLength(ctx)),
     p_user: user.email,
   })

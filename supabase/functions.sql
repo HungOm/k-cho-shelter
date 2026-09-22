@@ -1312,29 +1312,22 @@ revoke all on ticket_custody from anon, authenticated;
 
 -- ============ THE BUYER'S OWN DIGITAL TICKET ============
 --
--- One per buyer, and what it covers is never stored. `holding_of` resolves a
--- code to the buyer behind it and answers with the tickets they hold AT THE
--- MOMENT somebody scans, so nothing has to refresh it and no sale path has to
--- remember a second table. The check page may not touch a telephone number —
--- tests/verify refuses it that column — so the join lives in here, behind
--- SECURITY DEFINER, and the page receives ticket numbers and nothing else.
--- See the migration of the same name.
+-- One per buyer, and a buyer is a NAME AND A NUMBER TOGETHER: a household or a
+-- shop shares one telephone number, and keying on the number alone would show
+-- one person what everybody else who used that phone had bought. What it
+-- covers is never stored — `holding_of` resolves a code to its buyer and
+-- answers with the tickets they hold AT THE MOMENT somebody scans, so nothing
+-- refreshes it and no sale path has to remember a second table. The check page
+-- may not touch a telephone number, so the join lives in here behind SECURITY
+-- DEFINER. See the migrations of 2026-09-21.
 
 /*
- * EXECUTE IS REVOKED FROM EVERYBODY AND GRANTED TO ONE ROLE, and on a SECURITY
- * DEFINER function that is not a precaution, it is the whole of its safety.
+ * The live holding, now resolved by both halves of the identity.
  *
- * Postgres grants EXECUTE to PUBLIC on a new function. Every other routine in
- * this database is SECURITY INVOKER, so row-level security answers for them
- * even if a browser calls one directly — `sell_books` reached from the
- * `authenticated` role simply writes nothing. This one runs as its owner and
- * RLS does not apply to it, so a PUBLIC grant would let anybody with the
- * anon key read a buyer's name and what they paid by guessing a code, going
- * round the endpoint that exists to rate the guessing.
- *
- * `search_path` is pinned for the same family of reason: a definer function
- * that resolves `tickets` through a caller-controlled path is resolving
- * somebody else's table.
+ * `t.buyer_phone = r.buyer_phone and buyer_key(t.buyer_name) = buyer_key(r.buyer_name)`
+ * is the whole change. Everything else — the legacy branch, the ordering, the
+ * limit, SECURITY DEFINER and why it exists — is as it was; see the migration
+ * of 2026-09-21 that introduced it.
  */
 create or replace function holding_of(p_code text, p_limit integer default 1000)
 returns table (
@@ -1352,12 +1345,13 @@ set search_path = public, pg_temp
 as $$
   select q.idx, q.number, q.status, q.buyer_name, q.amount, q.book_idx
     from (
-      -- A LIVE HOLDING: every ticket the buyer behind this code holds now.
-      -- Void is included deliberately: a cancelled ticket was theirs, and the
-      -- check page has a line for it that a buyer must not miss.
+      -- A LIVE HOLDING: every ticket this buyer holds now. Both halves of the
+      -- identity, so a shared telephone number does not pool two people.
       select t.idx, t.number, t.status, t.buyer_name, t.amount, t.book_idx
         from ticket_receipts r
-        join tickets t on t.buyer_phone = r.buyer_phone
+        join tickets t
+          on t.buyer_phone = r.buyer_phone
+         and buyer_key(t.buyer_name) = buyer_key(r.buyer_name)
        where r.code = p_code
          and r.buyer_phone <> ''
          and t.status in ('Sold', 'Donated', 'Void')
@@ -1381,23 +1375,21 @@ revoke all on function holding_of(text, integer) from anon, authenticated;
 grant execute on function holding_of(text, integer) to service_role;
 
 /*
- * THE TOKEN, AND ONLY THE TOKEN.
- *
- * All a buyer's digital ticket needs written down is an unguessable code
- * against their telephone number. What it covers is worked out above; what
- * band they are is worked out from that. So this creates a row if there is not
- * one and otherwise hands back the code they already have — which is the
- * property the whole model rests on, because the link in somebody's chat has
- * to go on being the right link after they buy more.
+ * The token, against both halves. The old three-argument form is dropped
+ * rather than overloaded: two functions of the same name differing by one
+ * argument is a call that resolves to whichever Postgres prefers, and the one
+ * it prefers would be the one that keys on the number alone.
  */
 create or replace function ensure_holding_tx(
   p_phone text,
+  p_name  text,
   p_code  text,
   p_user  text
 ) returns table (holding_code text, was_created boolean) as $$
 declare
   found_code text;
   phone      text := btrim(coalesce(p_phone, ''));
+  name_given text := btrim(coalesce(p_name, ''));
 begin
   -- Refused rather than defaulted: '' is the absence of an identity, and
   -- accepting it would pool every buyer with no number recorded into one
@@ -1409,11 +1401,12 @@ begin
   select r.code into found_code
     from ticket_receipts r
    where r.buyer_phone = phone
+     and buyer_key(r.buyer_name) = buyer_key(name_given)
    limit 1;
 
   if found_code is null then
-    insert into ticket_receipts (code, created_by, buyer_phone)
-      values (p_code, coalesce(p_user, ''), phone);
+    insert into ticket_receipts (code, created_by, buyer_phone, buyer_name)
+      values (p_code, coalesce(p_user, ''), phone, name_given);
     return query select p_code, true;
   else
     return query select found_code, false;

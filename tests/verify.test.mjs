@@ -76,15 +76,18 @@ function world(cfg = {}) {
      * Every link of that shape already in somebody's chat has to go on
      * answering, and this is what proves it does.
      *
-     * GGGG... is a HOLDING: a code against a telephone number, covering
-     * whatever that buyer holds at the moment somebody scans. Nothing lists
+     * GGGG... is a HOLDING: a code against a telephone number AND a name,
+     * covering whatever that buyer holds at the moment somebody scans. Nothing lists
      * what it covers. Its buyer holds forty-one tickets below, which is four
      * books, which is Gold — a band with a threshold on each side of it, so a
      * count taken from the wrong place cannot land there by accident.
      */
     ticket_receipts: [
       { code: 'RRRRRRRRRRRR', created_by: 'a@x.com', buyer_phone: '' },
-      { code: 'GGGGGGGGGGGG', created_by: 'a@x.com', buyer_phone: '0125550041' },
+      /* Both halves of the identity, because a buyer is both: one telephone
+         number may belong to a household, and one name to two people. */
+      { code: 'GGGGGGGGGGGG', created_by: 'a@x.com',
+        buyer_phone: '0125550041', buyer_name: 'Ma Nu' },
     ],
     ticket_receipt_items: [
       { code: 'RRRRRRRRRRRR', ticket_idx: 1 },

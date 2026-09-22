@@ -26,3 +26,23 @@
  * it, and the count beside the list is the true one either way.
  */
 export const HOLDING_MAX_TICKETS = 1000
+
+/**
+ * TWO WRITINGS OF ONE NAME, FOLDED TO ONE — the same fold the database indexes
+ * on, in `buyer_key`.
+ *
+ * A digital ticket is keyed on a buyer, and a buyer is a telephone number AND
+ * a name: the number alone pools a household or a shop, the name alone pools
+ * two people called Ma Hla. The name half is written on a phone, at a table,
+ * by different sellers, so it is compared rather than matched — case folded,
+ * runs of whitespace collapsed, trimmed.
+ *
+ * IT HAS TO AGREE WITH THE SQL, character for character, because the unique
+ * index is built on that one and the api decides which buyer a set belongs to
+ * with this one. Disagreeing, they would let two rows exist for one buyer or
+ * refuse a row for two — so if either changes, both change, and
+ * tests/receipt checks them against the same inputs.
+ */
+export function buyerKey(name: string): string {
+  return String(name ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+}

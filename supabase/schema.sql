@@ -597,6 +597,29 @@ create index if not exists ticket_codes_batch_idx on ticket_codes (batch_id);
  * buyer is holding a receipt for is refused, which is the correct direction —
  * and nothing in this system deletes tickets anyway.
  */
+/*
+ * HOW TWO WRITINGS OF ONE NAME ARE RECOGNISED AS ONE.
+ *
+ * A digital ticket is keyed on a buyer, and a buyer is a telephone number AND
+ * a name — the number alone pools a household or a shop, the name alone pools
+ * two people called Ma Hla. The name half is written on a phone, at a table,
+ * by different sellers, so it is COMPARED rather than matched: case folded,
+ * runs of whitespace collapsed, trimmed. "Ko Zaw", "ko  zaw" and "Ko Zaw " are
+ * one person; keying on the literal text would give them three digital tickets
+ * and three QR codes, which is the failure the whole model exists to remove.
+ *
+ * IMMUTABLE BECAUSE IT IS INDEXED, and declared HERE rather than in
+ * functions.sql because the unique index below uses it and this file is
+ * applied first — see SETUP step 3, which is an order and not a preference.
+ */
+create or replace function buyer_key(p_name text) returns text
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select lower(btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')))
+$$;
+
 create table if not exists ticket_receipts (
   code       text primary key,
   created_at timestamptz not null default now(),
@@ -632,11 +655,19 @@ create table if not exists ticket_receipts (
    * reused, which is why the unique index below is partial — '' is the absence
    * of an identity and must not collide with itself.
    */
-  buyer_phone  text not null default ''
+  buyer_phone  text not null default '',
+  /*
+   * AND THE NAME, because a buyer is both. A household or a shop shares one
+   * telephone number; keyed on the number alone, everyone who bought through
+   * it would get one digital ticket listing each other's tickets. Compared
+   * through `buyer_key` — case folded, whitespace collapsed — so that "Ko
+   * Zaw", "ko  zaw" and "Ko Zaw " are one person rather than three holdings.
+   */
+  buyer_name   text not null default ''
 );
 
 create unique index if not exists ticket_receipts_one_per_buyer
-  on ticket_receipts (buyer_phone)
+  on ticket_receipts (buyer_phone, buyer_key(buyer_name))
   where buyer_phone <> '';
 
 create table if not exists ticket_receipt_items (

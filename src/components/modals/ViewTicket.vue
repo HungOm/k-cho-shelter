@@ -192,11 +192,33 @@ async function loadLogo() {
  * the buyer holds and the receipt behind it both stop moving, which is what a
  * receipt is. Buying more later earns the higher band on the NEXT one.
  */
+/*
+ * TWO WRITINGS OF ONE NAME, FOLDED TO ONE. The same fold the database indexes
+ * on and the api keys with — if the three ever disagree, one buyer gets two
+ * digital tickets or two buyers get one. See buyerKey in _shared/holding.ts.
+ */
+const buyerKey = (name) => String(name ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+
+/*
+ * WHAT THIS BUYER HOLDS, AND A BUYER IS BOTH HALVES.
+ *
+ * Keyed on the telephone number AND the name. The number alone pools a
+ * household or a shop — everyone who bought through one phone would share a
+ * digital ticket listing each other's tickets. The name alone pools two people
+ * called Ma Hla. Neither identifies anybody on its own; together they are as
+ * close as a hand-written raffle gets.
+ *
+ * With no number recorded there is nothing to key on at all, so nothing is
+ * returned and the card falls back to this one ticket.
+ */
 function ticketsHeldBy(t) {
   const phone = String(t?.buyer?.phone ?? '').trim()
   if (!phone) return []
+  const name = buyerKey(t?.buyer?.name)
   return (state.tickets || [])
-    .filter((x) => isSold(x) && String(x?.buyer?.phone ?? '').trim() === phone)
+    .filter((x) => isSold(x)
+      && String(x?.buyer?.phone ?? '').trim() === phone
+      && buyerKey(x?.buyer?.name) === name)
     .map((x) => String(x.number))
     .sort()
 }
