@@ -213,6 +213,33 @@ export const api = async () => ({})
    */
   ok(/Send their digital ticket/.test(text), 'and the buyer\'s digital ticket can be sent')
   ok(/41 tickets/.test(text), 'saying how many of them it covers')
+
+  /*
+   * AND THE SCREEN SAYS IT IS ONE ARTEFACT, which is the half that was missing.
+   *
+   * The pager steps through PRINTED tickets — each has its own artwork and its
+   * own printed QR, so one page each is right. The digital ticket does not
+   * work that way: one per BUYER, everything they hold, one QR. Paging a book
+   * sold to one person therefore shows the SAME digital ticket on every page,
+   * which is correct and is indistinguishable from forty-one digital tickets
+   * unless the screen says which it is. It did not, and it was read as the
+   * second thing — fairly, because nothing on it said otherwise.
+   */
+  ok(/Their digital ticket/.test(text), 'the card is headed as the BUYER\'s, not this ticket\'s')
+  ok(/the same one on every page/.test(text),
+    'and says the pager does not change it')
+
+  /*
+   * KEYED BY THE BUYER IN THE DATA TOO, not only in the words. Keyed on the
+   * ticket number it asked the server for one person's digital ticket once per
+   * page — forty-one calls for one artefact — and encoded one-per-ticket in
+   * the structure while the heading above denied it.
+   */
+  const src = readFileSync(join(ROOT, 'src/components/modals/ViewTicket.vue'), 'utf8')
+  ok(!/minted\.value\[t\.number\]/.test(src),
+    'the holding is not keyed by ticket number')
+  ok(/function holdKeyOf\(t\)/.test(src) && /buyerKey\(t\?\.buyer\?\.name\)/.test(src),
+    'it is keyed by the buyer — telephone number and folded name')
   ok(/41 tickets/.test(text), 'covering every ticket that buyer holds')
 }
 

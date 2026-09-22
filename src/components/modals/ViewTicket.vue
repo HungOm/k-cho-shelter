@@ -268,11 +268,32 @@ function holdingOf(t) {
  */
 const minted = ref({})
 
+/*
+ * KEYED BY THE BUYER, NOT BY THE TICKET, and that is not a cache detail.
+ *
+ * It was keyed on `t.number`, so paging through a book sold entirely to one
+ * person asked the server for that person's digital ticket TEN TIMES and
+ * stored ten entries — all holding the same code, because there is only one.
+ * Ten calls for one artefact, and worse, it wrote into the data structure the
+ * very thing this model exists to remove: one digital ticket per ticket.
+ *
+ * Blank for a buyer with no telephone number recorded, who has no identity to
+ * hold a code against and so never gets one.
+ */
+function holdKeyOf(t) {
+  const phone = String(t?.buyer?.phone ?? '').trim()
+  return phone ? `${phone}\u0000${buyerKey(t?.buyer?.name)}` : ''
+}
+
+/** The code for whoever this ticket belongs to, once there is one. */
+const codeFor = (t) => (holdKeyOf(t) ? String(minted.value[holdKeyOf(t)] ?? '') : '')
+
 async function ensureHolding(t) {
-  if (!t || minted.value[t.number] || ticketsHeldBy(t).length < 2) return
+  const key = holdKeyOf(t)
+  if (!key || minted.value[key] || ticketsHeldBy(t).length < 2) return
   try {
     const made = await api('make_receipt', { ticketNumbers: ticketsHeldBy(t) })
-    minted.value = { ...minted.value, [t.number]: String(made.code) }
+    minted.value = { ...minted.value, [key]: String(made.code) }
   } catch { /* the single ticket's card stands; send() reports it properly */ }
 }
 
@@ -285,7 +306,7 @@ function cardValues(t) {
    * whole holding after. The card takes `spans` and decides for itself: absent
    * or covering one, it draws exactly the card it always drew.
    */
-  const code = String(minted.value[t.number] ?? '')
+  const code = codeFor(t)
   const held = code ? holdingOf(t) : { chunks: [], tickets: 1 }
   const many = held.tickets > 1
   const each = Number(c.ticketPrice ?? 0)
@@ -392,7 +413,7 @@ const cardNote = computed(
  * standard card, which is what every raffle has until somebody moves a part.
  */
 const cardFor = (t) => {
-  const code = String(minted.value[t.number] ?? '')
+  const code = codeFor(t)
   return cardSVG(cardStyle.value, cardValues(t), {
     /* One QR for everything they hold, once there is a code for it. Until
        then this is the card for this ticket and carries the ticket's own. */
@@ -455,7 +476,7 @@ const THANKS_MY = 'ဝယ်ယူသူအားပေးမှုအတွက�
 const THANKS_EN = 'Thank you — this keeps the shelter open.'
 
 function messageFor(t) {
-  const code = String(minted.value[t.number] ?? '')
+  const code = codeFor(t)
   const held = code ? holdingOf(t) : { tickets: 1 }
   /* The picture is the nicety; this line is what actually lets them check it
      later, so it names the same thing the QR opens and never a subset of it. */
@@ -490,7 +511,7 @@ async function mintHolding(t) {
   const numbers = ticketsHeldBy(t)
   if (numbers.length < 2) return
   const made = await api('make_receipt', { ticketNumbers: numbers })
-  minted.value = { ...minted.value, [t.number]: String(made.code) }
+  minted.value = { ...minted.value, [holdKeyOf(t)]: String(made.code) }
   /* The card is redrawn from `minted`, and the picture is rasterised from the
      card. Without this the JPEG is made from the markup that was on screen a
      tick ago — the single ticket — and the organiser watches the preview
@@ -693,7 +714,7 @@ onMounted(async () => {
         <button class="btn sm ghost" :disabled="at === 0"
                 :title="at === 0 ? 'This is the first' : 'The one before'"
                 @click="step(-1)">&lsaquo;</button>
-        <span class="data">{{ at + 1 }} of {{ tickets.length }}</span>
+        <span class="data" title="Printed tickets in this book. The digital ticket below is one per buyer and does not change as you page.">{{ at + 1 }} of {{ tickets.length }}</span>
         <button class="btn sm ghost" :disabled="at >= tickets.length - 1"
                 :title="at >= tickets.length - 1 ? 'This is the last' : 'The next one'"
                 @click="step(1)">&rsaquo;</button>
@@ -704,6 +725,9 @@ onMounted(async () => {
           <img :src="result.template.url" alt="">
           <div class="overlay" v-html="layerFor(t)"></div>
         </div>
+        <!-- THE PRINTED TICKET, which IS one per ticket and carries its own
+             QR on the paper. That is the half the pager is paging; the digital
+             ticket below is one per buyer and does not change with it. -->
         <p class="tiny muted">
           <b class="data">{{ t.number }}</b> · {{ t.book }} · {{ t.status || 'Available' }}
           · generated {{ t.generatedAt ? date(t.generatedAt) : '—' }}
@@ -712,15 +736,36 @@ onMounted(async () => {
         </p>
 
         <!--
-          THE COPY A BUYER KEEPS. Disabled with the reason rather than hidden,
-          so an organiser learns that the sale needs recording rather than
-          concluding the button has gone.
-        -->
-        <!--
           THE CARD A BUYER IS SENT, shown as it will be sent.
           It is not the ticket above: the name lives on the stub and the code on
           the buyer's half, so what belongs to the buyer is composed rather than
           cropped. See digitalCardSVG.
+        -->
+        <!--
+          AND IT IS ONE ARTEFACT, WHICH THIS HEADING EXISTS TO SAY.
+          The pager above steps through PRINTED tickets, one page each, because
+          each has its own artwork and its own printed QR. The digital ticket
+          does not work that way: it is one per BUYER, covering everything they
+          hold, behind one QR. Paging a book sold to one person therefore shows
+          the SAME digital ticket ten times — correct, and indistinguishable
+          from ten digital tickets unless the screen says which it is. It was
+          read as the second thing, which is fair: nothing on the screen said
+          otherwise.
+        -->
+        <p class="digihead">
+          <span class="rubric">Their digital ticket</span>
+          <span v-if="heldCount(t) > 1" class="tiny muted">
+            One picture and one QR for all {{ heldCount(t) }} tickets this buyer holds
+            — the same one on every page of this book.
+          </span>
+          <span v-else class="tiny muted">
+            One picture and one QR. It covers everything this buyer holds.
+          </span>
+        </p>
+        <!--
+          THE COPY A BUYER KEEPS. Disabled with the reason rather than hidden,
+          so an organiser learns that the sale needs recording rather than
+          concluding the button has gone.
         -->
         <div class="send" :class="{ off: !!cannotSend(t) }">
           <!--
@@ -870,6 +915,15 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* The heading over the card: what it is, then how wide it reaches. Two lines
+   on a phone, one at desk width, and the sentence never competes with the
+   rubric above it. */
+.digihead {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  margin: 18px 0 8px;
+}
+.digihead .rubric { margin: 0 }
+
 .one { margin-bottom: 18px }
 /*
  * The send panel. One column, because the card is the subject and two buttons
