@@ -211,14 +211,39 @@ const buyerKey = (name) => String(name ?? '').replace(/\s+/g, ' ').trim().toLowe
  * With no number recorded there is nothing to key on at all, so nothing is
  * returned and the card falls back to this one ticket.
  */
+/*
+ * TWO SHAPES OF A TICKET LIVE IN THIS APP, AND THIS FUNCTION IS HANDED ONE OF
+ * EACH. That is the whole of the bug this pair of helpers fixes.
+ *
+ * The modal's own ticket comes from `render_tickets` and is the SERVER's
+ * shape, with the buyer nested: `t.buyer.phone`. The rows in `state.tickets`
+ * come from `toTicket` in store.js and are FLAT — `x.phone`, `x.name` — and
+ * there is no `x.buyer` on them at all.
+ *
+ * This read `x?.buyer?.phone` against the store, so it matched nothing, every
+ * time, for everybody. A buyer holding ten tickets counted as holding one: no
+ * supporter band on any card, and no digital ticket ever minted, because
+ * `ensureHolding` gives up below two. It was reported three times as "still
+ * per ticket" and it was never the deploy.
+ *
+ * It survived because tests/harnessreach built `state.tickets` with the
+ * NESTED shape — a fixture more generous than production, which is the trap
+ * that file's own notes warn about. The fixture is the real shape now.
+ *
+ * Named rather than a fallback chain: these are the two shapes this app has,
+ * both real, both legitimate, and neither is a guess.
+ */
+const buyerPhoneOf = (x) => String(x?.buyer?.phone ?? x?.phone ?? '').trim()
+const buyerNameOf = (x) => String(x?.buyer?.name ?? x?.name ?? '')
+
 function ticketsHeldBy(t) {
-  const phone = String(t?.buyer?.phone ?? '').trim()
+  const phone = buyerPhoneOf(t)
   if (!phone) return []
-  const name = buyerKey(t?.buyer?.name)
+  const name = buyerKey(buyerNameOf(t))
   return (state.tickets || [])
     .filter((x) => isSold(x)
-      && String(x?.buyer?.phone ?? '').trim() === phone
-      && buyerKey(x?.buyer?.name) === name)
+      && buyerPhoneOf(x) === phone
+      && buyerKey(buyerNameOf(x)) === name)
     .map((x) => String(x.number))
     .sort()
 }
@@ -281,8 +306,8 @@ const minted = ref({})
  * hold a code against and so never gets one.
  */
 function holdKeyOf(t) {
-  const phone = String(t?.buyer?.phone ?? '').trim()
-  return phone ? `${phone}\u0000${buyerKey(t?.buyer?.name)}` : ''
+  const phone = buyerPhoneOf(t)
+  return phone ? `${phone}\u0000${buyerKey(buyerNameOf(t))}` : ''
 }
 
 /** The code for whoever this ticket belongs to, once there is one. */

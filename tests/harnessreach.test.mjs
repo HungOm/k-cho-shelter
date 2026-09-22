@@ -151,9 +151,23 @@ export const state = reactive({
   // Forty-one sold tickets to one telephone number: four whole books, which is
   // Gold. A count inside a band's middle would pass even if the ladder were
   // wired to the wrong function.
+  /*
+   * THE SHAPE toTicket IN store.js ACTUALLY PRODUCES — flat, with name and
+   * phone on the row and no buyer object anywhere.
+   *
+   * It was buyer: { name, phone } here, which the store has never produced.
+   * ViewTicket read the nested form against these rows, matched nothing for
+   * everybody, and counted a buyer holding forty-one as holding one — no
+   * supporter band, no digital ticket. Every assertion below passed against a
+   * fixture more generous than production, which is exactly the trap this
+   * file's own notes warn about.
+   *
+   * NO BACKTICKS IN HERE: this comment lives inside the store stub, which is a
+   * template literal, and one backtick ends it.
+   */
   tickets: Array.from({ length: 41 }, (_, i) => ({
     number: 'KS-' + String(31 + i).padStart(5, '0'), status: 'Sold',
-    buyer: { name: 'John Kui', phone: '012345678' },
+    book: 'Book-004', name: 'John Kui', phone: '012345678',
   })),
 })
 export const isAdmin = computed(() => true)
@@ -238,8 +252,23 @@ export const api = async () => ({})
   const src = readFileSync(join(ROOT, 'src/components/modals/ViewTicket.vue'), 'utf8')
   ok(!/minted\.value\[t\.number\]/.test(src),
     'the holding is not keyed by ticket number')
-  ok(/function holdKeyOf\(t\)/.test(src) && /buyerKey\(t\?\.buyer\?\.name\)/.test(src),
-    'it is keyed by the buyer — telephone number and folded name')
+  ok(/function holdKeyOf\(t\)/.test(src), 'it is keyed by the buyer')
+
+  /*
+   * AND THE BUYER IS READ IN THE SHAPE THE STORE ACTUALLY PRODUCES.
+   *
+   * `state.tickets` rows are FLAT — `x.phone`, `x.name`, no `buyer` object —
+   * and ViewTicket read `x?.buyer?.phone` against them, so it matched nothing
+   * for everybody: a buyer holding forty-one counted as holding one, no band
+   * and no digital ticket. The fixture above carried the nested shape, so the
+   * assertions passed against a state production never reaches. Both halves
+   * are pinned now: the fixture is flat, and the reader names both shapes.
+   */
+  ok(/buyer\?\.phone \?\? x\?\.phone/.test(src),
+    'the flat store shape is read beside the server\'s nested one, in one place')
+  ok(/buyer\?\.name \?\? x\?\.name/.test(src), 'and the same for the name')
+  ok(/ticketsHeldBy[\s\S]{0,400}buyerPhoneOf\(x\)/.test(src),
+    'and the buyer match goes through it rather than reaching in itself')
   ok(/41 tickets/.test(text), 'covering every ticket that buyer holds')
 }
 
