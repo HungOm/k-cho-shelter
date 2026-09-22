@@ -466,14 +466,14 @@ console.log("a receipt shows the buyer their own copy")
    * stores one. The field is present or absent, never empty: a `rank: ''`
    * would draw a medal with no name beside it.
    */
-  eq(r.body.rank, 'bronze', 'a legacy receipt is banded by the tickets it names')
+  eq(r.body.rank, 'friend', 'a legacy receipt is banded by the tickets it names')
   eq(r.body.rankTickets, 1, 'and by how many of them there are')
 }
 
 console.log('a holding is banded by what its buyer holds today')
 {
   const r = await call(world(), '?r=GGGGGGGGGGGG')
-  eq(r.body.rank, 'gold', 'the band, worked out from the tickets behind the code')
+  eq(r.body.rank, 'companion', 'the band, worked out from the tickets behind the code')
   eq(r.body.rankTickets, 41, 'and the count it was worked out from, so it can be checked')
   /*
    * THE COUNT AND THE BAND AGREE, AND THAT IS NEW.

@@ -642,14 +642,21 @@ create table if not exists ticket_receipts (
   rank         text,
   rank_tickets integer,
   /*
-   * FIVE WORDS FOR FOUR BANDS. `faithful` was the bottom rung until
-   * 2026-09-22 and is now `bronze`; it stays allowed because rows minted
-   * before then carry it, and a constraint is validated against the table it
-   * is added to. The set is every band that has ever been, not every band
-   * there is — see the migration of 2026-09-22.
+   * NINE WORDS FOR FOUR BANDS. The ladder is friend, neighbour, companion,
+   * family. The other five are retired: the metals, and 'bronze' which was the
+   * bottom rung for a few hours on 2026-09-22 between 'faithful' and 'friend'.
+   *
+   * They stay legal because rows minted before each rename carry them, and a
+   * CHECK is validated against the table it is added to — so a word that has
+   * ever been written has to stay in the set or the migration fails on exactly
+   * the raffles whose history is worth keeping. The set is every band that has
+   * ever been, not every band there is.
    */
   constraint ticket_receipts_rank_known
-    check (rank is null or rank in ('bronze', 'faithful', 'silver', 'gold', 'diamond')),
+    check (rank is null or rank in (
+      'friend', 'neighbour', 'companion', 'family',
+      'bronze', 'faithful', 'silver', 'gold', 'diamond'
+    )),
   /*
    * WHOSE DIGITAL TICKET THIS IS, and the reason the row above stopped being
    * frozen. A digital ticket is one per BUYER — never printed, covering

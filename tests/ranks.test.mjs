@@ -15,16 +15,21 @@
  * It also pins the two refusals. `rankFor` returns null rather than guessing,
  * and the case worth protecting is the second one: with no tickets-per-book
  * there is no way to turn a count into books, and the obvious fallback would
- * print "Bronze supporter" on the card of somebody holding two hundred
- * tickets. A rank is a public compliment; getting it wrong downward, in
+ * print the bottom rung on the card of somebody holding two hundred tickets. A rank is a public compliment; getting it wrong downward, in
  * writing, on something they were sent, is worse than saying nothing.
  *
- * THE THRESHOLDS MOVED ON 2026-09-22, from Silver 1 / Gold 4 / Diamond 10 to
- * Silver 1 / Gold 3 / Diamond 6, and the bottom band was renamed from
- * `faithful` to `bronze`. Both are decisions rather than corrections, so both
- * are asserted here by name and by number: a threshold nudged back is a
- * red line in this file with the old value printed beside the new one, not a
- * diff somebody has to notice.
+ * THE LADDER HAS BEEN RENAMED TWICE AND RE-CUT ONCE, all on 2026-09-22, and
+ * none of it was a correction — each was a decision, so each is asserted here
+ * by name AND by number rather than left to be noticed in a diff:
+ *
+ *   thresholds  1 / 4 / 10 books  ->  1 / 3 / 6
+ *   bottom rung faithful -> bronze
+ *   all four    bronze/silver/gold/diamond -> friend/neighbour/companion/family
+ *
+ * The last one is why the words here describe RELATIONSHIPS and not materials:
+ * the raffle is sold inside the community it funds, so a ladder of closeness
+ * says belonging where metals said nothing and where Patron or Champion would
+ * have put the buyer above the people served. See _shared/ranks.ts.
  */
 /*
  * LOADED AS THE SERVER LOADS IT, from _shared, because that is where the ladder
@@ -48,7 +53,7 @@ const PER = 10
 
 console.log('the ladder is four bands, ordered from the top down')
 {
-  eq(RANK_IDS.join(','), 'diamond,gold,silver,bronze', 'the bands and their order')
+  eq(RANK_IDS.join(','), 'family,companion,neighbour,friend', 'the bands and their order')
   /*
    * ORDERED HIGHEST FIRST, and `rankFor` takes the first match, so a band whose
    * threshold is not strictly below the one above it would be unreachable. That
@@ -72,10 +77,19 @@ console.log('the ladder is four bands, ordered from the top down')
    * stood. If these move again, this is the line that says what they were.
    */
   const at = (id) => RANKS.find((r) => r.id === id)?.minBooks
-  eq(at('bronze'), 0, 'Bronze is anybody holding tickets but not yet a book')
-  eq(at('silver'), 1, 'Silver is one book')
-  eq(at('gold'), 3, 'Gold is three books, and was four')
-  eq(at('diamond'), 6, 'Diamond is six books, and was ten')
+  eq(at('friend'), 0, 'a Friend is anybody holding tickets but not yet a book')
+  eq(at('neighbour'), 1, 'a Neighbour is one book')
+  eq(at('companion'), 3, 'a Companion is three books, and was four')
+  eq(at('family'), 6, 'Family is six books, and was ten')
+
+  /*
+   * AND THERE IS NO RUNG ABOVE IT, which is a decision and not an omission.
+   * A fifth band was on the table when the metals ladder was being replaced;
+   * nothing sits above being one of the family, so if the top should be
+   * further away the THRESHOLD moves and the ladder stays four deep.
+   */
+  eq(RANKS.length, 4, 'four rungs, and Family is the last of them')
+  eq(RANKS[0].id, 'family', 'with nothing named above it')
 }
 
 console.log('every count above zero falls in exactly one band')
@@ -101,13 +115,13 @@ console.log('the thresholds themselves, on both sides')
 {
   //  books:  0        1        2        3        5        6
   const cases = [
-    [1, 'bronze', 'one ticket is already somebody'],
-    [PER - 1, 'bronze', 'nine tickets is short of a book'],
-    [PER, 'silver', 'the first whole book is Silver'],
-    [PER * 2, 'silver', 'two books is still Silver'],
-    [PER * 3 - 1, 'silver', 'one ticket short of three books is Silver'],
+    [1, 'friend', 'one ticket is already somebody'],
+    [PER - 1, 'friend', 'nine tickets is short of a book'],
+    [PER, 'neighbour', 'the first whole book is a Neighbour'],
+    [PER * 2, 'neighbour', 'two books is still a Neighbour'],
+    [PER * 3 - 1, 'neighbour', 'one ticket short of three books is a Neighbour'],
     /*
-     * THREE BOOKS IS GOLD, and this is the assertion that was rewritten when
+     * THREE BOOKS IS THE THIRD RUNG, and this is the assertion rewritten when
      * the thresholds came down on 2026-09-22. It read `PER * 4, 'gold'` — four
      * books, the count that had no band at all in the ladder as first
      * described, Silver stopping at three and Gold starting at five. That hole
@@ -116,20 +130,20 @@ console.log('the thresholds themselves, on both sides')
      * Four books is checked below as well, because it is the value this ladder
      * has been wrong about once already.
      */
-    [PER * 3, 'gold', 'three books is Gold'],
-    [PER * 4, 'gold', 'four books is Gold — the count that once had no band'],
-    [PER * 5, 'gold', 'five books is Gold'],
-    [PER * 6 - 1, 'gold', 'one ticket short of six books is Gold'],
+    [PER * 3, 'companion', 'three books is a Companion'],
+    [PER * 4, 'companion', 'four books is a Companion — the count that once had no band'],
+    [PER * 5, 'companion', 'five books is a Companion'],
+    [PER * 6 - 1, 'companion', 'one ticket short of six books is a Companion'],
     /*
-     * SIX BOOKS IS DIAMOND. Ten books used to be, and was Gold as well under
+     * SIX BOOKS IS THE TOP RUNG. Ten books used to be, and was Gold as well under
      * the description this ladder replaced; where two bands claimed a count it
      * went to the higher of them, because a ladder that rounds a compliment
      * down is the wrong way to be wrong. Ten books is still Diamond — now with
      * four books of room underneath it rather than none.
      */
-    [PER * 6, 'diamond', 'six books is Diamond'],
-    [PER * 10, 'diamond', 'ten books is Diamond, as it always was'],
-    [PER * 40, 'diamond', 'and it stays Diamond however far above'],
+    [PER * 6, 'family', 'six books is Family'],
+    [PER * 10, 'family', 'ten books is Family, where the top rung used to start'],
+    [PER * 40, 'family', 'and it stays Family however far above'],
   ]
   for (const [tickets, id, what] of cases) {
     eq(rankFor(tickets, PER)?.id, id, `${tickets} tickets: ${what}`)
@@ -143,10 +157,10 @@ console.log('the bands move with the raffle, because they are counted in books')
    * above, which is the point: the sentence an organiser says is "three books",
    * and it stays true when somebody changes the book size.
    */
-  eq(rankFor(5, 5)?.id, 'silver', 'one book of five is Silver')
-  eq(rankFor(4, 5)?.id, 'bronze', 'four tickets is short of that book')
-  eq(rankFor(30, 5)?.id, 'diamond', 'six books of five is Diamond')
-  eq(rankFor(30, 10)?.id, 'gold', 'the same thirty tickets is Gold where a book is ten')
+  eq(rankFor(5, 5)?.id, 'neighbour', 'one book of five is a Neighbour')
+  eq(rankFor(4, 5)?.id, 'friend', 'four tickets is short of that book')
+  eq(rankFor(30, 5)?.id, 'family', 'six books of five is Family')
+  eq(rankFor(30, 10)?.id, 'companion', 'the same thirty tickets is a Companion where a book is ten')
 }
 
 console.log('it refuses rather than guesses')
@@ -156,10 +170,10 @@ console.log('it refuses rather than guesses')
   eq(rankFor('', PER), null, 'a blank count is not zero tickets, it is no answer')
   /*
    * THE ONE THAT MATTERS. Without a book size the count cannot be turned into
-   * books, and the fallback everybody reaches for — call them Bronze — writes
+   * books, and the fallback everybody reaches for — call them a Friend — writes
    * the bottom band onto the card of the raffle's largest supporter.
    */
-  eq(rankFor(500, 0), null, 'with no book size it says nothing rather than Bronze')
+  eq(rankFor(500, 0), null, 'with no book size it says nothing rather than Friend')
   eq(rankFor(500, undefined), null, 'and the same when the setting is missing')
   eq(rankFor(500, 'ten'), null, 'and when it is not a number')
 }
@@ -197,7 +211,7 @@ console.log('the client reads this same ladder rather than a copy of it')
     'and does not carry a second copy of the thresholds')
 }
 
-console.log('every band on the ladder has a name on the check page, in both languages')
+console.log('every band on the ladder has its own name and colour on the check page')
 {
   /*
    * THE FAILURE THIS CATCHES HAS NO SYMPTOM, which is the only reason it is
@@ -209,9 +223,9 @@ console.log('every band on the ladder has a name on the check page, in both lang
    * and the supporter line silently disappears for the entire bottom band.
    * No error, no console, no gap on the screen where it used to be.
    *
-   * It is not hypothetical — the rename from `faithful` to `bronze` on
-   * 2026-09-22 touched exactly these three files, and shipping the server half
-   * without the page half would have looked like nothing at all.
+   * It is not hypothetical — the metals became Friend, Neighbour, Companion
+   * and Family on 2026-09-22 across exactly these three files, and shipping the
+   * server half without the page half would have looked like nothing at all.
    */
   const page = readFileSync(new URL('../src/verify/main.js', import.meta.url), 'utf8')
   const strings = readFileSync(new URL('../src/verify/strings.js', import.meta.url), 'utf8')
@@ -221,12 +235,27 @@ console.log('every band on the ladder has a name on the check page, in both lang
   ok(mapBlock, 'main.js still builds the band names from a fixed map')
   ok(RANK_IDS.length === 4, 'and there are four bands to find, not zero')
 
-  for (const id of RANK_IDS) {
+  for (const band of RANKS) {
+    const id = band.id
+    /*
+     * THE NAME, CHARACTER FOR CHARACTER, because the page cannot import the
+     * ladder — src/lib/ranks.js re-exports a module and verify may only import
+     * leaves — so main.js carries a copy. A copy with no assertion over it is
+     * how a buyer ends up Companion on the card in their chat and something
+     * else on the page that is supposed to confirm it.
+     */
+    ok(mapBlock && new RegExp(`\\b${id}: '${band.name}'`).test(mapBlock[1]),
+      `${id} is named "${band.name}" on the check page, as the ladder names it`)
+    /*
+     * AND NOT IN strings.js, which is the deliberate exception. Every other
+     * string on that page is a pair; these four are English only until a
+     * reader of Burmese has looked at them, because the Burmese for a
+     * relationship word would be composed rather than translated. Asserted as
+     * an ABSENCE so that putting them back is a decision somebody makes here.
+     */
     const key = 'rank' + id[0].toUpperCase() + id.slice(1)
-    ok(mapBlock && new RegExp(`\\b${id}: '${key}'`).test(mapBlock[1]),
-      `${id} is mapped to ${key} on the check page`)
-    ok(new RegExp(`${key}: \\{ en: '[^']+', my: '[^']+' \\}`).test(strings),
-      `${key} is written in both languages`)
+    ok(!new RegExp(`${key}:`).test(strings),
+      `${key} is not in the string table, where every entry owes a Burmese line`)
     /*
      * AND HAS A COLOUR OF ITS OWN. `.rank` paints from `currentColor` and
      * mixes its own background from it, so a band with no rule inherits the
@@ -246,9 +275,17 @@ console.log('every band on the ladder has a name on the check page, in both lang
    * smallest buyer lands in is the one this line is read at most often and
    * "1 tickets in this raffle" is a thank-you that reads as generated.
    */
+  /*
+   * The counted line under the name IS still a pair — only the rung's name is
+   * English. And it has a singular, because the band most buyers land in is
+   * the one this line is read at most often and "1 tickets in this raffle" is
+   * a thank-you that reads as generated.
+   */
   for (const key of ['rankThanks', 'rankThanks1', 'receiptCount', 'receiptCount1']) {
-    ok(new RegExp(`${key}: \\{`).test(strings) || new RegExp(`${key}: \\{ en`).test(strings),
+    ok(new RegExp(`${key}: \\{`).test(strings),
       `${key} exists, so a count of one is not made plural`)
+    ok(new RegExp(`${key}: \\{[\\s\\S]{0,200}?my: '[^']*[\u1000-\u109f]`).test(strings),
+      `and ${key} still carries its Burmese half`)
   }
   ok(/Number\(n\) === 1 \? `\$\{key\}1`/.test(page),
     'and the page picks the singular by the number rather than by the string')
@@ -299,10 +336,15 @@ console.log('a retired band id cannot reach the page, because no stored one is r
     'no query on this route reads a stored band')
 
   const mig = readFileSync(new URL(
-    '../supabase/migrations/20260922120000_the_bottom_rung_is_a_metal_like_the_others.sql',
+    '../supabase/migrations/20260922160000_the_ladder_stopped_being_made_of_metal.sql',
     import.meta.url), 'utf8')
-  ok(/'faithful'/.test(mig),
-    'and the retired id stays legal in the column, where rows minted before today carry it')
+  for (const retired of ['faithful', 'bronze', 'silver', 'gold', 'diamond']) {
+    ok(new RegExp(`'${retired}'`).test(mig),
+      `the retired id ${retired} stays legal in the column, where old rows carry it`)
+  }
+  for (const id of RANK_IDS) {
+    ok(new RegExp(`'${id}'`).test(mig), `and today's ${id} is legal too`)
+  }
 }
 
 console.log('all three treatments draw the band, and none of them invents one')

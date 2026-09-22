@@ -209,10 +209,10 @@ export const api = async () => ({})
   ok(text.includes('KS-00031'), 'the modal renders its ticket')
   /*
    * THE LADDER CAME ACROSS THE TREE AND RAN. Forty-one tickets at ten to a book
-   * is four books, which is Gold — a band with a threshold on each side of it,
-   * so a ladder wired to the wrong end would not land here by accident.
+   * is four books, which is Companion — a band with a threshold on each side of
+   * it, so a ladder wired to the wrong end would not land here by accident.
    */
-  ok(/Gold supporter/.test(text), 'and the supporter band, read from _shared/ranks.ts')
+  ok(/Companion/.test(text), 'and the supporter band, read from _shared/ranks.ts')
   ok(/4 books/.test(text), 'counted in books, from this raffle\'s own book size')
   /*
    * And the action that makes the band checkable.

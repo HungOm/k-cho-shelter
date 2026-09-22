@@ -598,9 +598,30 @@ async function run() {
      * this page has never heard of draws nothing instead of reaching for a
      * string called `rankSomething` and rendering the key.
      */
+    /*
+     * THE ONE STRING ON THIS PAGE THAT IS NOT A PAIR.
+     *
+     * Everything else goes through say() and renders Burmese above English,
+     * because a reader here may not read English at all. The four rungs do
+     * not, and it is deliberate: they are relationship words whose Burmese
+     * would be composed rather than translated, and an invented warm word on
+     * a card somebody keeps is worse than an honest one in a single language.
+     * strings.js says the same at more length and names what has to happen
+     * before that changes.
+     *
+     * NAMES, NOT STRING KEYS, and they must match _shared/ranks.ts exactly —
+     * the ladder is defined there once so the card in somebody's chat and this
+     * page cannot disagree about what to call them. The page cannot import it
+     * (src/lib/ranks.js re-exports a module, and this page may only import
+     * leaves), so these four are a copy, and tests/ranks compares them to the
+     * ladder character for character rather than trusting the comment.
+     *
+     * Still a fixed table, so a band this page has never heard of draws
+     * nothing rather than rendering an id.
+     */
     const BAND = {
-      bronze: 'rankBronze', silver: 'rankSilver',
-      gold: 'rankGold', diamond: 'rankDiamond',
+      friend: 'Friend', neighbour: 'Neighbour',
+      companion: 'Companion', family: 'Family',
     }
     /*
      * A COUNTED LINE, WHICH MEANS TWO ENGLISH SENTENCES AND ONE BURMESE ONE.
@@ -614,10 +635,10 @@ async function run() {
     const counted = (key, n) =>
       say(Number(n) === 1 ? `${key}1` : key).replace(/\{n\}/g, String(n))
 
-    const bandKey = BAND[String(body.rank || '')]
-    const band = bandKey
+    const bandName = BAND[String(body.rank || '')]
+    const band = bandName
       ? `<p class="rank rank-${escapeHtml(String(body.rank))}">
-           <b>${say(bandKey)}</b>
+           <b>${escapeHtml(bandName)}</b>
            <span>${counted('rankThanks', body.rankTickets ?? 0)}</span>
          </p>`
       : ''

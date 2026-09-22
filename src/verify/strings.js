@@ -126,42 +126,46 @@ export const S = {
   /*
    * THE SUPPORTER BAND, AND WHY IT IS ON THIS ROUTE ONLY.
    *
-   * A raffle that is funded by a few people buying a great many tickets should
-   * be able to say thank you to them by name of band, and the thank-you is
-   * worth nothing if it cannot be checked. This is where it is checked: the
-   * band was worked out on the server when the receipt was minted, from the
-   * tickets the buyer actually holds, and this page reads it back.
+   * A raffle funded by its own community should be able to say thank you by
+   * name of band, and the thank-you is worth nothing if it cannot be checked.
+   * This is where it is checked: the band is worked out on the server from the
+   * tickets the buyer holds at the moment somebody scans, and this page states
+   * a word and a number that came from the same rows.
    *
    * NOT on the printed QR. That code is on the paper, so anybody who picks up a
-   * dropped ticket has it, and "held by a Diamond supporter" would tell a
-   * stranger something about the person who lost it. A receipt is minted per
-   * purchase, printed on nothing, and delivered only inside the digital ticket
-   * the buyer is sent — the split the endpoint's own comments set out.
+   * dropped ticket has it, and "held by somebody who is Family to this place"
+   * would tell a stranger something about the person who lost it. The receipt
+   * code is printed on nothing and delivered only inside the digital ticket the
+   * buyer is sent — the split the endpoint's own comments set out.
    *
    * WARM, AND STILL A STATEMENT OF FACT. The count is beside the name because a
    * compliment with the number under it is a receipt; without the number it is
    * flattery, and this page's whole job is to be believed.
    */
+
   /*
-   * BRONZE, NOT "FAITHFUL", AND THE FOUR ARE NOW ONE SCALE. The bottom rung
-   * read "Faithful supporter" until 2026-09-22. Faithfulness is continuity —
-   * somebody who keeps coming back — and the band is computed from ONE
-   * raffle's holding, so it called a first-time buyer of a single ticket
-   * faithful. The Burmese half said the same thing: သစ္စာရှိ is faith, and
-   * carried a religious reading the other three rungs do not.
+   * THE BAND NAMES ARE NOT IN HERE, AND THAT IS THE ONE EXCEPTION ON THIS PAGE.
    *
-   * THE BURMESE HERE FOLLOWS THE MEDAL CONVENTION, which is what makes it a
-   * safe composition rather than a new phrase. ရွှေ / ငွေ / ကြေး are gold,
-   * silver and bronze the way a medal is named, so ကြေး ထောက်ပံ့သူ is the
-   * exact parallel of the two rungs above it. If a reader of Burmese finds
-   * ကြေး alone ambiguous here, ကြေးနီ is the unambiguous metal — but it breaks the
-   * one-word rhythm the other three keep, so the medal word is preferred
-   * unless somebody who reads it says otherwise.
+   * Every other string is a pair, because a reader of this page may not read
+   * English at all. The four rungs — Friend, Neighbour, Companion, Family —
+   * are English only, and they live in main.js beside the map that colours
+   * them rather than here.
+   *
+   * WHY, and it is a decision rather than an oversight: these are relationship
+   * words and the Burmese for them was COMPOSED, not translated by anybody who
+   * reads it. \u1021\u1016\u1031\u102C\u103A for Companion carries "partner" too and lands more
+   * transactional than the English does. A wrong warm word on a card somebody
+   * keeps is worse than the same word in one language: the rest of this file
+   * can be checked against the app's own i18n map, and an invented rung name
+   * has nothing to check against.
+   *
+   * So the band is the one place that waits for a reader of Burmese rather
+   * than guessing. When one has looked at them, the four entries come back
+   * here as pairs and main.js goes back to say() — and the test that pins
+   * every string in this file to a Burmese line will be true again without
+   * being weakened to allow this.
    */
-  rankBronze: { en: 'Bronze supporter', my: 'ကြေး ထောက်ပံ့သူ' },
-  rankSilver: { en: 'Silver supporter', my: 'ငွေ ထောက်ပံ့သူ' },
-  rankGold: { en: 'Gold supporter', my: 'ရွှေ ထောက်ပံ့သူ' },
-  rankDiamond: { en: 'Diamond supporter', my: 'စိန် ထောက်ပံ့သူ' },
+
   /*
    * ONE TICKET IS NOT "1 tickets". The bottom band is the band for somebody
    * holding fewer than a whole book, so the smallest counts are the ones this

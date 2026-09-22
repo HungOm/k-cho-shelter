@@ -63,26 +63,58 @@
    * brand or semantic colour used as a fill needs a companion ink token, and
    * #fff is not it. Nothing is filled here, so nothing needs one.
    *
-   * --band-silver is deliberately a slate rather than a grey. At grey it was
+   * --band-friend is deliberately a slate rather than a grey. At grey it was
    * indistinguishable from --muted, and a band that reads as disabled text is
-   * a thank-you that looks like a footnote.
-   */
-  --band-diamond: #2a6fb0;
-  --band-gold: #8a6a00;
-  --band-silver: #4d6470;
-  /*
-   * --band-bronze is a copper, and it is the one band here that had to be
-   * CHOSEN rather than renamed. It was --band-faithful: #0d7a6f, which is
-   * --brand exactly — the raffle's own teal. That was defensible for a band
-   * named for loyalty, which has no colour of its own and could borrow the
-   * product's. Bronze has a colour, and it is not teal.
+   * a thank-you that looks like a footnote — which matters most on the rung
+   * nearly every buyer lands on.
    *
-   * Pulled toward red (hue 20) rather than sitting where a browser's "bronze"
-   * would, because the band directly above it is --band-gold at hue 46 and
-   * these are read as 15px bold text a rung apart. At the obvious bronze the
-   * two were close enough to be one colour at that size.
+   * DO NOT TUNE THESE FOR SEPARATION FROM EACH OTHER. Each band is named in
+   * words, in two languages, in 15px bold, directly above the count that
+   * earned it, so the colour reinforces a label that is already explicit. A
+   * colour carrying information alone has to clear a bar; this one has to be
+   * legible on its own surface and nothing more. Measured while that was being
+   * argued: under red-green deficiency the neighbouring pairs collapse to
+   * roughly the same small number in BOTH themes, so light is not the safe
+   * one, and pulling a hue further apart improves the reader who was already
+   * fine while barely moving the one who is not.
    */
-  --band-bronze: #8d4a28;
+  --band-friend: #4d6470;
+  --band-neighbour: #8d4a28;
+  --band-companion: #8a6a00;
+  /*
+   * THE TOP RUNG GETS THE ONE HUE ON THIS PAGE THAT MEANS NOTHING ELSE.
+   *
+   * It was going to be --brand. "Family" names no material, unlike the metals
+   * this ladder replaced, so there is nothing for it to be faithful to except
+   * what it means — and what it means is being one of this place. The
+   * organisation's own ink looked like the argument rather than the shortcut.
+   *
+   * TWO THINGS KILLED IT, both read out of this file rather than guessed:
+   *
+   *   `.st .mark-sold { color: var(--brand) }` puts a rosette on every sold row
+   *   of a receipt. A Family holder is six books or more, so the band would sit
+   *   directly above sixty-odd marks in its own exact value — identical, not
+   *   close. The collision is guaranteed to occur precisely when the top rung
+   *   does, and it would read as the band belonging to the row system rather
+   *   than being a sentence about the person.
+   *
+   *   `--seal` is declared at :root, outside the dark block, so the roundel
+   *   stays #0d7a6f while --brand flips to #2bd4c0. In dark there are TWO
+   *   organisation teals and the band would be the one that is not the logo,
+   *   which is most of "the organisation's own ink" gone.
+   *
+   * So the blue instead, and the reason is better than the one it replaced:
+   * --ok, --warn, --bad and --brand all carry a meaning on this page. Blue
+   * carries none. The rung that says somebody is closest to this place is the
+   * only band whose colour cannot be mistaken for a verdict about a ticket.
+   *
+   * (Worth keeping if anybody restores the brand here: write it as
+   * `var(--brand)`, not the literal. A token meaning "this rung IS the
+   * organisation's colour" that hard-codes teal stops being true the day
+   * somebody rebrands — the same defect one level up from naming a token
+   * --band-gold and putting Companion's colour in it.)
+   */
+  --band-family: #2a6fb0;
   /*
    * THE GLYPH INSIDE THE ROUNDEL, and it has to be a token because it flips.
    *
@@ -115,12 +147,14 @@
     --mark-ink: #0d1211;
     /* Lifted the same way every other colour here is lifted: these are ink on
        a dark surface, so the light-mode values would be unreadable. */
-    --band-diamond: #8fc4f5;
-    --band-gold: #e5c454;
-    --band-silver: #b3c3cb;
-    /* Not the light bronze lightened — picked to land at the same ~8:1 the
-       other three dark bands sit at, on the 8% tint .rank mixes from it. */
-    --band-bronze: #eab488;
+    /* The same four inks, lifted the way every colour in this block is lifted.
+       Each was measured at ~8:1 on the 8% tint .rank mixes from it; the
+       assignment changed on 2026-09-22 and the values did not, which is the
+       whole reason a rename of four rungs needed no new colour picked. */
+    --band-friend: #b3c3cb;
+    --band-neighbour: #eab488;
+    --band-companion: #e5c454;
+    --band-family: #8fc4f5;
   }
 }
 * { box-sizing: border-box }
@@ -424,10 +458,10 @@ h1 { font-size: 19px; margin: 0 0 12px }
  * rule written about one place quietly governs another.
  */
 .rank > span { font-size: 13px; color: var(--text) }
-.rank-diamond { color: var(--band-diamond) }
-.rank-gold { color: var(--band-gold) }
-.rank-silver { color: var(--band-silver) }
-.rank-bronze { color: var(--band-bronze) }
+.rank-family { color: var(--band-family) }
+.rank-companion { color: var(--band-companion) }
+.rank-neighbour { color: var(--band-neighbour) }
+.rank-friend { color: var(--band-friend) }
 
 /*
  * THE TICKETS ON A RECEIPT. This was a bare <ul>: browser bullets, browser
