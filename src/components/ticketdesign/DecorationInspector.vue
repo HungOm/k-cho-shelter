@@ -29,6 +29,30 @@ import ToolBar from '../ui/ToolBar.vue'
 import ToolButton from '../ui/ToolButton.vue'
 import { PATHS } from '../../lib/iconpaths.js'
 import { BLENDS, DASHES } from '../../lib/designelements.js'
+/*
+ * THE FACE NAMES ARE IMPORTED, AND FROM THE PRINTED SIDE'S LIST.
+ *
+ * This panel used to hard-code "Everyday" and "Serif" — a copy of the names
+ * CardInspector uses, which are deliberately NOT the printed side's. That split
+ * is a real decision (CardInspector.vue:54-60): a print shop asks which font,
+ * nobody asks that of a picture sent on WhatsApp. The copy took the digital
+ * words onto the printed tab.
+ *
+ * Which made the Place rail offer two ways to put words on a printed ticket,
+ * one click apart, naming the same font differently:
+ *
+ *   "Own words" -> beginAdd('text')   -> Inspector           -> "Padauk"
+ *   "Words"     -> beginAdd('d:text') -> DecorationInspector -> "Everyday"
+ *
+ * Same tab, same panel slot — the two are a v-if/v-else pair. So this imports
+ * what Inspector imports, and gets the `why` line it never had along with it.
+ *
+ * This holds because decorations are printed-only TODAY. cardSVG can splice a
+ * decoration layer (ticketart.js:1991) but neither card caller passes one, and
+ * this panel renders only inside v-if="tab === 'place'". Feed decorations to a
+ * card and the question is open again.
+ */
+import { FAMILIES } from '../../lib/ticketelements.js'
 
 const props = defineProps({
   /** The decoration being edited, or null. Mutated in place, like the others. */
@@ -206,8 +230,7 @@ function setShadow(on) {
             <span class="wrap">
               <select :value="deco.text.family"
                       @change="before(); deco.text.family = $event.target.value">
-                <option value="text">Everyday</option>
-                <option value="number">Serif</option>
+                <option v-for="f in FAMILIES" :key="f.id" :value="f.id">{{ f.name }}</option>
               </select>
             </span>
           </label>
@@ -217,6 +240,7 @@ function setShadow(on) {
             Bold
           </label>
         </div>
+        <p class="say">{{ FAMILIES.find((f) => f.id === deco.text.family)?.why }}</p>
         <ToolBar label="How the words sit">
           <ToolButton v-for="a in ['left', 'centre', 'right']" :key="a"
                       icon="align" :label="a" wide :size="15" :active="deco.text.align === a"
