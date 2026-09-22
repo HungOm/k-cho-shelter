@@ -22,7 +22,7 @@ import Icon from '../ui/Icon.vue'
 import ToolButton from '../ui/ToolButton.vue'
 import { decorationLayerSVG } from '../../lib/designelements.js'
 import { PATHS } from '../../lib/iconpaths.js'
-import { BUILT_IN, MAX_SHAPES, shapeFrom, nextLibId } from '../../lib/designlibrary.js'
+import { BUILT_IN, MAX_SHAPES, MAX_COLOURS, shapeFrom, nextLibId } from '../../lib/designlibrary.js'
 
 const props = defineProps({
   /** The raffle's own library, as config carries it. */
@@ -31,9 +31,11 @@ const props = defineProps({
   selected: { type: Array, default: () => [] },
   busy: { type: Boolean, default: false },
 })
-const emit = defineEmits(['place', 'save', 'remove', 'use-colour'])
+const emit = defineEmits(['place', 'save', 'save-colour', 'remove', 'remove-colour', 'use-colour'])
 
-const naming = ref(false)
+/* '' | 'shape' | 'colour' — one naming row serving both, because both need
+   the same thing: a word typed before the server will take it. */
+const naming = ref('')
 const name = ref('')
 
 /*
@@ -121,6 +123,38 @@ function tile(shape) {
 }
 
 const canSave = computed(() => props.selected.length > 0)
+
+/*
+ * THE COLOUR ON THE SELECTION, WHICH IS THE ONLY COLOUR WORTH SAVING HERE.
+ *
+ * The studio's `swatches` are read off the artwork and lost on reload, so a
+ * raffle that matched its printer's ink had nowhere to put the answer. What it
+ * wants kept is the colour it just used, so that is what this offers: the fill
+ * of the selected piece, or its stroke when the piece has no fill.
+ */
+const HEXY = /^#[0-9a-f]{6}$/i
+const ink = (v) => (typeof v === 'string' && HEXY.test(v.trim()) ? v.trim().toLowerCase() : '')
+
+const pickedColour = computed(() => {
+  const d = props.selected?.[0]
+  if (!d) return ''
+  const f = (d.fill?.type ?? 'solid') !== 'none' ? d.fill?.colour : ''
+  return ink(f) || ink(d.stroke?.colour) || ''
+})
+
+const coloursFull = computed(() => (props.library?.colours?.length ?? 0) >= MAX_COLOURS)
+const whyNoColour = computed(() => {
+  if (props.busy) return 'Saving…'
+  if (coloursFull.value) return `The library holds ${MAX_COLOURS} colours. Remove one to keep another.`
+  if (!pickedColour.value) return 'Select something with a colour on it first'
+  /* Refusing a duplicate rather than storing a second row with the same value:
+     two swatches that look identical is a panel somebody has to click to tell
+     apart, which is the thing the tiles above exist to avoid. */
+  if ((props.library?.colours ?? []).some((c) => c.value === pickedColour.value)) {
+    return 'That colour is already kept'
+  }
+  return ''
+})
 const full = computed(() => (props.library?.shapes?.length ?? 0) >= MAX_SHAPES)
 const whyNoSave = computed(() => {
   if (props.busy) return 'Saving…'
@@ -129,10 +163,19 @@ const whyNoSave = computed(() => {
 })
 
 function confirmSave() {
-  const made = shapeFrom(props.selected, name.value.trim() || 'Saved shape')
-  if (!made) return
-  emit('save', { ...made, id: nextLibId('s') })
-  naming.value = false
+  if (naming.value === 'colour') {
+    if (!pickedColour.value) return
+    emit('save-colour', {
+      id: nextLibId('c'),
+      name: name.value.trim() || pickedColour.value,
+      value: pickedColour.value,
+    })
+  } else {
+    const made = shapeFrom(props.selected, name.value.trim() || 'Saved shape')
+    if (!made) return
+    emit('save', { ...made, id: nextLibId('s') })
+  }
+  naming.value = ''
   name.value = ''
 }
 </script>
@@ -166,35 +209,57 @@ function confirmSave() {
     </div>
   </div>
 
+  <!-- Directly under the tiles, because it is about the tiles. It had drifted
+       to the foot of the panel with the whole Colours section in between. -->
+  <p class="say">Click one to place it.</p>
+
   <!-- SAVING IS THE ONE THING HERE THAT NEEDS A WORD, because it needs a name
        typed. Everything else is a click on a picture of itself. -->
   <template v-if="!naming">
     <button class="btn sm" :disabled="!!whyNoSave" :title="whyNoSave || 'Keep the selection to place again'"
-            @click="naming = true">
+            @click="naming = 'shape'">
       <Icon name="plus" :size="15" />Save the selection
     </button>
   </template>
   <template v-else>
-    <input v-model="name" maxlength="40" placeholder="Call it something"
+    <input v-model="name" maxlength="40"
+           :placeholder="naming === 'colour' ? pickedColour : 'Call it something'"
            @keyup.enter="confirmSave">
     <div class="row">
-      <button class="btn sm ghost" @click="naming = false; name = ''">Cancel</button>
+      <button class="btn sm ghost" @click="naming = ''; name = ''">Cancel</button>
       <button class="btn sm primary" :disabled="busy" @click="confirmSave">Save</button>
     </div>
   </template>
 
-  <template v-if="library?.colours?.length">
+  <!--
+    THE COLOURS ROW IS ALWAYS HERE, EVEN EMPTY.
+
+    It used to render only when there were colours to show — and since nothing
+    could ever save one, it was a section that could not appear. Hiding it also
+    hides the way to fill it, so somebody looking for a colour they meant to
+    keep finds no row, no control and no reason. An empty row with its one
+    sentence costs a line and answers the question.
+  -->
+  <div class="colhead">
     <h4 class="rubric">Colours</h4>
-    <div class="cols">
+    <ToolButton
+      icon="plus" label="Keep this colour" :size="13" :disabled="!!whyNoColour"
+      :hint="whyNoColour || `Keep ${pickedColour} to use on another ticket`"
+      @click="naming = 'colour'" />
+  </div>
+  <div v-if="library?.colours?.length" class="cols">
+    <div v-for="c in library.colours" :key="c.id" class="colwrap">
       <button
-        v-for="c in library.colours" :key="c.id" type="button" class="col"
-        :style="{ background: c.value }"
+        type="button" class="col" :style="{ background: c.value }"
         :title="`${c.name} · ${c.value}`" :aria-label="`Use ${c.name}, ${c.value}`"
         @click="emit('use-colour', c.value)"></button>
+      <ToolButton
+        icon="trash" :label="`Remove ${c.name}`" :size="11" class="cx"
+        hint="Take it out of the library. What is already on a ticket stays."
+        @click="emit('remove-colour', c.id)" />
     </div>
-  </template>
-
-  <p class="say">Click one to place it.</p>
+  </div>
+  <p v-else class="tiny muted">No colours kept yet.</p>
 </div>
 </template>
 
@@ -233,9 +298,41 @@ function confirmSave() {
 .tx { position: absolute; top: 1px; right: 1px; opacity: 0 }
 .tile:hover .tx, .tx:focus-visible { opacity: 1 }
 
-.cols { display: flex; flex-wrap: wrap; gap: 4px }
+/* The heading and its one control on a line, because a section that can be
+   added to should say so where the section is named. */
+.colhead { display: flex; align-items: center; justify-content: space-between; gap: 6px }
+.colhead .rubric { margin: 0 }
+
+/* The gap clears the remove badge, which overhangs its swatch by 6px — at the
+   4px this started at, a badge sat on the NEIGHBOURING colour. */
+.cols { display: flex; flex-wrap: wrap; gap: 8px }
+.colwrap { position: relative }
+/*
+ * THE REMOVE BADGE CARRIES ITS OWN GROUND, which a swatch is the one place in
+ * this panel that forces. Everywhere else an icon inherits currentColor against
+ * a surface the theme controls; here it would sit on a colour the ORGANISER
+ * chose, and on a dark navy it disappeared into the thing it removes. So it
+ * gets the panel's own surface and border and steps off the corner.
+ *
+ * Still only on hover, the same rule as the tiles: a row of visible delete
+ * buttons reads as a panel that is dangerous to touch.
+ */
+.cx {
+  position: absolute; top: -5px; right: -5px; opacity: 0;
+  /* Sized here rather than left to the button's own padding, which made it
+     nearly as wide as the swatch. */
+  width: 19px; height: 19px; padding: 0;
+  display: grid; place-items: center;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 50%;
+}
+.colwrap:hover .cx, .cx:focus-visible { opacity: 1 }
+/* 44px, which is not a comfort choice: the remove badge sits on the corner, and
+   at 28px a badge big enough to read eclipsed the swatch into a crescent — you
+   could no longer see the colour you were deciding about. Four to a row in a
+   240px rail. */
 .col {
-  width: 24px; height: 24px; padding: 0;
+  width: 44px; height: 44px; padding: 0;
   border: 1px solid var(--border-strong); border-radius: 6px; cursor: pointer;
 }
 .col:hover { border-color: var(--brand) }

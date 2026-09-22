@@ -751,6 +751,23 @@ function removeFromLibrary(id) {
     'Taken out of the library')
 }
 
+/*
+ * A COLOUR IS KEPT THE SAME WAY A SHAPE IS, and for the same reason it needed
+ * keeping at all: `swatches` below are read off the artwork and thrown away on
+ * reload, so the ink a printer matched had nowhere to live. These two make the
+ * Colours row reachable — before them nothing could write one, so the row was
+ * a read path with no write path and could never appear.
+ */
+function saveColourToLibrary(colour) {
+  writeLibrary({ ...library.value, colours: [...library.value.colours, colour] },
+    `Kept “${colour.name}”`)
+}
+
+function removeColourFromLibrary(id) {
+  writeLibrary({ ...library.value, colours: library.value.colours.filter((c) => c.id !== id) },
+    'Taken out of the library')
+}
+
 function useLibraryColour(value) {
   const things = pickedThings.value
   if (!things.length) { toast('Select something to give it that colour', 'warn'); return }
@@ -2170,7 +2187,8 @@ const printedSize = computed(() => {
             <LibraryPanel
               :library="library" :selected="pickedDecos" :busy="libBusy"
               @place="placeFromLibrary" @save="saveToLibrary"
-              @remove="removeFromLibrary" @use-colour="useLibraryColour" />
+              @save-colour="saveColourToLibrary" @remove="removeFromLibrary"
+              @remove-colour="removeColourFromLibrary" @use-colour="useLibraryColour" />
 
             <div class="block grow">
               <h3 class="rubric">
