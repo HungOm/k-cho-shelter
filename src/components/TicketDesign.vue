@@ -75,6 +75,7 @@ import ShapesPanel from './ticketdesign/ShapesPanel.vue'
 import TemplateRail from './ticketdesign/TemplateRail.vue'
 import ArtworkVerdict from './ticketdesign/ArtworkVerdict.vue'
 import Inspector from './ticketdesign/Inspector.vue'
+import DecorationInspector from './ticketdesign/DecorationInspector.vue'
 import DigitalTab from './ticketdesign/DigitalTab.vue'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
@@ -685,6 +686,15 @@ const whyNoSelection = computed(() => (picked.value.length ? '' : 'Nothing is se
 /* What a press will not hold, as findings rather than refusals — see
    designelements.js. Only the printed tab asks for them. */
 const printRisks = computed(() => printWarnings(decorations.value, { printed: true }))
+
+/*
+ * THE WARNINGS FOR ONE SHAPE, for the panel that is showing it. The rail's line
+ * counts them all; the inspector says which of them are about the thing in
+ * front of you, which is the only place somebody can act on one.
+ */
+function risksFor(d) {
+  return d ? printWarnings([d], { printed: true }) : []
+}
 
 /*
  * WHAT TO CALL A SHAPE SOMEBODY DREW.
@@ -2492,7 +2502,20 @@ const printedSize = computed(() => {
           </div>
 
           <!-- ---------- the inspector: whatever is selected ---------- -->
-          <Inspector :element="chosen" :report="fitReport"
+          <!--
+            WHICHEVER PANEL THE SELECTION WANTS. A drawn shape and a field have
+            almost nothing in common to edit — one has a source and an overflow
+            rule, the other a gradient and a blend mode — so one panel with
+            every control in it and half of them hidden would be a panel whose
+            shape changes under the reader. Two components, one slot.
+          -->
+          <DecorationInspector
+            v-if="chosenDeco"
+            :deco="chosenDeco" :size="{ width: active.width, height: active.height }"
+            :swatches="swatches" :can-drop="canDrop"
+            :warnings="risksFor(chosenDeco)"
+            @mark="mark" @pick-colour="dropper" />
+          <Inspector v-else :element="chosen" :report="fitReport"
                      :sheet-width-m-m="design.sheet.widthMM"
                      :qr-density="qrDensity"
                      :half="chosenHalf"
