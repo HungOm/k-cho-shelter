@@ -586,10 +586,43 @@ input[type=file] { padding: 10px }
 .chip.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
 
 /* ---------- notes ---------- */
+/*
+ * `.note` WAS DOING TWO JOBS AT ONE VOLUME, AND ONLY ONE OF THEM EARNS IT.
+ *
+ * There are 151 of these in the app. 107 carry a tone — ok, warn, bad, info —
+ * and those are refusals, warnings and consequences: "this book is out with
+ * MAUNG", "do not pay for this ticket", what counting a book in will do to the
+ * tickets left in it. permissionui exists to keep exactly those visible, and
+ * they keep every pixel they had.
+ *
+ * The other 44 carry no tone and are plain explanation — "upload a picture of
+ * one blank ticket to begin", "only the System Admin can download the entry
+ * list". Helper text. They were drawn as a filled panel at .95rem, which on a
+ * screen like the studio or Admin made the longest sentence the heaviest thing
+ * in view and put the controls it describes second. A page that shouts its
+ * footnotes has no way left to shout an actual warning.
+ *
+ * So the plain one is set as helper text — the same .86rem the app already
+ * uses for `.hint`, so there is ONE size of helper voice rather than two — and
+ * the panel is kept for the tones that mean something. It is still a block,
+ * marked by a rule rather than a fill, because an explanation that dissolves
+ * into the paragraph above it is a different defect from a loud one.
+ *
+ * NOT A LICENCE TO DELETE THE WORDS. Several of these sentences exist because
+ * somebody was confused in front of a person paying; the instruction was to
+ * make long text smaller and quieter where it is needed, not to decide it is
+ * not needed.
+ */
 .note {
+  font-size: .86rem; color: var(--muted); margin-bottom: 14px;
+  padding: 2px 0 2px 12px; border-left: 2px solid var(--border);
+}
+/* The toned ones are panels, and the panel properties live with them rather
+   than on the base — stripping the base of padding would have quietly
+   un-padded all 107. */
+.note.ok, .note.warn, .note.bad, .note.info {
   padding: 14px 16px; border-radius: var(--r-sm);
-  font-size: .95rem; margin-bottom: 14px;
-  background: var(--surface-2);
+  font-size: .95rem; border-left: 0;
 }
 .note.ok   { background: var(--ok-soft);   color: var(--ok); }
 .note.warn { background: var(--warn-soft); color: var(--warn); }
