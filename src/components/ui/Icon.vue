@@ -111,6 +111,29 @@ const PATHS = {
   type:      'M6 6h12M12 6v12M9.5 18h5',
   image:     'M4 6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5v11A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-11ZM8.8 11a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6ZM4.6 16.2l4.4-3.7 3.5 3 3-2.5 4 3.6',
   code:      'M4.5 4.5h5v5h-5zM14.5 4.5h5v5h-5zM4.5 14.5h5v5h-5zM14.5 14.5h2v2h-2zM17.5 17.5h2v2h-2z',
+  /*
+   * `name` AND `label` WERE BEING ASKED FOR AND WERE NOT HERE.
+   *
+   * cardelements.js gives the digital card's parts a `kind`, and DigitalTab
+   * draws that kind straight as an icon name — unlike the printed side, which
+   * maps through KIND_ICON. Two of its kinds had no drawing, so the buyer's
+   * name and every caption on the card have been rendering the `missing` mark
+   * in the layer list AND in the inspector head, for as long as that tab has
+   * been a designer.
+   *
+   * It survived because the test that should have caught it matched
+   * `/^\s+name:/` against this FILE, which hits the prop declaration a few
+   * lines above rather than the table below. Fixed in cardlayout.test.mjs at
+   * the same commit; it parses the table now.
+   *
+   * `name` is ONE person over a written line — the buyer, and the line their
+   * name is written on. `people` is two figures and means a group, which is
+   * why this could not simply borrow it. `label` is the trade's own luggage
+   * tag with its eyelet, which is a caption ABOUT something rather than the
+   * something — the distinction the card makes between "Price" and the price.
+   */
+  name:      'M12 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 16c0-2.4 2.6-4 6-4s6 1.6 6 4M5 20h14',
+  label:     'M20.6 12.4 12.4 20.6a1.5 1.5 0 0 1-2.1 0l-6.2-6.2a1.5 1.5 0 0 1-.4-1.1l.4-6.3a1.5 1.5 0 0 1 1.4-1.4l6.3-.4a1.5 1.5 0 0 1 1.1.4l6.2 6.2a1.5 1.5 0 0 1 0 2.1ZM9 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z',
 
   // --- the studio: placing it ------------------------------------------
   position:  'M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',

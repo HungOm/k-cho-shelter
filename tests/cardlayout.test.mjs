@@ -308,6 +308,28 @@ console.log('what the studio saves is what a buyer is sent')
 console.log('every part is named, unique, and drawn with an icon the set has')
 {
   const icons = readFileSync(new URL('../src/components/ui/Icon.vue', import.meta.url), 'utf8')
+  /*
+   * PARSED FROM THE TABLE, NOT GREPPED OUT OF THE FILE.
+   *
+   * This read `new RegExp('^\\s+' + p.kind + ':', 'm').test(icons)`, which is
+   * true of any indented line in Icon.vue beginning with that word and a
+   * colon — including the PROP DECLARATIONS `name: {` and `label: {` near the
+   * top. So the two kinds that had no drawing at all were the two the check
+   * could not fail on, and the layer list rendered the `missing` mark for the
+   * buyer's name and every caption for as long as that tab has existed.
+   *
+   * The parser is the one icons.test.mjs uses — two spaces, the name, a colon,
+   * then a SINGLE-QUOTED path — so only a real entry counts, and an alias is
+   * allowed because Icon.vue resolves one.
+   */
+  const drawn = new Set(
+    [...icons.matchAll(/^ {2}([a-zA-Z]+): *'([^']+)'/gm)].map((m) => m[1]))
+  const aliased = new Set(
+    [...(/const ALIASES = \{([^}]*)\}/s.exec(icons)?.[1] ?? '')
+      .matchAll(/(\w+):\s*'/g)].map((m) => m[1]))
+  /* Guarded: a parse that stopped matching would pass every check below in
+     silence, which is the failure this whole block was already an example of. */
+  ok(drawn.size > 30, `the icon table parsed — ${drawn.size} drawings found`)
   for (const id of CARD_TREATMENTS) {
     const parts = standardParts(id)
     const ids = parts.map((p) => p.id)
@@ -316,9 +338,10 @@ console.log('every part is named, unique, and drawn with an icon the set has')
       ok(p.name && p.name !== p.id, `${id}/${p.id} has a name a person would use`)
       ok(p.what && p.what.length > 3, `${id}/${p.id} says where it is`)
       /* The layer list and the inspector both draw `kind` as an icon. Icon.vue
-         renders an unknown name as nothing at all, so a typo here is a row
-         with a hole in it and no error anywhere. */
-      ok(new RegExp(`^\\s+${p.kind}:`, 'm').test(icons), `${id}/${p.id} uses an icon the set has (${p.kind})`)
+         renders an unknown name as the `missing` mark, so a kind with no
+         drawing is a row with a hole in it and no error anywhere. */
+      ok(drawn.has(p.kind) || aliased.has(p.kind),
+        `${id}/${p.id} uses an icon the set actually draws (${p.kind})`)
     }
   }
 }

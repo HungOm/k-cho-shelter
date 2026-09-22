@@ -542,12 +542,39 @@ named for the part it governs.
 
 **Deliberately not built, and not oversights:**
 
-- **Nothing can be added.** No `+` on the layer list, no tool rail of shapes
+- **Nothing can be added.** ~~No `+` on the layer list, no tool rail of shapes
   down the left. A card part is a composition this app owns — the masthead is a
   mark, an organisation and an event — and the list is fixed. The printed tab
   adds elements because that ticket is somebody's artwork with fields dropped
   on it; this one is our drawing. Forty free elements would be forty ways to
-  take the card apart and none to get it back.
+  take the card apart and none to get it back.~~
+
+  **REVERSED BY THE USER, 2026-09-22.** Struck through rather than deleted,
+  because the reasoning is still worth reading and because this file's own §14
+  says a user of the screen outranks the document — so the next person to meet
+  this needs to see both the argument and the ruling that overtook it.
+
+  Asked for: *"add more reusable design elements library features — all
+  essential design elements"*, explicitly on **both** tabs. The half of the
+  original argument that survives is the half about **reversibility**, and it
+  is now a rule rather than a refusal:
+
+  - **The card's own parts stay fixed.** The list in `cardelements.js` cannot
+    be added to, removed from or reordered by anybody running a raffle. A
+    masthead is still a mark, an organisation and an event.
+  - **Decorations sit on top and are removable.** A shape, rule, badge, icon or
+    text block that somebody placed can always be taken off again, which is
+    what "forty ways to take the card apart and none to get it back" was
+    actually about. It was never about forty elements.
+  - **Only the differences are still stored**, so a raffle that has decorated
+    its card keeps every later improvement to the parts underneath.
+
+  What the original bullet got right and what it got wrong is worth naming,
+  because the same mistake is available on every screen: it reasoned from
+  "this is our drawing, not their artwork" to "therefore nothing may be added",
+  and those do not follow from one another. Ours-versus-theirs decides who owns
+  the PARTS. It says nothing about whether somebody may put a line under their
+  own organisation's name.
 - **Nothing can be removed, only hidden**, from the eye on its row. Reversible
   from the same control; removal would not be.
 - **"Show the seller's name" is not a toggle.** 8c draws one. The card carries
