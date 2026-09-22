@@ -60,6 +60,9 @@ import { resolveParts, standardParts, layoutFrom, CARD_TREATMENTS } from '../lib
 import {
   FAMILIES, lockAxis, keepRatio, nameOf, normalElement, nextId, legacyFromElements,
 } from '../lib/ticketelements.js'
+import {
+  EDGES, boundsOf, alignBoxes, distributeBoxes, orderMoved, offsetBox,
+} from '../lib/arrange.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
@@ -395,7 +398,42 @@ const problems = computed(() => (design.value ? validateDesign(design.value, act
 
 /* ---------- the element list ---------- */
 
+/*
+ * A PRIMARY SELECTION AND THE OTHERS, rather than one set of equals.
+ *
+ * `sel` is what the inspector is showing and has always been; `also` is
+ * everything else that is selected. Two refs rather than a Set because the two
+ * jobs are genuinely different and collapsing them loses one: the inspector
+ * edits ONE element's source, colour and lettering, and an inspector showing
+ * five elements' properties at once is a feature nobody asked for — while
+ * align, distribute, order and delete all act on the whole selection and do
+ * not care which was clicked first.
+ *
+ * So the rule is: the last thing clicked is the primary, everything held with
+ * shift joins it, and the inspector follows the primary alone.
+ */
 const sel = ref('')
+const also = ref([])
+
+/** Everything selected, primary first, with anything since deleted dropped. */
+const picked = computed(() => {
+  const live = new Set(elements.value.map((e) => e.id))
+  const out = []
+  for (const id of [sel.value, ...also.value]) {
+    if (id && live.has(id) && !out.includes(id)) out.push(id)
+  }
+  return out
+})
+const pickedEls = computed(() => {
+  const want = new Set(picked.value)
+  /* In ARRAY order, not selection order: everything downstream — distribute's
+     sort, the order moves, the renderer — reads array order as stacking order,
+     and handing those the order somebody happened to click in would restack a
+     design as a side effect of arranging it. */
+  return elements.value.filter((e) => want.has(e.id))
+})
+const many = computed(() => picked.value.length > 1)
+
 const chosen = computed(() => elements.value.find((e) => e.id === sel.value) || null)
 const placedById = computed(() => Object.fromEntries(placements.value.map((p) => [p.id, p])))
 const chosenPlaced = computed(() => placedById.value[sel.value] || null)
@@ -473,12 +511,109 @@ const byHalf = computed(() => {
 const chosenHalf = computed(() =>
   chosen.value ? (HALVES.find((g) => g.k === sideOf(chosen.value))?.t ?? '') : '')
 
-function pick(id) {
-  sel.value = id
+/**
+ * `add` is shift or the platform's own modifier, and it TOGGLES.
+ *
+ * Toggling rather than only adding, because the way somebody fixes a
+ * shift-click they did not mean is to shift-click it again — and a selection
+ * you can only grow is one you have to start over from.
+ *
+ * Shift-clicking the primary promotes the next one rather than leaving the
+ * inspector pointed at something no longer selected.
+ */
+function pick(id, add = false) {
+  if (!add) {
+    sel.value = id
+    also.value = []
+  } else if (id === sel.value) {
+    sel.value = also.value[0] || ''
+    also.value = also.value.slice(1)
+  } else if (also.value.includes(id)) {
+    also.value = also.value.filter((x) => x !== id)
+  } else if (sel.value) {
+    also.value = [...also.value, sel.value]
+    sel.value = id
+  } else {
+    sel.value = id
+  }
   /* Selecting from the rail should show the thing selected, not leave it
    * somewhere off the side of a zoomed canvas. */
   nextTick(scrollSelectionIntoView)
 }
+
+/*
+ * ---------- arranging what is already there ----------
+ *
+ * The arithmetic is in src/lib/arrange.js and is shared with the card tab; what
+ * lives here is which boxes to hand it and what to do with the answer. Every
+ * one of these calls mark() first, so the whole operation is a single undo step
+ * rather than one per element.
+ */
+
+/** Against the artboard for one, against the selection for several. */
+const alignWithin = () => (many.value
+  ? boundsOf(pickedEls.value.map((e) => e.box))
+  : { left: 0, top: 0, width: 1, height: 1 })
+
+function alignPicked(edge) {
+  if (!pickedEls.value.length) return
+  mark()
+  const out = alignBoxes(pickedEls.value.map((e) => e.box), edge, alignWithin())
+  pickedEls.value.forEach((e, i) => { e.box.left = out[i].left; e.box.top = out[i].top })
+}
+
+function distributePicked(axis) {
+  if (pickedEls.value.length < 3) return
+  mark()
+  const out = distributeBoxes(pickedEls.value.map((e) => e.box), axis)
+  pickedEls.value.forEach((e, i) => { e.box.left = out[i].left; e.box.top = out[i].top })
+}
+
+function orderPicked(move) {
+  if (!picked.value.length) return
+  mark()
+  const order = orderMoved(elements.value.map((e) => e.id), picked.value, move)
+  const by = Object.fromEntries(elements.value.map((e) => [e.id, e]))
+  design.value.elements = order.map((id) => by[id])
+}
+
+/*
+ * A COPY IS A NEW ELEMENT, NOT A SECOND REFERENCE. `after` is dropped rather
+ * than copied: it names another element to flow from, and two elements flowing
+ * from one anchor print on top of each other. The copy starts standing on its
+ * own, which is the only version of it that is always correct.
+ */
+function duplicatePicked() {
+  if (!pickedEls.value.length) return
+  mark()
+  const made = pickedEls.value.map((e) => normalElement({
+    ...JSON.parse(JSON.stringify(e)), id: nextId(), after: '', box: offsetBox(e.box),
+  }))
+  design.value.elements = [...elements.value, ...made]
+  sel.value = made[0].id
+  also.value = made.slice(1).map((e) => e.id)
+}
+
+function deletePicked() {
+  if (!picked.value.length) return
+  mark()
+  const going = new Set(picked.value)
+  design.value.elements = elements.value.filter((e) => !going.has(e.id))
+  for (const e of design.value.elements) if (going.has(e.after)) e.after = ''
+  sel.value = ''
+  also.value = []
+}
+
+/*
+ * WHY EACH TOOL CANNOT BE PRESSED, or '' when it can. Handed straight to
+ * ToolButton, which disables on the presence of a reason — so there is no way
+ * to draw one of these enabled without an answer to "why not".
+ */
+const whyNoSelection = computed(() => (picked.value.length ? '' : 'Nothing is selected'))
+const whyNotDistribute = computed(() => (
+  picked.value.length >= 3 ? ''
+    : picked.value.length ? 'Spacing needs three or more — shift-click to add to the selection'
+      : 'Nothing is selected'))
 
 /*
  * ADDING SOMETHING: pick what, then draw where.
@@ -678,10 +813,31 @@ function edgesExcept(id) {
 function startMove(el, ev) {
   if (el.enabled === false) return
   ev.stopPropagation()
+
+  /*
+   * SHIFT ON THE CANVAS SELECTS, IT DOES NOT DRAG. Somebody adding a fifth box
+   * to a selection is aiming at the box, not at a destination, and a drag that
+   * begins on the same press moves it a few pixels every time — which is a
+   * design quietly nudged out of alignment by the act of selecting it.
+   */
+  if (ev.shiftKey || ev.metaKey) { pick(el.id, true); return }
+
   mark()
-  sel.value = el.id
+  /*
+   * PRESSING SOMETHING ALREADY SELECTED KEEPS THE SELECTION, and drags all of
+   * it. Anything else makes a multi-selection impossible to move: you pick
+   * three, press one to drag them, and the press throws the other two away.
+   */
+  if (!picked.value.includes(el.id)) pick(el.id)
+
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
-  drag.value = { mode: 'move', id: el.id, px: ev.clientX, py: ev.clientY, box: { ...el.box } }
+  drag.value = {
+    mode: 'move', id: el.id, px: ev.clientX, py: ev.clientY, box: { ...el.box },
+    /* Every box's starting position, so the delta is applied to where each one
+       WAS rather than accumulating per frame. The primary is excluded — it is
+       handled by the snapping path below and would otherwise move twice. */
+    group: pickedEls.value.filter((e) => e.id !== el.id).map((e) => ({ id: e.id, box: { ...e.box } })),
+  }
 }
 
 function startResize(el, corner, ev) {
@@ -751,6 +907,20 @@ function onPointerMove(ev) {
     const bottom = snapY(st.box.top + dy + st.box.height, ys) - st.box.height
     el.box.left = Math.abs(left - (st.box.left + dx)) <= Math.abs(right - (st.box.left + dx)) ? left : right
     el.box.top = Math.abs(top - (st.box.top + dy)) <= Math.abs(bottom - (st.box.top + dy)) ? top : bottom
+
+    /*
+     * THE REST OF THE SELECTION FOLLOWS THE PRIMARY'S SETTLED POSITION, not the
+     * raw pointer delta. Snapping moves the primary a little further than the
+     * pointer went, and applying the pointer's delta to the others would shear
+     * the selection apart by exactly the snap distance every time it caught.
+     * One box snaps; the group keeps its shape.
+     */
+    for (const g of st.group || []) {
+      const other = elements.value.find((e) => e.id === g.id)
+      if (!other) continue
+      other.box.left = Math.round((g.box.left + (el.box.left - st.box.left)) * 1e4) / 1e4
+      other.box.top = Math.round((g.box.top + (el.box.top - st.box.top)) * 1e4) / 1e4
+    }
     return
   }
 
@@ -1011,12 +1181,55 @@ onUnmounted(() => {
  * screen's chrome, and two handlers on one name is how a listener ends up
  * removed by the wrong remove.
  */
+/*
+ * TYPING IS NOT A SHORTCUT. Every one of these has to refuse while somebody is
+ * in a field, or Delete eats a character out of a motto and ⌘A selects every
+ * box on the ticket instead of the text in the box under the cursor. The
+ * studio is full of inputs, which is why the existing ⌘\ was already careful
+ * to use a modifier rather than a bare key.
+ */
+function inAField(t) {
+  return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
+    || t.tagName === 'SELECT' || t.isContentEditable)
+}
+
 function onFocusKey(e) {
   // ⌘\ on a Mac, Ctrl+\ elsewhere. Not a bare key: this screen is full of
   // text fields and a single letter would fire while somebody types a motto.
   if (e.key === '\\' && (e.metaKey || e.ctrlKey)) {
     e.preventDefault()
     setFocus(!state.focus)
+    return
+  }
+
+  /* The arrange shortcuts belong to the Place tab, where the selection is. */
+  if (tab.value !== 'place' || inAField(e.target)) return
+  const cmd = e.metaKey || e.ctrlKey
+
+  if (cmd && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicatePicked(); return }
+  if (cmd && (e.key === 'a' || e.key === 'A')) {
+    e.preventDefault()
+    /* Everything that is on the ticket. A hidden element selected by ⌘A is one
+       that arrange tools would move where nobody can see it happen. */
+    const live = elements.value.filter((el) => el.enabled !== false).map((el) => el.id)
+    sel.value = live[0] || ''
+    also.value = live.slice(1)
+    return
+  }
+  if (cmd && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault()
+    undo()
+    return
+  }
+  if (e.key === 'Escape' && picked.value.length) {
+    e.preventDefault()
+    sel.value = ''
+    also.value = []
+    return
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && picked.value.length) {
+    e.preventDefault()
+    deletePicked()
   }
 }
 
@@ -1661,7 +1874,8 @@ const printedSize = computed(() => {
                     -->
                     <Icon :name="KIND_ICON[el.kind]" :size="15" class="kind"
                           :class="el.kind" :title="KIND_WORD[el.kind]" />
-                    <button type="button" class="elname" @click="pick(el.id)">{{ nameOf(el) }}</button>
+                    <button type="button" class="elname"
+                            @click="pick(el.id, $event.shiftKey || $event.metaKey)">{{ nameOf(el) }}</button>
                     <span v-if="trouble(el)" class="warnmark"
                           :title="`${nameOf(el)} ${trouble(el)}`">!</span>
                     <!--
@@ -1797,6 +2011,66 @@ const printedSize = computed(() => {
               </ToolBar>
             </div>
 
+            <!--
+              THE TOOL RAIL, beside the artboard rather than in the bar above it.
+
+              The bar already holds a zoom stepper, a line of measurements and
+              three toggles; eight more controls in it would make one strip of
+              fourteen things with no grouping the eye can use. Down the left of
+              the canvas they are where the hand already is when it is working
+              on the artboard, and they group into what-you-are-doing /
+              arranging / stacking, which is three positions to learn rather
+              than eleven.
+
+              EVERY ONE OF THESE ACTS ON THE SELECTION, and every one of them is
+              disabled with the reason when there is nothing to act on — so the
+              rail is never a row of live buttons that silently do nothing.
+            -->
+            <div class="withrail">
+            <ToolBar label="Arrange" vertical>
+              <span class="tgroup">
+                <ToolButton icon="align" label="Align left" :why="whyNoSelection"
+                            :hint="many ? 'Line the selected boxes up on their left edges'
+                                        : 'Put this box against the left edge of the ticket'"
+                            @click="alignPicked('left')" />
+                <ToolButton icon="position" label="Centre across" :why="whyNoSelection"
+                            :hint="many ? 'Centre the selected boxes on each other, across'
+                                        : 'Centre this box across the ticket'"
+                            @click="alignPicked('centre')" />
+                <ToolButton icon="size" label="Centre down" :why="whyNoSelection"
+                            :hint="many ? 'Centre the selected boxes on each other, down'
+                                        : 'Centre this box down the ticket'"
+                            @click="alignPicked('middle')" />
+              </span>
+              <span class="tgroup">
+                <ToolButton icon="distribute" label="Space across" :why="whyNotDistribute"
+                            hint="Even gaps between the selected boxes, left to right. The outermost two stay where they are."
+                            @click="distributePicked('across')" />
+                <ToolButton icon="margins" label="Space down" :why="whyNotDistribute"
+                            hint="Even gaps between the selected boxes, top to bottom"
+                            @click="distributePicked('down')" />
+              </span>
+              <span class="tgroup">
+                <ToolButton icon="arrowUp" label="Bring forward" :why="whyNoSelection"
+                            hint="One place nearer the front, so it prints over what it overlaps"
+                            @click="orderPicked('forward')" />
+                <ToolButton icon="arrowDown" label="Send backward" :why="whyNoSelection"
+                            hint="One place further back"
+                            @click="orderPicked('backward')" />
+                <ToolButton icon="layers" label="Bring to front" :why="whyNoSelection"
+                            hint="All the way to the front of the stack"
+                            @click="orderPicked('front')" />
+              </span>
+              <span class="tgroup">
+                <ToolButton icon="duplicate" label="Duplicate" :why="whyNoSelection"
+                            hint="A copy, nudged down and right so it is visibly a copy"
+                            @click="duplicatePicked" />
+                <ToolButton icon="trash" label="Remove" :why="whyNoSelection"
+                            hint="Take the selection off the ticket"
+                            @click="deletePicked" />
+              </span>
+            </ToolBar>
+
             <div ref="stage" class="stage">
               <!-- The ruler reads in shares, because that is what is stored; the
                    width in millimetres is the one absolute fact on it. -->
@@ -1822,7 +2096,8 @@ const printedSize = computed(() => {
                 <div
                   v-for="el in elements" :key="el.id"
                   class="ebox"
-                  :class="{ on: sel === el.id, off: el.enabled === false, faint: !showAllBoxes && sel !== el.id, code: el.kind === 'code' }"
+                  :class="{ on: sel === el.id, too: also.includes(el.id), off: el.enabled === false,
+                            faint: !showAllBoxes && !picked.includes(el.id), code: el.kind === 'code' }"
                   :style="{ left: pc(el.box.left), top: pc(el.box.top), width: pc(el.box.width), height: pc(el.box.height) }"
                   :title="el.enabled === false ? `${nameOf(el)} is switched off in the list` : `${nameOf(el)} — drag to move, or use the arrow keys`"
                   @pointerdown="startMove(el, $event)">
@@ -1830,8 +2105,12 @@ const printedSize = computed(() => {
                     type="button" class="grab" :aria-label="nameOf(el)"
                     :disabled="el.enabled === false"
                     :title="el.enabled === false ? `${nameOf(el)} is switched off in the list` : `${nameOf(el)} — drag to move, or use the arrow keys`"
-                    @keydown="onKey" @click.stop="pick(el.id)"></button>
-                  <template v-if="sel === el.id && el.enabled !== false">
+                    @keydown="onKey" @click.stop="pick(el.id, $event.shiftKey || $event.metaKey)"></button>
+                  <!-- Handles on the PRIMARY only. Eight of them on each of
+                       five selected boxes is forty grips over one artboard, and
+                       a drag from any of them resizes one thing while four
+                       others look equally grabbable. -->
+                  <template v-if="sel === el.id && !many && el.enabled !== false">
                     <span
                       v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
                       class="hdl" :class="c"
@@ -1853,6 +2132,7 @@ const printedSize = computed(() => {
                 </div>
               </div>
             </div>
+            </div><!-- .withrail -->
 
             <p class="readout">
               <template v-if="chosen && inPixels">
@@ -2325,6 +2605,25 @@ const printedSize = computed(() => {
 }
 .ebox.faint { outline-color: rgba(255, 255, 255, .4); box-shadow: 0 0 0 1px rgba(0, 0, 0, .22) }
 .ebox.off { cursor: not-allowed; outline-style: dotted; outline-color: rgba(255, 255, 255, .45); opacity: .6 }
+/*
+ * THE OTHERS IN A MULTI-SELECTION ARE MARKED, AND NOT AS BRIGHTLY.
+ *
+ * One outline weight for everything selected would lose which box the
+ * inspector is editing, and the inspector edits exactly one. So the primary
+ * keeps its 2px amber and the rest take a thinner line of the same hue: the
+ * same colour says "selected", the weight says "and this one is the one the
+ * panel is about".
+ *
+ * The literal amber rather than a token is the surrounding file's own choice
+ * and its reason holds here: this outline sits on somebody's ARTWORK, which is
+ * any colour at all, so it cannot be a theme colour that might land on its own
+ * twin. It is the same value the primary uses, three lines down.
+ */
+.ebox.too {
+  outline: 1px solid #ffb300;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .45);
+  background: rgba(255, 179, 0, .07);
+}
 .ebox.on {
   outline: 2px solid #ffb300;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .55);

@@ -69,6 +69,28 @@
    it — vertically as well as horizontally, which is what makes a canvas read
    as a thing on a table rather than as content stuck to the top of a box. */
 .stagewrap > .stage { flex: 1; display: grid; place-content: center start }
+/*
+ * A TOOL RAIL BESIDE THE ARTBOARD, added 2026-09-22.
+ *
+ * `.withrail` takes the flex:1 the stage used to take from .stagewrap, and
+ * hands it on — so the artboard still fills the height left over and still
+ * centres in it, with the rail standing beside rather than above it.
+ *
+ * `align-items: start` on the rail deliberately, against the stage's own
+ * centring: a column of tools that floats to the vertical middle of a tall
+ * canvas is a column somebody has to go and find. It stays at the top, where
+ * the eye enters the canvas.
+ */
+.stagewrap > .withrail { flex: 1; display: flex; align-items: start; gap: 10px; min-width: 0 }
+.withrail > .stage { flex: 1; display: grid; place-content: center start; min-width: 0 }
+/* The rail is a panel in its own right, not a floating strip: it sits on the
+   same surface as the two rails either side of the canvas so the screen reads
+   as three columns with a tool strip, rather than four columns. */
+.withrail > .toolbar {
+  flex: 0 0 auto; padding: 6px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface);
+}
 .pgroup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border) }
 .pgroup:first-of-type { border-top: 0; padding-top: 0 }
 .rubric {
