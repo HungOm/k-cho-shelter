@@ -36,9 +36,12 @@ import { stubShare } from './ticketdesign.js'
  * file importing them back would be a cycle with a `const` in it. See the note
  * at the top of that file.
  */
-import { partBoxes, CARD, CARD_CERT, CARD_STUB } from './cardelements.js'
+import { partBoxes, CARD, CARD_CERT, CARD_STUB, CARD_SHELTER } from './cardelements.js'
+/* The rung's device and the category's watermark. It imports nothing itself,
+   so the card gains a picture without the renderer gaining a dependency. */
+import { rungBadge, cardCategory } from './cardbadges.js'
 
-export { CARD, CARD_CERT, CARD_STUB }
+export { CARD, CARD_CERT, CARD_STUB, CARD_SHELTER }
 /*
  * WHAT ONE BUYER HOLDS, FOLDED INTO BOOKS AND SPANS. A digital ticket is one
  * per buyer and covers everything they have, so the line under TICKETS is a
@@ -1589,11 +1592,309 @@ export const CARD_DESIGNS = [
     note: 'Light stock, tinted border, seal' },
   { id: 'stub', name: 'Stub', size: CARD_STUB,
     note: 'Portrait, phone-shaped, number first' },
+  { id: 'shelter', name: 'Supporter', size: CARD_SHELTER,
+    note: 'Landscape, the person first, rung badge and prize' },
 ]
 
 /** The chosen design, falling back to Grand rather than to nothing drawn. */
 export function cardDesign(id) {
   return CARD_DESIGNS.find((d) => d.id === id) || CARD_DESIGNS[0]
+}
+
+/*
+ * CARD 8d, THE SUPPORTER CARD — the treatment for a raffle whose ladder means
+ * something to it.
+ *
+ * WHAT IT REARRANGES, AND WHY. Grand leads with the serial, because a single
+ * ticket's identity is its number. This one leads with the PERSON: the buyer's
+ * name takes the weight, the numbers sit under a caption that counts them, and
+ * the rung's device sits beside the name the way a seal sits beside a
+ * signature. A raffle sold by a community to itself is not selling numbered
+ * entries, it is thanking people by name, and the card that goes into their
+ * chat should be about them.
+ *
+ * WHAT IT ADDS THAT NO CARD HAD. When it is drawn and what the top prize is —
+ * the two things every buyer asks and no previous treatment answered; the
+ * books behind a folded span, which is what an organiser is asked when
+ * somebody rings; the Ref beside the QR in words, for the person reading it
+ * down a telephone; and a sentence saying what the money does.
+ *
+ * THE DEVICE IS NOT THE RUNG'S COLOUR, and that decision is load-bearing
+ * rather than aesthetic. The five rung colours live in verify.css, hand-picked
+ * per theme. This file cannot reach a stylesheet, so following them would mean
+ * a second copy of five colours drifting from the first — and worse, a card is
+ * a picture ALREADY SENT to somebody's chat, so a colour baked into one is a
+ * colour nobody can ever correct. The seal is gold on every rung and the rung
+ * is carried by the word beside it, which is spelled out anyway.
+ */
+export function shelterCardSVG(values = {}, opts = {}) {
+  const { width: W, height: H } = CARD_SHELTER
+  const P = partBoxes('shelter', opts.layout)
+  const { paper, ink, quiet, hair, gold } = cardPalette('shelter', values)
+
+  const s = (v) => String(v ?? '').trim()
+  const number = s(values.number)
+  const name = s(values.name)
+  const org = s(values.org)
+  const event = s(values.event)
+  const draw = s(values.drawOn)
+  const prize = s(values.prize)
+  const price = s(values.price)
+  const sold = !!values.sold
+  const link = s(values.link)
+  const logo = s(values.logo)
+  const ref = s(values.ref)
+  const impact = s(values.impact)
+  const luck = s(values.goodLuck)
+  const motto = s(values.motto)
+  const thanks = s(values.thanks)
+
+  const chunks = Array.isArray(values.spans) ? values.spans : []
+  const totalHeld = chunks.reduce((n, c) => n + (c?.count ?? 0), 0)
+  const many = totalHeld > 1
+
+  const t = (str, x, y, size, fill, family, extra = '') => (str
+    ? `<text x="${round(x)}" y="${round(y)}" font-family='${family}' font-size="${round(size)}" `
+      + `fill="${fill}" ${extra} xml:space="preserve">${esc(str)}</text>`
+    : '')
+
+  const anch = (p) => (p.align === 'centre' ? 'text-anchor="middle" ' : p.align === 'right' ? 'text-anchor="end" ' : '')
+  const ax = (p) => p.x + (p.align === 'centre' ? p.w / 2 : p.align === 'right' ? p.w : 0)
+  const bx = (p) => p.x + (p.align === 'centre' ? (p.w - p.own) / 2 : p.align === 'right' ? p.w - p.own : 0)
+  const fam = (p) => (p.family === 'number' ? FONT.family : TEXT_FAMILY)
+  const bold = (p) => (p.weight === 'bold' ? 'font-weight="700"' : '')
+  const paint = (p, role) => p.ink || role
+  const op = (v) => String(round(v, 4)).replace(/^0\./, '.')
+  const cap = (p, str, dy) =>
+    t(str, ax(p), p.y + dy * p.k, 22 * p.k, quiet, TEXT_FAMILY,
+      `${anch(p)}letter-spacing="${round(3 * p.k)}"`)
+
+  /* ---- the mark, the organisation and the event ---- */
+  const initial = (org || event || '?').trim().charAt(0).toUpperCase()
+  const m = P.masthead
+  const tile = `<rect x="${round(m.x)}" y="${round(m.y)}" width="${round(76 * m.k)}" `
+    + `height="${round(76 * m.k)}" rx="${round(20 * m.k)}" fill="rgba(255,255,255,.10)"/>`
+  const mark = !m.on ? '' : (logo
+    ? tile
+      + `<image href="${esc(logo)}" x="${round(m.x + 8 * m.k)}" y="${round(m.y + 8 * m.k)}" `
+      + `width="${round(60 * m.k)}" height="${round(60 * m.k)}" preserveAspectRatio="xMidYMid meet"/>`
+    : tile
+      + t(initial, m.x + 38 * m.k, m.y + 52 * m.k, 36 * m.k, paint(m, ink), TEXT_FAMILY,
+        'text-anchor="middle" font-weight="700"'))
+
+  /*
+   * PAID, NOT SOLD. Grand says SOLD because it is a fact about the ticket —
+   * the raffle's own word for a state in STATUS_WORDS. This card is addressed
+   * to the person who paid, and from where they are standing the fact is that
+   * their money arrived. Same condition, the sentence read from the other end.
+   */
+  const S = P.status
+  const chip = sold && S.on
+    ? `<rect x="${round(S.x)}" y="${round(S.y)}" width="${round(168 * S.k)}" `
+      + `height="${round(52 * S.k)}" rx="${round(26 * S.k)}" fill="none" stroke="${gold}" `
+      + `stroke-width="${round(2 * S.k)}"/>`
+      + `<path d="M${round(S.x + 42 * S.k)} ${round(S.y + 26 * S.k)}l${round(7 * S.k)} ${round(7 * S.k)} `
+      + `l${round(13 * S.k)} -${round(14 * S.k)}" fill="none" stroke="${gold}" `
+      + `stroke-width="${round(3 * S.k)}" stroke-linecap="round" stroke-linejoin="round"/>`
+      + t('PAID', S.x + 100 * S.k, S.y + 35 * S.k, 24 * S.k, gold, TEXT_FAMILY,
+        `text-anchor="middle" font-weight="700" letter-spacing="${round(2 * S.k)}"`)
+    : ''
+
+  /*
+   * THE SEAL. A ring, a dashed inner ring, the category's device for this rung,
+   * and the rung's POSITION in Roman under it. Never the rung's name: that is
+   * up to 24 characters of free text in a script this file cannot measure, and
+   * the name is set beside the seal at a size somebody can actually read.
+   */
+  const SE = P.seal
+  const badge = rungBadge(values.category, values.rungSlot)
+  const seal = SE.on && s(values.rankName)
+    ? (() => {
+      const d = 116 * SE.k
+      const cx = SE.x + d / 2
+      const cy = SE.y + d / 2
+      const g = round(d / 24, 4)
+      return `<circle cx="${round(cx)}" cy="${round(cy)}" r="${round(d / 2 - 1)}" fill="none" `
+        + `stroke="${paint(SE, gold)}" stroke-width="${round(2 * SE.k)}"/>`
+        + `<circle cx="${round(cx)}" cy="${round(cy)}" r="${round(d / 2 - 8 * SE.k)}" fill="none" `
+        + `stroke="${paint(SE, gold)}" stroke-width="${round(1 * SE.k)}" `
+        + `stroke-dasharray="${round(3 * SE.k)} ${round(4 * SE.k)}" opacity=".7"/>`
+        /*
+         * THE DEVICE SITS HIGH AND SMALL, and both numbers were wrong first
+         * time. At 0.92 the 24-unit box is 107px tall inside a 116px ring, so
+         * the glyph ran straight through the numeral and the two drew on top
+         * of each other — the render showed a house with three strokes under
+         * it that looked like part of the drawing. 0.6 leaves the lower third
+         * of the ring empty, which is where the rung goes.
+         */
+        + `<g transform="translate(${round(cx - 12 * g * 0.6)} ${round(cy - 15 * g * 0.6)}) `
+        + `scale(${round(g * 0.6, 4)})" fill="none" stroke="${paint(SE, gold)}" stroke-width="2.2" `
+        + `stroke-linecap="round" stroke-linejoin="round"><path d="${badge.path}"/></g>`
+        + t(badge.numeral, cx, cy + 42 * SE.k, 16 * SE.k, paint(SE, gold), TEXT_FAMILY,
+          `text-anchor="middle" font-weight="700" letter-spacing="${round(2 * SE.k)}"`)
+    })()
+    : ''
+
+  /* ---- the person ---- */
+  const B = P.buyer
+  const buyer = (B.on ? cap(B, 'SUPPORTER', 26) : '')
+    + (B.on ? t(name, ax(B), B.y + 82 * B.k, 54 * B.k, paint(B, ink), fam(B), `${anch(B)}${bold(B)}`) : '')
+    + (B.on
+      ? bandLine(values, { x: ax(B), y: B.y + 118 * B.k, size: 22 * B.k, ink: gold, quiet, anchor: anch(B).trim() })
+      : '')
+
+  /* ---- what they hold ---- */
+  /*
+   * THE SPAN, NOT THE BOOKS — and the difference is what the caption promises.
+   *
+   * `holdingHeadline` describes a holding the way an organiser says it:
+   * "Book-0003 / Book-0004". That is right on Grand, where the line is the
+   * ticket's identity. Here the caption above it reads "YOUR 20 TICKET
+   * NUMBERS", so what follows has to BE the numbers, and a buyer comparing
+   * this against a paper stub is looking for the first and the last.
+   *
+   * ONLY WHEN IT IS ACTUALLY ONE RUN, and this is the whole care in it.
+   * "#0021 – #0040" over a holding with a gap in it claims twenty tickets
+   * somebody does not have, on the card they would take to the draw. So the
+   * span is drawn when the count matches the distance between the ends, and
+   * anything else — two books bought months apart, a run with a hole — falls
+   * back to the description, which is never wrong about what is held.
+   */
+  const N = P.number
+  const tail = (v) => {
+    const m2 = /(\d+)\s*$/.exec(String(v ?? ''))
+    return m2 ? Number(m2[1]) : null
+  }
+  const oneRun = (() => {
+    if (chunks.length < 1) return null
+    const first = tail(chunks[0]?.from)
+    const last = tail(chunks[chunks.length - 1]?.to)
+    if (first === null || last === null) return null
+    return last - first + 1 === totalHeld ? { from: chunks[0].from, to: chunks[chunks.length - 1].to } : null
+  })()
+  const held = N.on
+    ? cap(N, many ? `YOUR ${totalHeld} TICKET NUMBERS` : 'YOUR TICKET NUMBER', 26)
+      + (() => {
+        if (!many) return t(number, ax(N), N.y + 104 * N.k, 70 * N.k, paint(N, gold), fam(N), `${anch(N)}${bold(N)}`)
+        if (oneRun) {
+          return t(`${oneRun.from} \u2013 ${oneRun.to}`, ax(N), N.y + 104 * N.k, 70 * N.k,
+            paint(N, gold), fam(N), `${anch(N)}${bold(N)}`)
+        }
+        const h = holdingHeadline(chunks, N.w, 70 * N.k)
+        return t(h.text, ax(N), N.y + 104 * N.k, h.size, paint(N, gold), fam(N), `${anch(N)}${bold(N)}`)
+      })()
+    : ''
+
+  /*
+   * THE BOOKS BEHIND THE SPAN, and only when there are books to name.
+   *
+   * `spansOf` folds a whole book into one chunk with `kind: 'book'`; anything
+   * else is a run of numbers with no book of its own. So this line names the
+   * books it can and says nothing about the rest, rather than inventing a
+   * label for a run that came out of two.
+   */
+  const K = P.books
+  const bookChunks = chunks.filter((c) => c && c.kind === 'book' && c.book)
+  const booksLine = !K.on ? '' : (bookChunks.length
+    ? bookChunks.slice(0, 4).map((c, i) =>
+      t(`${String(c.book).toUpperCase()}  ${c.from}–${c.to}`,
+        K.x + i * round(K.w / Math.min(4, bookChunks.length)), K.y + 20 * K.k,
+        19 * K.k, quiet, FONT.family)).join('')
+    /* ONE TICKET STILL CAME OUT OF A BOOK. With no holding to fold there are no
+       chunks and this line would draw nothing at all, leaving a card that names
+       the ticket and not where it came from — which is the first thing an
+       organiser is asked when somebody rings. So it falls back to the ticket's
+       own book, which every card has. */
+    : t(s(values.book).toUpperCase(), K.x, K.y + 20 * K.k, 19 * K.k, quiet, FONT.family))
+
+  /*
+   * WHEN AND WHAT FOR. Two labelled facts rather than three: a buyer asks when
+   * it is drawn and what the top prize is, and nothing else on this card is a
+   * question they have. Each draws only if the raffle knows it — a label with
+   * nothing under it is a card that looks unfinished.
+   */
+  const D = P.draw
+  const facts = D.on ? [draw && ['DRAW', draw], prize && ['GRAND PRIZE', prize]].filter(Boolean) : []
+  const drawRow = facts.map(([label, value], i) =>
+    t(label, D.x + i * 366 * D.k, D.y + 22 * D.k, 22 * D.k, quiet, TEXT_FAMILY,
+      `letter-spacing="${round(3 * D.k)}"`)
+    + t(value, D.x + i * 366 * D.k, D.y + 62 * D.k, 30 * D.k, paint(D, ink), fam(D), bold(D))).join('')
+
+  /* ---- the QR, what it is for, and the reference in words ---- */
+  const C = P.code
+  const qr = { enabled: C.on, x: bx(C), y: C.y, size: 236 * C.k, ecc: 'M', backing: true }
+  const code = opts.qrUrl && opts.encode ? qrLayer(qr, opts.qrUrl, { encode: opts.encode }) : ''
+  const codeSaid = C.on
+    ? t('Scan to verify these tickets', bx(C) + 118 * C.k, C.y + 274 * C.k, 20 * C.k, quiet,
+      TEXT_FAMILY, 'text-anchor="middle"')
+      + (ref ? t(`Ref ${ref}`, bx(C) + 118 * C.k, C.y + 306 * C.k, 18 * C.k, quiet, FONT.family,
+        'text-anchor="middle"') : '')
+    : ''
+
+  /* ---- the card itself ---- */
+  const tearY = 620
+  const R = 28
+  const notchMask = `<mask id="notch"><rect width="${W}" height="${H}" rx="${R}" fill="#fff"/>`
+    + `<circle cx="0" cy="${tearY}" r="18" fill="#000"/><circle cx="${W}" cy="${tearY}" r="18" fill="#000"/></mask>`
+  const weave = `<pattern id="weave" width="18" height="18" patternUnits="userSpaceOnUse" `
+    + `patternTransform="rotate(-24)"><line x1="0" y1="0" x2="0" y2="18" `
+    + `stroke="rgba(255,255,255,.035)" stroke-width="7"/></pattern>`
+  const foil = `<rect x="${R}" y="0" width="${W - R * 2}" height="7" fill="${gold}"/>`
+  const tearLine = `<line x1="100" y1="${tearY}" x2="${W - 100}" y2="${tearY}" stroke="${hair}" `
+    + `stroke-width="2" stroke-dasharray="10 8"/>`
+
+  /*
+   * THE WATERMARK IS THE CATEGORY'S OWN DEVICE at its fullest, ghosted. Grand
+   * draws a ticket glyph, which says "this is a ticket" to somebody already
+   * holding one. This says what the money is for.
+   */
+  const wm = P.watermark
+  const cat = cardCategory(values.category)
+  const watermark = wm.on
+    ? `<g opacity="${op(wm.opacity)}" transform="translate(${round(wm.x)} ${round(wm.y)}) `
+      + `scale(${round((wm.w / 24) * 0.98, 4)})" fill="none" stroke="${paint(wm, ink)}" `
+      + `stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">`
+      + `<path d="${cat.watermark}"/></g>`
+    : ''
+
+  const FO = P.footer
+  const MO = P.motto
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
+    + `<defs>${weave}</defs>`
+    + notchMask
+    + `<g mask="url(#notch)">`
+    + `<rect width="${W}" height="${H}" rx="${R}" fill="${paper}"/>`
+    + `<rect width="${W}" height="${H}" rx="${R}" fill="url(#weave)"/>`
+    + watermark
+    + foil
+    + tearLine
+    + mark
+    + (m.on ? t(org, ax(m) + 102 * m.k, m.y + 30 * m.k, 24 * m.k, quiet, TEXT_FAMILY, anch(m)) : '')
+    + (m.on ? t(event, ax(m) + 102 * m.k, m.y + 68 * m.k, 36 * m.k, paint(m, ink), fam(m), `${anch(m)}${bold(m)}`) : '')
+    + chip
+    + `<line x1="64" y1="160" x2="${W - 64}" y2="160" stroke="${hair}" stroke-width="2"/>`
+    + seal
+    + buyer
+    + held
+    + booksLine
+    + drawRow
+    + code
+    + codeSaid
+    /* The impact sentence and the address, under the tear. */
+    + (FO.on ? t(impact || thanks, ax(FO), FO.y + 30 * FO.k, 24 * FO.k, paint(FO, ink), fam(FO), anch(FO)) : '')
+    + (FO.on ? t(link, ax(FO), FO.y + 64 * FO.k, 20 * FO.k, quiet, FONT.family, anch(FO)) : '')
+    /*
+     * THE GOOD-LUCK LINE, OR THE RAFFLE'S MOTTO WHERE THERE IS NO NAME TO WISH.
+     * This part is `motto` on every other treatment and holds the same box
+     * here, so a card sent with no buyer recorded keeps the line the raffle
+     * wrote rather than losing it — which is what the other three do.
+     */
+    + (MO.on && (luck || motto)
+      ? t(luck || motto, ax(MO), MO.y + 32 * MO.k, 30 * MO.k, paint(MO, gold), fam(MO),
+        `${anch(MO)}font-style="italic"`)
+      : '')
+    + `</g></svg>`
 }
 
 /*
@@ -1605,6 +1906,7 @@ export function cardDesign(id) {
 export function cardSVG(id, values = {}, opts = {}) {
   if (id === 'certificate') return certificateCardSVG(values, opts)
   if (id === 'stub') return stubCardSVG(values, opts)
+  if (id === 'shelter') return shelterCardSVG(values, opts)
   return digitalCardSVG(values, opts)
 }
 

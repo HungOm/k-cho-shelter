@@ -62,8 +62,12 @@ console.log('the standard layout draws the card the renderers already drew')
 {
   const golden = JSON.parse(readFileSync(new URL('./fixtures/cards.golden.json', import.meta.url), 'utf8'))
   const keys = Object.keys(golden)
-  /* A loop that finds nothing passes silently. Say how many there should be. */
-  eq(keys.length, 6, 'the fixture holds six renders')
+  /*
+   * A loop that finds nothing passes silently. Say how many there should be —
+   * two per treatment, the full card and the one with nothing optional on it.
+   * Eight since the Supporter card, which is the fourth treatment.
+   */
+  eq(keys.length, 8, 'the fixture holds eight renders')
   for (const id of CARD_TREATMENTS) {
     ok(golden[id] !== undefined, `the fixture has a ${id} render`)
     eq(cardSVG(id, V, {}), golden[id], `${id} is drawn exactly as it was`)

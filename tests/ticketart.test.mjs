@@ -29,6 +29,7 @@ import {
   stubCardSVG, CARD_STUB,
   certificateCardSVG, CARD_CERT,
   digitalCardSVG, cardSVG, CARD_DESIGNS,
+  shelterCardSVG, CARD_SHELTER,
 } from '../src/lib/ticketart.js'
 import { sheetHTML, pageFit, PAGE } from '../src/lib/ticketsheet.js'
 
@@ -883,7 +884,10 @@ const CARD_VALUES = {
 }
 const cardOpts = {}
 
-const treatments = { grand: digitalCardSVG, certificate: certificateCardSVG, stub: stubCardSVG }
+const treatments = {
+  grand: digitalCardSVG, certificate: certificateCardSVG, stub: stubCardSVG,
+  shelter: shelterCardSVG,
+}
 const exported = Object.keys(readFileSync(new URL('../src/lib/ticketart.js', import.meta.url).pathname, 'utf8')
   .split('\n')
   .filter((l) => /^export function \w*CardSVG\b/.test(l))

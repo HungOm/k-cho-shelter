@@ -138,6 +138,30 @@ export function configPayload(cfg: Record<string, string>) {
     cardDesign: cfg.CARD_DESIGN ?? '',
     motto: cfg.MOTTO ?? '',
     /*
+     * WHAT THE MONEY DOES, in the organiser's own words, on the Supporter
+     * card. Blank is a real answer and draws the ordinary thank-you.
+     */
+    impactLine: cfg.IMPACT_LINE ?? '',
+    /*
+     * THE HEADLINE PRIZE ON THE CARD, AND WHY IT IS NOT READ OFF `prizes`.
+     *
+     * Deriving it was the first instinct and it is wrong twice over. This
+     * function is SYNCHRONOUS and takes a config map — it has no database and
+     * no client — and it has eleven callers whose whole point, stated at the
+     * top of this file, is that they all answer with the same object built the
+     * same way. Making it async to fetch one string would touch every one of
+     * them, and six field-shape divergences in this repo started exactly
+     * there.
+     *
+     * And the two are not the same fact. `prizes` is the DRAW SCHEDULE — every
+     * prize, its quantity and its value, in rank order, for the night. This is
+     * one line of advertising on a card sent weeks earlier, and an organiser
+     * may reasonably write "A motorbike" where the schedule says "Honda Wave
+     * 110, RM 5,500". A card that recites a row of the schedule is a card that
+     * changes when somebody edits a value nobody meant to publish.
+     */
+    topPrize: cfg.TOP_PRIZE ?? '',
+    /*
      * WHERE THE PARTS OF THE DIGITAL CARD SIT, parsed here rather than on the
      * client, so a row that got corrupted is one blank card layout instead of
      * a JSON.parse throwing inside whichever screen happened to draw a ticket

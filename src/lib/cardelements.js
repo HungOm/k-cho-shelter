@@ -63,11 +63,21 @@
  * file that owns layouts owns it, and the drawing imports it. One direction.
  */
 export const CARD = { width: 1200, height: 760 }
+/*
+ * THE SUPPORTER CARD shares Grand's canvas deliberately. It is a different
+ * composition of the same object — a landscape ticket a buyer is sent — and
+ * giving it its own proportions would make the two impossible to compare in
+ * the studio's picker, which is the one screen where somebody chooses between
+ * them.
+ */
+export const CARD_SHELTER = { width: 1200, height: 760 }
 export const CARD_CERT = { width: 1200, height: 850 }
 export const CARD_STUB = { width: 1080, height: 1920 }
 
 /** The three treatments, by the id `state.cfg.cardDesign` holds. */
-export const CARD_SIZES = { grand: CARD, certificate: CARD_CERT, stub: CARD_STUB }
+export const CARD_SIZES = {
+  grand: CARD, certificate: CARD_CERT, stub: CARD_STUB, shelter: CARD_SHELTER,
+}
 
 /*
  * WHAT A PART CAN BE ASKED, and what it cannot.
@@ -150,6 +160,55 @@ const PARTS = {
       px: [64, 634, 760, 40], textual: true, family: 'number', italic: true },
     { id: 'footer', role: 'ink', name: 'Thanks & link', kind: 'type', what: 'the last two lines',
       px: [64, 672, 900, 74], textual: true },
+  ],
+  /*
+   * THE SUPPORTER CARD — the treatment a raffle sends when the ladder means
+   * something to it.
+   *
+   * WHAT IT HAS THAT THE OTHERS DO NOT, and why each earns its box:
+   *
+   *   `seal`   the rung's device — see cardbadges.js. A picture that grows
+   *            across the five rungs, carrying the POSITION and never the
+   *            name, because a name is 24 characters of free text in an
+   *            unmeasurable script and a ring is not.
+   *   `books`  which books the span came out of. A holding folds to
+   *            "#0021 – #0040", which is the number a buyer checks, but the
+   *            books behind it are what an organiser is asked about when
+   *            somebody rings up, and they fit on one quiet line.
+   *   `draw`   when it is drawn and what the top prize is, as a labelled
+   *            pair. The one thing a buyer wants that no previous card said.
+   *
+   * AND WHAT IT DOES DIFFERENTLY. The number is a SPAN, not a serial, so it
+   * sits under a caption that counts it — "YOUR 20 TICKET NUMBERS" — and the
+   * buyer's name takes the weight a serial has on Grand. That is the whole
+   * argument of this treatment: the card is about the person, and the numbers
+   * are what they are holding.
+   */
+  shelter: [
+    { id: 'background', name: 'Background', kind: 'paper', what: 'the card, its gold edge and its notches',
+      px: [0, 0, 1200, 760], locked: true },
+    { id: 'watermark', role: 'ink', name: 'Watermark', kind: 'design', what: 'the category\u2019s own device, behind everything',
+      px: [790, 330, 420, 430], opacity: 0.05 },
+    { id: 'masthead', role: 'ink', name: 'Logo mark', kind: 'image', what: 'who issued it, top left',
+      px: [64, 56, 640, 76], textual: true, weight: 'bold' },
+    { id: 'status', role: 'gold', name: 'Paid chip', kind: 'label', what: 'top right',
+      px: [968, 60, 168, 52] },
+    { id: 'seal', role: 'gold', name: 'Rung badge', kind: 'image', what: 'the device for the rung they are on',
+      px: [64, 188, 116, 116], square: true },
+    { id: 'buyer', role: 'ink', name: 'Buyer name', kind: 'name', what: 'the largest thing on this card',
+      px: [200, 186, 560, 124], textual: true, weight: 'bold' },
+    { id: 'number', role: 'gold', name: 'Ticket numbers', kind: 'ticket', what: 'the span they hold',
+      px: [64, 324, 760, 118], textual: true, family: 'number', weight: 'bold' },
+    { id: 'books', role: 'ink', name: 'Books behind it', kind: 'money', what: 'one quiet line under the span',
+      px: [64, 444, 760, 28], textual: true },
+    { id: 'draw', role: 'ink', name: 'Draw & prize', kind: 'money', what: 'a labelled pair, lower left',
+      px: [64, 486, 700, 74], textual: true },
+    { id: 'code', role: 'ink', name: 'Check code', kind: 'code', what: 'the QR a door scans',
+      px: [884, 188, 236, 236], square: true },
+    { id: 'motto', role: 'gold', name: 'Good luck', kind: 'type', what: 'below the tear line, right',
+      px: [700, 668, 436, 44], textual: true, family: 'number', italic: true, align: 'right' },
+    { id: 'footer', role: 'ink', name: 'Thanks & link', kind: 'type', what: 'the last two lines, left',
+      px: [64, 654, 620, 74], textual: true },
   ],
   certificate: [
     { id: 'background', name: 'Background', kind: 'paper', what: 'stock and the double rule',

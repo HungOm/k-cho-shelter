@@ -407,6 +407,44 @@ function cardValues(t) {
        falls back to the bottom rung — see ranks.js. */
     rankName: band?.name ?? '',
     rankCount: rankCount(band),
+    /*
+     * WHICH PICTURE THE SUPPORTER CARD DRAWS, AND IT IS NOT A SECOND CHOICE.
+     *
+     * The raffle already said what it is when it picked a rung preset — a
+     * shelter, a learning centre, a community centre, a fellowship. The card's
+     * device follows that rather than adding a control beside it, because two
+     * settings for one fact is two settings that can disagree, and the one
+     * that disagrees is whichever the organiser did not open. An unknown or
+     * empty preset falls back inside cardbadges.js rather than here.
+     */
+    category: String(c.supporterBands?.preset ?? ''),
+    /* The rung's POSITION, which is what the seal draws. `band.id` is a slot
+       id from ranks.ts — rung1..rung5 — and is the only stable thing about a
+       rung, the name being free text an organiser rewrites. */
+    rungSlot: band?.id ?? '',
+    /*
+     * THE REFERENCE IN WORDS, under the QR. The code is already carried for
+     * the QR itself; this is the same string set where somebody can read it
+     * back down a telephone, which is what happens when a camera will not
+     * focus in a hall. Blank on a ticket with no receipt minted, and the card
+     * draws nothing rather than "Ref".
+     */
+    ref: code || '',
+    /*
+     * WHAT THE MONEY DOES AND WHEN IT IS DRAWN — the two things a buyer asks
+     * that no card has answered. Both blank until an organiser fills them in,
+     * and both draw nothing when blank rather than a label over an empty
+     * space. `topPrize` is derived from the prize schedule by the server, so
+     * there is no second place to type a prize that is already recorded.
+     */
+    impact: String(c.impactLine ?? '').trim(),
+    prize: String(c.topPrize ?? '').trim(),
+    /*
+     * The last line, and the only one addressed to the person by name. First
+     * name only: "Good luck, Hung Om!" reads as a form letter, and the card
+     * has already said their full name once, larger, at the top.
+     */
+    goodLuck: goodLuckFor(t.buyer?.name ?? ''),
     brand,
     /* Computed, never configured — an organisation choosing a colour is not
      * choosing a contrast ratio. See brand.js. */
@@ -547,6 +585,30 @@ async function pictureOf(t, mime = 'image/jpeg') {
  */
 const THANKS_MY = 'ဝယ်ယူသူအားပေးမှုအတွက် ကျေးဇူးတင်ပါသည်။'
 const THANKS_EN = 'Thank you — this keeps the shelter open.'
+
+/*
+ * THE LAST LINE ON THE SUPPORTER CARD, and the only one that speaks to the
+ * person rather than about the ticket.
+ *
+ * FIRST NAME ONLY, and the split is the whole care in it. "Good luck, Hung
+ * Om!" reads as a mail merge; the card has already set their full name once,
+ * larger, at the top, so repeating it adds nothing and costs the warmth the
+ * line exists for.
+ *
+ * SPLIT ON WHITESPACE AND TAKE THE FIRST PART, which is right for the names
+ * this raffle actually holds and is NOT a claim about names in general. A
+ * Burmese name is frequently one word and comes back whole, which is the
+ * correct answer. Where it is wrong it is wrong in the safe direction — too
+ * much of somebody's name rather than a stranger's — and a name that is one
+ * long word is drawn as itself rather than cut at a guess.
+ *
+ * Blank in, blank out: no name recorded draws no line at all, rather than
+ * "Good luck, !" on the card a buyer keeps.
+ */
+function goodLuckFor(name) {
+  const first = String(name ?? '').trim().split(/\s+/)[0] || ''
+  return first ? `Good luck, ${first}!` : ''
+}
 
 function messageFor(t) {
   const code = codeFor(t)
