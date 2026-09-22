@@ -19,7 +19,7 @@
  * raffle. Contain rather than cover, because a logo cropped to fill a square
  * loses the part that was doing the identifying.
  */
-import { reject, rejectBytes, sniffType, bare, drawSquare, toPayload,
+import { reject, rejectBytes, sniffType, bare, drawSquare, alphaBounds, toPayload,
          ACCEPTED, SIZES, MAX_SOURCE } from '../src/lib/logofile.js'
 
 let pass = 0, fail = 0
@@ -115,6 +115,70 @@ console.log('contain, not cover — centred, square, both sizes')
   calls.length = 0
   drawSquare({ width: 50, height: 50 }, 192, doc)
   ok(calls[0][2] === 192, 'an image reporting only width/height still scales')
+}
+
+/*
+ * THE TRANSPARENT MARGIN COMES OFF, and what happens when it cannot be seen.
+ *
+ * A logo exported from a design tool carries the artboard's empty edge. Every
+ * layout downstream then treats that as part of the mark, so it lands inside
+ * its box at whatever fraction the exporter chose — reported as a logo that
+ * "becomes much smaller" once uploaded. Alpha only: a JPEG has no transparency
+ * and a white-background logo must come through untouched, because trimming
+ * what merely LOOKS like background is this code guessing at artwork.
+ *
+ * The second half is the half that matters. `alphaBounds` answers null for
+ * every way it cannot be sure, and the fake context below has no getImageData
+ * — which is also a real browser with a tainted canvas. Falling back to the
+ * whole picture is what this did before trimming existed.
+ */
+console.log('a logo is measured from its mark, not from its artboard')
+{
+  /* 40x40, with an opaque 10x10 block at (15,5). Everything else transparent. */
+  const W = 40; const H = 40
+  const px = new Uint8ClampedArray(W * H * 4)
+  for (let y = 5; y < 15; y += 1) {
+    for (let x = 15; x < 25; x += 1) px[(y * W + x) * 4 + 3] = 255
+  }
+  const calls = []
+  const seeing = { createElement: () => ({
+    width: 0, height: 0,
+    getContext: () => ({
+      drawImage: (...a) => calls.push(a.slice(1)),
+      getImageData: () => ({ data: px }),
+    }),
+    toDataURL: () => 'data:image/png;base64,ZZZ',
+  }) }
+  const img = { naturalWidth: W, naturalHeight: H }
+
+  const box = alphaBounds(img, seeing)
+  const got = box && `${box.sx},${box.sy},${box.sw},${box.sh}`
+  ok(got === '15,5,10,10', `the bounds are the opaque block and not the artboard (${got})`)
+
+  calls.length = 0
+  drawSquare(img, 192, seeing)
+  /* The LAST call is the real draw; the first is alphaBounds' own probe. */
+  const last = calls[calls.length - 1]
+  ok(last.length === 8, `it draws from a source rectangle rather than the whole file (${last.length} args)`)
+  ok(`${last[0]},${last[1]},${last[2]},${last[3]}` === '15,5,10,10',
+     `and that rectangle is the mark (${last.slice(0, 4).join(',')})`)
+  ok(`${last[6]},${last[7]}` === '192,192',
+     `which then fills the square instead of a quarter of it (${last[6]}x${last[7]})`)
+}
+
+console.log('and when the pixels cannot be read, nothing changes')
+{
+  /* No getImageData — an older browser, a tainted canvas, or this very stub. */
+  const calls = []
+  const blind = { createElement: () => ({
+    width: 0, height: 0,
+    getContext: () => ({ drawImage: (...a) => calls.push(a.slice(1)) }),
+    toDataURL: () => 'data:image/png;base64,ZZZ',
+  }) }
+  ok(alphaBounds({ naturalWidth: 40, naturalHeight: 40 }, blind) === null,
+     'it says it cannot tell rather than guessing')
+  drawSquare({ naturalWidth: 400, naturalHeight: 100 }, 192, blind)
+  ok(calls[0].length === 4, `and the draw is the whole picture, exactly as before (${calls[0].length} args)`)
 }
 
 console.log('the constants say what they are for')

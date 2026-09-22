@@ -15,6 +15,7 @@
  * state.cfg = res.config, with no second shape to diverge from.
  */
 import { ApiError, type AppUser } from './gate.ts'
+import { CARD_TREATMENT_IDS, isCardTreatment } from '../_shared/cardtreatments.js'
 import { configPayload } from './config.ts'
 import { PRESETS, SLOTS } from '../_shared/ranks.ts'
 
@@ -138,11 +139,18 @@ function checkImage(b64: unknown, declared: string, which: string): Uint8Array {
  * so while somebody can still edit it; shrinking hides it until it prints.
  */
 export async function setCardDesign(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
-  const ALLOWED = ['grand', 'certificate', 'stub']
+  /*
+   * THE LIST IS IMPORTED AND NEVER WRITTEN HERE. It was a hand-typed
+   * `['grand', 'certificate', 'stub']`, a fourth treatment was added on the
+   * client, and this copy did not learn about it — so the Supporter card could
+   * be chosen in the studio, previewed, and refused on save. See
+   * _shared/cardtreatments.js; there is a guard in tests/cardlayout that fails
+   * if an array like that is ever written in this file again.
+   */
   const design = String(p.cardDesign ?? '').trim().toLowerCase()
-  if (design && !ALLOWED.includes(design)) {
+  if (!isCardTreatment(design)) {
     throw new ApiError('BAD_DESIGN',
-      `${design} is not one of the ticket treatments (${ALLOWED.join(', ')}).`)
+      `${design} is not one of the ticket treatments (${CARD_TREATMENT_IDS.join(', ')}).`)
   }
 
   const motto = String(p.motto ?? '').replace(/\s+/g, ' ').trim()
@@ -208,7 +216,41 @@ export async function setCardDesign(p: Record<string, unknown>, user: AppUser, c
     }
   }
 
-  const rows: Record<string, string> = { CARD_DESIGN: design, MOTTO: motto }
+  /*
+   * THE OTHER TWO SENTENCES THE CARD SAYS, and they arrive here rather than in
+   * an action of their own because this IS the card's words: the motto has
+   * always been set on this call, and a second endpoint writing a third
+   * sentence onto the same object is a second place for a screen to disagree
+   * about what a card holds.
+   *
+   * ABSENT MEANS "DO NOT TOUCH", the same rule the layout above follows and
+   * for the same reason: an older bundle posts neither, and a missing key that
+   * cleared the value would empty an organiser's words the next time somebody
+   * saved a treatment from a screen that has never heard of them. Only an
+   * explicit empty string clears one.
+   */
+  const words: Record<string, string> = {}
+  for (const [key, field, limit] of [
+    ['TOP_PRIZE', 'topPrize', 48],
+    ['IMPACT_LINE', 'impactLine', 96],
+  ] as const) {
+    if (p[field] === undefined) continue
+    const text = String(p[field] ?? '').replace(/\s+/g, ' ').trim()
+    if (text.length > limit) {
+      throw new ApiError('CARD_WORDS_TOO_LONG',
+        `That line is ${text.length} characters and the card holds ${limit}. ` +
+        'A longer one is refused rather than shrunk, because shrinking changes ' +
+        'the card where nobody is looking.',
+        { field, length: text.length, max: limit })
+    }
+    /* Same reason as the motto: this ends up inside an SVG. */
+    if (/[<>]/.test(text)) {
+      throw new ApiError('BAD_CARD_WORDS', 'That line cannot contain < or >.')
+    }
+    words[key] = text
+  }
+
+  const rows: Record<string, string> = { CARD_DESIGN: design, MOTTO: motto, ...words }
   if (layout !== undefined) {
     /* An empty overlay is stored as the empty string rather than as "{}", so
        "has this raffle designed its card" is the same question as "is this
@@ -220,7 +262,10 @@ export async function setCardDesign(p: Record<string, unknown>, user: AppUser, c
   await writeConfig(ctx, rows)
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'SET_CARD_DESIGN',
-    details: { design, motto, layout: layout === undefined ? 'unchanged' : Object.keys(layout as object) },
+    details: {
+      design, motto, ...words,
+      layout: layout === undefined ? 'unchanged' : Object.keys(layout as object),
+    },
     email: user.email,
   })
   return { config: configPayload(await currentConfig(ctx)) }

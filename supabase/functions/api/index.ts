@@ -883,6 +883,34 @@ async function readVersion(_p: Record<string, unknown>, user: AppUser, ctx: Ctx)
     dueSoonBy: soon,
     scope: mine ? 'mine' : 'all',
     serverTime: new Date().toISOString(),
+    /*
+     * WHAT THIS DEPLOY CAN DO, so a browser can tell it is newer than its
+     * server.
+     *
+     * THE FAILURE THIS ENDS. The app is deployed by a push and the functions
+     * are deployed by hand, so the two are routinely apart. When the browser
+     * calls something this build has never heard of, the reply is
+     * `Unknown action: set_supporter_bands` — which names a symptom and hides
+     * the cause. An organiser pressing Save and reading that has no way to
+     * learn the answer is "somebody needs to deploy the functions"; it
+     * happened on 2026-09-22 and cost the afternoon.
+     *
+     * A LIST AND NOT A VERSION NUMBER, deliberately. A build stamp says the
+     * two differ; this says WHICH capability is missing, which is the sentence
+     * somebody can act on. It also cannot go stale: it is the registry itself,
+     * so an action added without redeploying is absent here by construction
+     * rather than by somebody remembering to bump something. REGISTRY and not
+     * ACTION_META: the first is what the dispatcher actually looks an action up
+     * in, the second is labels for the permissions screen, and reporting the
+     * labels would answer a question nobody asked.
+     *
+     * NO NEW DISCLOSURE. These names already ship inside every browser bundle
+     * — src/lib/supabaseApi.js carries the client's own allowlist of them — and
+     * knowing an action's NAME grants nothing: every one of them is behind the
+     * same role check it was before. `read_version` is role-free because the
+     * poll it rides on is.
+     */
+    actions: Object.keys(REGISTRY).sort(),
   }
 }
 

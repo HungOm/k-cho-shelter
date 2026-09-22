@@ -22,7 +22,14 @@ export { ApiError }
 const READ_TIMEOUT_MS = 20_000
 const WRITE_TIMEOUT_MS = 45_000
 
-const WRITES = new Set([
+/*
+ * EXPORTED, so the store can compare it against what the deployed function says
+ * it can dispatch — see takeSkew. Writes only, and that limitation is the right
+ * one rather than a shortcut: a read the server cannot dispatch shows an empty
+ * screen, which is visible; a WRITE it cannot dispatch loses work somebody just
+ * did and reports it as "Unknown action", which is not.
+ */
+export const WRITES = new Set([
   'sell_ticket', 'reserve_ticket', 'release_ticket', 'correct_ticket', 'void_ticket',
   'bulk_record_sales', 'sell_book', 'issue_books', 'transfer_books', 'return_books',
   'move_tickets',

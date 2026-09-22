@@ -98,19 +98,91 @@ export function rejectBytes(declared, bytes) {
   return null
 }
 
+/**
+ * THE PART OF THE PICTURE THAT IS ACTUALLY THE PICTURE, or null.
+ *
+ * WHY THIS EXISTS. A logo exported from a design tool nearly always carries
+ * transparent margin — the artboard was bigger than the mark. Every layout
+ * downstream then treats that margin as part of the logo, so the mark lands
+ * inside its box at whatever fraction the exporter chose, and no amount of
+ * fitting can recover it: the card cannot tell empty pixels from quiet ones.
+ * Reported as "when logo is uploaded it doesn't fit well … becomes much
+ * smaller", and the card's own inset and plinth were only two thirds of it.
+ *
+ * ALPHA ONLY, NEVER COLOUR. Fully transparent pixels are padding by
+ * definition. White ones are not: plenty of marks are white, the card is dark,
+ * and a JPEG has no alpha at all so a white-background logo is left exactly as
+ * it is. Trimming what merely LOOKS like background would be this code
+ * guessing at somebody's artwork.
+ *
+ * NULL WHENEVER IT CANNOT BE SURE, which is most of the ways this can go
+ * wrong: a context that cannot give pixels, a canvas tainted by a
+ * cross-origin source, an image that is transparent everywhere. The caller
+ * falls back to the whole picture, which is what it did before this existed.
+ */
+export function alphaBounds(img, doc = document) {
+  const w = img.naturalWidth || img.width
+  const h = img.naturalHeight || img.height
+  if (!w || !h) return null
+  let data
+  try {
+    const probe = doc.createElement('canvas')
+    probe.width = w
+    probe.height = h
+    const pctx = probe.getContext('2d')
+    if (!pctx || typeof pctx.getImageData !== 'function') return null
+    pctx.drawImage(img, 0, 0, w, h)
+    data = pctx.getImageData(0, 0, w, h).data
+  } catch {
+    /* Tainted canvas, or a stub with no pixels. Not knowing is a real answer. */
+    return null
+  }
+  if (!data || data.length < w * h * 4) return null
+
+  /* 8 of 255, not 0. A one-per-cent ghost at the edge of an export is the
+     antialiased tail of nothing, and treating it as content gives back the
+     margin this is here to remove. */
+  const FLOOR = 8
+  let top = -1; let left = w; let right = -1; let bottom = -1
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (data[(y * w + x) * 4 + 3] <= FLOOR) continue
+      if (top < 0) top = y
+      bottom = y
+      if (x < left) left = x
+      if (x > right) right = x
+    }
+  }
+  if (top < 0 || right < left) return null
+  const box = { sx: left, sy: top, sw: right - left + 1, sh: bottom - top + 1 }
+  /* Nothing worth doing under a couple of per cent — redrawing for three
+     pixels costs a re-encode and changes the file for no visible gain. */
+  return (box.sw >= w * 0.98 && box.sh >= h * 0.98) ? null : box
+}
+
 /** Square, centred, transparent where the picture does not reach. */
 export function drawSquare(img, side, doc = document) {
   const canvas = doc.createElement('canvas')
   canvas.width = canvas.height = side
   const ctx = canvas.getContext('2d')
-  const w = img.naturalWidth || img.width
-  const h = img.naturalHeight || img.height
+  /*
+   * MEASURED FROM THE MARK AND NOT FROM THE FILE. `alphaBounds` answers with
+   * the part of the image that has anything in it; without it — an older
+   * browser, a tainted canvas, a JPEG — this is the whole picture and the
+   * behaviour is what it always was.
+   */
+  const box = alphaBounds(img, doc)
+  const w = box ? box.sw : (img.naturalWidth || img.width)
+  const h = box ? box.sh : (img.naturalHeight || img.height)
   // Contain rather than cover: a logo cropped to fill a square loses the part
   // of itself that was doing the identifying.
   const scale = Math.min(side / w, side / h)
   const dw = Math.round(w * scale)
   const dh = Math.round(h * scale)
-  ctx.drawImage(img, Math.round((side - dw) / 2), Math.round((side - dh) / 2), dw, dh)
+  const dx = Math.round((side - dw) / 2)
+  const dy = Math.round((side - dh) / 2)
+  if (box) ctx.drawImage(img, box.sx, box.sy, box.sw, box.sh, dx, dy, dw, dh)
+  else ctx.drawImage(img, dx, dy, dw, dh)
   return canvas
 }
 

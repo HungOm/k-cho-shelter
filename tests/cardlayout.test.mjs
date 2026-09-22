@@ -346,5 +346,62 @@ console.log('every part is named, unique, and drawn with an icon the set has')
   }
 }
 
+/*
+ * ONE LIST OF TREATMENTS, AND NOWHERE TO WRITE A SECOND.
+ *
+ * branding.ts validated a saved card design against a hand-typed
+ * `['grand', 'certificate', 'stub']`. A fourth treatment was added to the
+ * client on 2026-09-22 and that copy did not learn about it, so the Supporter
+ * card could be chosen in the studio, previewed, and then refused on save with
+ * BAD_DESIGN — a control that worked right up to the moment it mattered.
+ * Nothing failed: both files were internally correct and both suites green.
+ * Only the PAIR was wrong, and no test looked at the pair.
+ *
+ * THE IMPORT FIXES THE COPY THAT EXISTED; THIS FIXES THE NEXT ONE. Both halves
+ * are asserted, and they fail for different reasons: the first if the shared
+ * module stops being imported, the second if somebody writes the array out
+ * again. An absence check alone could pass on a file that had stopped
+ * importing anything at all.
+ */
+console.log('the treatments are named in one place and the server reads it')
+{
+  const branding = readFileSync(new URL('../supabase/functions/api/branding.ts', import.meta.url), 'utf8')
+
+  ok(/_shared\/cardtreatments\.js'/.test(branding),
+     'branding.ts takes the treatments from the shared module')
+  ok(/isCardTreatment\(/.test(branding),
+     'and validates through it rather than through a list of its own')
+
+  /*
+   * The literal shape of the defect: any array of quoted treatment ids written
+   * in that file. Matched on `grand` because it is the id that must appear in
+   * any such list — a copy that omitted it would not be a copy of this list.
+   *
+   * COMMENTS ARE STRIPPED FIRST, and the first version of this guard did not
+   * do that and failed on the CORRECT file: branding.ts's own comment quotes
+   * `['grand', 'certificate', 'stub']` to explain what was removed. A rule
+   * about code that matches the sentence describing the code punishes writing
+   * the explanation down, which is the opposite of what this repository wants.
+   * Same trap as a deploy probe that greps for a string the comment about its
+   * deletion still carries.
+   */
+  const code = branding
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/^\s*\/\/.*$/gm, ' ')
+  ok(code.length > 1000, `branding.ts still has code after its comments come off (${code.length})`)
+  ok(!/\[\s*'grand'/.test(code),
+     'and no second list of treatments is written out in it')
+
+  /* The shared module is the one place, and it holds every treatment the
+     client can draw — the direction that would otherwise let a treatment exist
+     on one side only. */
+  const shared = readFileSync(new URL('../supabase/functions/_shared/cardtreatments.js', import.meta.url), 'utf8')
+  const listed = [...shared.matchAll(/'([a-z]+)'/g)].map((m) => m[1])
+  ok(listed.length >= 4, `the shared module names the treatments (${listed.join(', ')})`)
+  for (const id of CARD_TREATMENTS) {
+    ok(listed.includes(id), `${id} is in the shared list the server validates against`)
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

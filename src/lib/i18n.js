@@ -370,6 +370,11 @@ export const MY_ERRORS = {
      "This motto cannot be used." */
   MOTTO_TOO_LONG: 'ဆောင်ပုဒ် ရှည်လွန်းပါသည်',
   BAD_MOTTO: 'ဤဆောင်ပုဒ်ကို မသုံးနိုင်ပါ',
+  /* The prize line and the impact line on the Supporter card. Composed the
+     same way as their neighbours and with the same amount of native review,
+     which is none — the English in branding.ts is the sentence that was meant. */
+  CARD_WORDS_TOO_LONG: 'ဤစာကြောင်း ရှည်လွန်းပါသည်',
+  BAD_CARD_WORDS: 'ဤစာကြောင်းကို မသုံးနိုင်ပါ',
   /* Composed, like the rest of this file. "The digital ticket's arrangement
      could not be read." The English under it says which part and why. */
   BAD_CARD_LAYOUT: 'ဒစ်ဂျစ်တယ်လက်မှတ် အစီအစဉ်ကို ဖတ်၍ မရပါ',

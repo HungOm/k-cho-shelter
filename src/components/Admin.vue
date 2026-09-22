@@ -406,6 +406,59 @@ async function saveBands() {
   } finally { bandsSaving.value = false }
 }
 
+/*
+ * THE TWO SENTENCES THE SUPPORTER CARD SAYS, and the reason they are HERE
+ * rather than in Ticket Studio.
+ *
+ * The studio is where a card is DRAWN — artwork, boxes, which treatment. These
+ * are what the raffle claims: what somebody could win, and what their money
+ * does. An organiser writes those once for the whole raffle and never touches
+ * them again, which is Setup's job; putting them in the studio would file a
+ * fundraising decision under a design tool.
+ *
+ * They ride on set_card_design because that call is already the card's WORDS —
+ * the motto has always been set there — and a second endpoint writing a third
+ * sentence onto the same object is a second place for two screens to disagree
+ * about what a card holds.
+ */
+const cardWords = ref({ topPrize: '', impactLine: '' })
+const wordsSaving = ref(false)
+const wordsDirty = computed(() =>
+  cardWords.value.topPrize !== String(c.value?.topPrize ?? '')
+  || cardWords.value.impactLine !== String(c.value?.impactLine ?? ''))
+
+function loadCardWords() {
+  cardWords.value = {
+    topPrize: String(c.value?.topPrize ?? ''),
+    impactLine: String(c.value?.impactLine ?? ''),
+  }
+}
+watch(c, loadCardWords, { immediate: true })
+
+async function saveCardWords() {
+  wordsSaving.value = true
+  try {
+    /*
+     * The treatment and the motto go back UNCHANGED rather than being left
+     * out. setCardDesign writes CARD_DESIGN and MOTTO on every call — omitting
+     * them would blank the raffle's motto every time somebody saved a prize.
+     * The two new lines are the ones that may be absent, and absent means
+     * "do not touch" on that side.
+     */
+    const r = await api('set_card_design', {
+      cardDesign: String(c.value?.cardDesign ?? ''),
+      motto: String(c.value?.motto ?? ''),
+      topPrize: cardWords.value.topPrize.trim(),
+      impactLine: cardWords.value.impactLine.trim(),
+    })
+    if (r?.config) setConfig(r.config)
+    toast('Saved', 'ok')
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+    loadCardWords()
+  } finally { wordsSaving.value = false }
+}
+
 async function saveBrand() {
   brandSaving.value = true
   try {
@@ -1332,6 +1385,44 @@ function details(d) {
           <template v-if="!c?.ticketArtwork"><b>No artwork uploaded yet</b>, so tickets cannot be printed.</template>
         </span>
         <button class="btn sm" @click="go('ticketdesign')">Ticket Studio &rarr;</button>
+      </div>
+
+      <!--
+        WHAT THE CARD CLAIMS, as opposed to what it looks like.
+
+        Two lines on the card a buyer keeps: what they could win, and what
+        their money does. Both blank by default and both draw NOTHING when
+        blank rather than a label over an empty space — a raffle that has not
+        decided what to claim should not claim anything, and that is a real
+        answer rather than an unfinished one.
+
+        Under the Ticket Studio row because they are about the same object and
+        an organiser thinking about the card is already looking here. Not IN
+        the studio, because these are a fundraising decision and the studio is
+        a drawing tool.
+      -->
+      <hr class="hr">
+      <div class="field">
+        <label for="topprize">Headline prize <span class="opt">&mdash; on the card</span></label>
+        <input id="topprize" v-model="cardWords.topPrize" maxlength="48"
+               placeholder="A motorbike" autocomplete="off">
+        <p class="hint">
+          How the card advertises the prize. Not taken from the draw schedule:
+          that list carries values, and a card sent weeks early should not
+          quote a figure you did not mean to publish.
+        </p>
+      </div>
+      <div class="field">
+        <label for="impact">What the money does <span class="opt">&mdash; on the card</span></label>
+        <input id="impact" v-model="cardWords.impactLine" maxlength="96"
+               placeholder="Your RM 200 helps a family through a month." autocomplete="off">
+        <p class="hint">One sentence, under the tear line. Blank prints the ordinary thank-you.</p>
+      </div>
+      <div class="spread">
+        <span class="tiny muted">Both are blank until you write them, and print nothing when blank.</span>
+        <button class="btn sm primary" :disabled="wordsSaving || !wordsDirty"
+                :title="wordsDirty ? undefined : 'Nothing changed'"
+                @click="saveCardWords">{{ wordsSaving ? 'Saving\u2026' : 'Save' }}</button>
       </div>
     </div>
 

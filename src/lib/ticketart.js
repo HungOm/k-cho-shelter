@@ -1412,7 +1412,10 @@ export function certificateCardSVG(values = {}, opts = {}) {
     `<circle cx="${round(SE.x + 76 * SE.k)}" cy="${round(SE.y + 76 * SE.k)}" r="${round(76 * SE.k)}" fill="none" stroke="${rule}" stroke-width="2"/>`
     + `<circle cx="${round(SE.x + 76 * SE.k)}" cy="${round(SE.y + 76 * SE.k)}" r="${round(64 * SE.k)}" fill="none" stroke="${rule}" stroke-width="1"/>`
     + (logo
-      ? `<image href="${esc(logo)}" x="${round(SE.x + 32 * SE.k)}" y="${round(SE.y + 32 * SE.k)}" width="${round(88 * SE.k)}" height="${round(88 * SE.k)}" preserveAspectRatio="xMidYMid meet"/>`
+      /* The two rings ARE this treatment's mark and stay; only the logo's own
+         inset shrinks, from 88 inside a 128 seal to 108 — still clear of the
+         inner ring at r=64, which is what the rings are for. */
+      ? `<image href="${esc(logo)}" x="${round(SE.x + 22 * SE.k)}" y="${round(SE.y + 22 * SE.k)}" width="${round(108 * SE.k)}" height="${round(108 * SE.k)}" preserveAspectRatio="xMidYMid meet"/>`
       : t(initial, SE.x + 76 * SE.k, SE.y + 98 * SE.k, 52 * SE.k, ink, TEXT_FAMILY, 'text-anchor="middle" font-weight="700"')))
 
   const C = P.code
@@ -1493,10 +1496,11 @@ export function stubCardSVG(values = {}, opts = {}) {
 
   const tile = `<rect x="${round(M.x)}" y="${round(M.y)}" width="${round(84 * M.k)}" `
     + `height="${round(84 * M.k)}" rx="${round(22 * M.k)}" fill="rgba(255,255,255,.10)"/>`
+  /* The plinth is the initial's, not the logo's — see the note in
+     digitalCardSVG. Same change, this treatment's measurements. */
   const mark = !M.on ? '' : (logo
-    ? tile
-      + `<image href="${esc(logo)}" x="${round(M.x + 9 * M.k)}" y="${round(M.y + 9 * M.k)}" `
-      + `width="${round(66 * M.k)}" height="${round(66 * M.k)}" preserveAspectRatio="xMidYMid meet"/>`
+    ? `<image href="${esc(logo)}" x="${round(M.x)}" y="${round(M.y)}" `
+      + `width="${round(84 * M.k)}" height="${round(84 * M.k)}" preserveAspectRatio="xMidYMid meet"/>`
     : tile
       + t(initial, M.x + 42 * M.k, M.y + 56 * M.k, 44 * M.k, paint(M, ink), TEXT_FAMILY,
         'text-anchor="middle" font-weight="700"'))
@@ -1695,12 +1699,30 @@ export function shelterCardSVG(values = {}, opts = {}) {
   /* ---- the mark, the organisation and the event ---- */
   const initial = (org || event || '?').trim().charAt(0).toUpperCase()
   const m = P.masthead
+  /*
+   * AN UPLOADED LOGO FILLS THE MARK; THE PLINTH IS THE FALLBACK'S.
+   *
+   * The translucent rounded square exists so a single INITIAL has something to
+   * sit on — a letter alone on a dark card reads as a typo. A real logo needs
+   * no plinth, and it was getting one anyway plus an 8px inset, so the mark
+   * came out at 79% of its box inside a grey square that made the remaining
+   * gap look deliberate. Reported as "when logo is uploaded it doesn't fit
+   * well … becomes much smaller", which is exactly what it was.
+   *
+   * Three things were shrinking it and only two are ours: the inset, the
+   * plinth, and the PNG's own transparent margin, which no layout can undo —
+   * a logo exported with 20% padding arrives 20% smaller than the box and
+   * this code cannot know the difference between that and the picture.
+   * Removing our two is what gives it back the room we were taking.
+   *
+   * `meet` stays. It is the reason a wide wordmark is not stretched into a
+   * square, and a mark that fits badly is better than a mark that is wrong.
+   */
   const tile = `<rect x="${round(m.x)}" y="${round(m.y)}" width="${round(76 * m.k)}" `
     + `height="${round(76 * m.k)}" rx="${round(20 * m.k)}" fill="rgba(255,255,255,.10)"/>`
   const mark = !m.on ? '' : (logo
-    ? tile
-      + `<image href="${esc(logo)}" x="${round(m.x + 8 * m.k)}" y="${round(m.y + 8 * m.k)}" `
-      + `width="${round(60 * m.k)}" height="${round(60 * m.k)}" preserveAspectRatio="xMidYMid meet"/>`
+    ? `<image href="${esc(logo)}" x="${round(m.x)}" y="${round(m.y)}" `
+      + `width="${round(76 * m.k)}" height="${round(76 * m.k)}" preserveAspectRatio="xMidYMid meet"/>`
     : tile
       + t(initial, m.x + 38 * m.k, m.y + 52 * m.k, 36 * m.k, paint(m, ink), TEXT_FAMILY,
         'text-anchor="middle" font-weight="700"'))
@@ -2065,12 +2087,30 @@ export function digitalCardSVG(values = {}, opts = {}) {
   const m = P.masthead
   /* A rounded tile rather than a hairline circle: 8a draws the mark as a solid
    * object, which reads as an emblem where an outline reads as a placeholder. */
+  /*
+   * AN UPLOADED LOGO FILLS THE MARK; THE PLINTH IS THE FALLBACK'S.
+   *
+   * The translucent rounded square exists so a single INITIAL has something to
+   * sit on — a letter alone on a dark card reads as a typo. A real logo needs
+   * no plinth, and it was getting one anyway plus an 8px inset, so the mark
+   * came out at 79% of its box inside a grey square that made the remaining
+   * gap look deliberate. Reported as "when logo is uploaded it doesn't fit
+   * well … becomes much smaller", which is exactly what it was.
+   *
+   * Three things were shrinking it and only two are ours: the inset, the
+   * plinth, and the PNG's own transparent margin, which no layout can undo —
+   * a logo exported with 20% padding arrives 20% smaller than the box and
+   * this code cannot know the difference between that and the picture.
+   * Removing our two is what gives it back the room we were taking.
+   *
+   * `meet` stays. It is the reason a wide wordmark is not stretched into a
+   * square, and a mark that fits badly is better than a mark that is wrong.
+   */
   const tile = `<rect x="${round(m.x)}" y="${round(m.y)}" width="${round(76 * m.k)}" `
     + `height="${round(76 * m.k)}" rx="${round(20 * m.k)}" fill="rgba(255,255,255,.10)"/>`
   const mark = !m.on ? '' : (logo
-    ? tile
-      + `<image href="${esc(logo)}" x="${round(m.x + 8 * m.k)}" y="${round(m.y + 8 * m.k)}" `
-      + `width="${round(60 * m.k)}" height="${round(60 * m.k)}" preserveAspectRatio="xMidYMid meet"/>`
+    ? `<image href="${esc(logo)}" x="${round(m.x)}" y="${round(m.y)}" `
+      + `width="${round(76 * m.k)}" height="${round(76 * m.k)}" preserveAspectRatio="xMidYMid meet"/>`
     : tile
       + t(initial, m.x + 38 * m.k, m.y + 52 * m.k, 40 * m.k, paint(m, ink), TEXT_FAMILY,
         'text-anchor="middle" font-weight="700"'))

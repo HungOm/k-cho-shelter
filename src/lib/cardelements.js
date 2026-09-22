@@ -46,6 +46,7 @@
  * what gets stored, because a treatment that is ever redrawn at another size
  * must not take every saved layout with it. `boxOf` is the one conversion.
  */
+import { CARD_TREATMENT_IDS } from '../../supabase/functions/_shared/cardtreatments.js'
 
 /*
  * THE THREE SHAPES LIVE HERE AND NOT IN `ticketart.js`, which is where they
@@ -251,7 +252,21 @@ const PARTS = {
 }
 
 /** The treatments this file knows how to lay out, in the order the rail shows. */
-export const CARD_TREATMENTS = Object.keys(PARTS)
+/*
+ * THE IDS COME FROM _shared, NOT FROM Object.keys(PARTS).
+ *
+ * They were this file's own until 2026-09-22, when a fourth treatment was added
+ * here and the server's hand-written copy in branding.ts was not — so the
+ * Supporter card could be chosen, previewed, and then refused on save. Both
+ * files were correct; only the pair was wrong. See _shared/cardtreatments.ts
+ * for the whole of that reasoning, and ranks.ts for the precedent.
+ *
+ * PARTS still decides what a treatment is MADE of; this decides which ones
+ * exist. A treatment in the shared list with no PARTS entry gives
+ * `standardParts` nothing to return, which cardlayout's loop over
+ * CARD_TREATMENTS fails on loudly — so the two cannot quietly disagree either.
+ */
+export const CARD_TREATMENTS = [...CARD_TREATMENT_IDS]
 
 /*
  * WHAT AN UNEDITED PART IS. Every field is present and named, so nothing in

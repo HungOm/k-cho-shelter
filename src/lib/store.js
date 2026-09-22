@@ -11,6 +11,8 @@ import { ApiError, LS } from './errors.js'
 // writes are these calls, so this one import is what actually moves the app
 // from one backend to the other.
 import { api as rawApi } from './backend.js'
+/* The actions this bundle can WRITE with, for the deploy-skew check below. */
+import { WRITES } from './supabaseApi.js'
 import { buildIndex, runSearch } from './search.js'
 import { saveTickets, loadTickets, clearCache } from './cache.js'
 import { my, myError } from './i18n.js'
@@ -119,6 +121,13 @@ export const state = reactive({
   // said — so refresh() can tell "nobody is waiting" from "nothing has told me
   // yet", and only pay for the extra call in the second case.
   pendingApprovals: null,
+
+  /*
+   * Actions this app can call that the deployed function cannot dispatch, or
+   * [] when the two agree — see takeSkew. Empty until something has said,
+   * which is also what a server too old to answer leaves it as.
+   */
+  serverBehind: [],
 
   // true while showing the local copy, before the full table has arrived
   fromCache: false,
@@ -748,11 +757,42 @@ function takeReturns(v) {
   }
 }
 
+/**
+ * WHETHER THE SERVER IS OLDER THAN THIS APP.
+ *
+ * The client is deployed by a push and the Edge Functions are deployed by hand,
+ * so the two are routinely apart. When this browser calls something the running
+ * function has never heard of, the reply is `Unknown action: set_supporter_bands`
+ * — which names a symptom and hides the cause, and an organiser reading it has
+ * no way to reach "somebody needs to deploy the functions". That happened on
+ * 2026-09-22 and cost an afternoon.
+ *
+ * COMPARED AS CAPABILITIES, NOT AS VERSIONS. read_version reports the action
+ * names its deploy can dispatch; WRITES is the list this bundle can write with.
+ * What matters is the set difference in ONE direction: actions we know and the
+ * server does not. Writes only, deliberately — a read the server cannot
+ * dispatch shows an empty screen, which somebody sees; a write it cannot
+ * dispatch loses work that was just done. The other direction — a server newer than the app — is
+ * normal and harmless, because the app simply never calls them.
+ *
+ * SILENT WHEN IT CANNOT TELL. A server too old to report `actions` at all sends
+ * nothing, and nothing is exactly what this must do with that: the check itself
+ * is newer than some deploys, and a warning that fires because the warning is
+ * new would be the first thing anybody learned to ignore.
+ */
+function takeSkew(v) {
+  if (!Array.isArray(v.actions) || !v.actions.length) return
+  const server = new Set(v.actions)
+  const missing = [...WRITES].filter((a) => !server.has(a)).sort()
+  state.serverBehind = missing
+}
+
 export async function poll() {
   try {
     const v = await api('read_version', {})
     if (v.approvalsWaiting !== undefined) state.pendingApprovals = v.approvalsWaiting
     takeReturns(v)
+    takeSkew(v)
     if (v.tickets !== undefined && v.tickets !== state.ticketVersion) await loadDelta()
     else if (v.serverTime) state.lastSync = v.serverTime
   } catch { /* not news */ }

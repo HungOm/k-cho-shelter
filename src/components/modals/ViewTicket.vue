@@ -434,8 +434,14 @@ function cardValues(t) {
      * WHAT THE MONEY DOES AND WHEN IT IS DRAWN — the two things a buyer asks
      * that no card has answered. Both blank until an organiser fills them in,
      * and both draw nothing when blank rather than a label over an empty
-     * space. `topPrize` is derived from the prize schedule by the server, so
-     * there is no second place to type a prize that is already recorded.
+     * space.
+     *
+     * `topPrize` is CONFIG and not a row of the prize schedule, and the comment
+     * here said the opposite for several hours after the decision changed — the
+     * two are not the same fact. `prizes` is the draw-night list with values on
+     * it; this is one line of advertising sent weeks earlier, and a card should
+     * not recite a figure nobody meant to publish. Both are set in Setup, under
+     * the Ticket Studio row.
      */
     impact: String(c.impactLine ?? '').trim(),
     prize: String(c.topPrize ?? '').trim(),
