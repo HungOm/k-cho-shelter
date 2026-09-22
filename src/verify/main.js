@@ -599,19 +599,31 @@ async function run() {
      * string called `rankSomething` and rendering the key.
      */
     const BAND = {
-      faithful: 'rankFaithful', silver: 'rankSilver',
+      bronze: 'rankBronze', silver: 'rankSilver',
       gold: 'rankGold', diamond: 'rankDiamond',
     }
+    /*
+     * A COUNTED LINE, WHICH MEANS TWO ENGLISH SENTENCES AND ONE BURMESE ONE.
+     * `{n}` was substituted into a single plural string, so a buyer holding
+     * one ticket was told "1 tickets in this raffle — thank you." That reader
+     * is exactly who the bottom band is for, so the ungrammatical form was the
+     * one shown most often, in the one place on this page whose whole job is
+     * to sound like a person rather than a machine. Burmese marks no plural
+     * on the classifier, so both entries carry the same `my` half.
+     */
+    const counted = (key, n) =>
+      say(Number(n) === 1 ? `${key}1` : key).replace(/\{n\}/g, String(n))
+
     const bandKey = BAND[String(body.rank || '')]
     const band = bandKey
       ? `<p class="rank rank-${escapeHtml(String(body.rank))}">
            <b>${say(bandKey)}</b>
-           <span>${say('rankThanks').replace(/\{n\}/g, String(body.rankTickets ?? 0))}</span>
+           <span>${counted('rankThanks', body.rankTickets ?? 0)}</span>
          </p>`
       : ''
     const details = `
       ${band}
-      <p class="state">${say('receiptCount').replace(/\{n\}/g, String(body.count ?? 0))}</p>
+      <p class="state">${counted('receiptCount', body.count ?? 0)}</p>
       ${spanLine}
       <ul class="tickets">${list}</ul>`
     render(panel(anyVoid ? 'warn' : 'good', 'receiptGenuine',

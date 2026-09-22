@@ -21,7 +21,31 @@
  * overlap and ranges that leave a hole are the same defect — a value with no
  * single answer — and the only way to be sure they are gone is to name the
  * bands as thresholds rather than as spans, so every count above zero falls in
- * exactly one. tests/ranks walks every boundary, including four books.
+ * exactly one. tests/ranks walks every boundary.
+ */
+
+/*
+ * THE THRESHOLDS ARE SET TO BE REACHED, which is a change made on 2026-09-22
+ * and the reason the numbers here are not the ones this file was born with.
+ *
+ * They were Silver 1, Gold 4, Diamond 10. At the raffle's own defaults — ten
+ * tickets to a book, RM 10 a ticket — Diamond meant a hundred tickets and
+ * RM 1,000 from one buyer, and Gold meant RM 400. A ladder whose upper rungs
+ * nobody stands on is not a ladder; it is a decoration with three-quarters of
+ * itself hidden, and every buyer it thanks is thanked at the bottom.
+ *
+ * Silver 1, Gold 3, Diamond 6 keeps the same shape and brings the top within
+ * reach: RM 100, RM 300 and RM 600 of a raffle whose books are RM 100 each.
+ * A household, a shop or a church group that takes six books is a real
+ * supporter of this shelter and there is now a name for them that somebody
+ * will actually be called.
+ *
+ * WHAT WOULD MAKE THESE WRONG AGAIN, said plainly because it is checkable:
+ * if most buyers end up Gold or Diamond, the rungs are too low and mean
+ * nothing; if almost everyone is still on the bottom rung, they are too high.
+ * The query that settles it is a count of tickets grouped by buyer — the
+ * bands are a description of the raffle's buyers, so they should be re-read
+ * against the buyers once a raffle has run.
  */
 
 /*
@@ -32,16 +56,33 @@
  * `minBooks: 0` for the bottom band is deliberate and is not "no books". It is
  * the band for somebody who has bought tickets but not yet a whole book, and it
  * exists because that is most buyers: a ladder whose bottom rung is one book
- * would say nothing at all to the person who bought three tickets, which is the
- * person the word "faithful" is for.
+ * would say nothing at all to the person who bought three tickets, and that
+ * person is the one the raffle most wants to thank.
+ *
+ * THE BOTTOM RUNG IS A METAL, AND THAT IS THE POINT OF THE NAME. It was
+ * "Faithful supporter" until 2026-09-22, and the word was wrong for a reason
+ * worth writing down rather than quietly fixing: faithfulness is continuity —
+ * somebody who keeps coming back — and this band is computed from ONE
+ * raffle's holding. It called a first-time buyer of a single ticket faithful,
+ * which is a claim about a person that the rows underneath it cannot support.
+ * That is precisely what the commit introducing these bands was titled against
+ * ("A thank-you nobody can check is flattery"), and it was the one band on the
+ * ladder whose word was not backed by the number printed beside it.
+ *
+ * "Bronze" fixes it three ways at once. It is true — bronze says where you
+ * stand on a ladder, and claims nothing about you. It completes a scale that
+ * was already three-quarters metal, so the bottom rung stops reading as a
+ * consolation handed to somebody who missed the metals. And it drops a
+ * religious register that landed on every small buyer whether or not it was
+ * theirs to carry.
  */
 export type Rank = { id: string; name: string; books: number; tickets: number }
 
 export const RANKS = [
-  { id: 'diamond', name: 'Diamond supporter', minBooks: 10 },
-  { id: 'gold', name: 'Gold supporter', minBooks: 4 },
+  { id: 'diamond', name: 'Diamond supporter', minBooks: 6 },
+  { id: 'gold', name: 'Gold supporter', minBooks: 3 },
   { id: 'silver', name: 'Silver supporter', minBooks: 1 },
-  { id: 'faithful', name: 'Faithful supporter', minBooks: 0 },
+  { id: 'bronze', name: 'Bronze supporter', minBooks: 0 },
 ]
 
 export const RANK_IDS = RANKS.map((r) => r.id)
@@ -57,11 +98,11 @@ export function booksHeld(tickets: number, perBook: number): number {
  * be worse than none:
  *
  *   NO TICKETS. Nobody is a supporter of nothing, and a card with a rank line
- *   reading "Faithful supporter · 0 tickets" is a sentence about an absence.
+ *   reading "Bronze supporter · 0 tickets" is a sentence about an absence.
  *
  *   NO BOOK SIZE. Without tickets-per-book there is no way to turn a count into
- *   books, and the tempting fallback — call them Faithful and move on — would
- *   put "Faithful supporter" on a card belonging to somebody holding two
+ *   books, and the tempting fallback — call them Bronze and move on — would
+ *   put "Bronze supporter" on a card belonging to somebody holding two
  *   hundred tickets. Silence is recoverable; a demotion printed on a ticket is
  *   not. This is the shape this repository has been caught by before: a default
  *   that quietly admits the case nobody thought about.

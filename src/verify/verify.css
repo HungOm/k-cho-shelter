@@ -70,7 +70,19 @@
   --band-diamond: #2a6fb0;
   --band-gold: #8a6a00;
   --band-silver: #4d6470;
-  --band-faithful: #0d7a6f;
+  /*
+   * --band-bronze is a copper, and it is the one band here that had to be
+   * CHOSEN rather than renamed. It was --band-faithful: #0d7a6f, which is
+   * --brand exactly — the raffle's own teal. That was defensible for a band
+   * named for loyalty, which has no colour of its own and could borrow the
+   * product's. Bronze has a colour, and it is not teal.
+   *
+   * Pulled toward red (hue 20) rather than sitting where a browser's "bronze"
+   * would, because the band directly above it is --band-gold at hue 46 and
+   * these are read as 15px bold text a rung apart. At the obvious bronze the
+   * two were close enough to be one colour at that size.
+   */
+  --band-bronze: #8d4a28;
   /*
    * THE GLYPH INSIDE THE ROUNDEL, and it has to be a token because it flips.
    *
@@ -106,7 +118,9 @@
     --band-diamond: #8fc4f5;
     --band-gold: #e5c454;
     --band-silver: #b3c3cb;
-    --band-faithful: #2bd4c0;
+    /* Not the light bronze lightened — picked to land at the same ~8:1 the
+       other three dark bands sit at, on the 8% tint .rank mixes from it. */
+    --band-bronze: #eab488;
   }
 }
 * { box-sizing: border-box }
@@ -391,7 +405,7 @@ h1 { font-size: 19px; margin: 0 0 12px }
 .rank-diamond { color: var(--band-diamond) }
 .rank-gold { color: var(--band-gold) }
 .rank-silver { color: var(--band-silver) }
-.rank-faithful { color: var(--band-faithful) }
+.rank-bronze { color: var(--band-bronze) }
 
 /*
  * THE TICKETS ON A RECEIPT. This was a bare <ul>: browser bullets, browser

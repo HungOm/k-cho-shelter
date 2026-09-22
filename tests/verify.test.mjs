@@ -466,7 +466,7 @@ console.log("a receipt shows the buyer their own copy")
    * stores one. The field is present or absent, never empty: a `rank: ''`
    * would draw a medal with no name beside it.
    */
-  eq(r.body.rank, 'faithful', 'a legacy receipt is banded by the tickets it names')
+  eq(r.body.rank, 'bronze', 'a legacy receipt is banded by the tickets it names')
   eq(r.body.rankTickets, 1, 'and by how many of them there are')
 }
 

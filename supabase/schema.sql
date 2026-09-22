@@ -641,8 +641,15 @@ create table if not exists ticket_receipts (
    */
   rank         text,
   rank_tickets integer,
+  /*
+   * FIVE WORDS FOR FOUR BANDS. `faithful` was the bottom rung until
+   * 2026-09-22 and is now `bronze`; it stays allowed because rows minted
+   * before then carry it, and a constraint is validated against the table it
+   * is added to. The set is every band that has ever been, not every band
+   * there is — see the migration of 2026-09-22.
+   */
   constraint ticket_receipts_rank_known
-    check (rank is null or rank in ('faithful', 'silver', 'gold', 'diamond')),
+    check (rank is null or rank in ('bronze', 'faithful', 'silver', 'gold', 'diamond')),
   /*
    * WHOSE DIGITAL TICKET THIS IS, and the reason the row above stopped being
    * frozen. A digital ticket is one per BUYER — never printed, covering

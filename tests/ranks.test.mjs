@@ -15,9 +15,16 @@
  * It also pins the two refusals. `rankFor` returns null rather than guessing,
  * and the case worth protecting is the second one: with no tickets-per-book
  * there is no way to turn a count into books, and the obvious fallback would
- * print "Faithful supporter" on the card of somebody holding two hundred
+ * print "Bronze supporter" on the card of somebody holding two hundred
  * tickets. A rank is a public compliment; getting it wrong downward, in
  * writing, on something they were sent, is worse than saying nothing.
+ *
+ * THE THRESHOLDS MOVED ON 2026-09-22, from Silver 1 / Gold 4 / Diamond 10 to
+ * Silver 1 / Gold 3 / Diamond 6, and the bottom band was renamed from
+ * `faithful` to `bronze`. Both are decisions rather than corrections, so both
+ * are asserted here by name and by number: a threshold nudged back is a
+ * red line in this file with the old value printed beside the new one, not a
+ * diff somebody has to notice.
  */
 /*
  * LOADED AS THE SERVER LOADS IT, from _shared, because that is where the ladder
@@ -41,7 +48,7 @@ const PER = 10
 
 console.log('the ladder is four bands, ordered from the top down')
 {
-  eq(RANK_IDS.join(','), 'diamond,gold,silver,faithful', 'the bands and their order')
+  eq(RANK_IDS.join(','), 'diamond,gold,silver,bronze', 'the bands and their order')
   /*
    * ORDERED HIGHEST FIRST, and `rankFor` takes the first match, so a band whose
    * threshold is not strictly below the one above it would be unreachable. That
@@ -53,6 +60,22 @@ console.log('the ladder is four bands, ordered from the top down')
       `${RANKS[i].id} sits strictly below ${RANKS[i - 1].id}, so it is reachable`)
   }
   ok(RANKS.every((r) => r.name.trim() !== '' && r.id.trim() !== ''), 'every band is named')
+
+  /*
+   * THE NUMBERS THEMSELVES, because they are a judgement about this raffle's
+   * buyers rather than a fact about the code, and a judgement should be
+   * written down where changing it is deliberate.
+   *
+   * At the raffle's defaults — ten tickets to a book, RM 10 a ticket — these
+   * are RM 100, RM 300 and RM 600. They were 1 / 4 / 10, which put Diamond at
+   * RM 1,000 from one buyer and left the top of the ladder somewhere nobody
+   * stood. If these move again, this is the line that says what they were.
+   */
+  const at = (id) => RANKS.find((r) => r.id === id)?.minBooks
+  eq(at('bronze'), 0, 'Bronze is anybody holding tickets but not yet a book')
+  eq(at('silver'), 1, 'Silver is one book')
+  eq(at('gold'), 3, 'Gold is three books, and was four')
+  eq(at('diamond'), 6, 'Diamond is six books, and was ten')
 }
 
 console.log('every count above zero falls in exactly one band')
@@ -76,29 +99,36 @@ console.log('every count above zero falls in exactly one band')
 
 console.log('the thresholds themselves, on both sides')
 {
-  //  books:  0        1         3        4        9        10
+  //  books:  0        1        2        3        5        6
   const cases = [
-    [1, 'faithful', 'one ticket is already somebody'],
-    [PER - 1, 'faithful', 'nine tickets is short of a book'],
+    [1, 'bronze', 'one ticket is already somebody'],
+    [PER - 1, 'bronze', 'nine tickets is short of a book'],
     [PER, 'silver', 'the first whole book is Silver'],
-    [PER * 3, 'silver', 'three books is still Silver'],
-    [PER * 4 - 1, 'silver', 'one ticket short of four books is Silver'],
+    [PER * 2, 'silver', 'two books is still Silver'],
+    [PER * 3 - 1, 'silver', 'one ticket short of three books is Silver'],
     /*
-     * FOUR BOOKS HAD NO BAND AT ALL in the ladder as it was described — Silver
-     * stopped at three and Gold started at five, so the count fell through the
-     * gap. Closing the gap is a choice about which way it closes, and this line
-     * is that choice written down: four books is Gold. Move the threshold back
-     * to five and this is the assertion that goes red, reporting Silver.
+     * THREE BOOKS IS GOLD, and this is the assertion that was rewritten when
+     * the thresholds came down on 2026-09-22. It read `PER * 4, 'gold'` — four
+     * books, the count that had no band at all in the ladder as first
+     * described, Silver stopping at three and Gold starting at five. That hole
+     * is closed by construction now that the bands are thresholds, so the line
+     * that earns its place is the new boundary rather than the old scar.
+     * Four books is checked below as well, because it is the value this ladder
+     * has been wrong about once already.
      */
-    [PER * 4, 'gold', 'four books is Gold — the count that had no band'],
-    [PER * 9, 'gold', 'nine books is Gold'],
-    [PER * 10 - 1, 'gold', 'one ticket short of ten books is Gold'],
+    [PER * 3, 'gold', 'three books is Gold'],
+    [PER * 4, 'gold', 'four books is Gold — the count that once had no band'],
+    [PER * 5, 'gold', 'five books is Gold'],
+    [PER * 6 - 1, 'gold', 'one ticket short of six books is Gold'],
     /*
-     * TEN BOOKS WAS BOTH Gold (5-10) and Diamond (10+). It is Diamond, the
-     * higher of the two, because a ladder that rounds a compliment down is the
-     * wrong way to be wrong.
+     * SIX BOOKS IS DIAMOND. Ten books used to be, and was Gold as well under
+     * the description this ladder replaced; where two bands claimed a count it
+     * went to the higher of them, because a ladder that rounds a compliment
+     * down is the wrong way to be wrong. Ten books is still Diamond — now with
+     * four books of room underneath it rather than none.
      */
-    [PER * 10, 'diamond', 'ten books is Diamond, and used to be Gold as well'],
+    [PER * 6, 'diamond', 'six books is Diamond'],
+    [PER * 10, 'diamond', 'ten books is Diamond, as it always was'],
     [PER * 40, 'diamond', 'and it stays Diamond however far above'],
   ]
   for (const [tickets, id, what] of cases) {
@@ -114,9 +144,9 @@ console.log('the bands move with the raffle, because they are counted in books')
    * and it stays true when somebody changes the book size.
    */
   eq(rankFor(5, 5)?.id, 'silver', 'one book of five is Silver')
-  eq(rankFor(4, 5)?.id, 'faithful', 'four tickets is short of that book')
-  eq(rankFor(50, 5)?.id, 'diamond', 'ten books of five is Diamond')
-  eq(rankFor(50, 10)?.id, 'gold', 'the same fifty tickets is Gold where a book is ten')
+  eq(rankFor(4, 5)?.id, 'bronze', 'four tickets is short of that book')
+  eq(rankFor(30, 5)?.id, 'diamond', 'six books of five is Diamond')
+  eq(rankFor(30, 10)?.id, 'gold', 'the same thirty tickets is Gold where a book is ten')
 }
 
 console.log('it refuses rather than guesses')
@@ -126,10 +156,10 @@ console.log('it refuses rather than guesses')
   eq(rankFor('', PER), null, 'a blank count is not zero tickets, it is no answer')
   /*
    * THE ONE THAT MATTERS. Without a book size the count cannot be turned into
-   * books, and the fallback everybody reaches for — call them Faithful — writes
+   * books, and the fallback everybody reaches for — call them Bronze — writes
    * the bottom band onto the card of the raffle's largest supporter.
    */
-  eq(rankFor(500, 0), null, 'with no book size it says nothing rather than Faithful')
+  eq(rankFor(500, 0), null, 'with no book size it says nothing rather than Bronze')
   eq(rankFor(500, undefined), null, 'and the same when the setting is missing')
   eq(rankFor(500, 'ten'), null, 'and when it is not a number')
 }
@@ -165,6 +195,63 @@ console.log('the client reads this same ladder rather than a copy of it')
   const bare = client.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   ok(!/minBooks/.test(bare),
     'and does not carry a second copy of the thresholds')
+}
+
+console.log('every band on the ladder has a name on the check page, in both languages')
+{
+  /*
+   * THE FAILURE THIS CATCHES HAS NO SYMPTOM, which is the only reason it is
+   * worth a test of its own. main.js turns a band id into a string key through
+   * a FIXED map and draws nothing when the lookup misses — deliberate, so that
+   * a band this page has never heard of cannot render as the literal word
+   * `rankSomething`. The cost of that safety is that a half-landed rename is
+   * invisible: the server starts answering `bronze`, the page finds no entry,
+   * and the supporter line silently disappears for the entire bottom band.
+   * No error, no console, no gap on the screen where it used to be.
+   *
+   * It is not hypothetical — the rename from `faithful` to `bronze` on
+   * 2026-09-22 touched exactly these three files, and shipping the server half
+   * without the page half would have looked like nothing at all.
+   */
+  const page = readFileSync(new URL('../src/verify/main.js', import.meta.url), 'utf8')
+  const strings = readFileSync(new URL('../src/verify/strings.js', import.meta.url), 'utf8')
+  const css = readFileSync(new URL('../src/verify/verify.css', import.meta.url), 'utf8')
+
+  const mapBlock = /const BAND = \{([\s\S]*?)\}/.exec(page)
+  ok(mapBlock, 'main.js still builds the band names from a fixed map')
+  ok(RANK_IDS.length === 4, 'and there are four bands to find, not zero')
+
+  for (const id of RANK_IDS) {
+    const key = 'rank' + id[0].toUpperCase() + id.slice(1)
+    ok(mapBlock && new RegExp(`\\b${id}: '${key}'`).test(mapBlock[1]),
+      `${id} is mapped to ${key} on the check page`)
+    ok(new RegExp(`${key}: \\{ en: '[^']+', my: '[^']+' \\}`).test(strings),
+      `${key} is written in both languages`)
+    /*
+     * AND HAS A COLOUR OF ITS OWN. `.rank` paints from `currentColor` and
+     * mixes its own background from it, so a band with no rule inherits the
+     * body text and its panel goes grey — a thank-you that reads as a
+     * disabled row. Both themes, because the dark values are hand-picked
+     * rather than derived, and a rename that reaches one block and not the
+     * other leaves dark mode falling back to nothing.
+     */
+    ok(new RegExp(`\\.rank-${id} \\{ color: var\\(--band-${id}\\) \\}`).test(css),
+      `.rank-${id} paints from --band-${id}`)
+    ok((css.match(new RegExp(`--band-${id}:`, 'g')) || []).length === 2,
+      `--band-${id} is set in both the light and the dark block`)
+  }
+
+  /*
+   * The counted line under the name has a singular, because the band the
+   * smallest buyer lands in is the one this line is read at most often and
+   * "1 tickets in this raffle" is a thank-you that reads as generated.
+   */
+  for (const key of ['rankThanks', 'rankThanks1', 'receiptCount', 'receiptCount1']) {
+    ok(new RegExp(`${key}: \\{`).test(strings) || new RegExp(`${key}: \\{ en`).test(strings),
+      `${key} exists, so a count of one is not made plural`)
+  }
+  ok(/Number\(n\) === 1 \? `\$\{key\}1`/.test(page),
+    'and the page picks the singular by the number rather than by the string')
 }
 
 console.log('all three treatments draw the band, and none of them invents one')

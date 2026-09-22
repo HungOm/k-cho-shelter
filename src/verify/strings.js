@@ -120,6 +120,8 @@ export const S = {
    */
   receiptGenuine: { en: 'Verified tickets', my: 'အတည်ပြုပြီး လက်မှတ်များ' },
   receiptCount: { en: '{n} tickets on this receipt', my: 'ဤပြေစာတွင် လက်မှတ် {n} စောင်' },
+  /* The singular, for the same reason as rankThanks1 below. */
+  receiptCount1: { en: '{n} ticket on this receipt', my: 'ဤပြေစာတွင် လက်မှတ် {n} စောင်' },
 
   /*
    * THE SUPPORTER BAND, AND WHY IT IS ON THIS ROUTE ONLY.
@@ -140,12 +142,41 @@ export const S = {
    * compliment with the number under it is a receipt; without the number it is
    * flattery, and this page's whole job is to be believed.
    */
-  rankFaithful: { en: 'Faithful supporter', my: 'သစ္စာရှိ ထောက်ပံ့သူ' },
+  /*
+   * BRONZE, NOT "FAITHFUL", AND THE FOUR ARE NOW ONE SCALE. The bottom rung
+   * read "Faithful supporter" until 2026-09-22. Faithfulness is continuity —
+   * somebody who keeps coming back — and the band is computed from ONE
+   * raffle's holding, so it called a first-time buyer of a single ticket
+   * faithful. The Burmese half said the same thing: သစ္စာရှိ is faith, and
+   * carried a religious reading the other three rungs do not.
+   *
+   * THE BURMESE HERE FOLLOWS THE MEDAL CONVENTION, which is what makes it a
+   * safe composition rather than a new phrase. ရွှေ / ငွေ / ကြေး are gold,
+   * silver and bronze the way a medal is named, so ကြေး ထောက်ပံ့သူ is the
+   * exact parallel of the two rungs above it. If a reader of Burmese finds
+   * ကြေး alone ambiguous here, ကြေးနီ is the unambiguous metal — but it breaks the
+   * one-word rhythm the other three keep, so the medal word is preferred
+   * unless somebody who reads it says otherwise.
+   */
+  rankBronze: { en: 'Bronze supporter', my: 'ကြေး ထောက်ပံ့သူ' },
   rankSilver: { en: 'Silver supporter', my: 'ငွေ ထောက်ပံ့သူ' },
   rankGold: { en: 'Gold supporter', my: 'ရွှေ ထောက်ပံ့သူ' },
   rankDiamond: { en: 'Diamond supporter', my: 'စိန် ထောက်ပံ့သူ' },
+  /*
+   * ONE TICKET IS NOT "1 tickets". The bottom band is the band for somebody
+   * holding fewer than a whole book, so the smallest counts are the ones this
+   * line is read at most often, and an ungrammatical thank-you is a thank-you
+   * that reads as generated. The Burmese is deliberately identical in both
+   * entries: စောင် is a classifier and Burmese does not mark the noun for
+   * plural, so there is one sentence there and two in English. Edit both `my`
+   * halves together or they will drift.
+   */
   rankThanks: {
     en: '{n} tickets in this raffle — thank you.',
+    my: 'ဤကံစမ်းမဲတွင် လက်မှတ် {n} စောင် — ကျေးဇူးတင်ပါသည်။',
+  },
+  rankThanks1: {
+    en: '{n} ticket in this raffle — thank you.',
     my: 'ဤကံစမ်းမဲတွင် လက်မှတ် {n} စောင် — ကျေးဇူးတင်ပါသည်။',
   },
 
