@@ -469,14 +469,27 @@ function waLink(a) {
               -->
               <tr :class="{ deskrow: !a.agentId }"
                   @click="a.agentId && (openSeller = a)">
+                <!--
+                  THE EXPLANATION IS NOT IN THE CELL, AND THAT IS A MONEY BUG
+                  RATHER THAN A TIDY-UP.
+
+                  This sentence used to sit inside this <td>. A table column is
+                  as wide as its widest cell, so 110 characters of prose took
+                  416px of a 970px table — 43% of it — and pushed OWES off the
+                  right-hand edge into the scroller. The outstanding balance is
+                  the most important number on this screen and it was the one
+                  you could not read. Measured at 1000px, not guessed: Seller
+                  416, Books 78, Sold 69, Should have 142, Handed in 142, Owes
+                  123 with the card ending at 938.
+
+                  So the row says what it is and the sentence moves under the
+                  table, where an explanation of a row TYPE belongs — read once,
+                  not once per column width.
+                -->
                 <td>
                   <span v-if="a.agentId" class="chev">›</span>
                   {{ a.name || a.agentId }}
                   <span v-if="a.overdueBooks" class="pill bad">{{ a.overdueBooks }} late</span>
-                  <span v-if="!a.agentId" class="tiny muted deskwhy">
-                    the money went into the tin as each sale was written down, so there is
-                    nobody to chase — each ticket says who recorded it
-                  </span>
                 </td>
                 <td class="num">{{ a.booksOut }}</td>
                 <td class="num">{{ a.ticketsSold }}</td>
@@ -512,6 +525,13 @@ function waLink(a) {
             </tr>
           </tfoot>
         </table>
+        <!-- Only when the line it explains is on screen. A footnote about a row
+             that is not there is a sentence somebody has to rule out. -->
+        <p v-if="shownRows.some((a) => !a.agentId)" class="hint">
+          <b>The desk</b> is tickets sold from books nobody holds. The money
+          went into the tin as each sale was written down, so there is
+          nobody to chase — each ticket says who recorded it.
+        </p>
         <Pager v-model:page="page" :total="matching.length" :size="PAGE" noun="sellers" />
         </div>
       </template>
@@ -577,5 +597,4 @@ function waLink(a) {
 
 /* Not a person, so not a row that invites a press. */
 .deskrow { cursor: default; }
-.deskwhy { display: block; max-width: 46ch; margin-top: 2px; }
 </style>

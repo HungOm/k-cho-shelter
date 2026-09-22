@@ -11,7 +11,7 @@
  */
 import { ref, onMounted, onActivated, computed, watch, nextTick } from 'vue'
 import { api, toast, state, go, isAdmin } from '../lib/store.js'
-import { dateTime, relative, money, COUNTED_IN_HELP } from '../lib/format.js'
+import { dateTime, relative, money, possessive, COUNTED_IN_HELP } from '../lib/format.js'
 import Empty from './ui/Empty.vue'
 import Filters from './ui/Filters.vue'
 
@@ -657,7 +657,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
             </template>
             <template v-else-if="isRequest(r)">
               Saying no moves nothing and puts nothing on
-              {{ r.detail?.agentName || 'their' }} balance.
+              {{ possessive(r.detail?.agentName) }} balance.
             </template>
             <template v-else>
               Saying no runs nothing at all.
@@ -680,7 +680,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
             </template>
             <template v-else>
               The books go back on the shelf. Nothing was ever on
-              {{ r.detail?.agentName || 'their' }} balance.
+              {{ possessive(r.detail?.agentName) }} balance.
             </template>
           </p>
         </div>

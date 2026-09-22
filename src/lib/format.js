@@ -117,6 +117,26 @@ export function bookShort(book) {
   return String(book).replace(/\D/g, '').replace(/^0+/, '') || '0'
 }
 
+/**
+ * A NAME THAT OWNS SOMETHING, WITH THE APOSTROPHE IT NEEDS.
+ *
+ * The approvals queue printed "puts nothing on Josh balance" — the template
+ * interpolated a name and then wrote " balance" after it, which is correct
+ * English only for the fallback ("their balance") and wrong for every actual
+ * seller. An organiser reading a refusal they are about to send does not need
+ * it to look like the app cannot write.
+ *
+ * The typographic apostrophe, matching &rsquo; wherever this app writes one in
+ * prose. A name already ending in s takes the apostrophe alone, which is the
+ * more conservative of the two accepted styles and the one that does not
+ * produce "Thomas's" beside "Josh's" in the same queue.
+ */
+export function possessive(name, fallback = 'their') {
+  const n = String(name ?? '').trim()
+  if (!n) return fallback
+  return /s$/i.test(n) ? `${n}’` : `${n}’s`
+}
+
 export const STATUS_WORDS = {
   Available: 'Not sold yet',
   Reserved: 'Being held',

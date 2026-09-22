@@ -150,5 +150,52 @@ const dl = readFileSync(join(here, '../src/components/modals/Deadlines.vue'), 'u
 ok(/Only the System Admin can change the final deadline/.test(dl),
    'the final deadline is not an organiser\'s to move, and says so')
 
+/*
+ * A NAME THAT OWNS SOMETHING TAKES AN APOSTROPHE.
+ *
+ * The approvals queue rendered "Saying no moves nothing and puts nothing on
+ * Josh balance". The template interpolated a name and wrote " balance" after
+ * it, which reads correctly only for the fallback — "their balance" — and
+ * wrongly for every real seller. Found by rendering the screen, not by reading
+ * the template, because in source it is a mustache followed by a word and
+ * looks like every other line.
+ *
+ * Both halves are asserted, and they fail for different reasons: the helper
+ * being wrong, and a template going back to interpolating a bare name. The
+ * second is the one that actually happened.
+ */
+console.log('a seller who owns a balance gets the apostrophe for it')
+{
+  const { possessive } = await import('../src/lib/format.js')
+  const cases = [
+    ['Josh', 'Josh\u2019s'],
+    ['Ma Hla Yin', 'Ma Hla Yin\u2019s'],
+    ['Thomas', 'Thomas\u2019'],      // already ends in s: the apostrophe alone
+    ['', 'their'],                   // nobody named — the sentence still reads
+    [null, 'their'],
+    ['  Josh  ', 'Josh\u2019s'],     // trimmed, or the space lands before the mark
+  ]
+  for (const [input, want] of cases) {
+    const got = possessive(input)
+    ok(got === want, `possessive(${JSON.stringify(input)}) is ${want} (got ${got})`)
+  }
+
+  const appr = readFileSync(join(here, '../src/components/Approvals.vue'), 'utf8')
+  /*
+   * EVERY mustache that owns the word "balance", checked for the helper —
+   * rather than asserting the bad shape is absent. The first version of this
+   * matched "a mustache containing agentName followed by balance" and went red
+   * on the FIXED file, because `{{ possessive(r.detail?.agentName) }} balance`
+   * is exactly that shape. Asserting on the absence of a pattern that the cure
+   * also matches is the trap this repo keeps paying for; count the good signal.
+   */
+  const owners = [...appr.matchAll(/\{\{([^}]*)\}\}\s*balance/g)].map((m) => m[1])
+  ok(owners.length >= 2, `the sentences that own a balance were found (${owners.length})`)
+  for (const expr of owners) {
+    ok(/possessive\(/.test(expr),
+       `the name in front of "balance" goes through possessive() (${expr.trim()})`)
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
