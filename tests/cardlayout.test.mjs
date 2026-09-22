@@ -307,7 +307,7 @@ console.log('what the studio saves is what a buyer is sent')
 
 console.log('every part is named, unique, and drawn with an icon the set has')
 {
-  const icons = readFileSync(new URL('../src/components/ui/Icon.vue', import.meta.url), 'utf8')
+  const icons = readFileSync(new URL('../src/lib/iconpaths.js', import.meta.url), 'utf8')
   /*
    * PARSED FROM THE TABLE, NOT GREPPED OUT OF THE FILE.
    *

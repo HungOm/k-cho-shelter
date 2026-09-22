@@ -37,7 +37,20 @@ import { renderScreen } from './screen.mjs'
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
 const ICON = 'src/components/ui/Icon.vue'
+/*
+ * THE DRAWINGS MOVED OUT OF THE COMPONENT on 2026-09-22, because the studio can
+ * place an icon on a ticket now and `ticketart.js` draws that ticket nowhere
+ * near a Vue component. The rules below are unchanged and still parse a table;
+ * it is a different file.
+ *
+ * Worth noting how this was found rather than missed: `cut` THREW — "could not
+ * find the start of the icon table" — instead of returning nothing and letting
+ * every loop run zero times. A parser that fails loudly is the reason this move
+ * cost a minute rather than shipping a suite that tested nothing.
+ */
+const DATA = 'src/lib/iconpaths.js'
 const src = readFileSync(join(ROOT, ICON), 'utf8')
+const data = readFileSync(join(ROOT, DATA), 'utf8')
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -55,14 +68,14 @@ const eq = (g, w, what) => { String(g) === String(w) ? pass++ : (fail++, console
  * on a comment, which sourceanchors.test.mjs requires of every file here.
  */
 const PATHS = (() => {
-  const body = cut(src, 'const PATHS = {', '\n}', 'the icon table')
+  const body = cut(data, 'const PATHS = {', '\n}', 'the icon table')
   const out = {}
   for (const m of body.matchAll(/^ {2}([a-zA-Z]+): *'([^']+)'/gm)) out[m[1]] = m[2]
   return out
 })()
 
 const ALIASES = (() => {
-  const body = cut(src, 'const ALIASES = {', '}', 'the alias table')
+  const body = cut(data, 'const ALIASES = {', '}', 'the alias table')
   const out = {}
   for (const m of body.matchAll(/([a-zA-Z]+): *'([a-zA-Z]+)'/g)) out[m[1]] = m[2]
   return out
@@ -72,7 +85,7 @@ const NAMES = Object.keys(PATHS)
 
 console.log('the icon table was actually read')
 {
-  ok(NAMES.length > 30, `parsed ${NAMES.length} drawings out of Icon.vue`)
+  ok(NAMES.length > 30, `parsed ${NAMES.length} drawings out of iconpaths.js`)
   ok(Object.keys(ALIASES).length > 0, `and ${Object.keys(ALIASES).length} alias(es)`)
   ok(NAMES.includes('missing'), 'including the mark shown when a name does not exist')
 }

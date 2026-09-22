@@ -91,11 +91,29 @@ const ink = (v) => (typeof v === 'string' && HEX.test(v.trim()) ? v.trim().toLow
  * things on a real ticket. The limits are there to catch a number that is
  * wrong, not to enforce a taste.
  */
-const box = (b) => ({
+/*
+ * AND A LINE MAY HAVE A ZERO SIDE, WHICH IS WHAT A HORIZONTAL RULE IS.
+ *
+ * This read `num(b?.width, 0.1) || 0.1`, and the `||` was there to replace a
+ * missing side with something visible. It also replaced a DELIBERATE zero,
+ * because 0 is falsy — so a rule drawn with `height: 0` came out as a diagonal
+ * across a tenth of the card. It was found by looking at a rendered ticket, not
+ * by any assertion here, which is the second thing on this file that only a
+ * picture could have told me.
+ *
+ * So the default applies when a side is ABSENT, never when it is zero, and the
+ * floor is per kind: a rect or an ellipse with no area draws nothing and is a
+ * mistake, while a line with no height is the commonest thing anybody draws.
+ */
+const side = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d)
+
+const minSide = (kind) => (kind === 'line' ? 0 : 0.0005)
+
+const box = (b, kind) => ({
   left: tidy(clamp(num(b?.left), -1, 2)),
   top: tidy(clamp(num(b?.top), -1, 2)),
-  width: tidy(clamp(num(b?.width, 0.1) || 0.1, 0.0005, 3)),
-  height: tidy(clamp(num(b?.height, 0.1) || 0.1, 0.0005, 3)),
+  width: tidy(clamp(side(b?.width, 0.1), minSide(kind), 3)),
+  height: tidy(clamp(side(b?.height, 0.1), minSide(kind), 3)),
 })
 
 let seq = 0
@@ -128,7 +146,7 @@ export function normalDecoration(raw) {
        somebody puts in a background they have finished placing so they stop
        catching it while working on what sits over it. */
     locked: raw?.locked === true,
-    box: box(raw?.box),
+    box: box(raw?.box, kind),
     /* Degrees, and whole ones. A rotation of 0.3° is a value somebody cannot
        have meant and cannot see; it arrives from a drag that was not quite
        still. */
@@ -236,8 +254,11 @@ export function faultsIn(list, opts = {}) {
         bad.push(`${where} is off the artboard — ${k} is ${d.box[k]}.`)
       }
     }
+    /* A line is allowed a zero side — that is a horizontal or vertical rule,
+       and refusing it would refuse the commonest decoration there is. */
+    const floor = minSide(d.kind)
     for (const k of ['width', 'height']) {
-      if (d.box?.[k] !== undefined && !(num(d.box[k], NaN) > 0.0005 && num(d.box[k], NaN) <= 3)) {
+      if (d.box?.[k] !== undefined && !(num(d.box[k], NaN) >= floor && num(d.box[k], NaN) <= 3)) {
         bad.push(`${where} has a ${k} of ${d.box[k]}.`)
       }
     }
@@ -271,7 +292,7 @@ export function faultsIn(list, opts = {}) {
   if (code) {
     list.forEach((d, i) => {
       if (!d?.box || d.enabled === false) return
-      const b = box(d.box)
+      const b = box(d.box, d.kind)
       const over = !(b.left >= code.left + code.width || b.left + b.width <= code.left
         || b.top >= code.top + code.height || b.top + b.height <= code.top)
       if (over) {
@@ -299,7 +320,24 @@ export function faultsIn(list, opts = {}) {
  * shipping the model for them without the tools would be a shape in the file
  * that nothing can produce.
  */
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+/*
+ * QUOTES TOO, AND THAT IS NOT BELT-AND-BRACES.
+ *
+ * `esc` escaped &, < and > and shipped a card that would not render. A font
+ * stack is `Padauk, "Noto Sans Myanmar", "Myanmar Text", system-ui` — it
+ * CONTAINS double quotes — so `font-family="…"` closed itself at the first one
+ * and the rest of the element became malformed attributes. The picture did not
+ * draw at all.
+ *
+ * ticketart.js has known this for longer than this file has existed: its own
+ * note says a quote in a font-family attribute killed it once, and every
+ * font-family it writes is single-quoted for that reason. Doing it here too,
+ * AND escaping the character, because one of those alone is a rule somebody
+ * has to remember at every call site and the other is not.
+ */
+const esc = (s) => String(s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
 const DASH_FOR = { solid: '', dashed: '4 3', dotted: '1 2.5' }
 
@@ -373,8 +411,10 @@ export function decorationSVG(d, w, h, ctx = {}) {
     const anchor = el.text.align === 'centre' ? 'middle' : el.text.align === 'right' ? 'end' : 'start'
     const tx = el.text.align === 'centre' ? x + bw / 2 : el.text.align === 'right' ? x + bw : x
     body = `<text x="${tx.toFixed(2)}" y="${(y + bh).toFixed(2)}" text-anchor="${anchor}" `
-      + `font-size="${size.toFixed(2)}" font-family="${el.text.family === 'number'
-        ? esc(ctx.numberFamily || 'serif') : esc(ctx.textFamily || 'sans-serif')}" `
+      /* SINGLE-QUOTED, like every other font-family this app writes. A stack
+         carries double quotes of its own and would close the attribute. */
+      + `font-size="${size.toFixed(2)}" font-family='${el.text.family === 'number'
+        ? esc(ctx.numberFamily || 'serif') : esc(ctx.textFamily || 'sans-serif')}' `
       + `font-weight="${el.text.weight === 'bold' ? '700' : '400'}" `
       + (el.text.tracking ? `letter-spacing="${(el.text.tracking * size).toFixed(2)}" ` : '')
       + `fill="${fill === 'none' ? el.fill.colour : fill}">${esc(el.text.value)}</text>`

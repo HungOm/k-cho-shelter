@@ -67,6 +67,25 @@ console.log('the defaults are the ones that make a new thing visible')
   eq(l.fill.type, 'none', 'a line has no fill — a filled line is a rectangle')
   ok(l.stroke.width > 0, 'and it does have a stroke, or it draws nothing at all')
 
+  /*
+   * A ZERO SIDE IS WHAT A HORIZONTAL RULE IS, and this was wrong until a
+   * rendered ticket showed it. The default for a missing side was applied with
+   * `||`, so a deliberate 0 — falsy — became 0.1, and a rule drawn across a
+   * card came out as a diagonal over a tenth of its height.
+   */
+  eq(normalDecoration({ kind: 'line', box: { width: 0.8, height: 0 } }).box.height, 0,
+    'a line keeps a height of zero, which is a horizontal rule')
+  eq(normalDecoration({ kind: 'line', box: { width: 0, height: 0.8 } }).box.width, 0,
+    'and a width of zero, which is a vertical one')
+  eq(normalDecoration({ kind: 'rect', box: { width: 0.5 } }).box.height, 0.1,
+    'while a side that is genuinely ABSENT still gets a visible default')
+  ok(normalDecoration({ kind: 'rect', box: { width: 0.5, height: 0 } }).box.height > 0,
+    'and a rect with no area is not one, so it keeps a floor')
+  eq(faultsIn([{ id: 'a', kind: 'line', box: { left: 0, top: 0, width: 0.5, height: 0 } }]).length, 0,
+    'saving a flat line is allowed')
+  ok(faultsIn([{ id: 'a', kind: 'rect', box: { left: 0, top: 0, width: 0.5, height: 0 } }]).length > 0,
+    'and saving a rect with no height is not')
+
   /* The cap is the honest place to say a ticket is not a canvas. */
   eq(normalDecorations(new Array(500).fill({ kind: 'rect' })).length, MAX_DECORATIONS,
     `a list longer than ${MAX_DECORATIONS} is cut to it`)
@@ -137,6 +156,73 @@ console.log('the effects are wrapped, not baked into the shape')
   const ids = [...two.matchAll(/<linearGradient id="([^"]+)"/g)].map((m) => m[1])
   eq(ids.length, 2, 'two gradients are defined')
   eq(new Set(ids).size, 2, 'and they do not share an id, which would give both the same colours')
+}
+
+/*
+ * WELL-FORMEDNESS, WHICH IS THE CHECK THIS FILE DID NOT HAVE AND SHOULD HAVE.
+ *
+ * Every assertion above looks for a SUBSTRING — `<rect `, `feDropShadow`, the
+ * words somebody typed. All of them passed on output that no renderer would
+ * draw: `font-family="Padauk, "Noto Sans Myanmar", …"` closed its own attribute
+ * at the first inner quote and turned the rest of the element into rubbish. The
+ * picture came out blank and the suite was green. It was found by LOOKING at a
+ * card, which is the one thing a substring test cannot do for itself.
+ *
+ * So this walks the tags and refuses anything whose attributes do not close.
+ * It is not a full parser and does not need to be — the failure it exists to
+ * catch is a value that ends its own attribute, which is the only way a string
+ * built by templates like these goes wrong.
+ */
+function illFormed(svg) {
+  const bad = []
+  for (const m of String(svg).matchAll(/<([a-zA-Z][\w:-]*)((?:[^<>"']|"[^"]*"|'[^']*')*)\/?>/g)) {
+    /*
+     * CONSUMED AS PAIRS, not scanned for stray quotes — which was the first
+     * version of this and it passed the very string it exists to catch.
+     * `font-family="a "b" c"` has an even number of quotes and survives any
+     * check that only counts them; what gives it away is that once every
+     * well-formed `name="value"` has been eaten, something is LEFT.
+     */
+    let rest = m[2]
+    for (;;) {
+      const before = rest
+      rest = rest.replace(/^\s*[\w:.-]+\s*=\s*("[^"]*"|'[^']*')/, '')
+      if (rest === before) break
+    }
+    /* The slash of a self-closing tag is not an attribute. */
+    rest = rest.replace(/\/\s*$/, '')
+    if (rest.trim() !== '') {
+      bad.push(`<${m[1]}> has an attribute that does not close, at: ${rest.trim().slice(0, 60)}`)
+    }
+  }
+  /* And a tag that never closed at all leaves a bare angle bracket behind. */
+  const stray = String(svg).replace(/<[^<>]*>/g, '')
+  if (/[<>]/.test(stray)) bad.push('a tag is left open')
+  return bad
+}
+
+console.log('what it draws is well-formed, not merely the right substrings')
+{
+  /* The real stack, double quotes and all — which is what broke it. */
+  const ctx = {
+    icons: { trophy: 'M7 4h10v5a5 5 0 0 1-10 0Z' },
+    textFamily: 'Padauk, "Noto Sans Myanmar", "Myanmar Text", system-ui, sans-serif',
+    numberFamily: '"Times New Roman", "Liberation Serif", Times, serif',
+  }
+  for (const kind of KINDS) {
+    const svg = decorationSVG({
+      kind, box: at(0.1, 0.1, 0.3, 0.2),
+      text: { value: 'Ma & Pa "quoted" <x>', family: kind === 'text' ? 'number' : 'text' },
+      icon: { name: 'trophy' }, image: { src: 'https://example.org/a"b.png' },
+      fill: { type: 'gradient' }, shadow: { blur: 0.01 }, rotation: 12, blend: 'multiply',
+    }, W, H, ctx)
+    const bad = illFormed(svg)
+    ok(bad.length === 0, `${kind} draws well-formed SVG${bad.length ? ' — ' + bad[0] : ''}`)
+  }
+  /* And the scanner itself can fail, or it is worth nothing. */
+  ok(illFormed('<text font-family="a "b" c">x</text>').length > 0,
+    'and the check can tell a broken attribute from a good one')
+  ok(illFormed('<rect x="1" y="2"/>').length === 0, 'while passing an ordinary tag')
 }
 
 console.log('text that could break the picture is escaped')

@@ -49,6 +49,8 @@ export { CARD, CARD_CERT, CARD_STUB, CARD_SHELTER }
  * neighbour `ticketspans.js`, which imports nothing and so cannot cycle back.
  */
 import { describeSpans, MEASURABLE } from './ticketspans.js'
+import { decorationLayerSVG } from './designelements.js'
+import { PATHS as ICON_PATHS } from './iconpaths.js'
 
 /*
  * THE FONT, AND WHY ITS NUMBERS ARE IN HERE.
@@ -1049,9 +1051,30 @@ export function elementLayerSVG(design, values = {}, opts = {}) {
     }
   }
 
+  /*
+   * DECORATIONS SIT UNDER THE FIELDS AND OVER THE WATERMARK.
+   *
+   * Under the fields because the fields are what the ticket is FOR. A tint
+   * somebody drew across a serial number, or a mark that lands on top of the
+   * check code, makes a ticket that cannot do its job — and the QR case is
+   * refused outright in designelements.js precisely because it fails silently.
+   * Putting the drawn layer beneath means no shape anybody adds can take a
+   * ticket's own value away, which is the reversible choice.
+   *
+   * Over the watermark because the watermark is the paper's own texture: a
+   * decoration under it would be printed through, which is not a thing anybody
+   * would ask for.
+   *
+   * IF SOMEBODY LATER WANTS A STAMP ON TOP — a "PAID" across a counterfoil is a
+   * real design — that is a deliberate second layer with its own argument, not
+   * a reordering of this one.
+   */
   const body = [
     // First, so that qrLayer's white backing punches it out from under the code.
     watermarkSVG(design, watermark, opts),
+    decorationLayerSVG(design?.decorations, width, height, {
+      icons: ICON_PATHS, textFamily: TEXT_FAMILY, numberFamily: FONT.family,
+    }),
     ...codes,
     ...texts,
     ...(guides ? placed.map(elementGuide) : []),
@@ -1903,11 +1926,51 @@ export function shelterCardSVG(values = {}, opts = {}) {
  * three-way branch across every screen that shows a card, and the third branch
  * is the one somebody forgets.
  */
+/*
+ * DECORATIONS ON THE CARD, ADDED IN ONE PLACE FOR ALL FOUR TREATMENTS.
+ *
+ * Injected here rather than inside each renderer, and that is worth saying
+ * because the alternative is what this file used to be: the same paragraph of
+ * drawing repeated four times, which is exactly what `partBoxes` was extracted
+ * to end. Four copies of a decoration pass would be four places for one of them
+ * to fall behind.
+ *
+ * IT GOES IN LAST AND THEREFORE ON TOP, which is the opposite of the printed
+ * ticket and is deliberate. A printed ticket carries the values the raffle
+ * fills in on somebody else's artwork, so a drawn shape must never be able to
+ * cover a serial number. A card is OUR drawing — the parts are a fixed
+ * composition this app owns, everything on it is already ours, and the whole
+ * reason somebody is decorating it is to add to that composition. A seal that
+ * cannot sit over the border it is meant to interrupt is not a seal.
+ *
+ * The QR is still protected, and by the same hard rule, in designelements.js —
+ * which is where it belongs, because it is true of both tabs and of any tab
+ * that comes later.
+ *
+ * The inject is a string splice rather than a parameter threaded through four
+ * signatures: each renderer returns one <svg> element, and the last thing
+ * before its closing tag is the last thing drawn.
+ */
+function withDecorations(svg, values, w, h) {
+  const layer = decorationLayerSVG(values?.decorations, w, h, {
+    icons: ICON_PATHS, textFamily: TEXT_FAMILY, numberFamily: FONT.family,
+  })
+  if (!layer) return svg
+  const at = svg.lastIndexOf('</svg>')
+  return at < 0 ? svg : svg.slice(0, at) + layer + svg.slice(at)
+}
+
 export function cardSVG(id, values = {}, opts = {}) {
-  if (id === 'certificate') return certificateCardSVG(values, opts)
-  if (id === 'stub') return stubCardSVG(values, opts)
-  if (id === 'shelter') return shelterCardSVG(values, opts)
-  return digitalCardSVG(values, opts)
+  const size = CARD_SIZE_FOR[id] || CARD
+  const svg = id === 'certificate' ? certificateCardSVG(values, opts)
+    : id === 'stub' ? stubCardSVG(values, opts)
+      : id === 'shelter' ? shelterCardSVG(values, opts)
+        : digitalCardSVG(values, opts)
+  return withDecorations(svg, values, size.width, size.height)
+}
+
+const CARD_SIZE_FOR = {
+  grand: CARD, certificate: CARD_CERT, stub: CARD_STUB, shelter: CARD_SHELTER,
 }
 
 export function digitalCardSVG(values = {}, opts = {}) {
