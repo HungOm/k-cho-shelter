@@ -394,8 +394,57 @@ h1 { font-size: 19px; margin: 0 0 12px }
   padding: 8px 0; border-top: 1px solid var(--border);
 }
 .tickets li:first-child { border-top: 0 }
-.tickets b { font-variant-numeric: tabular-nums; letter-spacing: .02em }
+/* A ticket number never breaks. It is the one string on this page somebody
+   reads back down a telephone, and "KS-" over "00001" is two answers. */
+.tickets b { font-variant-numeric: tabular-nums; letter-spacing: .02em; white-space: nowrap }
 .tickets span { color: var(--muted); font-size: 13px; text-align: right }
+/* The mark travels with the words rather than being pinned to the column
+   edge: read as a pair they are one answer, and the eye finds the colour
+   first and the sentence second. */
+.tickets .st { justify-content: flex-end }
+
+/*
+ * THE THREE MARKS.
+ *
+ * `currentColor` is the whole mechanism: each wrapper sets a colour and the
+ * symbol inherits it, so one sprite serves three states and dark mode is
+ * already handled by the tokens. `--mark-ink` is the tick INSIDE the sold
+ * rosette — it sits on a filled shape, so it needs the companion ink token
+ * rather than white, which is unreadable on the light-mint brand this page
+ * uses after dark.
+ *
+ * The sprite itself is removed from layout rather than hidden: `display: none`
+ * on an <svg> holding <symbol>s stops Safari resolving the <use> that points
+ * into it, and the marks come out as three empty boxes.
+ */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden }
+.mk { width: 1.05em; height: 1.05em; display: block }
+/*
+ * TWO ITEMS: the mark, and the language pair as one block.
+ *
+ * `say()` returns Burmese and English as two BLOCKS, one over the other. Put
+ * straight into this row they became two flex items side by side — squeezed
+ * into half a column each and wrapping mid-word, which is what the first
+ * render of this showed. `.ws` is the box that keeps them stacked.
+ */
+.st { display: inline-flex; align-items: center; gap: 7px }
+.st .ws { display: block; min-width: 0 }
+/*
+ * SCOPED TO `.st`, AND THAT IS NOT TIDINESS — IT IS THE ONLY WAY THEY WIN.
+ *
+ * `.tickets span { color: var(--muted) }` is a class AND a type, so it
+ * outranks a bare `.mark-sold`, and the three marks came out the same grey as
+ * the sentence beside them: three shapes doing all the work and the colour
+ * doing none. `.st .mark-sold` is two classes and takes it back.
+ *
+ * Same family as the `.req` leak in the app's own stylesheet — a rule written
+ * where the author was looking, landing inside a selector written somewhere
+ * else. Worth checking in a picture rather than in the source, because both
+ * rules are correct and only the pair is wrong.
+ */
+.st .mark-sold { color: var(--brand); --mark-ink: var(--brand-ink) }
+.st .mark-unsold { color: var(--warn) }
+.st .mark-void { color: var(--bad) }
 
 .state { margin: 0; font-weight: 600 }
 /*

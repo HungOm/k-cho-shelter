@@ -71,8 +71,58 @@ function say(key, pair) {
   return `<span class="my" lang="my">${s.my}</span><span class="en">${s.en}</span>`
 }
 
+/*
+ * THE THREE STATES A TICKET CAN BE IN, AS MARKS.
+ *
+ * The page said "Recorded as sold" in two languages on every line of a
+ * forty-one ticket list, which is eighty-two lines of prose to convey three
+ * facts. A mark carries it at a glance and the words stay beside it — never
+ * instead of it, and never colour alone, so the three SHAPES differ as well as
+ * the three colours: a rosette for sold, a ring with a bar for not yet, a ring
+ * with a stroke through it for cancelled. Somebody who cannot tell teal from
+ * amber still sees three different things, and somebody reading aloud down a
+ * telephone still has the sentence.
+ *
+ * SOLD IS A ROSETTE IN THE RAFFLE'S OWN COLOUR — the scalloped disc a reader
+ * already knows from a verified badge, at `--brand` rather than the blue that
+ * belongs to somebody else's product. It is the only one of the three with a
+ * tick in it, because it is the only one that is good news.
+ *
+ * DRAWN ONCE AND REFERENCED, not repeated per row. Three `<symbol>`s in a
+ * hidden sprite and a `<use>` on each line: a list of three hundred tickets is
+ * the case this page has to survive, and inlining a rosette three hundred
+ * times would be sixty kilobytes of markup on a page whose whole argument is
+ * that it opens on one bar of signal.
+ */
+const SPRITE = `<svg class="sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="m-sold" viewBox="0 0 24 24">
+    <polygon points="12.00,1.00 14.36,3.21 17.50,2.47 18.43,5.57 21.53,6.50 20.79,9.64 23.00,12.00 20.79,14.36 21.53,17.50 18.43,18.43 17.50,21.53 14.36,20.79 12.00,23.00 9.64,20.79 6.50,21.53 5.57,18.43 2.47,17.50 3.21,14.36 1.00,12.00 3.21,9.64 2.47,6.50 5.57,5.57 6.50,2.47 9.64,3.21" fill="currentColor"/>
+    <path d="M7.5 12.2l3 3 6-6.4" fill="none" stroke="var(--mark-ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="m-unsold" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9.6" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M7.6 12h8.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="m-void" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9.6" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M6.4 17.6 17.6 6.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  </symbol>
+</defs></svg>`
+
+/**
+ * A state, as a mark and the words for it.
+ *
+ * `aria-hidden` on the mark and the words left alone: the sentence is what a
+ * screen reader should read, and a duplicate label beside it would be read
+ * twice. The mark is decoration over a fact that is already written.
+ */
+function mark(state) {
+  return `<span class="mark-${state}" aria-hidden="true">`
+    + `<svg class="mk" viewBox="0 0 24 24"><use href="#m-${state}"/></svg></span>`
+}
+
 function render(html) {
-  root.innerHTML = topbar() + html + about()
+  root.innerHTML = SPRITE + topbar() + html + about()
 }
 
 /*
@@ -512,7 +562,12 @@ async function run() {
   if (body.receipt) {
     const list = (body.tickets || []).map((t) => {
       const key = t.void ? 'void' : t.sold ? 'sold' : 'unsold'
-      return `<li><b>${escapeHtml(String(t.number))}</b><span>${say(key)}</span></li>`
+      /* The words in their own box. `say` returns two BLOCKS — Burmese over
+         English — and dropped straight into a flex row they would sit side by
+         side, squeezed, and wrap mid-word. The mark is one item, the language
+         pair is the other. */
+      return `<li><b>${escapeHtml(String(t.number))}</b>`
+        + `<span class="st">${mark(key)}<span class="ws">${say(key)}</span></span></li>`
     }).join('')
     /*
      * THE SAME LINE THAT IS ON THE CARD, above the list rather than instead of
@@ -598,7 +653,7 @@ async function run() {
     <dl class="facts">
       <div class="fact">
         <dt>${say('statusLabel')}</dt>
-        <dd class="state">${say(stateKey)}</dd>
+        <dd class="state st">${mark(stateKey)}<span class="ws">${say(stateKey)}</span></dd>
       </div>
     </dl>`
 

@@ -98,6 +98,57 @@ console.log('it imports nothing from the app')
   }
 }
 
+/*
+ * THREE STATES, THREE SHAPES, AND THE WORDS STILL THERE.
+ *
+ * The list said "Recorded as sold" in two languages on every one of up to a
+ * thousand rows. A mark carries it at a glance — but a mark that carried it
+ * ALONE would be a page telling somebody whether they own a ticket in colour,
+ * which is no answer at all to a reader who cannot tell teal from amber, and
+ * no answer to anybody reading it down a telephone.
+ *
+ * So the rule is: the shapes differ as well as the colours, the sentence stays
+ * beside the mark, and the mark is aria-hidden because the sentence is what a
+ * screen reader should read once rather than twice.
+ */
+console.log('a ticket\'s state is a shape and a sentence, never a colour alone')
+{
+  const main = read('src/verify/main.js')
+  const css = read('src/verify/verify.css')
+
+  ok(/render\(html\)\s*\{[\s\S]{0,140}SPRITE/.test(main),
+    'the sprite is emitted by render, so every answer has the marks it needs')
+
+  /* Three symbols, and each state reaches its own. Named rather than counted:
+     two states pointing at one symbol is the failure this exists to stop, and
+     a count of three would not see it. */
+  for (const state of ['sold', 'unsold', 'void']) {
+    ok(new RegExp(`id="m-${state}"`).test(main), `there is a mark for ${state}`)
+    ok(new RegExp(`\\.st \\.mark-${state}\\s*\\{`).test(css), `and a colour for ${state}`)
+  }
+  const shapes = [...main.matchAll(/<symbol id="m-([a-z]+)"([\s\S]*?)<\/symbol>/g)]
+  eq(shapes.length, 3, 'three symbols')
+  eq(new Set(shapes.map((m) => m[2].replace(/\s+/g, ''))).size, 3,
+    'and three different drawings — the shape carries the state, not the colour')
+
+  /*
+   * SCOPED TO `.st`, WHICH IS LOAD-BEARING. `.tickets span` is a class and a
+   * type, so a bare `.mark-sold` loses to it and all three marks come out the
+   * same grey as the sentence beside them. Both rules are correct and only
+   * the pair is wrong, which is why this is pinned rather than trusted.
+   */
+  ok(!/^\.mark-(sold|unsold|void)\s*\{/m.test(css),
+    'the mark colours are not written unscoped, where .tickets span outranks them')
+
+  /* The words are not replaced by the mark, and the mark is not read out. */
+  ok(/mark\(key\)\$\{?.*say\(key\)|mark\(key\)}<span class="ws">\$\{say\(key\)/.test(main)
+    || /mark\(key\)[\s\S]{0,60}say\(key\)/.test(main),
+  'every row still carries the sentence beside its mark')
+  ok(/aria-hidden="true"[\s\S]{0,80}<use href="#m-/.test(main)
+    || /class="mark-\$\{state\}" aria-hidden="true"/.test(main),
+  'and the mark is hidden from a screen reader, which reads the sentence')
+}
+
 console.log('and asks nobody to sign in')
 {
   const html = read('v/index.html')
