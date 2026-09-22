@@ -59,8 +59,11 @@ const ALIGN = [{ id: 'left', name: 'Left' }, { id: 'centre', name: 'Centre' }, {
  * have Burmese names must not have to discover that the other one drops them.
  */
 const FACES = [
-  { id: 'text', name: 'Everyday', why: 'Renders Burmese as well as English. The right choice for anything a person typed.' },
-  { id: 'number', name: 'Serif', why: 'The serial number face — figures of one width, so numbers line up. English and figures only.' },
+  /* One clause each. The second sentence of both said the same thing the first
+     one implied, and these sit under a two-item select where the reader has
+     already narrowed it to two. */
+  { id: 'text', name: 'Everyday', why: 'Renders Burmese. Use it for anything typed.' },
+  { id: 'number', name: 'Serif', why: 'Figures of one width, so numbers line up. English only.' },
 ]
 
 const px = (part, k) => Math.round(part.box[k] * (k === 'left' || k === 'width' ? props.size.width : props.size.height))
@@ -92,7 +95,7 @@ const over = () => (props.motto || '').length > props.mottoMax
       <span class="pglyph" :class="part.kind"><Icon :name="part.kind" :size="16" /></span>
       <div class="pname">
         <h3>{{ part.name }}</h3>
-        <p class="tiny muted">{{ part.what }}</p>
+        <p class="say">{{ part.what }}</p>
       </div>
       <button
         v-if="!part.locked" type="button" class="hide" :class="{ off: !part.enabled }"
@@ -144,14 +147,11 @@ const over = () => (props.motto || '').length > props.mottoMax
         {{ px(part, 'left') }}, {{ px(part, 'top') }} ·
         {{ px(part, 'width') }} &times; {{ px(part, 'height') }} px
       </p>
-      <p v-if="part.square" class="tiny muted">
-        Kept square whichever handle you drag. A stretched QR is a QR that will
-        not scan, and nobody finds out until somebody is at the door with it.
+      <p v-if="part.square" class="say"
+         title="A stretched QR is a QR that will not scan, and nobody finds out until somebody is at the door with it.">
+        Always square.
       </p>
-      <p v-else class="tiny muted">
-        The lettering grows with the box, so this sizes the part as well as
-        placing it.
-      </p>
+      <p v-else class="say">Lettering grows with the box.</p>
     </div>
 
     <div v-if="part.textual" class="pgroup">
@@ -171,14 +171,11 @@ const over = () => (props.motto || '').length > props.mottoMax
            :can-drop="canDrop"
            @update:model-value="(v) => { part.ink = v }"
            @pick="emit('pick-colour', (c) => { part.ink = c })" />
-      <p class="tiny muted">
+      <p class="say">
         <button v-if="part.ink" type="button" class="linkish"
-                title="Go back to the colour worked out from the raffle's own colour"
+                title="Go back to the colour worked out from the raffle's own colour, which is readable on it"
                 @click="part.ink = ''">Back to the card's own colour</button>
-        <template v-else>
-          Taken from the raffle's colour and readable on it. Typing one here
-          overrules that.
-        </template>
+        <template v-else>From the raffle's colour.</template>
       </p>
       <div class="sitrow">
         <label class="formrow"><span class="cap">Lettering</span>
@@ -193,11 +190,9 @@ const over = () => (props.motto || '').length > props.mottoMax
           Bold
         </label>
       </div>
-      <p class="tiny muted">{{ FACES.find((f) => f.id === part.family)?.why }}</p>
-      <p class="tiny muted">
-        This sets the {{ part.name.toLowerCase() }} itself. A caption over it keeps
-        the lettering that tells the two apart.
-      </p>
+      <!-- The second sentence went: it said a caption keeps its own lettering,
+           which is a fact about a part nobody has selected. -->
+      <p class="say">{{ FACES.find((f) => f.id === part.family)?.why }}</p>
     </div>
 
     <!--
@@ -221,21 +216,21 @@ const over = () => (props.motto || '').length > props.mottoMax
       <span class="meter" :class="{ bad: over() }" aria-hidden="true">
         <span :style="{ width: Math.min(100, ((motto || '').length / mottoMax) * 100) + '%' }"></span>
       </span>
-      <p class="tiny muted">
-        {{ mottoMax }} characters keeps it on one line at every size. Longer is
-        refused, not shrunk — shrinking changes the design where you cannot see it.
-      </p>
-      <p class="tiny muted">
-        The same line on every treatment. The box around it is this treatment's.
+      <!-- The count and the meter above already say the length; a sentence
+           repeating it was the label restated. What survives is the fact
+           neither of them shows — that the line belongs to the raffle, while
+           the box around it belongs to this treatment. -->
+      <p class="say"
+         title="Longer is refused rather than shrunk: shrinking changes the design where you cannot see it.">
+        The same line on every treatment. The box is this one's.
       </p>
     </div>
 
     <div v-if="part.id === 'code'" class="pgroup">
       <h4 class="rubric">The code</h4>
-      <p class="tiny muted">
-        Scanning it opens the public check page for that ticket. There is no
-        placeholder underneath it to fight with, unlike the printed ticket —
-        this card is drawn, not photographed.
+      <p class="say"
+         title="No placeholder underneath it to fight with, unlike the printed ticket — this card is drawn, not photographed.">
+        Opens the public check page.
       </p>
       <p v-if="qrDensity" class="tiny" :class="qrDensity.ok ? 'muted' : 'bad'">
         Sent at {{ qrDensity.sentWidth }} px wide, each square of the code lands
@@ -250,10 +245,7 @@ const over = () => (props.motto || '').length > props.mottoMax
 
     <div v-if="part.locked" class="pgroup">
       <h4 class="rubric">The card itself</h4>
-      <p class="tiny muted">
-        The paper, the weave and the rules that make a rectangle read as a
-        ticket. It cannot be moved or hidden, because it is the card.
-      </p>
+      <p class="say">The card itself — it cannot be moved or hidden.</p>
     </div>
   </template>
 
@@ -278,10 +270,9 @@ const over = () => (props.motto || '').length > props.mottoMax
       <span class="chipcol" :style="{ background: brand || 'var(--brand)' }"></span>
       <b class="data">{{ brand || 'the standard colour' }}</b>
     </div>
-    <p class="tiny muted">
-      Taken from the raffle's theme — change it in Setup and every ticket
-      follows. The lettering on top is worked out for readability rather than
-      chosen, so a pale colour does not produce an unreadable card.
+    <p class="say"
+       title="The lettering on top is worked out for readability rather than chosen, so a pale colour does not produce an unreadable card.">
+      From the raffle's theme, in Setup.
     </p>
   </div>
 
@@ -295,20 +286,31 @@ const over = () => (props.motto || '').length > props.mottoMax
       <input type="range" min="0" max="20" step="1"
              :value="Math.round(watermark.opacity * 100)"
              aria-label="Watermark strength, as a percentage"
+             title="A few per cent is the point of it: strong enough that a large flat field does not read as a screen, faint enough that nothing is printed over."
              @input="watermark.opacity = Number($event.target.value) / 100">
     </label>
-    <p class="tiny muted">
-      A few per cent is the point of it: strong enough that a large flat field
-      does not read as a screen, faint enough that nothing is printed over.
-    </p>
+    <!-- The sentence moved onto the control it is about. A slider showing its
+         own percentage above it does not also need a paragraph telling you
+         which end of it is right. -->
   </div>
 
+  <!--
+    A CONSEQUENCE, NOT AN EXPLANATION, so it keeps `.tiny` and its tone rather
+    than dropping to `.say` with the captions. What somebody is about to change
+    for every buyer is the one sentence in this panel that has to survive a
+    reader who is skimming.
+
+    Shortened, not shrunk. The clause about cards already issued being redrawn
+    IF THEY ARE SENT AGAIN was the half people misread as "already delivered
+    pictures change", so the two halves are now one line each and in the order
+    somebody worries about them.
+  -->
   <div class="pgroup saving">
     <h4 class="rubric">What saving changes</h4>
     <p class="tiny">
-      The card belongs to the raffle, not to a ticket: every digital ticket sent
-      from now on is drawn this way, including ones already issued if they are
-      sent again. Pictures already delivered keep what they were drawn with.
+      Every card sent from now on is drawn this way, including ones already
+      issued if they are sent again.
+      <span class="muted">Pictures already delivered keep what they had.</span>
     </p>
   </div>
 </aside>

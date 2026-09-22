@@ -106,15 +106,15 @@ const emit = defineEmits(['remove', 'pick-colour'])
                  title="A code element always prints this ticket's own check code">
         </span>
       </label>
-      <p class="tiny muted">
+      <p class="say">
         <template v-if="element.kind === 'field'">
           {{ SOURCE[element.source]?.why }}.
         </template>
         <template v-else-if="element.kind === 'text'">
-          The same words on every ticket printed from this template.
+          The same on every ticket from this template.
         </template>
         <template v-else>
-          Scanning it opens the public check page for this ticket.
+          Opens the public check page.
         </template>
       </p>
     </div>
@@ -157,7 +157,7 @@ const emit = defineEmits(['remove', 'pick-colour'])
           · {{ (inPixels.w * mmPer).toFixed(1) }} × {{ (inPixels.h * mmPer).toFixed(1) }} mm printed
         </template>
       </p>
-      <p class="tiny muted">The bottom edge is the line the lettering sits on.</p>
+      <p class="say">The bottom edge is the baseline.</p>
     </div>
 
     <div v-if="element.kind !== 'code'" class="pgroup">
@@ -184,7 +184,7 @@ const emit = defineEmits(['remove', 'pick-colour'])
           Bold
         </label>
       </div>
-      <p class="tiny muted">{{ FAMILIES.find((f) => f.id === element.family)?.why }}</p>
+      <p class="say">{{ FAMILIES.find((f) => f.id === element.family)?.why }}</p>
     </div>
 
     <div v-if="element.kind !== 'code'" class="pgroup">
@@ -205,7 +205,7 @@ const emit = defineEmits(['remove', 'pick-colour'])
       <label class="choice">
         <input v-model="element.backing" type="checkbox">
         <span>White behind it
-          <span class="why">The artwork prints its own placeholder code here; one drawn over another scans as neither.</span>
+          <span class="why">The artwork prints its own code here; one over another scans as neither.</span>
         </span>
       </label>
       <p v-if="qrDensity" class="tiny" :class="qrDensity.ok ? 'muted' : 'bad'">
@@ -218,12 +218,16 @@ const emit = defineEmits(['remove', 'pick-colour'])
       </p>
     </div>
 
+    <!-- A CONSEQUENCE, so it keeps `.tiny` while the captions above drop to
+         `.say`. The half that surprises people — that digital tickets already
+         issued are redrawn from it — leads, and the half that reassures
+         follows quietly. -->
     <div class="pgroup saving">
       <h4 class="rubric">What saving changes</h4>
       <p class="tiny">
-        The design belongs to the template, not to a ticket: everything printed or
-        sent from now on draws from it, including digital tickets already issued.
-        Paper already printed keeps what it was printed with.
+        Everything printed or sent from now on draws from this, including
+        digital tickets already issued.
+        <span class="muted">Paper already printed keeps what it had.</span>
       </p>
     </div>
   </template>

@@ -547,7 +547,7 @@ defineExpose({ sendTest, testing })
                 :class="{ on: card.design === d.id }" :title="d.note"
                 @click="card.design = d.id">{{ d.name }}</button>
       </div>
-      <p class="tiny muted">{{ CARD_DESIGNS.find((d) => d.id === card.design)?.note }}</p>
+      <p class="say">{{ CARD_DESIGNS.find((d) => d.id === card.design)?.note }}</p>
     </div>
 
     <div class="block grow">
@@ -571,9 +571,8 @@ defineExpose({ sendTest, testing })
                   :why="p.locked ? 'The background is the card itself — there is nothing behind it to show.' : ''" />
         </li>
       </ul>
-      <p class="tiny muted">
-        Nothing can be added or removed here. The parts of the card are this
-        app's own drawing, not artwork you place things on.
+      <p class="say" title="The parts of the card are this app's own drawing, not artwork you place things on.">
+        Nothing can be added or removed — these parts are the card.
       </p>
     </div>
 
@@ -589,9 +588,8 @@ defineExpose({ sendTest, testing })
              title="A chat list thumbnail and the preview above a reply show a centred square of the picture. Keep the number and the mark inside it.">
         <input v-model="showSafe" type="checkbox"> Safe area for WhatsApp
       </label>
-      <p class="tiny muted">
-        The safe area is the square a chat list crops to. Everything outside it
-        is still on the card somebody opens.
+      <p class="say" title="Everything outside it is still on the card somebody opens.">
+        The square a chat list crops to.
       </p>
     </div>
   </aside>
@@ -599,7 +597,7 @@ defineExpose({ sendTest, testing })
   <!-- ---------- the canvas ---------- -->
   <div class="stagewrap">
     <div class="stagebar">
-      <span class="tiny muted">what the buyer receives</span>
+      <span class="say">what the buyer receives</span>
       <span class="specs data">{{ size.width }} &times; {{ size.height }} px</span>
       <span class="grow"></span>
       <span v-if="testNote" class="tiny muted">{{ testNote }}</span>

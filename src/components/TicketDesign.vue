@@ -2032,9 +2032,8 @@ const printedSize = computed(() => {
                 <button type="button" class="segbtn" :class="{ on: pending === 'text' }"
                         @click="beginAdd('text')">Own words</button>
               </div>
-              <p class="tiny muted">
-                Pick it, then draw a box anywhere on the artwork.
-                Nothing here is fixed by the system.
+              <p class="say" title="Nothing here is fixed by the system — a field can go anywhere on either half.">
+                Pick one, then draw a box.
               </p>
             </div>
 
@@ -2223,7 +2222,7 @@ const printedSize = computed(() => {
                   aria-label="Where the stub begins, as a percentage of the ticket"
                   @input="design.stubAt = Math.max(0.05, Math.min(0.95, Number($event.target.value) / 100))">
                 <span class="unit">%</span>
-                <span class="tiny muted">or drag the line on the ticket</span>
+                <span class="say">or drag the line on the ticket</span>
               </div>
             </div>
           </aside>
@@ -2619,10 +2618,9 @@ const printedSize = computed(() => {
         them back is the worse failure by a distance.
       -->
       <footer v-if="tab === 'digital'" class="footbar">
-        <span class="tiny muted grow">
-          Held as shares of the card, so an arrangement survives a treatment
-          being redrawn — and only what you have MOVED is written down, so the
-          rest of the card keeps improving with the app.
+        <span class="say grow">
+          Held as shares, so an arrangement survives a redraw. Only what you
+          have moved is written down.
         </span>
         <button class="btn sm ghost danger" :disabled="!cardParts.length"
                 :title="`Put every part of this card back where it started. The other ${CARD_TREATMENTS.length - 1} treatments keep whatever you have arranged on them. This cannot be undone.`"
@@ -2639,9 +2637,8 @@ const printedSize = computed(() => {
                 @click="redoCard">Redo</button>
       </footer>
       <footer v-else class="footbar">
-        <span class="tiny muted grow">
-          Held as shares of the template and not as pixels, so the same design survives a
-          redraw at any size — and a different charity's artwork starts from its own.
+        <span class="say grow">
+          Held as shares, not pixels, so a design survives a redraw at any size.
         </span>
         <!--
           THREE ACTIONS THAT LOOKED IDENTICAL AND ARE NOT.

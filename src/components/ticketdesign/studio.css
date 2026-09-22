@@ -102,3 +102,47 @@
 /* .seg / .segbtn live in src/style.css — a switch outside the studio used them
    and a studio-scoped definition left it unstyled. */
 .mono { font-family: var(--font-data); font-variant-numeric: tabular-nums }
+
+/*
+ * THREE VOICES, WHICH USED TO BE ONE.
+ *
+ * `class="tiny muted"` appeared 31 times across this studio and carried three
+ * different jobs at one volume: an explanation of why a control behaves as it
+ * does, an empty state telling somebody what to do next, and a CONSEQUENCE —
+ * "under two pixels a square, which phones struggle with". They were drawn
+ * identically, so the sentence that mattered looked exactly like the sentence
+ * that did not, and a panel of them read as a wall.
+ *
+ * The user's instruction was "minimum text only… explanation in smaller text
+ * if needed, and helper text must be visible and smaller, not competing for
+ * attention with tools icons". Three instructions, and the middle one is the
+ * reason this is a split rather than a delete: some of these should survive,
+ * quieter.
+ *
+ *   .say        an explanation. Available, not read. Smaller than a control's
+ *               own label so it cannot compete with the icon beside it.
+ *   .tiny + a   a consequence or a refusal. Unchanged, and it keeps every
+ *   tone        pixel — permissionui requires a control's reason stay legible,
+ *               and a warning that shrinks with the captions is a warning
+ *               nobody sees.
+ *   .tiny muted an empty state, which is the one place worth MORE words: say
+ *               what would put something here and how.
+ *
+ * .74rem is deliberately below .tiny's .82 and the app's .hint at .86. It is
+ * the only place in the product that goes this small, and it earns it: this is
+ * a desk screen at tablet width or wider, dense by choice, where the artboard
+ * is the thing and the caption is a footnote to a control.
+ */
+.say {
+  margin: 0;
+  font-size: .74rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+/* Against a rail of 32px icons, even .74rem competes if it is the same colour
+   as the words on the controls. The rule gives it a left edge to belong to
+   rather than floating as a second column of text. */
+.say.under {
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+}

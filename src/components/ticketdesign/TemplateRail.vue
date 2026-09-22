@@ -108,7 +108,7 @@ function onPick(e) {
       drawn and then refused by the same check that guards an upload.
     -->
     <div v-if="sizes.length" class="blankstart">
-      <p class="tiny muted">or start from a blank ticket and place the fields now</p>
+      <p class="say">or start from a blank ticket</p>
       <button v-for="(sz, i) in sizes" :key="i" type="button"
               class="btn sm" :disabled="busy"
               :title="`A blank ${sz.label} ticket, with the trim edge and the stub's perforation drawn on it`"
@@ -117,7 +117,7 @@ function onPick(e) {
       </button>
     </div>
 
-    <p class="tiny muted"
+    <p class="say"
        title="One blank ticket with its stub. SVG is refused, and the size is read from the file's own header — renaming a file will not get it past.">
       PNG, JPEG or WebP · up to 4 MB
     </p>

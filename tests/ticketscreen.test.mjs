@@ -286,8 +286,25 @@ console.log('the screen says what it is storing')
     drive: settle, renderReal: ['Inspector.vue'],
   })
   const text = visibleText(html)
-  ok(/shares of the template/.test(text), 'the footer states that positions are shares')
-  ok(/not as pixels/.test(text), 'and says what they are not')
+  /*
+   * MATCHED ON THE TWO WORDS THAT CARRY THE MODEL, not on the sentence.
+   *
+   * It read /shares of the template/ and /not as pixels/ until 2026-09-22,
+   * when the studio's prose was cut on a user instruction — "minimum text
+   * only" — and the footer became "Held as shares, not pixels, so a design
+   * survives a redraw at any size." Both facts are still there and both
+   * assertions went red, which is a test pinning phrasing rather than meaning.
+   *
+   * This file has already paid for that once, thirty lines down: an assertion
+   * matching a full sentence stopped matching when "not to any ticket" became
+   * "not to a ticket", and a disjunction carried it green for weeks. The
+   * lesson taken then was to match the short durable clause. "shares" and
+   * "pixels" are the shortest durable thing here — the contrast between them
+   * IS the model, and a rewrite that drops either has dropped the point rather
+   * than tightened it.
+   */
+  ok(/\bshares\b/.test(text), 'the footer states that positions are shares')
+  ok(/\bpixels\b/.test(text), 'and says what they are not')
 
   /*
    * THIS ASSERTION WAS DEAD AND HAD TO BE RE-AIMED, 2026-09-20.
@@ -317,7 +334,21 @@ console.log('the screen says what it is storing')
   })
   const chosenText = visibleText(picked)
   ok(/Its box/.test(chosenText), 'the inspector really is showing a selected element')
-  ok(/belongs to the template/.test(chosenText), 'and saving explains what it reaches')
+  /*
+   * WHAT IT REACHES, in whatever words. This matched /belongs to the template/
+   * — the ownership framing — and the 2026-09-22 cut replaced that abstraction
+   * with the consequence it stands for: "Everything printed or sent from now
+   * on draws from this, including digital tickets already issued."
+   *
+   * The assertion's own name is "saving explains what it REACHES", so the
+   * concrete clause is the better thing to pin: a reader about to commit a
+   * press run needs to know the blast radius, not the data model. Matched on
+   * the reach and on the part people misread — that already-issued digital
+   * tickets are included — because dropping that half is the way this sentence
+   * would actually get worse.
+   */
+  ok(/from now on/.test(chosenText), 'and saving explains what it reaches')
+  ok(/already issued/.test(chosenText), 'including the half people misread')
 }
 
 console.log('an unsaved change says so, and can be undone')

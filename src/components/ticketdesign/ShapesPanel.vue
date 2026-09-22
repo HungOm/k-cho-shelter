@@ -89,9 +89,9 @@ const emit = defineEmits(['add', 'save', 'remove'])
       <button class="btn sm" @click="emit('add')">Add a shape</button>
       <button class="btn sm primary" :disabled="busy" @click="emit('save')">Save shapes</button>
     </div>
-    <p class="tiny muted"
+    <p class="say"
        title="Tolerance is on the aspect ratio, as a fraction: 0.02 accepts two per cent out of shape. Removing every shape restores the standard list. Only artwork too coarse to print is turned away — an unfamiliar shape is measured and offered, never thrown away.">
-      Tolerance is a fraction of the aspect ratio
+      Tolerance is a fraction of the shape
     </p>
   </div>
 
