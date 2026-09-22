@@ -107,11 +107,22 @@ console.log('halfofeachbook — ten consecutive numbers that are not a book')
   eq(tickets.length, 10, 'ten tickets')
   const c = spansOf(tickets, BOOKS)
   eq(c.filter((x) => x.kind === 'book').length, 0, 'and not one book among them')
-  eq(c.length, 1, 'they are one span')
-  eq(chunkText(c[0]), 'KS-00006 – KS-00015', 'printed as the span they are')
   /* Said the other way, because this is the assertion that protects the money:
      nothing in the output may name a book the buyer does not hold whole. */
   ok(!line(tickets).includes('Book-'), 'no book is named on a holding that contains none')
+
+  /*
+   * AND THEY ARE TWO SPANS, NOT ONE. This is the other half of the same rule.
+   * A book here is a physical object with a printed range, handed to a seller
+   * and reconciled as a unit; these ten are the back half of one and the front
+   * half of the next. Printed as `KS-00006 – KS-00015` the line reads like one
+   * book's worth and sends whoever checks it to one shelf, so a run stops
+   * where a book does.
+   */
+  eq(c.length, 2, 'they are two spans, one per book')
+  eq(chunkText(c[0]), 'KS-00006 – KS-00010', 'the back half of the first')
+  eq(chunkText(c[1]), 'KS-00011 – KS-00015', 'and the front half of the second')
+  eq(summarise(tickets, BOOKS).tickets, 10, 'and all ten are still accounted for')
 }
 
 console.log('nine of ten is nine, not a book')
@@ -177,6 +188,18 @@ console.log('nothing merges across a change in the numbering')
   const odd = [{ number: 'SAMPLE', book: '' }, { number: 'KS-00001', book: '' }]
   eq(summarise(odd, BOOKS).chunks.length, 2, 'an unreadable number is its own chunk')
   ok(line(odd).includes('SAMPLE'), 'and is still shown')
+}
+
+console.log('a run never merges two books, whole or not')
+{
+  /* The whole-book case cannot arise — pass one takes those out first — so
+     this is the case that is left: partial, partial, and adjacent. */
+  const c = spansOf(hold(10, 11), BOOKS)
+  eq(c.length, 2, 'the last ticket of one book and the first of the next are two')
+  eq(line(hold(10, 11)), 'KS-00010 · KS-00011', 'and are printed as two')
+  /* Within one book it still runs on, which is the thing that would be lost
+     if the boundary check were written as "never merge anything". */
+  eq(line(hold(11, 12, 13)), 'KS-00011 – KS-00013', 'inside one book a run is a run')
 }
 
 console.log('a book whose row is missing is listed, never folded')

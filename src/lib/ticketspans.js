@@ -23,6 +23,13 @@
  * `tickets.book_idx` is a column and `books` carries its own first and last.
  * Nothing here infers a book from arithmetic on numbers.
  *
+ * AND A RUN STOPS WHERE A BOOK DOES, which is the same rule facing the other
+ * way. A book is a physical object with a printed range, given to a seller and
+ * reconciled as a unit. Refusing to NAME one the buyer does not hold whole and
+ * then printing `KS-00006 – KS-00015` across two of them would give back with
+ * one hand what the first rule took with the other: a line that reads like one
+ * book's worth and sends whoever checks it to one shelf.
+ *
  * WHAT A NUMBER IS, WITHOUT BEING TOLD.
  *
  * Adjacency needs an integer, and ticket numbers are a prefix and a padded
@@ -140,29 +147,40 @@ export function spansOf(tickets, books = []) {
     }
   }
   for (const [number, book] of byNumber) {
-    if (!foldedBooks.has(book)) loose.push(number)
+    if (!foldedBooks.has(book)) loose.push({ number, book })
   }
 
-  /* ---- pass two: fold what is left into runs ---- */
+  /* ---- pass two: fold what is left into runs, WITHIN ONE BOOK ---- */
   /*
-   * A RUN MAY CROSS A BOOK BOUNDARY, now that no whole book is left in here.
-   * To the buyer a span of numbers is a span of numbers; which book a
-   * counterfoil is filed in is the office's business and is on the check page
-   * behind the QR. Refusing to cross would print
-   * `KS-00009 – KS-00010 · KS-00011 – KS-00012` where one span is true.
+   * A RUN STOPS AT A BOOK BOUNDARY, and that is the second half of the same
+   * rule as pass one.
+   *
+   * A book in this raffle is a physical object with a printed range, given out
+   * to a seller and reconciled as a unit. Pass one refuses to CALL something a
+   * book unless the buyer holds all of it. This refuses to blur where one ends
+   * for the same reason: a buyer holding KS-00006 to KS-00015 holds the back
+   * half of one book and the front half of the next, and printing that as a
+   * single ten-long span is a line that reads like one book's worth and sends
+   * whoever checks it to one shelf.
+   *
+   * It costs a chunk in the one case where neither book is whole — two spans
+   * where there might have been one — and it buys a line that can never be
+   * read as a unit the raffle does not have. Anything already folded into a
+   * whole book left in pass one, so this never splits something that was
+   * genuinely one thing.
    */
-  loose.sort(compareNumbers)
+  loose.sort((a, b) => compareNumbers(a.number, b.number))
   let run = null
   const runs = []
-  for (const number of loose) {
+  for (const { number, book } of loose) {
     const shape = shapeOf(number)
-    if (run && follows(run.shape, shape)) {
+    if (run && run.book === book && follows(run.shape, shape)) {
       run.to = number
       run.shape = shape
       run.count += 1
       continue
     }
-    run = { kind: 'span', from: number, to: number, count: 1, shape }
+    run = { kind: 'span', from: number, to: number, count: 1, shape, book }
     runs.push(run)
   }
   for (const r of runs) chunks.push({ kind: r.kind, from: r.from, to: r.to, count: r.count })
