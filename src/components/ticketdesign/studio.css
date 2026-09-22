@@ -77,6 +77,6 @@
 }
 .quad { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px }
 .quad.one { grid-template-columns: 1fr }
-/* .seg / .segbtn moved to src/style.css — TicketDock uses them and is not a
-   studio component, so a studio-scoped definition left it unstyled. */
+/* .seg / .segbtn live in src/style.css — a switch outside the studio used them
+   and a studio-scoped definition left it unstyled. */
 .mono { font-family: var(--font-data); font-variant-numeric: tabular-nums }

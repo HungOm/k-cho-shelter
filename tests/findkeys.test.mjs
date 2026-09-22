@@ -16,10 +16,19 @@
  * bag must therefore SAY why. Silence is the one outcome the rule forbids,
  * and silence is also the default behaviour of a missing branch.
  *
+ * AND WHERE THE TICKET GOES WHEN A KEY OPENS ONE. Find used to draw the
+ * ticket in a dock beside the list when the window was wide enough and hand it
+ * up to the sheet when it was not — two records of one ticket, two sale forms.
+ * The organiser removed the dock on 2026-09-22 and ruled that a ticket opens
+ * in the modal whatever you are holding. What replaced the dock's assertion is
+ * below: opening ALWAYS hands the ticket up. The failure being pinned is a
+ * width-gated branch that swallows it instead, which on screen is a row that
+ * does nothing when you press it.
+ *
  * WHAT THIS CANNOT DO. It cannot prove focus actually lands on a row: server
  * rendering has no document, so `focusRow` has nothing to focus. It proves
- * what the component decides — which row is next, which page, and what is
- * said — and leaves the DOM half to a browser.
+ * what the component decides — which row is next, which page, what is said,
+ * and what it hands to App.vue — and leaves the DOM half to a browser.
  */
 import { renderScreen, visibleText, setupOf } from './screen.mjs'
 
@@ -68,9 +77,18 @@ export const setSellMode = () => {}
 
 const ADMIN = { email: 'org@x.com', role: 'admin', agentId: '', isSuperAdmin: false }
 
+/*
+ * WHAT THE SCREEN TELLS THE APP is now the observable. It used to be a
+ * `selected` ref that the dock read, which a test could look at directly; with
+ * the dock gone, opening a ticket is an EMIT and nothing is left on the
+ * component to inspect. setupOf takes an emit for exactly this — a swallowed
+ * one would make "opened the ticket" and "did nothing at all" identical.
+ */
 const bindings = async () => {
-  const { ctx, cleanup } = await setupOf('src/components/Search.vue', STORE(ADMIN))
-  return { b: ctx, cleanup }
+  const sent = []
+  const { ctx, cleanup } = await setupOf('src/components/Search.vue', STORE(ADMIN), {},
+    { emit: (ev, arg) => sent.push([ev, arg]) })
+  return { b: ctx, sent, cleanup }
 }
 
 console.log('the keys are promised only where the keys exist')
@@ -86,21 +104,27 @@ console.log('the keys are promised only where the keys exist')
      `the wide layout states the contract (${wideHtml.slice(0, 70)})`)
 }
 
-console.log('the dock is the wide presentation and never the only one')
+console.log('a ticket opens in the sheet, and at every width the same way')
 {
-  const narrow = await renderScreen('src/components/Search.vue', STORE(ADMIN), {
-    drive: (b) => { b.selected.value = TICKETS[0] },
-    renderReal: ['TicketDock.vue'],
-  })
-  ok(!/class="dock"/.test(narrow),
-     'nothing is docked on a phone, however a selection got set')
-
-  const wideHtml = await renderScreen('src/components/Search.vue', STORE(ADMIN), {
-    drive: (b) => { b.wide.value = true; b.selected.value = TICKETS[0] },
-    renderReal: ['TicketDock.vue'],
-  })
-  ok(/class="dock"/.test(wideHtml), 'and the ticket opens beside the list when there is room')
-  ok(/Who bought it\?/.test(visibleText(wideHtml)), 'with the sale in it, not a link to it')
+  /*
+   * BOTH WIDTHS, because the defect this replaces a dock assertion with is a
+   * branch that only one of them takes. A screen that opens the ticket on a
+   * phone and swallows it on a desktop passes any test that renders one shape.
+   */
+  for (const wide of [false, true]) {
+    const { b, sent, cleanup } = await bindings()
+    b.wide.value = wide
+    b.openTicket(TICKETS[0])
+    ok(sent.length === 1 && sent[0][0] === 'open' && sent[0][1].number === 'KS-00001',
+       `the ticket is handed up for the sheet to open, wide: ${wide} `
+       + `(${JSON.stringify(sent.map((e) => e[0]))})`)
+    /* The one thing the dock was better at, kept: the keyboard stays on the
+       row it came from, so closing the sheet does not land you at the top of
+       six hundred results. */
+    ok(b.focusNum.value === 'KS-00001',
+       `and the keyboard keeps its place on the row it came from (${b.focusNum.value})`)
+    cleanup()
+  }
 }
 
 console.log('down at the bottom of a page turns the page, and says so')
@@ -147,23 +171,25 @@ console.log('S on a ticket that cannot be sold says why, out loud')
    * green, because the key would still "work" — it would just open a ticket
    * the server then refuses.
    */
-  const { b, cleanup } = await bindings()
+  const { b, sent, cleanup } = await bindings()
   b.wide.value = true
   b.page.value = 2
   await b.focusRow('KS-00026')
   b.sellFocused()
-  ok(b.selected.value === null,
+  ok(sent.length === 0,
      'a refused ticket is not opened for a sale that cannot happen')
   ok(/cannot be sold from here/.test(b.said.value) && /Book-002 is out with TEST/.test(b.said.value),
      `and the reason is spoken, not swallowed (${b.said.value})`)
 
   /* Back to page one first: focus only ever sits on a row that is drawn, so
-     a ticket on another page is not something S can reach. */
+     a ticket on another page is not something S can reach. This one also
+     proves the line above could have failed: the same array, and the sale
+     that IS allowed puts something in it. */
   b.page.value = 1
   await b.focusRow('KS-00001')
   b.sellFocused()
-  ok(b.selected.value && b.selected.value.number === 'KS-00001',
-     'a ticket that can be sold opens')
+  ok(sent.length === 1 && sent[0][1].number === 'KS-00001',
+     `a ticket that can be sold opens (${JSON.stringify(sent.map((e) => e[0]))})`)
   ok(/Who bought it/.test(b.said.value), `and says what to type (${b.said.value})`)
   cleanup()
 }

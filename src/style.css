@@ -542,10 +542,11 @@ input[type=file] { padding: 10px }
  * A SEGMENTED SWITCH, and it lives here because it is used outside the studio.
  *
  * These were in ticketdesign/studio.css, which is pulled in only by the studio's
- * own components with `<style scoped src>`. TicketDock uses `.segbtn` for its
- * "Write the sale" / "Where it has been" tabs and is NOT a studio component, so
- * the class resolved to nothing and the tabs rendered as bare buttons: two white
- * boxes with an invisible label, on a dark screen.
+ * own components with `<style scoped src>`. A pair of tabs outside the studio —
+ * on the Find dock, since removed — used `.segbtn`, so the class resolved to
+ * nothing and the tabs rendered as bare buttons: two white boxes with an
+ * invisible label, on a dark screen. They stay here rather than moving back,
+ * because the next switch outside the studio would rediscover this the same way.
  *
  * A class that resolves to nothing is the same defect as `.bad` resolving to
  * nothing further up this file — it reads as handled and does nothing.

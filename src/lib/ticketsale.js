@@ -1,14 +1,16 @@
 /**
  * RECORDING A SALE: the rules, once, for every screen that records one.
  *
- * WHY THIS IS A MODULE AND NOT A COMPONENT. Two screens now write a sale —
- * the sheet you open from anywhere, and the dock beside the results on Find —
- * and they must not be the same MARKUP, because one is a full-height sheet on
- * a phone and the other is a column beside a list on a desktop. What they must
- * share is every rule: a sale needs a name and a telephone number somebody can
- * actually ring; a book in somebody else's bag refuses rather than warns; an
- * organiser writing into such a book has to say why, and that sentence goes
- * onto the book's own trail.
+ * WHY THIS IS A MODULE AND NOT A COMPONENT. It was written when two screens
+ * wrote a sale — the sheet you open from anywhere, and a dock beside the
+ * results on Find — which had to share every rule without sharing markup. The
+ * organiser removed the dock on 2026-09-22, so today SellTicket.vue is the
+ * only caller, and the module stays anyway: the rules are what a second
+ * surface would copy, and this repository's most frequent bug is two halves of
+ * one fact drifting. The rules are that a sale needs a name and a telephone
+ * number somebody can actually ring; a book in somebody else's bag refuses
+ * rather than warns; an organiser writing into such a book has to say why, and
+ * that sentence goes onto the book's own trail.
  *
  * Two copies of those rules is the shape of bug this repository has produced
  * more than any other — two halves of one fact drifting — and the half that

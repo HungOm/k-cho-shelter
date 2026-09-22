@@ -29,11 +29,12 @@ const showTrail = ref(false)
 const emit = defineEmits(['close', 'saved'])
 
 /*
- * THE RULES OF A SALE LIVE IN lib/ticketsale.js, because the dock beside the
- * Find results records one too and the two must not be the same markup — a
- * full-height sheet on a phone and a column beside a list are different
- * shapes of the same act. Everything below here is this sheet's own: the
- * steps-versus-quick layout, and the focus that goes with it.
+ * THE RULES OF A SALE LIVE IN lib/ticketsale.js, and stay there now that this
+ * sheet is the only screen that records one. They were pulled out when Find
+ * had a dock of its own; keeping them out is what stops the next second
+ * surface from being written as a second copy of the rules. Everything below
+ * here is this sheet's own: the steps-versus-quick layout, and the focus that
+ * goes with it.
  */
 const {
   name, phone, zone, reason, onBehalf, step, busy, done,
@@ -41,6 +42,27 @@ const {
   nameOk, phoneOk, canSell, agent, place, mine, blocked, needsReason,
   next, sell, hold, release, correct,
 } = useTicketSale(computed(() => props.ticket), () => emit('saved'))
+
+/*
+ * WHERE THE TICKET PHYSICALLY IS, under the number.
+ *
+ * The subtitle used to name the seller the ticket was CREDITED to, which is
+ * already a fact row below ("Sold by") and is not the question somebody
+ * holding a counterfoil is asking. What they want under the number is where
+ * the thing itself is: in the office, or in somebody's bag 200km away.
+ *
+ * The same four sentences the results list prints, so a row and the sheet it
+ * opens cannot describe one ticket two ways.
+ */
+const where = computed(() => {
+  const w = place.value
+  if (!w) return ''
+  if (w.out) return `with ${w.agentName || w.agentId}`
+  if (w.status === 'Unassigned') return 'in the office'
+  if (w.status === 'Returned') return 'brought back'
+  if (w.status === 'Lost') return 'book lost'
+  return ''
+})
 
 const nameBox = ref(null)
 const phoneBox = ref(null)
@@ -54,7 +76,7 @@ watch(() => props.ticket, focusFirst, { immediate: true })
 </script>
 
 <template>
-  <Sheet :title="t.number" :subtitle="`${t.book}${agent ? ' · ' + agent.name : ''}`" @close="emit('close')">
+  <Sheet :title="t.number" :subtitle="`${t.book}${where ? ' · ' + where : ''}`" @close="emit('close')">
 
     <!-- An unsold ticket in a book somebody is carrying is not free stock. It
          is 200km away, and it may already have been sold on paper. -->
@@ -130,7 +152,11 @@ watch(() => props.ticket, focusFirst, { immediate: true })
           to reach the buyer.
         </p>
         <div class="fact"><span>Phone</span><b>{{ t.phone || 'none' }}</b></div>
-        <div class="fact"><span>Book</span><b>{{ t.book }}</b></div>
+        <!-- The book is NOT a row here. It is the subtitle, two lines up, and
+             printing "Book · Book-0001" underneath "Book-0001 · in the office"
+             is the same string twice inside one panel — which reads as a form
+             with a field in it rather than as a record, and pushes the fact
+             somebody opened this for further down. -->
         <!-- Who sold it was recorded from the first version and shown nowhere.
              It is the first thing asked about a sale somebody is querying. -->
         <div v-if="agent" class="fact"><span>Sold by</span><b>{{ agent.name }}<RoleTag seller /></b></div>
@@ -173,7 +199,7 @@ watch(() => props.ticket, focusFirst, { immediate: true })
         somebody presses this.
       -->
       <button class="btn sm ghost mt" @click="showTrail = true">
-        <Icon name="clock" :size="16" />Where this ticket has been
+        <Icon name="clock" :size="16" />Where it has been
       </button>
       <div v-if="t.source === 'settlement'" class="note warn">
         This was filled in when the book was counted, so nobody wrote down who bought it.

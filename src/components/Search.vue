@@ -1,7 +1,7 @@
 <script setup>
 /**
- * Finding things. On a wide screen the list keeps its place beside the ticket
- * you opened, so you can work down a stack without losing where you were.
+ * Finding things. The list, and a keyboard to work down it — the ticket itself
+ * opens in the sheet, which is the one place a ticket is ever read or written.
  */
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { state, searchResults, agentMap, whereIs, isSold, isAdmin, api, toast, go, sellBlock } from '../lib/store.js'
@@ -20,7 +20,6 @@ import Icon from './ui/Icon.vue'
  */
 import YourStock from './ui/YourStock.vue'
 import Pager from './ui/Pager.vue'
-import TicketDock from './ui/TicketDock.vue'
 
 const emit = defineEmits(['open'])
 const box = ref(null)
@@ -153,11 +152,23 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
 /*
  * ================= WORKING DOWN A STACK, FROM THE KEYBOARD =================
  *
- * TWO PRESENTATIONS OF ONE SELECTION. Wide enough for a column beside the
- * list and the ticket opens in a dock; otherwise it opens in the sheet, as it
- * always has. A phone has no room for a dock and no keyboard to earn one, and
- * a seller standing up holding a book is the person on the phone. 1024px is
- * the same gate the dense reading mode uses.
+ * ONE PRESENTATION OF A TICKET, AND IT IS THE SHEET.
+ *
+ * This screen used to open a ticket in a dock beside the list on a wide
+ * layout and in the sheet everywhere else, so a desktop and a phone showed
+ * two different records of the same ticket — two sale forms, two sets of
+ * words, two places for them to drift apart. The organiser looked at the dock
+ * on 2026-09-22 and ruled: a ticket opens in a modal, the same one, whatever
+ * you are holding. Which is the same ruling they made about the trail the day
+ * before, and it is now the rule rather than a preference about one panel.
+ *
+ * So the screen hands the ticket up and App.vue opens SellTicket. Nothing is
+ * drawn beside the list.
+ *
+ * THE KEYBOARD SURVIVED THE DOCK. Arrow keys, Enter and S are about the LIST,
+ * not about what the list opens — a stack of counterfoils is still worked
+ * down with both hands. Only the promise of them is width-gated, because a
+ * phone has no keys to promise.
  *
  * The match is read once and listened to, and it answers false on the server,
  * where there is no window — so a server render is the phone shape, which is
@@ -165,7 +176,7 @@ watch(() => [state.query, state.filterStatus, state.filterAgent, state.filterWhe
  */
 const wide = ref(false)
 let mq = null
-const onWide = (e) => { wide.value = e.matches; if (!e.matches) selected.value = null }
+const onWide = (e) => { wide.value = e.matches }
 onMounted(() => {
   if (typeof window === 'undefined' || !window.matchMedia) return
   mq = window.matchMedia('(min-width: 1024px)')
@@ -175,18 +186,14 @@ onMounted(() => {
 onUnmounted(() => mq?.removeEventListener('change', onWide))
 
 /*
- * The ticket in the dock. Held as the OBJECT rather than as a number, which
- * is safe here and was worth checking before relying on: loadDelta merges
- * with Object.assign onto the row already in state and reindex remaps the
- * same objects, so a held reference keeps updating across a poll instead of
- * going stale. Holding a number and looking it up every render would also
- * work; it would just be re-deriving something the tree already gives us.
+ * Opening keeps the roving focus on the row it came from, so closing the
+ * sheet puts the keyboard back exactly where it was rather than at the top of
+ * the page — which is the one thing the dock was genuinely better at, and the
+ * only part of it worth keeping.
  */
-const selected = ref(null)
-
 function openTicket(t) {
-  if (wide.value) { selected.value = t; focusNum.value = t.number }
-  else emit('open', t)
+  focusNum.value = t.number
+  emit('open', t)
 }
 
 /*
@@ -283,18 +290,6 @@ function onKey(ev) {
   }
 }
 
-/** The next number worth typing into, so the dock can point at it. */
-const nextUnsold = computed(() => {
-  if (!selected.value) return null
-  const rows = searchResults.value.results
-  const at = rows.findIndex((r) => r.number === selected.value.number)
-  return rows.slice(at + 1).find((r) => !isSold(r) && !sellBlock(r)) || null
-})
-
-function goNext() {
-  const t = nextUnsold.value
-  if (t) { selected.value = t; focusRow(t.number) }
-}
 </script>
 
 <template>
@@ -379,7 +374,6 @@ function goNext() {
     <Pager v-if="!state.loadProgress" v-model:page="page"
            :total="searchResults.results.length" :size="PAGE" noun="tickets" />
 
-    <div class="findsplit" :class="{ docked: wide && selected }">
     <!-- The ref and the key handler sit on the container, not on the
          TransitionGroup: a ref on a component hands back the component, and
          keydown bubbles up from whichever row has focus anyway. -->
@@ -395,8 +389,7 @@ function goNext() {
       <!-- results -->
       <TransitionGroup v-else-if="searchResults.results.length" name="list"
                        tag="ul" class="list">
-        <li v-for="t in pageRows" :key="t.number" class="rowpair"
-            :class="{ picked: selected && selected.number === t.number }">
+        <li v-for="t in pageRows" :key="t.number" class="rowpair">
           <button class="item" :data-num="t.number" :tabindex="rovingFor(t)"
                   @click="openTicket(t)" @focus="focusNum = t.number">
             <span class="grow">
@@ -440,16 +433,6 @@ function goNext() {
       </Empty>
     </div>
 
-    <!--
-      THE TICKET, BESIDE THE LIST. Only on the wide layout, and only once
-      something is selected — an empty column is furniture. On a phone this
-      never renders and the sheet opens as it always did.
-    -->
-    <TicketDock v-if="wide && selected" :ticket="selected" :next-unsold="nextUnsold"
-                @close="selected = null" @saved="selected = null"
-                @open-full="(t) => emit('open', t)" @go-next="goNext" />
-    </div>
-
     <Pager v-if="!state.loadProgress" v-model:page="page"
            :total="searchResults.results.length" :size="PAGE" noun="tickets" />
 
@@ -463,14 +446,9 @@ function goNext() {
 
 <style scoped>
 .searchcard { padding: 16px; }
-/* One column until there is room for two. The dock is sticky inside its own
-   column so the list scrolls past it rather than dragging it along. */
-.findsplit { display: block }
-@media (min-width: 1024px) {
-  .findsplit.docked { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start }
-}
 .keys { margin-left: 10px; font-size: .74rem; color: var(--muted-2, var(--muted)) }
-.rowpair.picked { background: var(--brand-soft) }
+/* The keyboard's own mark. It is the only thing on this screen that says where
+   ↑↓ has got to, now that nothing is drawn beside the list to say it. */
 .item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px }
 /* The same shape as the history control beside it: a small square that does one
    named thing, rather than a word competing with the row itself. */
