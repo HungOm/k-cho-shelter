@@ -15,7 +15,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { state, api, toast, go, goStudio } from '../../lib/store.js'
 import { designFor, stubShare } from '../../lib/ticketdesign.js'
-import { rankFor, rankCount } from '../../lib/ranks.js'
+import { ladderFrom, rankFor, rankCount } from '../../lib/ranks.js'
 import { numberLayerSVG, ticketVerifyUrl, receiptVerifyUrl, cardSVG, CARD_DESIGNS, CARD } from '../../lib/ticketart.js'
 /* What one buyer holds, folded into books and spans — see ticketspans.js. One
    definition, so the card, the message and the check page cannot describe the
@@ -248,8 +248,27 @@ function ticketsHeldBy(t) {
     .sort()
 }
 
+/*
+ * THE RUNGS ARE THE ORGANISER'S WORDS, AND THIS READS THEM RATHER THAN KNOWING
+ * THEM. `ladderFrom` falls back to the default preset for a config row it
+ * cannot use, so a card is always drawn with working words — and it is the same
+ * function the check page's server calls, so the picture in somebody's chat and
+ * the page that confirms it cannot disagree about what rung four is called.
+ */
+const ladder = computed(() => ladderFrom(state.cfg?.supporterBands))
+
 const bandFor = (t) =>
-  rankFor(ticketsHeldBy(t).length, Number(state.cfg?.ticketsPerBook ?? 0))
+  rankFor(ticketsHeldBy(t).length, Number(state.cfg?.ticketsPerBook ?? 0), ladder.value)
+
+/* The ladder comes back highest first, so [0] is the top rung. */
+const topRung = computed(() => ladder.value[0]?.name || 'Supporters')
+const bandsNote = computed(() => {
+  const per = Number(state.cfg?.ticketsPerBook ?? 0)
+  const rungs = [...ladder.value].reverse()
+    .map((r) => `${r.name} at ${r.minBooks} book${r.minBooks === 1 ? '' : 's'}`)
+  return `What this raffle calls its supporters, lowest first: ${rungs.join(', ')}.`
+    + (per ? ` A book is ${per} tickets.` : '')
+})
 
 /*
  * WHAT THIS BUYER HOLDS, AS BOOKS AND SPANS.
@@ -871,11 +890,24 @@ onMounted(async () => {
                 The row is absent when there is no band — no telephone number
                 recorded, or a raffle with no book size — rather than drawn
                 empty. "Supporter: —" invites somebody to go and set one, and
-                there is nowhere to set one: it is counted, never awarded.
+                there is nowhere to set one: WHO is on a rung is counted, never
+                awarded.
+
+                WHAT THE RUNG IS CALLED IS SETTABLE, THOUGH, AND THE TITLE SAYS
+                SO. That half changed when the words became configuration — a
+                raffle for the learning centre calls rung four "Patron" and one
+                for the shelter calls it "Keeper". Somebody reading "Keeper"
+                here and wondering where it came from has nowhere to look
+                otherwise, and the honest answer is two sentences: the word is
+                yours, the count is not. The link to change it is in the Look
+                block below, with the rest of what this raffle is wearing.
               -->
               <div v-if="bandFor(t)" class="fact">
                 <dt>Supporter</dt>
-                <dd>{{ bandFor(t).name }} <span class="muted">· {{ rankCount(bandFor(t)) }}</span></dd>
+                <dd :title="'Counted from the ' + rankCount(bandFor(t)) + ' this buyer holds, never awarded. '
+                            + 'What the rung is CALLED is this raffle\u2019s own \u2014 change it in Setup.'">
+                  {{ bandFor(t).name }} <span class="muted">· {{ rankCount(bandFor(t)) }}</span>
+                </dd>
               </div>
             </dl>
 
@@ -911,6 +943,13 @@ onMounted(async () => {
                    "Grand card" rather than "Grand" because a bare treatment
                    name in a row of statements does not say what it is naming. -->
               <li class="chip" :title="cardNote">{{ cardName }} card</li>
+              <!-- THE RAFFLE'S OWN WORDS FOR ITS SUPPORTERS, which is as much
+                   "what this raffle is wearing" as its colour is. It reports
+                   the ladder's TOP rung because that is the one an organiser
+                   recognises their choice by — "Pillar" says Community centre
+                   and "Cornerstone" says fellowship at a glance, where the
+                   bottom rung is "Friend" or "Well-wisher" in most of them. -->
+              <li class="chip" :title="bandsNote">{{ topRung }} &amp; 4 more</li>
             </ul>
             <!-- TWO LINKS, BECAUSE THEY GO TO TWO PLACES. Colour and logo are
                  the raffle's, and live in Setup; the treatment and the motto
@@ -922,6 +961,9 @@ onMounted(async () => {
                       @click="toCardStudio">Ticket Studio &middot; Digital ticket &rarr;</button>
               <button type="button" class="linky" title="Change the raffle's colour and logo"
                       @click="toSetup">Colour and logo in Setup &rarr;</button>
+              <button type="button" class="linky"
+                      title="Choose what this raffle calls its supporters, and how many books each rung takes"
+                      @click="toSetup">What supporters are called &rarr;</button>
             </p>
           </section>
 

@@ -9,6 +9,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { state, setConfig, api, toast, isAdmin, isSuper, go } from '../lib/store.js'
 import { money, date, dateTime, ROLE_WORDS, orgNameOf, APP_NAME } from '../lib/format.js'
 import { applyBrand, inkFor } from '../lib/brand.js'
+import { PRESETS, SLOTS, DEFAULT_BOOKS, presetById, ladderFrom } from '../lib/ranks.js'
 import { toPayload, reject as rejectLogo } from '../lib/logofile.js'
 import Logo from './ui/Logo.vue'
 
@@ -283,6 +284,10 @@ function loadNumbering() {
   }
 }
 watch(c, loadNumbering, { immediate: true })
+/* Immediate for the same reason as numbering: this screen mounts before
+   the config arrives on a cold load, so a one-shot read on mount leaves
+   every rung blank until something else happens to touch it. */
+watch(c, loadBands, { immediate: true })
 
 async function saveNumbering() {
   nbSaving.value = true
@@ -295,6 +300,110 @@ async function saveNumbering() {
     toast(err.message, 'bad', err.code)
     loadNumbering()
   } finally { nbSaving.value = false }
+}
+
+/*
+ * WHAT THIS RAFFLE CALLS ITS SUPPORTERS.
+ *
+ * Five rungs, lowest first, each a name and a threshold in whole BOOKS. The
+ * ladder used to be four words written into the code, rewritten three times in
+ * two days while people argued about which vocabulary was right. It was the
+ * wrong argument: the same app runs a raffle for a community centre, a refugee
+ * learning centre, a fellowship and a shelter, and "Mentor" is right in one of
+ * those rooms and meaningless in another.
+ *
+ * WHAT IS NOT SETTABLE HERE, and the screen says so rather than leaving it to
+ * be assumed: WHO is on a rung. That is counted from the tickets a buyer holds,
+ * by the same function on both sides of the wall, and there is no screen
+ * anywhere that awards one. An organiser chooses what to call five books.
+ */
+const bands = ref({ preset: '', rungs: [] })
+const bandsSaving = ref(false)
+
+function loadBands() {
+  const stored = state.cfg?.supporterBands
+  const rungs = Array.isArray(stored?.rungs) && stored.rungs.length === SLOTS.length
+    ? stored.rungs.map((r) => ({ name: String(r.name ?? ''), minBooks: Number(r.minBooks ?? 0) }))
+    : [...ladderFrom(stored)].reverse().map((r) => ({ name: r.name, minBooks: r.minBooks }))
+  bands.value = { preset: String(stored?.preset ?? ''), rungs }
+}
+
+/*
+ * A preset fills the WORDS and leaves the thresholds alone. The two are
+ * independent — a raffle may want a fellowship's vocabulary at its own book
+ * counts — and overwriting numbers somebody had tuned, because they clicked a
+ * column of names, is the kind of helpfulness that gets undone by hand.
+ */
+function applyPreset(id) {
+  const preset = presetById(id)
+  bands.value = {
+    preset: preset.id,
+    rungs: preset.rungs.map((name, i) => ({
+      name,
+      minBooks: Number(bands.value.rungs[i]?.minBooks ?? DEFAULT_BOOKS[i]),
+    })),
+  }
+}
+
+/*
+ * THE ONE RULE A LADDER HAS TO OBEY, checked here so the reason is on screen
+ * rather than in a toast after a refused save. rankFor takes the FIRST rung
+ * whose threshold is met, reading from the top, so a rung that does not sit
+ * strictly above the one below it can never be returned — it stays listed,
+ * stays named, and simply never happens to anybody.
+ */
+const bandsFault = computed(() => {
+  const rungs = bands.value.rungs || []
+  for (let i = 0; i < rungs.length; i++) {
+    const name = String(rungs[i]?.name ?? '').trim()
+    if (!name) return `Rung ${i + 1} has no name, and every rung is printed on somebody's card.`
+    if (name.length > 24) return `Rung ${i + 1} is ${name.length} characters and a card holds 24.`
+    const n = Number(rungs[i]?.minBooks)
+    if (!Number.isFinite(n) || n < 0 || n !== Math.floor(n)) {
+      return `Rung ${i + 1} needs a whole number of books, counting from 0.`
+    }
+    if (i > 0 && n <= Number(rungs[i - 1].minBooks)) {
+      return `${name} starts at ${n} books, which is not above ${rungs[i - 1].name} `
+        + `at ${rungs[i - 1].minBooks}. Nobody could ever reach it.`
+    }
+  }
+  return ''
+})
+
+/*
+ * WHAT A RUNG COSTS A BUYER, so the ladder is chosen against money rather than
+ * against book counts nobody converts in their head.
+ *
+ * NOTHING FOR THE BOTTOM RUNG, and that is the fix rather than a gap. It read
+ * "any tickets · RM 10.00", which is the price of the ONE ticket it takes to
+ * get there and reads as the price of the rung. Every other row is "3 books ·
+ * RM 300" — a floor — so a number in the same column on the row that HAS no
+ * floor says the opposite of what the row means. The words carry it alone.
+ *
+ * Absent rather than zero when the raffle has no price or book size set yet,
+ * which is the state a new raffle is in.
+ */
+function rungWorth(minBooks) {
+  const per = Number(state.cfg?.ticketsPerBook ?? 0)
+  const price = Number(state.cfg?.ticketPrice ?? 0)
+  if (!per || !price || !minBooks) return ''
+  return money(minBooks * per * price, state.cfg?.currency)
+}
+
+async function saveBands() {
+  bandsSaving.value = true
+  try {
+    const r = await api('set_supporter_bands', {
+      preset: bands.value.preset,
+      rungs: bands.value.rungs.map((x) => ({ name: String(x.name).trim(), minBooks: Number(x.minBooks) })),
+    })
+    if (r?.config) setConfig(r.config)
+    loadBands()
+    toast('Supporter rungs saved', 'ok')
+  } catch (err) {
+    toast(err.message, 'bad', err.code)
+    loadBands()
+  } finally { bandsSaving.value = false }
 }
 
 async function saveBrand() {
@@ -1223,6 +1332,92 @@ function details(d) {
           <template v-if="!c?.ticketArtwork"><b>No artwork uploaded yet</b>, so tickets cannot be printed.</template>
         </span>
         <button class="btn sm" @click="go('ticketdesign')">Ticket Studio &rarr;</button>
+      </div>
+    </div>
+
+    <!--
+      WHAT SUPPORTERS ARE CALLED.
+
+      Its own card rather than a row inside the brand card, because it is not
+      the raffle's APPEARANCE: these five words are printed on the card a buyer
+      keeps and stated again on the public page anybody can scan, and they are
+      the only part of that sentence anybody here chooses.
+
+      THE SENTENCE UNDER THE HEADING IS LOAD-BEARING, not filler. The single
+      most likely misreading of this screen is that it awards ranks — it is a
+      form, on an admin page, with people's titles in it. Saying "counted, never
+      awarded" once, where somebody is about to type, is cheaper than explaining
+      it afterwards to an organiser who has gone looking for the box that sets
+      a particular buyer to Pillar.
+    -->
+    <div class="card">
+      <h3 style="margin:0 0 2px">What supporters are called</h3>
+      <p class="muted small" style="margin:0 0 12px">
+        Five rungs, printed on the digital ticket and on the page a buyer scans.
+        Who lands on which rung is <b>counted</b> from the tickets they hold &mdash;
+        never awarded, and there is no screen that sets one by hand.
+      </p>
+
+      <!-- THE PRESETS ARE A STARTING POINT AND SAY SO. They fill the words and
+           leave the book counts alone, because the two are independent and
+           overwriting numbers somebody tuned, on a click meant to change
+           vocabulary, is the kind of help that gets undone by hand. -->
+      <p class="tiny muted" style="margin:0 0 6px">Start from:</p>
+      <div class="row wrap" style="margin-bottom:14px">
+        <button v-for="p in PRESETS" :key="p.id" type="button"
+                class="btn sm" :class="{ primary: bands.preset === p.id }"
+                :disabled="bandsSaving"
+                :title="'Use the ' + p.name + ' wording: ' + p.rungs.join(', ')"
+                @click="applyPreset(p.id)">{{ p.name }}</button>
+      </div>
+
+      <!--
+        LOWEST FIRST, which is the order somebody reads a ladder they are
+        building and the opposite of the order the code evaluates it in. The
+        code reads highest-first because it takes the first threshold met; a
+        person fills in the bottom rung and works up. One of the two has to be
+        turned round and it should not be the person.
+      -->
+      <div class="col" style="gap:8px">
+        <div v-for="(r, i) in bands.rungs" :key="i" class="row" style="align-items:center">
+          <!-- `.data` rather than `.mono`: .mono is declared in the studio's own
+               scoped stylesheet and does not exist out here, so it would have
+               been a class that silently styled nothing. .data is the global
+               utility that gives numerals the app's tabular face. -->
+          <span class="tiny muted data" style="width:2em">{{ i + 1 }}</span>
+          <input v-model="r.name" type="text" maxlength="24" class="grow"
+                 :disabled="bandsSaving" :placeholder="'Rung ' + (i + 1)"
+                 :aria-label="'What rung ' + (i + 1) + ' is called'">
+          <input v-model.number="r.minBooks" type="number" min="0" step="1" inputmode="numeric"
+                 :disabled="bandsSaving" style="width:5.5em"
+                 :aria-label="'Books needed for rung ' + (i + 1)">
+          <!-- The count in MONEY, because a ladder is chosen against what a
+               buyer spends and nobody converts books to ringgit in their head.
+
+               `nowrap` and a width that fits the longest form it can take. At
+               9em "any tickets · RM 10.00" broke over two lines and every row
+               was a different height — the column is the one thing here the eye
+               scans down, so a ragged one defeats its own purpose. -->
+          <span class="tiny muted" style="width:11.5em; text-align:right; white-space:nowrap">
+            {{ r.minBooks === 0 ? 'any tickets' : r.minBooks + (r.minBooks === 1 ? ' book' : ' books') }}
+            <template v-if="rungWorth(r.minBooks)"> &middot; {{ rungWorth(r.minBooks) }}</template>
+          </span>
+        </div>
+      </div>
+
+      <div class="sub">
+        <!-- The fault is stated here AND the button is disabled with it in the
+             title, rather than the button being enabled and the save refused.
+             Same rule the rest of this app is held to: the reason is the useful
+             half. -->
+        <span class="muted small grow">
+          <template v-if="bandsFault"><b>{{ bandsFault }}</b></template>
+          <template v-else>Each rung has to start above the one below it.</template>
+        </span>
+        <button class="btn sm ghost" :disabled="bandsSaving" @click="loadBands">Undo</button>
+        <button class="btn sm primary" :disabled="bandsSaving || !!bandsFault"
+                :title="bandsFault || 'Save what this raffle calls its supporters'"
+                @click="saveBands">{{ bandsSaving ? 'Saving\u2026' : 'Save rungs' }}</button>
       </div>
     </div>
 

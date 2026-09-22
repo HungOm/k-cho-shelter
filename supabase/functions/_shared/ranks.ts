@@ -10,142 +10,177 @@
  *
  * THE LADDER IS IN BOOKS, NOT TICKETS, and that is a decision rather than a
  * convenience. A book is the unit this raffle hands out, reconciles and talks
- * about; "ten books" is a sentence an organiser already uses about a person.
- * Tickets per book is a setting, so the same ladder means 1-3 books whether a
- * book holds ten tickets or five, and the bands move with the raffle instead of
- * being pinned to a number that was right for one of them.
+ * about; "five books" is a sentence an organiser already uses about a person.
+ * Tickets per book is a setting, so the same ladder means the same thing
+ * whether a book holds ten tickets or five.
  *
- * THE BOUNDARIES ARE CLOSED, WHICH THEY WERE NOT WHEN THEY WERE DESCRIBED.
- * The ladder arrived as "Gold (5-10 books), Diamond (10+), Silver (1-3)": ten
- * books was both Gold and Diamond, and four books was neither. Ranges that
- * overlap and ranges that leave a hole are the same defect — a value with no
- * single answer — and the only way to be sure they are gone is to name the
- * bands as thresholds rather than as spans, so every count above zero falls in
- * exactly one. tests/ranks walks every boundary.
+ * THE BOUNDARIES ARE CLOSED. The ladder first arrived described as spans —
+ * "Gold 5-10 books, Diamond 10+, Silver 1-3" — which put ten books in two bands
+ * and four books in none. Overlaps and holes are the same defect, a value with
+ * no single answer, so the rungs are THRESHOLDS: highest first, first match
+ * wins, every count above zero in exactly one band. tests/ranks walks every
+ * boundary of every preset.
  */
 
 /*
- * WHO IS BUYING, WHICH IS WHAT THE WORDS HAD TO BE CHOSEN AGAINST.
+ * THE WORDS ARE THE ORGANISER'S, AND THAT IS THE POINT OF THIS FILE'S SHAPE.
  *
- * A raffle here funds a community centre, a refugee learning centre, refugee
- * Christian fellowships, a shelter for refugee patients with chronic and
- * mental health conditions, and whatever small community fundraising comes
- * next. The tickets are sold largely INSIDE that community: the person holding
- * a book is usually a neighbour of the people it pays for, not a donor at a
- * distance from them.
+ * A raffle here is an instrument rather than an event. The same app runs one
+ * for a community centre, one for a refugee learning centre, one for a
+ * fellowship, one for a shelter housing refugee patients with chronic and
+ * mental health conditions, and one for whatever small community cause comes
+ * next. What a supporter should be CALLED is not the same question in those
+ * five rooms, and no list written here could be right in all of them.
  *
- * AND THE RAFFLE IS AN INSTRUMENT, NOT AN EVENT — it is run again for the next
- * cause. That is worth knowing here for two reasons. It is why no rung can be
- * named after one arm of the organisation: the same ladder prints on a ticket
- * sold for the learning centre and on one sold for something that does not
- * exist yet. And it is the strongest form of the argument against the rung
- * this ladder started with, "Faithful": somebody may buy in raffle after
- * raffle, which is what faithfulness would actually mean, and the band can
- * still only ever see the one holding in front of it.
+ * So the rungs are configuration. This file holds the PRESETS an organiser can
+ * start from and the shape every ladder has to have; the names and thresholds
+ * a particular raffle uses live in the SUPPORTER_BANDS config row, and the
+ * organiser edits them.
  *
- * That single fact rules out most of the vocabulary this kind of ladder
- * normally reaches for, and it is worth writing down because every one of them
- * will be suggested again:
- *
- *   PATRON, BENEFACTOR, AMBASSADOR — patronage. Someone from outside
- *   conferring help on people beneath them. It is the wrong relationship and
- *   it is not even accurate here.
- *
- *   CHAMPION, GUARDIAN, HERO, LIFESAVER — rescue. It puts the ticket-buyer
- *   above the patients, who are frequently from the same families. "Lifesaver"
- *   is also a claim nobody can check, which is the failure this whole file
- *   exists to prevent.
- *
- *   CARER — it means something specific in a shelter with patients. It belongs
- *   to the staff and the families doing that work, not to somebody who bought
- *   a book of tickets.
- *
- *   ANYTHING NAMING THE SHELTER — a ticket sold at the learning centre reaches
- *   a family that has nothing to do with the shelter, and a rung named after
- *   one arm of the organisation is wrong on three quarters of the tickets.
- *
- *   ANYTHING RELIGIOUS — for the opposite reason to the one you would guess.
- *   The fellowships make the register genuinely theirs, but the learning
- *   centre and the community centre reach families outside them, and the band
- *   prints on every card.
- *
- * WHAT IS LEFT IS CLOSENESS, which is a real ladder, orders itself the way
- * people already order relationships, and says belonging rather than charity:
- * Friend, Neighbour, Companion, Family. They are also the four plainest words
- * on the list — all ordinary in Burmese, none of them abstract — which matters
- * more than it looks, because half the audience reads the Burmese half first
- * and it is composed here rather than translated by a reader of it.
- *
- * AND IT TOPS OUT AT FOUR ON PURPOSE. Nothing sits above "family". A fifth
- * rung was on the table and this is the argument against it: if the top wants
- * to be further away, move the threshold, do not invent a word that outranks
- * being one of the family.
- *
- * THE METALS ARE GONE, AND THEY WERE NOT WRONG, they were generic. Bronze,
- * Silver, Gold and Diamond could belong to any charity on earth, and "Diamond
- * supporter" is a luxury register on a card carried by people who fled. The
- * bottom rung before them was "Faithful supporter", dropped on 2026-09-22
- * because faithfulness is continuity and the band is computed from ONE
- * raffle's holding, so it called a first-time buyer of a single ticket
- * faithful — the one band whose word was not backed by the number beside it.
- * That argument is about the CLAIM and survives every rename since.
+ * WHAT DOES NOT MOVE, because it is what makes the band checkable rather than
+ * a compliment: the band is still COUNTED. An organiser chooses what to call
+ * five books. Nobody chooses who has five books.
  */
 
 /*
- * THE THRESHOLDS ARE SET TO BE REACHED, which is a change made on 2026-09-22
- * and the reason the numbers here are not the ones this file was born with.
+ * FIVE SLOTS, AND THE IDS ARE POSITIONS RATHER THAN WORDS.
  *
- * They were Silver 1, Gold 4, Diamond 10. At the raffle's own defaults — ten
- * tickets to a book, RM 10 a ticket — Diamond meant a hundred tickets and
- * RM 1,000 from one buyer, and Gold meant RM 400. A ladder whose upper rungs
- * nobody stands on is not a ladder; it is a decoration with three-quarters of
- * itself hidden, and every buyer it thanks is thanked at the bottom.
+ * Every earlier version of this ladder keyed on the word — `gold`, `bronze`,
+ * `family` — which worked while the words were written here and breaks the
+ * moment they are typed in by somebody running a raffle. A colour token called
+ * `--band-gold` holding the colour of something called "Encourager" is the
+ * defect this repository already has a memory of, one level up.
  *
- * 1, 3 and 6 books keeps the same shape and brings the top within reach:
- * RM 100, RM 300 and RM 600 of a raffle whose books are RM 100 each. A
- * household, a shop or a fellowship that takes six books is as close to this
- * organisation as a ticket can make somebody, and there is now a name for them
- * that people will actually be called.
- *
- * WHAT WOULD MAKE THESE WRONG AGAIN, said plainly because it is checkable:
- * if most buyers end up Companion or Family, the rungs are too low and mean
- * nothing; if almost everyone is still a Friend, they are too high.
- * The query that settles it is a count of tickets grouped by buyer — the
- * bands are a description of the raffle's buyers, so they should be re-read
- * against the buyers once a raffle has run.
+ * So the id says WHERE on the ladder, and the name says what this raffle calls
+ * it. The stylesheet, the stored column and the check page all key on the
+ * position; only the name is anybody's to change.
  */
+export const SLOTS = ['rung1', 'rung2', 'rung3', 'rung4', 'rung5'] as const
 
-/*
- * Ordered from the top down, because that is how it is read: the first band
- * whose threshold is met is the answer, so no band can be shadowed by one
- * below it and adding a band cannot silently reorder the others.
- *
- * `minBooks: 0` for the bottom band is deliberate and is not "no books". It is
- * the band for somebody who has bought tickets but not yet a whole book, and it
- * exists because that is most buyers: a ladder whose bottom rung is one book
- * would say nothing at all to the person who bought three tickets, and that
- * person is the one the raffle most wants to thank. "Friend" is the right word
- * for them precisely because it claims nothing — it is what somebody is after
- * one ticket, and it is still true after nine.
- *
- * NONE OF THESE FOUR MAKES A CLAIM THE ROWS CANNOT CARRY, which is the test
- * every candidate had to pass. Friend, Neighbour, Companion and Family all
- * describe a relationship TO THE ORGANISATION, and the number printed beside
- * them is what earned it. Contrast the rung this replaced: "Faithful" described
- * the PERSON, over time, from a single raffle's holding.
- */
+export type Rung = { id: string; name: string; minBooks: number }
 export type Rank = { id: string; name: string; books: number; tickets: number }
 
-export const RANKS = [
-  { id: 'family', name: 'Family', minBooks: 6 },
-  { id: 'companion', name: 'Companion', minBooks: 3 },
-  { id: 'neighbour', name: 'Neighbour', minBooks: 1 },
-  { id: 'friend', name: 'Friend', minBooks: 0 },
+/*
+ * WHERE THE RUNGS SIT BY DEFAULT, in books, bottom to top.
+ *
+ * 0 is deliberate and is not "no books". It is the rung for somebody who has
+ * bought tickets but not yet a whole book, and it exists because that is most
+ * buyers: a ladder whose bottom rung is one book says nothing at all to the
+ * person who bought three tickets, and that person is the one the raffle most
+ * wants to thank.
+ *
+ * At the raffle's own defaults — ten tickets to a book, RM 10 a ticket — the
+ * five rungs are RM 10, RM 100, RM 200, RM 300 and RM 500. An earlier ladder
+ * put its top at ten books, RM 1,000 from one buyer, which is a rung nobody
+ * stood on; a ladder whose upper rungs are unreachable thanks everybody at the
+ * bottom.
+ */
+export const DEFAULT_BOOKS = [0, 1, 2, 3, 5]
+
+/*
+ * THE PRESETS, WHICH ARE THE ORGANISER'S OWN WORDS AND NOT A RECOMMENDATION.
+ *
+ * Supplied by the people running these raffles, one column per kind of
+ * fundraising, and reproduced here as given. A later reader will notice that
+ * some of them — Patron, Champion, Guardian — are words this file argued
+ * against when it was choosing a single fixed ladder, on the grounds that
+ * patronage and rescue both put the ticket-buyer above the people served.
+ * That argument was about imposing ONE vocabulary on every raffle. These are
+ * chosen per raffle by the people whose community it is, which is a different
+ * thing entirely and is the reason this is configuration. Do not "correct"
+ * them.
+ *
+ * Bottom to top, five names each, matching DEFAULT_BOOKS.
+ */
+export const PRESETS = [
+  {
+    id: 'community',
+    name: 'Community centre',
+    rungs: ['Well-wisher', 'Friend', 'Neighbour', 'Builder', 'Pillar'],
+  },
+  {
+    id: 'shelter',
+    name: 'Shelter',
+    rungs: ['Well-wisher', 'Friend', 'Neighbour', 'Keeper', 'Guardian'],
+  },
+  {
+    id: 'learning',
+    name: 'Learning centre',
+    rungs: ['Friend', 'Supporter', 'Mentor', 'Patron', 'Champion'],
+  },
+  {
+    id: 'fellowship',
+    name: 'Christian fellowship',
+    rungs: ['Friend', 'Blessing', 'Encourager', 'Servant', 'Cornerstone'],
+  },
 ]
 
+/*
+ * COMMUNITY CENTRE IS THE DEFAULT because it is the broadest room. A raffle is
+ * sold across all of them — the same ticket reaches a family at the learning
+ * centre and somebody at the fellowship — so the preset that ships is the one
+ * whose words are true in every room, and an organiser running a raffle FOR
+ * one of the others changes it in one click.
+ */
+export const DEFAULT_PRESET = 'community'
+
+export function presetById(id: unknown) {
+  return PRESETS.find((p) => p.id === String(id ?? '')) || PRESETS[0]
+}
+
+/** A preset, as a ladder: highest first, which is the order everything reads. */
+export function ladderOf(presetId: unknown, books: number[] = DEFAULT_BOOKS): Rung[] {
+  const preset = presetById(presetId)
+  return preset.rungs
+    .map((name, i) => ({ id: SLOTS[i], name, minBooks: Number(books[i] ?? DEFAULT_BOOKS[i]) }))
+    .reverse()
+}
+
+/** What a raffle gets before anybody has chosen anything. */
+export const RANKS: Rung[] = ladderOf(DEFAULT_PRESET)
 export const RANK_IDS = RANKS.map((r) => r.id)
 
-/** Whole books held, which is what the bands are measured in. */
+/*
+ * A STORED LADDER, OR THE DEFAULT — AND IT CANNOT THROW.
+ *
+ * This runs inside a screen that is drawing somebody's ticket and inside the
+ * function answering a stranger's scan. A raffle whose config row is somehow
+ * unreadable gets the default ladder and a working page, never an exception.
+ * Same rule as `parseLayout` in config.ts, and for the same reason.
+ *
+ * VALIDATED AS A LADDER, not merely as JSON. The one property everything else
+ * depends on is that the thresholds DESCEND — `rankFor` takes the first match,
+ * so a rung whose threshold is not strictly below the one above it can never
+ * be returned, and it would be listed, named, and silently unreachable. A
+ * stored ladder that does not descend is refused whole rather than patched,
+ * because half a ladder is worse than the default one.
+ */
+export function ladderFrom(stored: unknown): Rung[] {
+  const raw = Array.isArray(stored)
+    ? stored
+    : (stored && typeof stored === 'object' && Array.isArray((stored as { rungs?: unknown }).rungs)
+        ? (stored as { rungs: unknown[] }).rungs
+        : null)
+  if (!raw || raw.length !== SLOTS.length) return RANKS
+
+  const out: Rung[] = []
+  for (let i = 0; i < SLOTS.length; i++) {
+    const r = raw[i] as { name?: unknown; minBooks?: unknown } | null
+    if (!r || typeof r !== 'object') return RANKS
+    const name = String(r.name ?? '').trim()
+    const minBooks = Number(r.minBooks)
+    if (!name) return RANKS
+    if (!Number.isFinite(minBooks) || minBooks < 0 || minBooks !== Math.floor(minBooks)) return RANKS
+    out.push({ id: SLOTS[i], name, minBooks })
+  }
+  // Bottom to top as stored, so each threshold must be strictly above the last.
+  for (let i = 1; i < out.length; i++) {
+    if (out[i].minBooks <= out[i - 1].minBooks) return RANKS
+  }
+  return out.reverse()
+}
+
+/** Whole books held, which is what the rungs are measured in. */
 export function booksHeld(tickets: number, perBook: number): number {
   return Math.floor(tickets / perBook)
 }
@@ -159,20 +194,21 @@ export function booksHeld(tickets: number, perBook: number): number {
  *   reading "Friend · 0 tickets" is a sentence about an absence.
  *
  *   NO BOOK SIZE. Without tickets-per-book there is no way to turn a count into
- *   books, and the tempting fallback — call them Friend and move on — would
- *   put the bottom rung on a card belonging to somebody holding two hundred
+ *   books, and the tempting fallback — give them the bottom rung and move on —
+ *   would put "Well-wisher" on a card belonging to somebody holding two hundred
  *   tickets. Silence is recoverable; a demotion printed on a ticket is not.
  *   This is the shape this repository has been caught by before: a default
  *   that quietly admits the case nobody thought about.
  */
-export function rankFor(tickets: unknown, perBook: unknown): Rank | null {
+export function rankFor(tickets: unknown, perBook: unknown, ladder: Rung[] = RANKS): Rank | null {
   const n = Number(tickets)
   const per = Number(perBook)
   if (!Number.isFinite(n) || n < 1) return null
   if (!Number.isFinite(per) || per < 1) return null
 
   const books = booksHeld(n, per)
-  const band = RANKS.find((r) => books >= r.minBooks)
+  const rungs = Array.isArray(ladder) && ladder.length ? ladder : RANKS
+  const band = rungs.find((r) => books >= r.minBooks)
   if (!band) return null
   return { id: band.id, name: band.name, books, tickets: Math.floor(n) }
 }

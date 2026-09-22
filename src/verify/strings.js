@@ -144,26 +144,18 @@ export const S = {
    */
 
   /*
-   * THE BAND NAMES ARE NOT IN HERE, AND THAT IS THE ONE EXCEPTION ON THIS PAGE.
+   * THE RUNG NAMES ARE NOT IN HERE, AND THEY CANNOT BE.
    *
-   * Every other string is a pair, because a reader of this page may not read
-   * English at all. The four rungs — Friend, Neighbour, Companion, Family —
-   * are English only, and they live in main.js beside the map that colours
-   * them rather than here.
+   * Every other string on this page is a pair, because a reader may not read
+   * English at all. The five rungs are not strings of this page's at all: they
+   * are typed in by whoever runs the raffle — "Keeper" for a shelter, "Mentor"
+   * for the learning centre, "Encourager" for a fellowship — and arrive on the
+   * reply beside the count. There is nowhere for this file to get a second
+   * language from, and inventing one would be worse than the single language
+   * the organiser actually chose.
    *
-   * WHY, and it is a decision rather than an oversight: these are relationship
-   * words and the Burmese for them was COMPOSED, not translated by anybody who
-   * reads it. \u1021\u1016\u1031\u102C\u103A for Companion carries "partner" too and lands more
-   * transactional than the English does. A wrong warm word on a card somebody
-   * keeps is worse than the same word in one language: the rest of this file
-   * can be checked against the app's own i18n map, and an invented rung name
-   * has nothing to check against.
-   *
-   * So the band is the one place that waits for a reader of Burmese rather
-   * than guessing. When one has looked at them, the four entries come back
-   * here as pairs and main.js goes back to say() — and the test that pins
-   * every string in this file to a Burmese line will be true again without
-   * being weakened to allow this.
+   * The count line under the name IS still a pair. It is this page's sentence,
+   * not theirs.
    */
 
   /*

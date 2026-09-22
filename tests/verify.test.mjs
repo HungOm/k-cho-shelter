@@ -466,14 +466,23 @@ console.log("a receipt shows the buyer their own copy")
    * stores one. The field is present or absent, never empty: a `rank: ''`
    * would draw a medal with no name beside it.
    */
-  eq(r.body.rank, 'friend', 'a legacy receipt is banded by the tickets it names')
+  /*
+   * THE ID IS A POSITION AND THE NAME COMES WITH IT. The words are the
+   * organiser's now, so a test asserting "friend" would be asserting a default
+   * preset rather than the ladder's shape. rung1 is the bottom; the name beside
+   * it is whatever this raffle calls it, and the fixture has chosen nothing, so
+   * it is the community column's.
+   */
+  eq(r.body.rank, 'rung1', 'a legacy receipt is banded by the tickets it names')
+  eq(r.body.rankName, 'Well-wisher', 'and the reply carries what this raffle calls that rung')
   eq(r.body.rankTickets, 1, 'and by how many of them there are')
 }
 
 console.log('a holding is banded by what its buyer holds today')
 {
   const r = await call(world(), '?r=GGGGGGGGGGGG')
-  eq(r.body.rank, 'companion', 'the band, worked out from the tickets behind the code')
+  eq(r.body.rank, 'rung4', 'the band, worked out from the tickets behind the code')
+  eq(r.body.rankName, 'Builder', 'named from the ladder this raffle is using')
   eq(r.body.rankTickets, 41, 'and the count it was worked out from, so it can be checked')
   /*
    * THE COUNT AND THE BAND AGREE, AND THAT IS NEW.

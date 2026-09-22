@@ -642,18 +642,23 @@ create table if not exists ticket_receipts (
   rank         text,
   rank_tickets integer,
   /*
-   * NINE WORDS FOR FOUR BANDS. The ladder is friend, neighbour, companion,
-   * family. The other five are retired: the metals, and 'bronze' which was the
-   * bottom rung for a few hours on 2026-09-22 between 'faithful' and 'friend'.
+   * FOURTEEN IDS FOR FIVE RUNGS, and only the first five are current.
    *
-   * They stay legal because rows minted before each rename carry them, and a
-   * CHECK is validated against the table it is added to — so a word that has
-   * ever been written has to stay in the set or the migration fails on exactly
-   * the raffles whose history is worth keeping. The set is every band that has
-   * ever been, not every band there is.
+   * The ladder is keyed on POSITION now — rung1 at the bottom to rung5 at the
+   * top — because what each rung is CALLED is configuration: an organiser
+   * running a raffle for the learning centre and one running it for a shelter
+   * do not use the same words, and an id made of a word cannot survive that.
+   *
+   * The other nine are retired names from three earlier ladders. They stay
+   * legal because rows minted before each change carry them, and a CHECK is
+   * validated against the table it is added to — so a value that has ever been
+   * written has to stay in the set or the migration fails on exactly the
+   * raffles whose history is worth keeping. The set is every band that has ever
+   * been, not every band there is.
    */
   constraint ticket_receipts_rank_known
     check (rank is null or rank in (
+      'rung1', 'rung2', 'rung3', 'rung4', 'rung5',
       'friend', 'neighbour', 'companion', 'family',
       'bronze', 'faithful', 'silver', 'gold', 'diamond'
     )),
@@ -1609,7 +1614,8 @@ insert into config (key, value, notes) values
   -- means something specific in each case rather than "unset".
   ('CARD_DESIGN', '', 'Which of the three treatments the digital ticket is drawn in — grand, certificate or stub. Set in Ticket Studio on the "Digital ticket" tab. Blank means Grand, which is what a raffle that has never opened that tab gets.'),
   ('MOTTO', '', 'One line printed on the digital ticket, under the buyer''s name. Blank prints no line at all. 48 characters is the limit and a longer one is refused rather than shrunk, because shrinking changes the card where nobody is looking.'),
-  ('CARD_LAYOUT', '', 'Where the parts of the digital ticket sit, as JSON, for any part an organiser has MOVED in Ticket Studio. Only the differences are stored, keyed by treatment and then by part, so a raffle that has changed one line keeps every later improvement to the rest of the card. Blank means the standard layout of whichever treatment is chosen, which is what every raffle had before the tab could move anything.')
+  ('CARD_LAYOUT', '', 'Where the parts of the digital ticket sit, as JSON, for any part an organiser has MOVED in Ticket Studio. Only the differences are stored, keyed by treatment and then by part, so a raffle that has changed one line keeps every later improvement to the rest of the card. Blank means the standard layout of whichever treatment is chosen, which is what every raffle had before the tab could move anything.'),
+  ('SUPPORTER_BANDS', '', 'What this raffle calls its supporters, as JSON: {"preset":"<id>","rungs":[{"name":"...","minBooks":0}, ... x5]}, bottom rung first. Five rungs, thresholds in whole BOOKS and strictly ascending. Blank means the Community centre preset at 0/1/2/3/5 books. The NAMES are the organiser''s; the count that earns one is not — the band is always worked out from the tickets a buyer holds.')
 on conflict (key) do nothing;
 
 /*

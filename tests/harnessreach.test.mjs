@@ -209,10 +209,14 @@ export const api = async () => ({})
   ok(text.includes('KS-00031'), 'the modal renders its ticket')
   /*
    * THE LADDER CAME ACROSS THE TREE AND RAN. Forty-one tickets at ten to a book
-   * is four books, which is Companion — a band with a threshold on each side of
-   * it, so a ladder wired to the wrong end would not land here by accident.
+   * is four books, which is the fourth rung — one with a threshold on each side
+   * of it, so a ladder wired to the wrong end would not land here by accident.
+   *
+   * The WORD is the default preset's, because this fixture's config sets no
+   * ladder of its own. That is the case worth exercising here: a raffle that
+   * has never opened the settings screen still draws a named rung on a card.
    */
-  ok(/Companion/.test(text), 'and the supporter band, read from _shared/ranks.ts')
+  ok(/Builder/.test(text), 'and the supporter band, read from _shared/ranks.ts')
   ok(/4 books/.test(text), 'counted in books, from this raffle\'s own book size')
   /*
    * And the action that makes the band checkable.

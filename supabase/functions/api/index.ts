@@ -181,6 +181,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   set_brand_color: { group: 'Access', label: 'Change the raffle\'s colour' },
   set_numbering: { group: 'Access', label: 'Change the ticket numbering', danger: true },
   set_card_design: { group: 'Access', label: 'Change the buyer\'s digital ticket' },
+  set_supporter_bands: { group: 'Access', label: 'Change what supporters are called' },
   /*
    * META IS OPTIONAL IN CODE AND NOT IN PRACTICE. list_permissions falls back
    * to `group: 'Other'` and the raw action slug as the label, so an action
@@ -369,6 +370,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   set_ticket_ceiling: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setTicketCeiling },
   set_numbering: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setNumbering },
   set_card_design: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setCardDesign },
+  set_supporter_bands: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setSupporterBands },
 
   // --- the two deadlines ---
   deadline_status: { roles: null, kind: 'read', fn: deadlines.deadlineStatus },

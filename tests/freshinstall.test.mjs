@@ -68,9 +68,11 @@ ok(!!seed, 'the config seed block was found in schema.sql')
  * plus ORG_ABOUT_MY and ORG_ABOUT_EN, which let an organiser write the sentence
  * that page carries under every verdict instead of shipping one raffle's, plus
  * CARD_DESIGN and MOTTO, which the digital ticket reads, plus CARD_LAYOUT,
- * which holds the parts of that card an organiser has moved in the studio.
+ * which holds the parts of that card an organiser has moved in the studio, plus
+ * SUPPORTER_BANDS, which holds what this raffle calls its supporters now that
+ * those five words are the organiser's rather than the code's.
  */
-ok(Object.keys(seed ?? {}).length === 37, `37 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
+ok(Object.keys(seed ?? {}).length === 38, `38 keys are seeded (found ${Object.keys(seed ?? {}).length})`)
 
 /*
  * AND THE KEYS THE SERVER ACTUALLY READS ARE ALL THERE — which a count cannot

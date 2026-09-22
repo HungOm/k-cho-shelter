@@ -51,7 +51,7 @@ import { HOLDING_MAX_TICKETS } from '../_shared/holding.ts'
  * a COUNT and names nobody, so it crosses this line freely — what never
  * crossed it is how the count was arrived at, and that is now `holding_of`.
  */
-import { rankFor } from '../_shared/ranks.ts'
+import { ladderFrom, rankFor } from '../_shared/ranks.ts'
 
 type Ctx = { supabaseAdmin: { from: (t: string) => any } }
 
@@ -77,6 +77,16 @@ async function numbering(ctx: Ctx) {
     /* How many tickets make a book, which is what turns a count into a
        supporter band. A fact about the raffle, not about any buyer. */
     perBook: Number(map.TICKETS_PER_BOOK ?? 0) || 0,
+    /*
+     * WHAT THIS RAFFLE CALLS ITS RUNGS. The thresholds and the words are the
+     * organiser's; who lands on which is still counted here from rows that
+     * name nobody. Parsed through `ladderFrom`, which falls back to the default
+     * preset for anything it cannot use and never throws — a raffle with an
+     * unreadable row gets working words rather than a failed scan.
+     */
+    ladder: ladderFrom((() => {
+      try { return JSON.parse(map.SUPPORTER_BANDS ?? '') } catch { return null }
+    })()),
     /*
      * WHO TO TELL, when the answer on this page is "no".
      *
@@ -318,7 +328,7 @@ export default {
        * _shared/ranks.ts, which returns null for exactly that reason.
        */
       const sold = tickets.filter((t) => t.sold).length
-      const band = rankFor(sold, rcfg.perBook)
+      const band = rankFor(sold, rcfg.perBook, rcfg.ladder)
 
       return reply({
         ok: true,
@@ -327,7 +337,21 @@ export default {
         count: tickets.length,
         tickets,
         buyer,
-        ...(band ? { rank: band.id, rankTickets: band.tickets } : {}),
+        /*
+         * THE NAME TRAVELS WITH THE ID NOW, and it has to.
+         *
+         * The page used to hold its own table of band names and look one up by
+         * id, which was right while the words lived in the code. They are the
+         * organiser's now, so the only place that knows what rung four is
+         * called is the config this function has already read. The id still
+         * comes too — it is a POSITION, rung1 to rung5, and it is what the
+         * stylesheet colours by, so a raffle's own words cannot change what a
+         * rung looks like.
+         *
+         * Still nothing about the buyer: a word the organiser chose and a count
+         * of rows that name nobody.
+         */
+        ...(band ? { rank: band.id, rankName: band.name, rankTickets: band.tickets } : {}),
         drawDate: rcfg.drawDate,
         checkedAt: new Date().toISOString(),
       })

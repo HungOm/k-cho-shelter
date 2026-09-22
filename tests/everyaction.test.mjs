@@ -178,6 +178,17 @@ const CALLS = {
      reachable, which is the half that matters — the permissive path only exists
      on an empty raffle. */
   set_card_design: { cardDesign: 'stub', motto: 'Love is patient, love is kind' },
+  /* Five rungs, lowest first, strictly ascending — the one shape the handler
+     insists on, because rankFor takes the first threshold met from the top and
+     a rung that is not above the one below it can never be returned. */
+  set_supporter_bands: {
+    preset: 'shelter',
+    rungs: [
+      { name: 'Well-wisher', minBooks: 0 }, { name: 'Friend', minBooks: 1 },
+      { name: 'Neighbour', minBooks: 2 }, { name: 'Keeper', minBooks: 3 },
+      { name: 'Guardian', minBooks: 5 },
+    ],
+  },
   set_numbering: { ticketPrefix: 'KS-', ticketDigits: 5, ticketStart: 1,
                    ticketsPerBook: 10, bookPrefix: 'Book-', bookDigits: 4 },
   roll_check_in: {}, set_final_deadline: { date: '2027-01-01' },

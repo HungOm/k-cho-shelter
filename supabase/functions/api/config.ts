@@ -12,6 +12,7 @@
  */
 
 import { dayStart } from './deadlines.ts'
+import { DEFAULT_PRESET, ladderFrom } from '../_shared/ranks.ts'
 
 const num = (v: unknown, d: number) => {
   const n = parseInt(String(v ?? ''), 10)
@@ -37,6 +38,41 @@ function parseLayout(raw: unknown): Record<string, unknown> {
     return out && typeof out === 'object' && !Array.isArray(out) ? out : {}
   } catch {
     return {}
+  }
+}
+
+/*
+ * WHAT THIS RAFFLE CALLS ITS SUPPORTERS, or nothing at all. Never throws.
+ *
+ * Same contract as parseLayout above and for the same reason: this runs on
+ * every sign-in and feeds a screen that is drawing somebody's ticket. Blank and
+ * unreadable both mean the Community centre preset, which is what every raffle
+ * had before this could be changed.
+ *
+ * The RUNGS come back through `ladderFrom`, which is the one place that decides
+ * whether a stored ladder is usable — five rungs, all named, thresholds whole
+ * and strictly ascending — so a half-valid row cannot reach a card through this
+ * door either. It returns highest-first because that is the order everything
+ * reads; the client stores and edits bottom-first, so it is turned back here.
+ *
+ * The PRESET id is carried alongside for the settings screen only. It says
+ * which column of the table this started from so the screen can name it;
+ * nothing computes a band from it, and a raffle that has edited a name keeps
+ * the id it started from. Blank means nobody has chosen.
+ */
+function parseBands(raw: unknown): { preset: string; rungs: { name: string; minBooks: number }[] } {
+  const text = String(raw ?? '').trim()
+  let stored: unknown = null
+  if (text) {
+    try { stored = JSON.parse(text) } catch { stored = null }
+  }
+  const preset = stored && typeof stored === 'object' && !Array.isArray(stored)
+    ? String((stored as { preset?: unknown }).preset ?? '')
+    : ''
+  const ladder = ladderFrom(stored)
+  return {
+    preset: preset || (text ? '' : DEFAULT_PRESET),
+    rungs: [...ladder].reverse().map((r) => ({ name: r.name, minBooks: r.minBooks })),
   }
 }
 
@@ -114,6 +150,13 @@ export function configPayload(cfg: Record<string, string>) {
      * where its motto is. It is small — only the parts somebody has moved.
      */
     cardLayout: parseLayout(cfg.CARD_LAYOUT),
+    /*
+     * The supporter ladder, bottom rung first — the order it is edited and
+     * read in. It travels with the rest of config because the card in a
+     * buyer's chat and the settings screen have to agree about what rung four
+     * is called, and it is five short names.
+     */
+    supporterBands: parseBands(cfg.SUPPORTER_BANDS),
     projectCode: cfg.PROJECT_CODE ?? '',
     /*
      * Whether this raffle has artwork to print tickets from — a yes or no, not

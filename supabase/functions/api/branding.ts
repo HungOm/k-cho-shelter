@@ -16,6 +16,7 @@
  */
 import { ApiError, type AppUser } from './gate.ts'
 import { configPayload } from './config.ts'
+import { PRESETS, SLOTS } from '../_shared/ranks.ts'
 
 type Ctx = {
   supabaseAdmin: {
@@ -306,6 +307,101 @@ export async function uploadLogo(p: Record<string, unknown>, user: AppUser, ctx:
  * an organisation choosing a colour is not choosing a contrast ratio, and the
  * primary button says "Count a book in" on a phone held outdoors.
  */
+/*
+ * WHAT THIS RAFFLE CALLS ITS SUPPORTERS.
+ *
+ * Five rungs, bottom first, each a name and a threshold in whole BOOKS. The
+ * names are the organiser's; the thresholds are theirs too. What is NOT theirs
+ * is who lands on which rung — that is counted from the tickets a buyer holds,
+ * here and on the public check page, and there is no screen that awards one.
+ *
+ * REFUSED RATHER THAN REPAIRED, and every refusal says which rung and why.
+ * `ladderFrom` on the reading side falls back to the default preset for
+ * anything it cannot use, silently, because it runs inside a page that is
+ * drawing somebody's ticket and must never throw. That safety is exactly why
+ * this side has to be strict: a ladder quietly replaced by the default at READ
+ * time is an organiser who saved their words, saw the screen say "Saved", and
+ * is being shown somebody else's on every card. The error belongs where
+ * somebody is looking at a form.
+ */
+export async function setSupporterBands(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  const preset = String(p.preset ?? '').trim()
+  if (preset && !PRESETS.some((x) => x.id === preset)) {
+    throw new ApiError('BAD_BANDS',
+      `${preset} is not one of the presets (${PRESETS.map((x) => x.id).join(', ')}).`)
+  }
+
+  const raw = p.rungs
+  if (!Array.isArray(raw) || raw.length !== SLOTS.length) {
+    throw new ApiError('BAD_BANDS',
+      `A supporter ladder has ${SLOTS.length} rungs, lowest first. This has ` +
+      `${Array.isArray(raw) ? raw.length : 'none'}.`)
+  }
+
+  const rungs: { name: string; minBooks: number }[] = []
+  for (let i = 0; i < raw.length; i++) {
+    const r = raw[i] as { name?: unknown; minBooks?: unknown } | null
+    const where = `Rung ${i + 1}`
+    if (!r || typeof r !== 'object' || Array.isArray(r)) {
+      throw new ApiError('BAD_BANDS', `${where} could not be read.`)
+    }
+    const name = String(r.name ?? '').trim().replace(/\s+/g, ' ')
+    if (!name) {
+      throw new ApiError('BAD_BANDS',
+        `${where} has no name. Every rung is printed on somebody's card, so ` +
+        'none of them can be blank.')
+    }
+    if (name.length > 24) {
+      throw new ApiError('BAD_BANDS',
+        `${where} is ${name.length} characters and a card holds 24. A longer ` +
+        'name is refused rather than shrunk, because shrinking it changes the ' +
+        'card silently and you would not see it until it was sent.',
+        { rung: i + 1, length: name.length, max: 24 })
+    }
+    /* The same two characters the motto refuses, and for the same reason: this
+       ends up inside an SVG that goes to a buyer as a picture. */
+    if (/[<>]/.test(name)) {
+      throw new ApiError('BAD_BANDS', `${where} cannot contain < or >.`)
+    }
+
+    const minBooks = Number(r.minBooks)
+    if (!Number.isFinite(minBooks) || minBooks < 0 || minBooks !== Math.floor(minBooks)) {
+      throw new ApiError('BAD_BANDS',
+        `${where} needs a whole number of books, counting from 0.`)
+    }
+    if (minBooks > 10000) {
+      throw new ApiError('BAD_BANDS', `${where} is more books than any raffle has.`)
+    }
+    rungs.push({ name, minBooks })
+  }
+
+  /*
+   * STRICTLY ASCENDING, which is the one property the rest of the app depends
+   * on. `rankFor` takes the FIRST rung whose threshold is met, reading from the
+   * top — so a rung that does not sit strictly above the one below it can never
+   * be returned. It would still be listed, still be named, and simply never
+   * happen to anybody: a rung nobody can reach is not a validation nicety, it
+   * is a name the organiser typed and will never see.
+   */
+  for (let i = 1; i < rungs.length; i++) {
+    if (rungs[i].minBooks <= rungs[i - 1].minBooks) {
+      throw new ApiError('BAD_BANDS',
+        `Rung ${i + 1} ("${rungs[i].name}") starts at ${rungs[i].minBooks} books, ` +
+        `which is not above rung ${i} ("${rungs[i - 1].name}") at ${rungs[i - 1].minBooks}. ` +
+        'Each rung has to start higher than the one below it, or nobody can ever reach it.',
+        { rung: i + 1, minBooks: rungs[i].minBooks, below: rungs[i - 1].minBooks })
+    }
+  }
+
+  await writeConfig(ctx, { SUPPORTER_BANDS: JSON.stringify({ preset, rungs }) })
+  await ctx.supabaseAdmin.from('audit_log').insert({
+    action: 'SET_SUPPORTER_BANDS',
+    details: { preset, rungs: rungs.map((r) => `${r.name} @ ${r.minBooks}`) },
+    email: user.email,
+  })
+  return { config: configPayload(await currentConfig(ctx)) }
+}
+
 export async function setBrandColor(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const raw = String(p.color ?? '').trim()
   if (raw === '') {

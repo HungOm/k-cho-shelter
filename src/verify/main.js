@@ -590,44 +590,36 @@ async function run() {
     /*
      * THE SUPPORTER BAND, ABOVE THE LIST because it is about the person
      * reading, and the list is about the tickets. Drawn only when the reply
-     * carries one: a receipt minted before the band existed, or a buyer with no
-     * telephone number recorded, has none, and nothing is shown rather than a
-     * medal with no name in it.
+     * carries one: a buyer with no telephone number recorded, or a raffle with
+     * no book size, has none, and nothing is shown rather than a rung with no
+     * name in it.
      *
-     * The key is built from a fixed map rather than from the value, so a band
-     * this page has never heard of draws nothing instead of reaching for a
-     * string called `rankSomething` and rendering the key.
+     * THE RUNG'S NAME COMES FROM THE SERVER, WHICH IS NEW AND IS NOT LAZINESS.
+     * This page used to hold its own table of names and look one up by id, and
+     * that was right while the words lived in the code. They are the
+     * organiser's now — rung4 is "Keeper" in a raffle for the shelter and
+     * "Patron" in one for the learning centre — so the only place that knows
+     * what to call it is the config the server has already read.
+     *
+     * THE ID IS STILL A FIXED TABLE, and that is the half that matters. It is a
+     * POSITION, rung1 to rung5, and it is all this page keys on: the colour
+     * class comes from the position, never from the name. So a raffle's own
+     * words cannot change what a rung looks like, and an id this page has never
+     * heard of draws nothing rather than being pasted into a class attribute.
+     *
+     * AND THE NAME IS THE ONE STRING HERE THAT IS NOT A PAIR. Everything else
+     * goes through say() and renders Burmese above English, because a reader
+     * may not read English at all. A rung's name cannot: it is typed in by an
+     * organiser, in one language, and this page has nowhere to get the other
+     * half from. Escaped on the way out for the same reason the about text is —
+     * it is text this page did not write.
      */
-    /*
-     * THE ONE STRING ON THIS PAGE THAT IS NOT A PAIR.
-     *
-     * Everything else goes through say() and renders Burmese above English,
-     * because a reader here may not read English at all. The four rungs do
-     * not, and it is deliberate: they are relationship words whose Burmese
-     * would be composed rather than translated, and an invented warm word on
-     * a card somebody keeps is worse than an honest one in a single language.
-     * strings.js says the same at more length and names what has to happen
-     * before that changes.
-     *
-     * NAMES, NOT STRING KEYS, and they must match _shared/ranks.ts exactly —
-     * the ladder is defined there once so the card in somebody's chat and this
-     * page cannot disagree about what to call them. The page cannot import it
-     * (src/lib/ranks.js re-exports a module, and this page may only import
-     * leaves), so these four are a copy, and tests/ranks compares them to the
-     * ladder character for character rather than trusting the comment.
-     *
-     * Still a fixed table, so a band this page has never heard of draws
-     * nothing rather than rendering an id.
-     */
-    const BAND = {
-      friend: 'Friend', neighbour: 'Neighbour',
-      companion: 'Companion', family: 'Family',
-    }
+
     /*
      * A COUNTED LINE, WHICH MEANS TWO ENGLISH SENTENCES AND ONE BURMESE ONE.
      * `{n}` was substituted into a single plural string, so a buyer holding
      * one ticket was told "1 tickets in this raffle — thank you." That reader
-     * is exactly who the bottom band is for, so the ungrammatical form was the
+     * is exactly who the bottom rung is for, so the ungrammatical form was the
      * one shown most often, in the one place on this page whose whole job is
      * to sound like a person rather than a machine. Burmese marks no plural
      * on the classifier, so both entries carry the same `my` half.
@@ -635,9 +627,11 @@ async function run() {
     const counted = (key, n) =>
       say(Number(n) === 1 ? `${key}1` : key).replace(/\{n\}/g, String(n))
 
-    const bandName = BAND[String(body.rank || '')]
-    const band = bandName
-      ? `<p class="rank rank-${escapeHtml(String(body.rank))}">
+    const SLOT = ['rung1', 'rung2', 'rung3', 'rung4', 'rung5']
+    const slot = SLOT.includes(String(body.rank ?? '')) ? String(body.rank) : ''
+    const bandName = String(body.rankName ?? '').trim()
+    const band = slot && bandName
+      ? `<p class="rank rank-${slot}">
            <b>${escapeHtml(bandName)}</b>
            <span>${counted('rankThanks', body.rankTickets ?? 0)}</span>
          </p>`

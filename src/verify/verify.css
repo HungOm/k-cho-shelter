@@ -54,7 +54,7 @@
      came to be 46px. A size, so no dark variant. */
   --tap: 52px;
   /*
-   * THE FOUR SUPPORTER BANDS, AS INK RATHER THAN AS FILLS.
+   * THE FIVE SUPPORTER RUNGS, AS INK RATHER THAN AS FILLS.
    *
    * Named for the band, not for the colour, so "gold" moving to a different
    * hue is one edit here and nothing anywhere else. Each is a TEXT colour on a
@@ -63,7 +63,7 @@
    * brand or semantic colour used as a fill needs a companion ink token, and
    * #fff is not it. Nothing is filled here, so nothing needs one.
    *
-   * --band-friend is deliberately a slate rather than a grey. At grey it was
+   * --band-rung1 is deliberately a slate rather than a grey. At grey it was
    * indistinguishable from --muted, and a band that reads as disabled text is
    * a thank-you that looks like a footnote — which matters most on the rung
    * nearly every buyer lands on.
@@ -78,43 +78,34 @@
    * one, and pulling a hue further apart improves the reader who was already
    * fine while barely moving the one who is not.
    */
-  --band-friend: #4d6470;
-  --band-neighbour: #8d4a28;
-  --band-companion: #8a6a00;
+  /*
+   * FIVE RUNGS, AND THE TOKEN IS THE POSITION. The names are the organiser's —
+   * rung4 is "Keeper" in a shelter raffle and "Patron" in one for the learning
+   * centre — so a token called --band-gold holding one of those would be named
+   * after its drawing rather than its role, which is the defect this file has
+   * already been bitten by one level up.
+   */
+  --band-rung1: #4d6470;
+  --band-rung2: #8d4a28;
+  --band-rung3: #8a6a00;
+  --band-rung4: #7a4ba8;
   /*
    * THE TOP RUNG GETS THE ONE HUE ON THIS PAGE THAT MEANS NOTHING ELSE.
    *
-   * It was going to be --brand. "Family" names no material, unlike the metals
-   * this ladder replaced, so there is nothing for it to be faithful to except
-   * what it means — and what it means is being one of this place. The
-   * organisation's own ink looked like the argument rather than the shortcut.
+   * It was going to be --brand — the organisation's own ink for the rung that
+   * says somebody is closest to it. Two things read out of this file killed it.
+   * `.st .mark-sold { color: var(--brand) }` puts a rosette on every sold row
+   * of a receipt, and a top-rung holder has five books or more, so the band
+   * would sit directly above fifty-odd marks in its exact value — identical,
+   * not close, and guaranteed to collide precisely when the top rung appears.
+   * And --seal is declared outside the dark block, so in dark there are two
+   * organisation teals and the band would be the one that is not the logo.
    *
-   * TWO THINGS KILLED IT, both read out of this file rather than guessed:
-   *
-   *   `.st .mark-sold { color: var(--brand) }` puts a rosette on every sold row
-   *   of a receipt. A Family holder is six books or more, so the band would sit
-   *   directly above sixty-odd marks in its own exact value — identical, not
-   *   close. The collision is guaranteed to occur precisely when the top rung
-   *   does, and it would read as the band belonging to the row system rather
-   *   than being a sentence about the person.
-   *
-   *   `--seal` is declared at :root, outside the dark block, so the roundel
-   *   stays #0d7a6f while --brand flips to #2bd4c0. In dark there are TWO
-   *   organisation teals and the band would be the one that is not the logo,
-   *   which is most of "the organisation's own ink" gone.
-   *
-   * So the blue instead, and the reason is better than the one it replaced:
    * --ok, --warn, --bad and --brand all carry a meaning on this page. Blue
-   * carries none. The rung that says somebody is closest to this place is the
-   * only band whose colour cannot be mistaken for a verdict about a ticket.
-   *
-   * (Worth keeping if anybody restores the brand here: write it as
-   * `var(--brand)`, not the literal. A token meaning "this rung IS the
-   * organisation's colour" that hard-codes teal stops being true the day
-   * somebody rebrands — the same defect one level up from naming a token
-   * --band-gold and putting Companion's colour in it.)
+   * carries none, so the top band is the one whose colour cannot be mistaken
+   * for a verdict about a ticket.
    */
-  --band-family: #2a6fb0;
+  --band-rung5: #2a6fb0;
   /*
    * THE GLYPH INSIDE THE ROUNDEL, and it has to be a token because it flips.
    *
@@ -147,14 +138,15 @@
     --mark-ink: #0d1211;
     /* Lifted the same way every other colour here is lifted: these are ink on
        a dark surface, so the light-mode values would be unreadable. */
-    /* The same four inks, lifted the way every colour in this block is lifted.
-       Each was measured at ~8:1 on the 8% tint .rank mixes from it; the
-       assignment changed on 2026-09-22 and the values did not, which is the
-       whole reason a rename of four rungs needed no new colour picked. */
-    --band-friend: #b3c3cb;
-    --band-neighbour: #eab488;
-    --band-companion: #e5c454;
-    --band-family: #8fc4f5;
+    /* The same five inks, lifted the way every colour in this block is
+       lifted. Each measured between 7.8:1 and 8.7:1 on the 8% tint .rank mixes
+       from it, against 4.5:1 to 6.1:1 in light — the dark block runs higher
+       throughout and these sit with their neighbours rather than apart. */
+    --band-rung1: #b3c3cb;
+    --band-rung2: #eab488;
+    --band-rung3: #e5c454;
+    --band-rung4: #cbb0ef;
+    --band-rung5: #8fc4f5;
   }
 }
 * { box-sizing: border-box }
@@ -458,10 +450,11 @@ h1 { font-size: 19px; margin: 0 0 12px }
  * rule written about one place quietly governs another.
  */
 .rank > span { font-size: 13px; color: var(--text) }
-.rank-family { color: var(--band-family) }
-.rank-companion { color: var(--band-companion) }
-.rank-neighbour { color: var(--band-neighbour) }
-.rank-friend { color: var(--band-friend) }
+.rank-rung5 { color: var(--band-rung5) }
+.rank-rung4 { color: var(--band-rung4) }
+.rank-rung3 { color: var(--band-rung3) }
+.rank-rung2 { color: var(--band-rung2) }
+.rank-rung1 { color: var(--band-rung1) }
 
 /*
  * THE TICKETS ON A RECEIPT. This was a bare <ul>: browser bullets, browser
