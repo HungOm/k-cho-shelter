@@ -288,13 +288,42 @@ function holdKeyOf(t) {
 /** The code for whoever this ticket belongs to, once there is one. */
 const codeFor = (t) => (holdKeyOf(t) ? String(minted.value[holdKeyOf(t)] ?? '') : '')
 
+/*
+ * WHY IT COULD NOT BE MADE, KEPT RATHER THAN SWALLOWED.
+ *
+ * This caught and discarded, on the reasoning that opening a modal must not
+ * throw a red error over a screen somebody is reading. That half is still
+ * right. Discarding the REASON was not: the card silently fell back to this
+ * one ticket, which is a perfectly ordinary-looking card, and the only signal
+ * that anything had failed was that it showed the wrong thing — which you can
+ * only notice if you already know what the right thing looks like.
+ *
+ * It cost the person using this three rounds of asking why the digital ticket
+ * was still per ticket, and me three answers, because the screen had the
+ * answer and was not saying it. Quiet is not the same as invisible.
+ */
+const holdError = ref({})
+
 async function ensureHolding(t) {
   const key = holdKeyOf(t)
   if (!key || minted.value[key] || ticketsHeldBy(t).length < 2) return
   try {
     const made = await api('make_receipt', { ticketNumbers: ticketsHeldBy(t) })
     minted.value = { ...minted.value, [key]: String(made.code) }
-  } catch { /* the single ticket's card stands; send() reports it properly */ }
+    holdError.value = { ...holdError.value, [key]: '' }
+  } catch (e) {
+    /* No toast — see above. The card block says it instead, where somebody
+       looking at the wrong card is already looking. */
+    holdError.value = { ...holdError.value, [key]: e.message || 'it could not be made' }
+  }
+}
+
+/** Why this buyer's digital ticket is missing, when it is. */
+function whyNoHolding(t) {
+  if (heldCount(t) < 2 || codeFor(t)) return ''
+  const key = holdKeyOf(t)
+  if (!key) return 'No telephone number is recorded for this buyer, so there is nothing to hold their tickets against.'
+  return holdError.value[key] || ''
 }
 
 function cardValues(t) {
@@ -752,6 +781,14 @@ onMounted(async () => {
           read as the second thing, which is fair: nothing on the screen said
           otherwise.
         -->
+        <!--
+          WHAT IT IS, THEN WHETHER WE HAVE IT — two sentences, not one.
+          The first describes the artefact and is true whether or not a code
+          has come back yet; folding them together left a state with nothing
+          said in it, which the suite caught on a render where the request had
+          not run. A screen that goes quiet while it waits is the failure this
+          whole block was added to stop.
+        -->
         <p class="digihead">
           <span class="rubric">Their digital ticket</span>
           <span v-if="heldCount(t) > 1" class="tiny muted">
@@ -761,6 +798,17 @@ onMounted(async () => {
           <span v-else class="tiny muted">
             One picture and one QR. It covers everything this buyer holds.
           </span>
+        </p>
+        <!--
+          THE CARD BELOW IS NOT THE ONE THEY SHOULD GET, AND IT SAYS SO.
+          Without this the fallback is a perfectly ordinary-looking card for
+          one ticket, and the only clue that anything failed is that it shows
+          the wrong thing — which you can only notice if you already know what
+          the right thing looks like.
+        -->
+        <p v-if="whyNoHolding(t)" class="note warn tiny nohold">
+          The card below is this one ticket, not their digital ticket — it
+          could not be made: {{ whyNoHolding(t) }}
         </p>
         <!--
           THE COPY A BUYER KEEPS. Disabled with the reason rather than hidden,
@@ -923,6 +971,9 @@ onMounted(async () => {
   margin: 18px 0 8px;
 }
 .digihead .rubric { margin: 0 }
+/* Amber, not red: nothing is broken and nothing is lost — the card below is
+   simply the smaller of two true things, and the sentence says which. */
+.nohold { margin: 0 0 10px }
 
 .one { margin-bottom: 18px }
 /*
