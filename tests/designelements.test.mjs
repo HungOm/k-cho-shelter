@@ -19,7 +19,7 @@ import {
   KINDS, FILLS, BLENDS, MAX_DECORATIONS,
   normalDecoration, normalDecorations, faultsIn,
   decorationSVG, decorationLayerSVG, printWarnings,
-} from '../src/lib/designelements.js'
+} from '../supabase/functions/_shared/designelements.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -249,8 +249,18 @@ console.log('saving refuses, and says which one and why')
     'angle brackets, which end up inside an SVG')
   ok(/limit is 120/.test(say([{ id: 'a', kind: 'text', text: { value: 'x'.repeat(200) } }])),
     'and a value longer than a ticket holds')
-  ok(/will not load a picture from/.test(say([{ id: 'a', kind: 'image', image: { src: 'file:///etc/passwd' } }])),
+  ok(/coordinates, not pictures/.test(say([{ id: 'a', kind: 'image', image: { src: 'file:///etc/passwd' } }])),
     'an image from somewhere this app will not fetch')
+  /*
+   * AND A data: URI IS REFUSED THOUGH IT WOULD RENDER PERFECTLY. It is the one
+   * thing that can make a decoration unbounded in size, and a printed design is
+   * stored whole in a column whose limit says "coordinates, not pictures". One
+   * pasted photograph is larger than every measurement in the design together.
+   */
+  ok(/coordinates, not pictures/.test(say([{ id: 'a', kind: 'image', image: { src: 'data:image/png;base64,iVBOR' } }])),
+    'and a picture pasted in as data, which would render and could not be saved')
+  eq(faultsIn([{ id: 'a', kind: 'image', image: { src: 'https://x.test/a.png' } }]).length, 0,
+    'while one already uploaded, referred to by address, is fine')
   ok(faultsIn(new Array(MAX_DECORATIONS + 5).fill(0).map((_, i) => ({ id: `d${i}` }))).some((f) => /limit is/.test(f)),
     'and more decorations than the limit')
 
@@ -266,7 +276,7 @@ console.log('saving refuses, and says which one and why')
 console.log('nothing may sit on the check code')
 {
   const code = at(0.7, 0.55, 0.2, 0.4)
-  const over = (b) => faultsIn([{ id: 'a', kind: 'rect', box: b }], { codeBox: code })
+  const over = (b) => faultsIn([{ id: 'a', kind: 'rect', box: b }], { codeBoxes: [code] })
     .some((f) => /check code/.test(f))
 
   ok(over(at(0.75, 0.6, 0.1, 0.1)), 'a mark inside it is refused')
@@ -276,8 +286,22 @@ console.log('nothing may sit on the check code')
 
   ok(!over(at(0, 0, 0.5, 0.4)), 'a decoration well clear of it is fine')
   ok(!over(at(0.9, 0.55, 0.1, 0.4)), 'and one that stops exactly where the code starts')
-  ok(!faultsIn([{ id: 'a', kind: 'rect', box: at(0.75, 0.6, 0.1, 0.1), enabled: false }], { codeBox: code })
+  ok(!faultsIn([{ id: 'a', kind: 'rect', box: at(0.75, 0.6, 0.1, 0.1), enabled: false }], { codeBoxes: [code] })
     .some((f) => /check code/.test(f)), 'and one that is switched off is not on the ticket at all')
+
+  /*
+   * BOTH CODES, because a printed ticket carries one on the main half and one
+   * on the stub. A rule that knew only about the first would protect half the
+   * tickets while looking like it worked, which is worse than not having it.
+   */
+  const stubCode = at(0.05, 0.1, 0.1, 0.2)
+  const twoCodes = { codeBoxes: [code, stubCode] }
+  ok(faultsIn([{ id: 'a', kind: 'rect', box: at(0.06, 0.12, 0.05, 0.05) }], twoCodes)
+    .some((f) => /check code/.test(f)), 'a mark on the stub\'s code is caught too')
+  ok(faultsIn([{ id: 'a', kind: 'rect', box: at(0.75, 0.6, 0.05, 0.05) }], twoCodes)
+    .some((f) => /check code/.test(f)), 'and one on the main half\'s')
+  eq(faultsIn([{ id: 'a', kind: 'rect', box: at(0.3, 0.05, 0.2, 0.1) }], twoCodes).length, 0,
+    'while the space between them is free')
 
   /* No code on the design means no rule to apply — a card treatment with its
      QR hidden must not refuse every decoration anybody draws. */

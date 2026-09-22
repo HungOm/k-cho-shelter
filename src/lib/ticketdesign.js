@@ -26,6 +26,7 @@
  */
 
 import { elementsOf, validateElements } from './ticketelements.js'
+import { faultsIn } from './designelements.js'
 
 /** The frame DEFAULT_DESIGN's numbers are expressed in. */
 export const REFERENCE = { width: 1600, height: 517 }
@@ -354,6 +355,22 @@ export function validateDesign(design, artwork) {
   /* Whatever the organiser has actually placed. The checks above are about the
    * slots the defaults ship with; this is about the list that replaced them. */
   if (Array.isArray(design?.elements)) problems.push(...validateElements(design.elements, stubShare(design)))
+
+
+  /*
+   * AND THE THINGS SOMEBODY DREW, by the same module the server refuses them
+   * with — so the studio says what is wrong BEFORE Save rather than the save
+   * coming back refused. `faultsIn` is the one implementation; this is the one
+   * call to it on this side of the wall.
+   *
+   * The code boxes are read off the design's own elements, both halves, so the
+   * rule is checked against where the QR is on THIS ticket rather than where a
+   * ticket usually has one.
+   */
+  const codeBoxes = (design?.elements || [])
+    .filter((e) => e?.kind === 'code' && e?.enabled !== false)
+    .map((e) => e.box)
+  problems.push(...faultsIn(design?.decorations, { codeBoxes }))
 
   return problems
 }

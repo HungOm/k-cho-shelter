@@ -275,11 +275,35 @@ console.log('the design is stored, within limits')
     { id: t.id, design: { main: { baseline: Infinity } } }, users.admin, w.db.ctx)),
     'BAD_DESIGN', 'or is not finite')
 
-  // A jsonb column with no ceiling is a place to put a megabyte.
-  const huge = { note: 'x'.repeat(9000) }
+  /*
+   * A jsonb column with no ceiling is a place to put a megabyte.
+   *
+   * THE CEILING MOVED from 8192 to 65536 on 2026-09-22, when a design gained
+   * decorations — up to sixty drawn shapes, about a kilobyte each with every
+   * field set, which the old limit would have refused on a ticket somebody had
+   * legitimately drawn. What keeps the new number safe is not its size: a
+   * decoration cannot carry a picture, because an image refers to one already
+   * uploaded and a `data:` URI is refused in designelements.js. The worst case
+   * is bounded by construction, and this is a formality behind it.
+   *
+   * The fixture is sized past the NEW limit rather than the old one, which is
+   * the whole reason this test went red: it built 9000 characters, and a design
+   * of 9000 characters is now perfectly acceptable. Worth noting how it
+   * surfaced — the suite CRASHED reading `.code` of a null rather than printing
+   * a FAIL line, so a grep for failures found nothing and only the exit code
+   * said anything was wrong.
+   */
+  const huge = { note: 'x'.repeat(70000) }
   const big = await errOf(() => templates.setTemplateDesign({ id: t.id, design: huge }, users.admin, w.db.ctx))
-  eq(big.code, 'BAD_DESIGN', 'a design far too large')
-  ok(/8192/.test(big.message), 'and the limit is named')
+  ok(big, 'a design far too large is refused, rather than stored')
+  eq(big?.code, 'BAD_DESIGN', 'and refused as a bad design')
+  ok(/65536/.test(big?.message ?? ''), 'and the limit is named')
+
+  /* And the size BELOW it is accepted, so the assertion above is about the
+     ceiling rather than about any large design at all. */
+  eq(await codeOf(() => templates.setTemplateDesign(
+    { id: t.id, design: { note: 'x'.repeat(9000) } }, users.admin, w.db.ctx)),
+    'NO_THROW', 'while a design of 9000 characters, which the old limit refused, is fine')
 }
 
 console.log('the accepted sizes are a setting, and a sane one')

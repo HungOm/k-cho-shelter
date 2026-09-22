@@ -31,6 +31,7 @@
  * precedent, and this follows it.
  */
 import { ApiError, type AppUser } from './gate.ts'
+import { faultsIn, MAX_DECORATIONS } from '../_shared/designelements.js'
 import { configPayload } from './config.ts'
 import { ALLOWED, decode, sniff } from './branding.ts'
 
@@ -395,10 +396,26 @@ export async function setTemplateDesign(p: Record<string, unknown>, user: AppUse
   } catch {
     throw new ApiError('BAD_DESIGN', 'That design could not be read.')
   }
-  if (encoded.length > 8192) {
+  /*
+   * THE LIMIT WENT UP WHEN DESIGNS GAINED THINGS SOMEBODY DRAWS.
+   *
+   * 8192 was right while a design held nothing but coordinates, and the
+   * sentence it carried is still the point: this column holds a design, not a
+   * picture. What changed is that a design can now carry up to
+   * MAX_DECORATIONS shapes, and one of those with every field set is about a
+   * kilobyte — so sixty of them plus the measurements is around 60k, and the
+   * old ceiling would have refused a ticket somebody had legitimately drawn.
+   *
+   * IT IS BOUNDED BY CONSTRUCTION RATHER THAN BY THIS NUMBER, which is the part
+   * that makes raising it safe. A decoration cannot carry a picture: an image
+   * refers to one already uploaded, by address, and a `data:` URI is refused in
+   * designelements.js precisely so that this ceiling stays a formality instead
+   * of becoming the thing standing between the column and a photograph.
+   */
+  if (encoded.length > 65536) {
     throw new ApiError('BAD_DESIGN',
-      `That design is ${encoded.length} characters. The limit is 8192 — it holds ` +
-      'coordinates, not pictures.')
+      `That design is ${encoded.length} characters. The limit is 65536 — it holds ` +
+      `coordinates and up to ${MAX_DECORATIONS} drawn shapes, not pictures.`)
   }
   // A coordinate that is not a number puts the ticket number nowhere, and NaN
   // survives JSON.stringify as null rather than failing here.
@@ -410,6 +427,32 @@ export async function setTemplateDesign(p: Record<string, unknown>, user: AppUse
   }
   if (!numbersAreReal(design)) {
     throw new ApiError('BAD_DESIGN', 'That design has a measurement that is not a number.')
+  }
+
+  /*
+   * AND THE THINGS SOMEBODY DREW, checked by the same module the studio draws
+   * them with rather than by a second opinion written here.
+   *
+   * That is the whole reason designelements lives in _shared. A copy of these
+   * rules in this file would agree with the studio on the day it was written
+   * and then let somebody draw a thing the server refuses — or, worse, accept
+   * one it should not have. branding.ts had exactly that shape this week: a
+   * hardcoded list of card treatments that a fourth treatment was missing from,
+   * so a card could be previewed and not saved.
+   *
+   * THE CODE BOXES COME FROM THE DESIGN'S OWN ELEMENTS, so the rule is checked
+   * against where the QR actually is on THIS ticket rather than where it
+   * usually is. Both halves — a printed ticket carries one on each.
+   */
+  const d = design as { decorations?: unknown; elements?: unknown }
+  if (d.decorations !== undefined) {
+    const codeBoxes = (Array.isArray(d.elements) ? d.elements : [])
+      .filter((e: { kind?: string; enabled?: boolean }) => e?.kind === 'code' && e?.enabled !== false)
+      .map((e: { box?: unknown }) => e.box)
+    const faults = faultsIn(d.decorations, { codeBoxes })
+    if (faults.length) {
+      throw new ApiError('BAD_DESIGN', faults.join(' '), { faults })
+    }
   }
 
   const { data, error } = await ctx.supabaseAdmin
