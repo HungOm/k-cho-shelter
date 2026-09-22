@@ -26,7 +26,7 @@
  */
 
 import { elementsOf, validateElements } from './ticketelements.js'
-import { faultsIn } from './designelements.js'
+import { faultsIn, normalDecorations } from './designelements.js'
 
 /** The frame DEFAULT_DESIGN's numbers are expressed in. */
 export const REFERENCE = { width: 1600, height: 517 }
@@ -301,7 +301,22 @@ export function designFor(template) {
    * underneath: they are what the derivation reads, and deleting them would
    * make every stored design unmigratable rather than merely old.
    */
-  return { ...merged, elements: elementsOf(merged, merged.artwork) }
+  /*
+   * AND THE DRAWN SHAPES, NORMALISED ON THE WAY IN AND ALWAYS A LIST.
+   *
+   * Always a list because every screen that touches them would otherwise need
+   * `?? []` at each use, and the one that forgot would be the one that threw
+   * while drawing somebody's ticket. Normalised because a design stored by an
+   * older build, or edited by hand, must produce a shape this renderer can draw
+   * rather than an exception — the same contract `resolveParts` carries for the
+   * card, and the reason `normalDecoration` is written to be incapable of
+   * failing.
+   */
+  return {
+    ...merged,
+    elements: elementsOf(merged, merged.artwork),
+    decorations: normalDecorations(merged.decorations),
+  }
 }
 
 /*

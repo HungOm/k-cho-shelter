@@ -63,6 +63,9 @@ import {
 import {
   EDGES, boundsOf, alignBoxes, distributeBoxes, orderMoved, offsetBox,
 } from '../lib/arrange.js'
+import {
+  KINDS as DECO_KINDS, normalDecoration, nextDecoId, printWarnings,
+} from '../lib/designelements.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
@@ -434,7 +437,7 @@ const also = ref([])
 
 /** Everything selected, primary first, with anything since deleted dropped. */
 const picked = computed(() => {
-  const live = new Set(elements.value.map((e) => e.id))
+  const live = new Set([...elements.value.map((e) => e.id), ...decorations.value.map((d) => d.id)])
   const out = []
   for (const id of [sel.value, ...also.value]) {
     if (id && live.has(id) && !out.includes(id)) out.push(id)
@@ -449,9 +452,38 @@ const pickedEls = computed(() => {
      design as a side effect of arranging it. */
   return elements.value.filter((e) => want.has(e.id))
 })
+const pickedDecos = computed(() => {
+  const want = new Set(picked.value)
+  return decorations.value.filter((d) => want.has(d.id))
+})
+/* Everything selected, of either kind. Align and distribute are arithmetic on
+   a box and do not care which list a box came from. */
+const pickedThings = computed(() => [...pickedEls.value, ...pickedDecos.value])
 const many = computed(() => picked.value.length > 1)
 
+/*
+ * THE THINGS SOMEBODY DREW, alongside the things the raffle fills in.
+ *
+ * Two lists rather than one, and they stay two: an element prints a VALUE and
+ * has a source; a decoration says nothing the app knows about. They are drawn
+ * as two layers — decorations under every field, so no shape anybody adds can
+ * take a serial number away — so merging them into one array would be merging
+ * two z-orders that are deliberately separate.
+ *
+ * ONE ID-SPACE THOUGH, which is what lets the selection, the arrange tools and
+ * the layer list treat them alike. `nextId` makes `e…` and `nextDecoId` makes
+ * `d…`, so an id says which list it came from without anything having to carry
+ * a flag alongside it.
+ */
+const decorations = computed(() => design.value?.decorations ?? [])
+const isDeco = (id) => String(id).startsWith('d')
+
+const thingById = (id) => (isDeco(id)
+  ? decorations.value.find((d) => d.id === id)
+  : elements.value.find((e) => e.id === id)) || null
+
 const chosen = computed(() => elements.value.find((e) => e.id === sel.value) || null)
+const chosenDeco = computed(() => decorations.value.find((d) => d.id === sel.value) || null)
 const placedById = computed(() => Object.fromEntries(placements.value.map((p) => [p.id, p])))
 const chosenPlaced = computed(() => placedById.value[sel.value] || null)
 
@@ -569,30 +601,45 @@ function pick(id, add = false) {
 
 /** Against the artboard for one, against the selection for several. */
 const alignWithin = () => (many.value
-  ? boundsOf(pickedEls.value.map((e) => e.box))
+  ? boundsOf(pickedThings.value.map((e) => e.box))
   : { left: 0, top: 0, width: 1, height: 1 })
 
 function alignPicked(edge) {
-  if (!pickedEls.value.length) return
+  if (!pickedThings.value.length) return
   mark()
-  const out = alignBoxes(pickedEls.value.map((e) => e.box), edge, alignWithin())
-  pickedEls.value.forEach((e, i) => { e.box.left = out[i].left; e.box.top = out[i].top })
+  const out = alignBoxes(pickedThings.value.map((e) => e.box), edge, alignWithin())
+  pickedThings.value.forEach((e, i) => { e.box.left = out[i].left; e.box.top = out[i].top })
 }
 
 function distributePicked(axis) {
-  if (pickedEls.value.length < 3) return
+  if (pickedThings.value.length < 3) return
   mark()
-  const out = distributeBoxes(pickedEls.value.map((e) => e.box), axis)
-  pickedEls.value.forEach((e, i) => { e.box.left = out[i].left; e.box.top = out[i].top })
+  const out = distributeBoxes(pickedThings.value.map((e) => e.box), axis)
+  pickedThings.value.forEach((e, i) => { e.box.left = out[i].left; e.box.top = out[i].top })
 }
 
+/*
+ * ORDER STAYS INSIDE ONE LIST, AND A MIXED SELECTION CANNOT BE ORDERED.
+ *
+ * The two lists are two layers by design: every decoration draws under every
+ * field. So "bring this decoration forward past that ticket number" has no
+ * answer — not a hard one, none at all — and a tool that quietly reordered
+ * within each list instead would move two things away from each other while
+ * looking like it moved them together. Disabled with the reason instead.
+ */
 function orderPicked(move) {
-  if (!picked.value.length) return
+  if (!picked.value.length || mixedPick.value) return
   mark()
-  const order = orderMoved(elements.value.map((e) => e.id), picked.value, move)
-  const by = Object.fromEntries(elements.value.map((e) => [e.id, e]))
-  design.value.elements = order.map((id) => by[id])
+  const inDecos = pickedDecos.value.length > 0
+  const list = inDecos ? decorations.value : elements.value
+  const order = orderMoved(list.map((e) => e.id), picked.value, move)
+  const by = Object.fromEntries(list.map((e) => [e.id, e]))
+  const sorted = order.map((id) => by[id])
+  if (inDecos) design.value.decorations = sorted
+  else design.value.elements = sorted
 }
+
+const mixedPick = computed(() => pickedEls.value.length > 0 && pickedDecos.value.length > 0)
 
 /*
  * A COPY IS A NEW ELEMENT, NOT A SECOND REFERENCE. `after` is dropped rather
@@ -601,14 +648,20 @@ function orderPicked(move) {
  * own, which is the only version of it that is always correct.
  */
 function duplicatePicked() {
-  if (!pickedEls.value.length) return
+  if (!pickedThings.value.length) return
   mark()
-  const made = pickedEls.value.map((e) => normalElement({
-    ...JSON.parse(JSON.stringify(e)), id: nextId(), after: '', box: offsetBox(e.box),
+  const copy = (x) => JSON.parse(JSON.stringify(x))
+  const els = pickedEls.value.map((e) => normalElement({
+    ...copy(e), id: nextId(), after: '', box: offsetBox(e.box),
   }))
-  design.value.elements = [...elements.value, ...made]
+  const decos = pickedDecos.value.map((d) => normalDecoration({
+    ...copy(d), id: nextDecoId(), box: offsetBox(d.box),
+  }))
+  if (els.length) design.value.elements = [...elements.value, ...els]
+  if (decos.length) design.value.decorations = [...decorations.value, ...decos]
+  const made = [...els, ...decos]
   sel.value = made[0].id
-  also.value = made.slice(1).map((e) => e.id)
+  also.value = made.slice(1).map((x) => x.id)
 }
 
 function deletePicked() {
@@ -616,7 +669,9 @@ function deletePicked() {
   mark()
   const going = new Set(picked.value)
   design.value.elements = elements.value.filter((e) => !going.has(e.id))
+  /* Anything that was flowing after a deleted element has lost its anchor. */
   for (const e of design.value.elements) if (going.has(e.after)) e.after = ''
+  design.value.decorations = decorations.value.filter((d) => !going.has(d.id))
   sel.value = ''
   also.value = []
 }
@@ -627,6 +682,52 @@ function deletePicked() {
  * to draw one of these enabled without an answer to "why not".
  */
 const whyNoSelection = computed(() => (picked.value.length ? '' : 'Nothing is selected'))
+/* What a press will not hold, as findings rather than refusals — see
+   designelements.js. Only the printed tab asks for them. */
+const printRisks = computed(() => printWarnings(decorations.value, { printed: true }))
+
+/*
+ * WHAT TO CALL A SHAPE SOMEBODY DREW.
+ *
+ * It has no name of its own — that is what makes it a decoration rather than a
+ * part — so the list has to say something, and "Decoration 4" is the worst of
+ * the available answers: it changes when anything above it is deleted, so the
+ * row somebody is looking for is never where they left it.
+ *
+ * The words if it has words, the mark's name if it is a mark, the kind
+ * otherwise. Every one of those is stable under deletion and says what the
+ * thing IS.
+ */
+const DECO_WORD = {
+  rect: 'Rectangle', ellipse: 'Ellipse', line: 'Rule', text: 'Words', image: 'Picture',
+}
+/*
+ * `icon` IS SPELLED OUT HERE RATHER THAN PUT IN THE TABLE ABOVE, and the
+ * reason is a convention this codebase enforces with a test.
+ *
+ * `icon: '…'` means an icon NAME everywhere in this app, and icons.test.mjs
+ * scans every file for that pattern to check the drawing exists. A label
+ * filed under that key reads to it as a request for a drawing called "Mark",
+ * and it failed exactly that way. The test is right and the table was wrong:
+ * one key spelling meaning two different things is how a scanner ends up
+ * unable to tell them apart, and the scanner is the thing that catches typos
+ * in the other 54 cases.
+ */
+function decoWord(kind) {
+  return kind === 'icon' ? 'Mark' : (DECO_WORD[kind] || 'Shape')
+}
+
+function decoName(d) {
+  const typed = String(d?.text?.value ?? '').trim()
+  if (d?.kind === 'text' && typed) return `“${typed.length > 22 ? `${typed.slice(0, 21)}…` : typed}”`
+  if (d?.kind === 'icon' && d.icon?.name) return `Mark · ${d.icon.name}`
+  return decoWord(d?.kind)
+}
+
+const whyNotOrder = computed(() => whyNoSelection.value || (mixedPick.value
+  ? 'Fields and drawn shapes are two layers — everything drawn prints under every field, '
+    + 'so there is no order between them to change'
+  : ''))
 const whyNotDistribute = computed(() => (
   picked.value.length >= 3 ? ''
     : picked.value.length ? 'Spacing needs three or more — shift-click to add to the selection'
@@ -642,9 +743,50 @@ const whyNotDistribute = computed(() => (
  */
 const pending = ref('')
 
+/*
+ * `d:rect` RATHER THAN `rect`, and the prefix is load-bearing rather than
+ * tidy: an element kind and a decoration kind are both called `text`, and one
+ * of them prints somebody's typed words while the other is a value the raffle
+ * fills in. One namespace with a collision in it is a bug waiting for whoever
+ * adds the fourth kind.
+ */
+const DECO_PREFIX = 'd:'
+const pendingDeco = computed(() => (pending.value.startsWith(DECO_PREFIX)
+  ? pending.value.slice(DECO_PREFIX.length) : ''))
+
 function beginAdd(kind) {
   pending.value = pending.value === kind ? '' : kind
   sel.value = ''
+  also.value = []
+}
+
+/*
+ * A NEW DECORATION IS VISIBLE BEFORE IT IS STYLED, which is the one thing that
+ * decides whether a drawing tool feels like it works. A shape created with no
+ * fill, or in the colour of whatever is behind it, reads as a tool that did
+ * nothing — and the next thing somebody does is press it four more times.
+ *
+ * So it takes the ink already on this side of the perforation, the same rule
+ * and the same function a new ELEMENT uses, rather than black on a dark green
+ * field. A line takes it as a stroke, because a filled line is a rectangle.
+ */
+function addDecorationAt(kind, box) {
+  const side = box.left + box.width / 2 >= stubShare(design.value) ? 'stub' : 'half'
+  const colour = inkNear(side)
+  const made = normalDecoration({
+    id: nextDecoId(),
+    kind,
+    half: side === 'stub' ? 'stub' : 'main',
+    box,
+    fill: { type: kind === 'line' ? 'none' : 'solid', colour },
+    stroke: kind === 'line' ? { width: 0.002, colour } : { width: 0, colour },
+    text: kind === 'text' ? { value: 'Your words' } : {},
+    icon: kind === 'icon' ? { name: 'ticket' } : {},
+  })
+  design.value.decorations = [...decorations.value, made]
+  sel.value = made.id
+  also.value = []
+  pending.value = ''
 }
 
 /* A sensible default for a new element: the ink of whatever is already on this
@@ -828,7 +970,7 @@ function edgesExcept(id) {
 }
 
 function startMove(el, ev) {
-  if (el.enabled === false) return
+  if (el.enabled === false || el.locked) return
   ev.stopPropagation()
 
   /*
@@ -911,7 +1053,8 @@ function onPointerMove(ev) {
     return
   }
 
-  const el = elements.value.find((e) => e.id === st.id)
+  /* Either list — a drag does not care which, and `thingById` reads the id. */
+  const el = thingById(st.id)
   if (!el) return
   const { xs, ys } = edgesExcept(st.id)
 
@@ -933,7 +1076,7 @@ function onPointerMove(ev) {
      * One box snaps; the group keeps its shape.
      */
     for (const g of st.group || []) {
-      const other = elements.value.find((e) => e.id === g.id)
+      const other = thingById(g.id)
       if (!other) continue
       other.box.left = Math.round((g.box.left + (el.box.left - st.box.left)) * 1e4) / 1e4
       other.box.top = Math.round((g.box.top + (el.box.top - st.box.top)) * 1e4) / 1e4
@@ -981,10 +1124,16 @@ function endPointer() {
     /* A click rather than a drag means no box was drawn. Rather than making a
      * zero-sized element nobody can see or grab, give it a sensible default
      * size at the point that was clicked. */
-    const box = b.width < 0.005 || b.height < 0.004
-      ? { left: b.left, top: b.top, width: 0.14, height: 0.03 }
-      : b
-    addElementAt(pending.value, box)
+    /* A click rather than a drag gets a default — and a different one for a
+       shape than for a field. A field is a line of type and is wide and thin;
+       a rectangle that shape reads as a rule somebody did not mean to draw. */
+    const tiny = b.width < 0.005 || b.height < 0.004
+    const box = !tiny ? b
+      : pendingDeco.value && pendingDeco.value !== 'line'
+        ? { left: b.left, top: b.top, width: 0.12, height: 0.12 }
+        : { left: b.left, top: b.top, width: 0.14, height: 0.03 }
+    if (pendingDeco.value) addDecorationAt(pendingDeco.value, box)
+    else addElementAt(pending.value, box)
   }
   drag.value = null
   drawn.value = null
@@ -1000,8 +1149,11 @@ function startStubDrag(ev) {
 /* Arrow keys nudge by a tenth of a per cent, Shift by one. Both are in shares,
  * so a nudge is the same distance on the ticket whatever the zoom. */
 function onKey(ev) {
-  const el = chosen.value
-  if (!el) return
+  /* Either list — an arrow key nudges whatever is selected, and a decoration is
+     as selectable as a field. `chosen` alone would have made the arrows work on
+     fields and silently do nothing on shapes. */
+  const el = thingById(sel.value)
+  if (!el || el.locked) return
   const step = ev.shiftKey ? 0.01 : 0.001
   const map = {
     ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
@@ -1886,6 +2038,56 @@ const printedSize = computed(() => {
               </p>
             </div>
 
+            <!--
+              AND THE THINGS THAT PRINT NOTHING THE RAFFLE KNOWS ABOUT.
+
+              Its own group, under its own heading, because it is a different
+              kind of act: everything above prints a VALUE — a number, a name, a
+              code — and everything here is a shape somebody drew. Putting a
+              rectangle in the same row as "A field" would say they were
+              alternatives, and the first question anybody asks of a rectangle
+              beside a ticket number is what it is going to print.
+
+              ICONS RATHER THAN WORDS, which is the one place in this rail that
+              is not a segmented control of labels. A rectangle, an ellipse and
+              a line ARE their icons — a word for each would be a word nobody
+              needs, and this is the drawing half of the screen.
+            -->
+            <div class="block">
+              <h3 class="rubric">Draw</h3>
+              <ToolBar label="Shapes to draw">
+                <ToolButton icon="shape" label="Rectangle" :size="17"
+                            :active="pendingDeco === 'rect'"
+                            hint="Draw a rectangle — a tint behind a price, a panel, a border"
+                            @click="beginAdd('d:rect')" />
+                <ToolButton icon="reset" label="Ellipse" :size="17"
+                            :active="pendingDeco === 'ellipse'"
+                            hint="Draw an ellipse or a circle"
+                            @click="beginAdd('d:ellipse')" />
+                <ToolButton icon="minus" label="Line" :size="17"
+                            :active="pendingDeco === 'line'"
+                            hint="Draw a rule. Drag it flat for a horizontal one — a line with no height is a line, not a mistake"
+                            @click="beginAdd('d:line')" />
+                <ToolButton icon="type" label="Words" :size="17"
+                            :active="pendingDeco === 'text'"
+                            hint="Words you type, which print the same on every ticket. Unlike a field, the raffle puts nothing in it"
+                            @click="beginAdd('d:text')" />
+                <ToolButton icon="design" label="Mark" :size="17"
+                            :active="pendingDeco === 'icon'"
+                            hint="One of the app's own drawings, placed on the ticket"
+                            @click="beginAdd('d:icon')" />
+              </ToolBar>
+              <p v-if="printRisks.length" class="tiny warnish">
+                <!-- REPORTED, NOT REFUSED, and only here: every one of these is
+                     right on the digital card, which is a picture on a lit
+                     screen with no press and no grey. -->
+                {{ printRisks[0] }}
+                <template v-if="printRisks.length > 1">
+                  &nbsp;&middot; and {{ printRisks.length - 1 }} more like it.
+                </template>
+              </p>
+            </div>
+
             <div class="block grow">
               <h3 class="rubric">
                 On this template <span class="count">{{ elements.length }}</span>
@@ -1939,7 +2141,54 @@ const printedSize = computed(() => {
                   </li>
                 </ul>
               </template>
-              <p v-if="!elements.length" class="tiny muted">
+              <!--
+                THE DRAWN SHAPES, IN THEIR OWN GROUP AND BELOW THE HALVES.
+
+                Below, because that is the order they print in: everything drawn
+                sits under every field. A list whose order contradicts the
+                artefact it describes is a list somebody has to translate.
+
+                NOT SPLIT BY HALF, unlike the fields above. A shape crosses the
+                perforation all the time — a tint that runs the width of the
+                ticket, a rule under both halves — so grouping them by side
+                would put one thing in two places or force a choice the drawing
+                does not have.
+
+                REVERSED, so the topmost shape is the top row. The array is
+                draw order and later draws over earlier; a layer list reads
+                downwards from the front. The card tab reverses for the same
+                reason and says so in the same words.
+              -->
+              <template v-if="decorations.length">
+                <p class="rubric halfhead">
+                  Drawn <span class="count data">&middot; {{ decorations.length }}</span>
+                </p>
+                <ul class="ellist">
+                  <li v-for="d in [...decorations].reverse()" :key="d.id"
+                      :class="{ on: sel === d.id, off: d.enabled === false }">
+                    <Icon :name="d.kind === 'text' ? 'type' : d.kind === 'icon' ? 'design' : 'shape'"
+                          :size="15" class="kind" :title="decoWord(d.kind)" />
+                    <button type="button" class="elname"
+                            @click="pick(d.id, $event.shiftKey || $event.metaKey)">{{ decoName(d) }}</button>
+                    <!--
+                      PINNED, NOT LOCKED-OUT. A drawn background is the thing
+                      somebody keeps catching while working on what sits over
+                      it, and this is the pin they put in it — it refuses a
+                      DRAG and nothing else. It is not a permission and it does
+                      not travel to anybody else.
+                    -->
+                    <ToolButton :icon="d.locked ? 'lock' : 'position'"
+                                :label="d.locked ? `Unpin ${decoName(d)}` : `Pin ${decoName(d)}`"
+                                :active="d.locked" :size="15"
+                                :hint="d.locked ? 'Pinned — a drag will not move it. Click to release.'
+                                                : 'Pin it, so working over it does not keep catching it'"
+                                @click="mark(); d.locked = !d.locked" />
+                    <Toggle v-model="d.enabled" :label="decoName(d)" :size="15" />
+                  </li>
+                </ul>
+              </template>
+
+              <p v-if="!elements.length && !decorations.length" class="tiny muted">
                 Nothing is printed on this ticket yet. Pick something above and draw a box.
               </p>
             </div>
@@ -2139,6 +2388,41 @@ const printedSize = computed(() => {
                 @pointerup="endPointer" @pointercancel="endPointer">
                 <img :src="active.url" alt="" draggable="false">
                 <div class="overlay" v-html="preview"></div>
+
+                <!--
+                  THE DRAWN SHAPES' BOXES, FIRST, so they sit under the fields'
+                  the way the shapes themselves sit under the fields. A
+                  selection outline that stacked the other way round would say
+                  the opposite of what the ticket prints.
+
+                  A decoration you can SEE — a filled rectangle — does not need
+                  its box drawn to be found, so the outline only appears when
+                  boxes are being shown or when it is in the selection. An
+                  element is invisible until the raffle fills it in, which is
+                  why theirs is drawn on the same terms but for a different
+                  reason.
+                -->
+                <div
+                  v-for="d in decorations" :key="d.id"
+                  class="ebox deco"
+                  :class="{ on: sel === d.id, too: also.includes(d.id), off: d.enabled === false,
+                            faint: !showAllBoxes && !picked.includes(d.id) }"
+                  :style="{ left: pc(d.box.left), top: pc(d.box.top), width: pc(d.box.width), height: pc(d.box.height) }"
+                  :title="d.locked ? `${decoName(d)} is pinned — unlock it in the list to move it`
+                                   : `${decoName(d)} — drag to move, or use the arrow keys`"
+                  @pointerdown="startMove(d, $event)">
+                  <button
+                    type="button" class="grab" :aria-label="decoName(d)"
+                    :disabled="d.enabled === false || d.locked"
+                    :title="d.locked ? `${decoName(d)} is pinned` : `${decoName(d)} — drag to move, or use the arrow keys`"
+                    @keydown="onKey" @click.stop="pick(d.id, $event.shiftKey || $event.metaKey)"></button>
+                  <template v-if="sel === d.id && !many && !d.locked && d.enabled !== false">
+                    <span
+                      v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
+                      class="hdl" :class="c"
+                      @pointerdown="startResize(d, c, $event)"></span>
+                  </template>
+                </div>
 
                 <!-- Every element's box. Shown as an outline when asked for, and
                      always for the selected one — you cannot position what you
@@ -2678,6 +2962,23 @@ const printedSize = computed(() => {
  * any colour at all, so it cannot be a theme colour that might land on its own
  * twin. It is the same value the primary uses, three lines down.
  */
+/*
+ * A DRAWN SHAPE'S OUTLINE IS A DIFFERENT COLOUR FROM A FIELD'S.
+ *
+ * Both are amber today and both sit on somebody's artwork, so two selected
+ * things would say nothing about which list they came from — and the list is
+ * the difference between "prints a value the raffle fills in" and "prints
+ * exactly this". It matters at the moment somebody presses an order tool and
+ * is told fields and shapes have no order between them: the screen should
+ * already have said they were two kinds of thing.
+ *
+ * A literal rather than a token for the same reason the amber is one, three
+ * rules down: this sits on ARTWORK, which is any colour at all, and a theme
+ * colour could land on its own twin.
+ */
+.ebox.deco { outline-color: #12b5e5 }
+.ebox.deco.on { outline: 2px solid #12b5e5; background: rgba(18, 181, 229, .14) }
+.ebox.deco.too { outline: 1px solid #12b5e5; background: rgba(18, 181, 229, .07) }
 .ebox.too {
   outline: 1px solid #ffb300;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .45);
