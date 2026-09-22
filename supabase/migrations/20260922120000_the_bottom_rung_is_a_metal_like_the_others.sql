@@ -42,6 +42,20 @@
  * the old word would make this migration fail on precisely the raffles that
  * have the history worth keeping. The set is "every band that has ever been",
  * not "every band there is".
+ *
+ * AND NO, THAT DOES NOT LEAVE A ROW THE CHECK PAGE CANNOT DRAW. The page maps
+ * a band id to a string through a fixed table and draws nothing on a miss, so
+ * a retired id reaching it would vanish silently — which is the inference
+ * anybody makes here, and it does not follow, because nothing reads this
+ * column. `holding_of` returns six columns and rank is not among them; the
+ * band on every reply is worked out at scan time by `rankFor`, on the legacy
+ * branch as much as the live one. `body.rank` is therefore always an id from
+ * today's ladder.
+ *
+ * That is the property that made this rename a three-file change rather than a
+ * permanent compatibility map, and it holds for the next rename too. It is
+ * pinned in tests/ranks — "a retired band id cannot reach the page" — because
+ * it is worth knowing before somebody adds a fifth rung.
  */
 do $$
 begin

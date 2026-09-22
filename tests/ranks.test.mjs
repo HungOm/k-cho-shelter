@@ -254,6 +254,57 @@ console.log('every band on the ladder has a name on the check page, in both lang
     'and the page picks the singular by the number rather than by the string')
 }
 
+console.log('a retired band id cannot reach the page, because no stored one is read')
+{
+  /*
+   * THE INFERENCE THIS EXISTS TO STOP, because a peer drew it within an hour
+   * of the rename and it is the obvious one.
+   *
+   * `ticket_receipts.rank` still permits 'faithful' — deliberately, since the
+   * column holds bands frozen at mint, is never back-filled, and a CHECK is
+   * validated against the rows already there, so narrowing it would fail the
+   * db push on precisely the raffles with history worth keeping. Meanwhile
+   * main.js draws NOTHING for a band it has no string for. Put those two
+   * together and you conclude the halves disagree: that a legacy row renders
+   * as an empty space, and that every future rename must keep mapping its
+   * retired id for as long as a receipt carrying it can be scanned.
+   *
+   * None of it follows, because NOTHING READS THE COLUMN. `holding_of`
+   * returns six columns and rank is not among them; the band on the reply is
+   * `rankFor(sold, perBook)` computed at scan time, for the legacy branch as
+   * much as the live one. So `body.rank` is always an id from this ladder, and
+   * feeding the page 'faithful' tests a state the server cannot produce.
+   *
+   * That is a property worth having rather than an accident — it is what made
+   * the rename a three-file change instead of a permanent compatibility map —
+   * so it is pinned here rather than left to be re-derived.
+   */
+  const fn = readFileSync(
+    new URL('../supabase/functions/verify/index.ts', import.meta.url), 'utf8')
+
+  ok(/const band = rankFor\(/.test(fn), 'the band is worked out at scan time')
+  /* `\b` is load-bearing: without it this matched `band.identifier` as well,
+     and the negative check that was meant to prove the assertion bites came
+     back green. A guard has to be shown failing before it is worth anything. */
+  ok(/rank: band\.id\b/.test(fn),
+    'and the reply carries that computed id, never a stored one')
+
+  /*
+   * Guarded, because an absence proves nothing if the parse found nothing to
+   * look at: a regex that stopped matching would pass this silently.
+   */
+  const selects = [...fn.matchAll(/\.select\(([^)]*)\)/g)].map((m) => m[1])
+  ok(selects.length > 0, 'and the file does query the database, so the next line means something')
+  ok(!selects.some((cols) => /\brank\b/.test(cols)),
+    'no query on this route reads a stored band')
+
+  const mig = readFileSync(new URL(
+    '../supabase/migrations/20260922120000_the_bottom_rung_is_a_metal_like_the_others.sql',
+    import.meta.url), 'utf8')
+  ok(/'faithful'/.test(mig),
+    'and the retired id stays legal in the column, where rows minted before today carry it')
+}
+
 console.log('all three treatments draw the band, and none of them invents one')
 {
   /*
