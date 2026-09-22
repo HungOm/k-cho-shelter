@@ -140,6 +140,26 @@ console.log('a ticket\'s state is a shape and a sentence, never a colour alone')
   ok(!/^\.mark-(sold|unsold|void)\s*\{/m.test(css),
     'the mark colours are not written unscoped, where .tickets span outranks them')
 
+  /*
+   * THE SAME TRAP, ONE BLOCK ALONG, AND IT HAD ALREADY SPRUNG. `.rank span`
+   * was written for the count line under the supporter band. `say()` emits its
+   * two halves as <span class="my"> and <span class="en">, and the band NAME is
+   * a say() pair inside the <b> — so at 0,1,1 that rule beat both the inherited
+   * band ink and `.rank b`'s 15px, and every band rendered its name in --text
+   * at 13px, identical to the count beneath it. All four --band-* tokens
+   * reached the border and the tint, which are currentColor on the <p>, and no
+   * glyph at all. Measured in a headless browser: the name spans computed
+   * rgb(15,26,23) with rgb(141,74,40) two elements up.
+   *
+   * The count line is a DIRECT child of .rank and the name spans are not, so
+   * `>` separates them exactly. Pinned as an absence, because the descendant
+   * form is what somebody would naturally write again.
+   */
+  ok(!/^\.rank span\s*\{/m.test(css),
+    '.rank does not colour its spans by descent, where the band name is one')
+  ok(/^\.rank > span\s*\{[^}]*color: var\(--text\)/m.test(css),
+    'the count line is reached by child, so the band ink still reaches the name')
+
   /* The words are not replaced by the mark, and the mark is not read out. */
   ok(/mark\(key\)\$\{?.*say\(key\)|mark\(key\)}<span class="ws">\$\{say\(key\)/.test(main)
     || /mark\(key\)[\s\S]{0,60}say\(key\)/.test(main),

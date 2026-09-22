@@ -401,7 +401,29 @@ h1 { font-size: 19px; margin: 0 0 12px }
   text-align: left;
 }
 .rank b { font-size: 15px; letter-spacing: .01em }
-.rank span { font-size: 13px; color: var(--text) }
+/*
+ * `> span`, AND THE CHILD COMBINATOR IS THE WHOLE RULE.
+ *
+ * This was `.rank span`, which was written for the count line and reached the
+ * band NAME as well — because `say()` emits its two halves as
+ * <span class="my"> and <span class="en">, and the name is a say() pair inside
+ * the <b>. At 0,1,1 it beat both the inherited band ink and `.rank b`'s 15px,
+ * so every band on this page rendered its name in --text at 13px: the same
+ * colour and the same size as the count beneath it. All four --band-* tokens
+ * reached the 1px border and the 8% tint, which are `currentColor` on the <p>,
+ * and no glyph at all. Measured, not reasoned: computed colour of the name
+ * spans was rgb(15,26,23) against rgb(141,74,40) two elements up.
+ *
+ * The count line is a DIRECT child of .rank and the name spans are not, so the
+ * combinator separates them exactly. The thanks halves inside that child
+ * inherit 13px and --text from it, which is what they had before.
+ *
+ * Third time this file has been caught by a class that is also a type: see
+ * `.tickets span` outranking `.mark-sold`, and the note above `.spans`. A span
+ * emitted by a shared helper lands inside somebody else's container, and a
+ * rule written about one place quietly governs another.
+ */
+.rank > span { font-size: 13px; color: var(--text) }
 .rank-diamond { color: var(--band-diamond) }
 .rank-gold { color: var(--band-gold) }
 .rank-silver { color: var(--band-silver) }
