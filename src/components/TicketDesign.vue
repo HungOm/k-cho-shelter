@@ -2963,8 +2963,43 @@ const printedSize = computed(() => {
       <ToolButton icon="help" label="Shortcuts" :size="16" :keys="keyOf('help')"
                   hint="Every key this studio answers" @click="showKeys = 'keys'" />
 
+      <!--
+        THE PICTURE, BESIDE THE NAME — NOT INSTEAD OF IT.
+
+        This header exists to answer "which template am I editing", which its
+        own comment calls the question a screen with three tabs and two side
+        panels most easily loses. It answered it in words, on a screen that
+        shows the thing everywhere else: TemplateRail draws each template as
+        its own thumbnail, LibraryPanel is "a click on a picture of itself",
+        and the Draw row's shapes ARE their icons.
+
+        Being shown a target as a picture rather than described in words made
+        it 1.28-1.45 s faster to find across 10,282 searches of real interfaces
+        (Putkonen et al., IJHCS 199:103483) — the second-largest effect in that
+        data. And the header is the upper-left, where the first fixations land
+        regardless of where the target actually is, so this is the one place on
+        the screen where a picture is read before anybody decides to look.
+
+        THE SELECT STAYS. A thumbnail is not a control: it cannot be tabbed to,
+        cannot be opened from the keyboard, and cannot list what else there is.
+        The image answers "which one is this" and the select answers "what else
+        could it be" — the same division TemplateRail already uses, where the
+        picture chooses and the tooltip carries the paperwork.
+
+        DECORATIVE, DELIBERATELY. The select is already labelled "Template
+        being designed" and already announces the active option, so alt text
+        here would make a screen reader say the name twice. It sits inside the
+        <label>, so clicking the picture focuses the select — the thing it
+        depicts.
+
+        GUARDED, BECAUSE THE URL CAN BE EMPTY. The server returns
+        `url: String(r.url ?? '')`, so a template may carry an empty string,
+        and `<img src="">` renders a broken-image glyph rather than nothing.
+      -->
       <label v-if="templates.length" class="picker">
         <span class="sr">Template being designed</span>
+        <img v-if="active?.url" class="pickthumb" :src="active.url"
+             alt="" aria-hidden="true" loading="lazy">
         <select :value="activeId" @change="pickTemplate">
           <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
@@ -4006,7 +4041,11 @@ const printedSize = computed(() => {
      note, and a picker allowed to shrink to nothing lost every pixel to it —
      an empty sliver in the one control that says which template is on the
      canvas. The note is the slack: it is helper text and may wrap. */
-  .bar .picker { min-width: 120px; flex: 0 1 auto; }
+  /* RAISED BY EXACTLY THE THUMBNAIL. The floor below was set so the select
+     could not lose every pixel to the saving note; putting a 34px picture and
+     a 6px gap inside the same label would have taken that back out of the
+     select and reinstated the sliver this rule exists to prevent. */
+  .bar .picker { min-width: 160px; flex: 0 1 auto; }
   /*
    * `width: 100%` is the whole fix. A select with only a max-width keeps its
    * intrinsic width while the label around it shrinks to nothing, so the
@@ -4034,7 +4073,40 @@ const printedSize = computed(() => {
    to two lines inside a row sized for one and lands on the control beside it.
    The picker and the `.grow` spacer are the slack in this bar. */
 .bar h2 { margin: 0; font-size: var(--fs-md); flex: none; white-space: nowrap }
-.picker select { min-height: 34px; padding: 4px 8px; width: auto; max-width: 220px }
+/*
+ * THE PICKER IS A ROW NOW — a thumbnail and the select that names it.
+ *
+ * The select keeps `width: auto` as its basis and is allowed to shrink, so the
+ * thumbnail is never the thing that gets squeezed: it is the fixed half of the
+ * pair and the name is the elastic half. A truncated name still reads; half a
+ * picture does not.
+ */
+.picker { display: flex; align-items: center; gap: var(--sp-3) }
+.picker select { min-height: 34px; padding: 4px 8px; width: auto; max-width: 220px;
+                 flex: 1 1 auto; min-width: 0 }
+/*
+ * 34x22 AND CROPPED, WHICH IS A DECISION ABOUT WHAT SURVIVES AT THIS SIZE.
+ *
+ * A ticket is about 3.1:1 (the reference artwork is 1600x517), so fitting one
+ * whole into a header row gives either 22px tall and 68px wide — a quarter of
+ * the bar, in a row that has already lost a fight over space once — or, at a
+ * width the bar can spare, a letterboxed sliver 11px tall that shows nothing.
+ *
+ * Cropping to the middle keeps what actually distinguishes two artworks at
+ * thumbnail size: their colour and their texture. Nobody reads a ticket here;
+ * they recognise one. The whole shape is in TemplateRail, one tab away, at a
+ * size where the shape is the point.
+ *
+ * The literal 34x22 is a proportion, not a size step — it is this element's
+ * aspect ratio expressed in pixels, and rounding either number to a scale
+ * would change the crop rather than the spacing. --r-xs and --rule are tokens
+ * because they ARE the radius and the hairline everything else uses.
+ */
+.pickthumb {
+  width: 34px; height: 22px; flex: none; object-fit: cover;
+  border-radius: var(--r-xs); border: var(--rule) solid var(--border);
+  background: var(--surface-2);
+}
 .specs { font-family: var(--font-data); font-size: var(--fs-2xs); color: var(--muted) }
 .tabs { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: var(--r-sm) }
 /*

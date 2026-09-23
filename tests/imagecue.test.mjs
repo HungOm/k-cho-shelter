@@ -64,15 +64,39 @@ const vues = (dir, acc = []) => {
  * The pattern is what is asserted, not merely that the file still exists — a
  * component can keep its name and lose its point.
  */
+/*
+ * THE PATTERN ASSERTS THE PROPERTY, NOT THE SPELLING — learned immediately.
+ *
+ * TemplateRail's entry was first written `/<img\s+:src="t\.url"/`, which pins
+ * the ATTRIBUTE ORDER. Another session then guarded the empty-url case I had
+ * flagged to them — `<img v-if="t.url" :src="t.url" …>` — and the gate went red
+ * on a strictly better component, because `v-if` now sat between the two things
+ * my regex required to be adjacent.
+ *
+ * That is ranks.test.mjs's lesson one file along: it asserted a <tspan> when
+ * the invariant was "nobody positions the count from a name's width", and had
+ * to be re-aimed when a correct change stopped using a tspan. A gate that
+ * fails on an improvement teaches people to route around it.
+ *
+ * So each pattern below names the thing that makes the control show its
+ * subject — the template's own url is the image source, the face is applied as
+ * the option's font — and nothing about how the attributes are arranged.
+ */
 const SHOWS_THE_THING = [
   ['components/ticketdesign/Lettering.vue', /:style="\{\s*fontFamily:/,
    'each typeface option is SET in that typeface'],
-  ['components/ticketdesign/TemplateRail.vue', /<img\s+:src="t\.url"/,
+  ['components/ticketdesign/TemplateRail.vue', /<img[^>]*:src="t\.url"/,
    'each template is its own thumbnail'],
   ['components/ticketdesign/LibraryPanel.vue', /v-html="tile\(/,
    'each saved shape is drawn, not named'],
   ['components/ui/Ink.vue', /:style="\{\s*background:/,
    'each colour is a swatch of itself'],
+  /* Added when F3 landed. The studio header names the active template in a
+     select AND shows it in a thumbnail beside it — the picture answers "which
+     one is this", the select answers "what else could it be". Protected here
+     so a later tidy-up cannot quietly delete the picture and leave the words. */
+  ['components/TicketDesign.vue', /:src="active\.url"/,
+   'the template being edited is shown, not only named'],
 ]
 
 /*
@@ -91,6 +115,11 @@ const NAMES_WORDS_AND_THAT_IS_RIGHT = {
   'components/modals/BookAction.vue': 2,
   'components/modals/IssueBooks.vue': 1,
   'components/ticketdesign/Inspector.vue': 1,  // which FIELD prints here
+  /* The template picker. It lists NAMES, which is right now that a thumbnail
+     of the active template sits beside it — a select is still the only thing
+     that can be tabbed to, opened from the keyboard and enumerate what else
+     there is. It moved here from NAMES_A_PICTURE when F3 landed. */
+  'components/TicketDesign.vue': 1,
 }
 
 /*
@@ -100,12 +129,9 @@ const NAMES_WORDS_AND_THAT_IS_RIGHT = {
  * back. Shrink-checked below, so a fix cannot leave a stale entry behind.
  */
 const NAMES_A_PICTURE = {
-  'components/TicketDesign.vue': [1,
-    'the template picker — UI-EVIDENCE F3. A template IS a picture and the '
-    + 'thumbnails already exist in TemplateRail, reachable only on the Artwork '
-    + 'tab. The fix is a thumbnail BESIDE the select, not instead of it, so the '
-    + 'control stays keyboard-navigable. Held: TicketDesign.vue is in use by '
-    + 'design-editor-ui-standards.'],
+  // Empty since F3 landed. An entry here is a control that chooses between
+  // things that look different and offers only words — a finding, not a
+  // permission, and it carries an owner so it cannot sit here indefinitely.
 }
 
 console.log('the controls that show what they choose still show it')
