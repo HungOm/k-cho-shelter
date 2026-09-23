@@ -102,10 +102,58 @@ const onBehalfBooks = computed(() => {
   }
   return out
 })
+/**
+ * Books in this range that somebody has already sold a ticket from.
+ *
+ * WHY THIS WAS MISSING AND THE REFUSAL ARRIVED AFTER THE PRESS. `blocked`
+ * above mirrors the CUSTODY half of what the server refuses — settled, lost,
+ * out with a seller, not yours. Wholeness is the other half, and it lived only
+ * in `sell_book_whole`, so an organiser typed a range, filled in the buyer and
+ * the telephone number, pressed Sell, and only then learned that the first
+ * book in the range had ten tickets gone. Reported from the screen: the live
+ * count said "10 books · 100 tickets · RM 1,000.00" the whole time.
+ *
+ * THE SAME CONDITION, NOT AN APPROXIMATION OF IT. functions.sql refuses when
+ * `count(*) from tickets where book_idx = b.idx and status in ('Sold',
+ * 'Donated')` is above nought, and `sold` on a book here is
+ * `book_ledger_all.counted_sold`, which for anything that is not Settled or
+ * Lost is `recorded_sold` — defined in schema.sql as exactly that count over
+ * exactly those two statuses. Settled and Lost never reach this question
+ * because bookBlock stops them first.
+ *
+ * NOT FOLDED INTO bookBlock, for the reason its own header gives about
+ * overrideReasonNeeded: bookBlock answers "may I sell from this book", and a
+ * partly-sold book is a perfectly good answer of YES to that — it is how every
+ * single-ticket sale works. Only a WHOLE-book sale cares, so only this modal
+ * asks.
+ *
+ * NAMED WITH THE COUNT, because "not whole" sends somebody back to the grid to
+ * work out how many and the server's own refusal names it.
+ */
+const notWhole = computed(() => {
+  const a = parseInt(from.value, 10)
+  if (isNaN(a) || !count.value || tooMany.value) return []
+  const b = parseInt(to.value || from.value, 10)
+  const lo = Math.min(a, isNaN(b) ? a : b)
+  const out = []
+  for (let n = lo; n < lo + count.value; n++) {
+    const num = bookNum(String(n))
+    const book = state.books.find(x => x.book === num)
+    /*
+     * A BOOK THIS SCREEN HAS NEVER HEARD OF IS NOT CLAIMED TO BE WHOLE OR NOT.
+     * For staff a miss is a snapshot still loading; bookBlock says so. Guessing
+     * here would put a red line under a book that is fine.
+     */
+    const sold = Number(book?.sold ?? 0)
+    if (book && sold > 0) out.push(`${num} — ${sold} already sold`)
+  }
+  return out
+})
+
 const onBehalf = ref('')
 
 const ok = computed(() =>
-  count.value > 0 && !tooMany.value && !blocked.value.length &&
+  count.value > 0 && !tooMany.value && !blocked.value.length && !notWhole.value.length &&
   name.value.trim() && phoneDigits(phone.value).length >= 7 &&
   (!onBehalfBooks.value.length || !!onBehalf.value.trim()))
 
@@ -238,6 +286,14 @@ async function sell() {
       <b>Not here to sell:</b>
       <div v-for="b in blocked" :key="b" class="small">{{ b }}</div>
       <div class="small">A book out with a seller has to be marked back first.</div>
+    </div>
+
+    <!-- Same shape as the block above, because it is the same kind of answer:
+         which books, named, and what to do instead. -->
+    <div v-if="notWhole.length" class="note bad">
+      <b>Not whole:</b>
+      <div v-for="b in notWhole" :key="b" class="small">{{ b }}</div>
+      <div class="small">Sell the rest of these one at a time.</div>
     </div>
 
         <button class="btn primary" :disabled="busy || !ok" @click="sell">

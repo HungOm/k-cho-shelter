@@ -266,5 +266,89 @@ export const sellOverrideNeeded = () => false
   cleanup()
 }
 
+console.log('7. a book with tickets already sold is refused WHILE TYPING, not after pressing')
+{
+  /*
+   * REPORTED FROM THE SCREEN. An organiser typed books 3 to 12, filled in the
+   * buyer and the telephone number, pressed Sell, and was told "Book Book-0003
+   * is not whole — 10 of its tickets are already sold." The live summary had
+   * said "10 books · 100 tickets · RM 1,000.00" the entire time.
+   *
+   * The modal already pre-checked the CUSTODY half of what the server refuses —
+   * settled, lost, out with a seller — precisely so that nobody commits to a
+   * sale in front of whoever is paying and is then refused. The WHOLENESS half
+   * had no client side at all, so it could only ever arrive after the press,
+   * which is the one outcome that pre-check exists to prevent.
+   *
+   * THE TEST DRIVES THE RANGE RATHER THAN CALLING sell(). What went wrong is
+   * that the form stayed VALID; asserting on the refusal would be asserting on
+   * the server's behaviour, which was already correct.
+   */
+  const store = `
+import { reactive, computed } from 'vue'
+export const state = reactive({
+  cfg: { ticketsPerBook: 10, ticketPrice: 10, currency: 'RM', bookPrefix: 'Book-', bookDigits: 4 },
+  agents: [],
+  user: { role: 'recorder', agentId: 'A001' },
+  /* Book-0003 has had ten tickets sold from it; the other two are untouched.
+     The sold field is the one bookWire puts on every book, from counted_sold. */
+  books: [
+    { book: 'Book-0002', status: 'Available', sold: 0, available: 10 },
+    { book: 'Book-0003', status: 'Available', sold: 10, available: 0 },
+    { book: 'Book-0004', status: 'Available', sold: 0, available: 10 },
+  ],
+  tickets: [],
+})
+export const api = async () => ({ sold: 0, books: [], amount: 0, tickets: [], skipped: [] })
+export const toast = () => {}
+export const refresh = async () => {}
+export const loadDelta = async () => {}
+export const isAdmin = computed(() => false)
+export const bookBlock = () => null
+export const overrideReasonNeeded = () => false
+export const sellOverrideNeeded = () => false
+`
+  const { setupOf } = await import('./screen.mjs')
+  const { ctx, cleanup } = await setupOf('src/components/modals/SellBook.vue', store, { book: null })
+
+  ctx.name.value = 'John Thang Test'
+  ctx.phone.value = '0172112613'
+
+  /*
+   * ASSERTED BEFORE IT IS READ, so a modal without the check FAILS rather than
+   * throwing. An uncaught TypeError kills the suite before its summary, and
+   * run.sh reads a missing summary as no line at all rather than as a failure.
+   */
+  ok(!!ctx.notWhole, 'the modal computes which books in the range are not whole')
+  const nw = () => (ctx.notWhole?.value ?? [])
+
+  /* A range with nothing sold in it stays sellable — the guard must not fire
+     on every range, which is the failure a guard like this has. */
+  ctx.from.value = '2'
+  ctx.to.value = '2'
+  ok(nw().length === 0, 'a whole book on its own raises nothing')
+  ok(ctx.ok.value === true, 'and the form is sellable')
+
+  /* The reported case: the part-sold book is FIRST in the range. */
+  ctx.from.value = '3'
+  ctx.to.value = '4'
+  ok(nw().length === 1,
+     `the part-sold book is named before anything is pressed (got ${nw().length})`)
+  ok(/Book-0003/.test(nw()[0] || ''),
+     `and named by its number rather than counted (${nw()[0]})`)
+  ok(/10/.test(nw()[0] || ''),
+     'and says how many are gone, which is what the server refusal says')
+  ok(ctx.ok.value === false, 'and the form cannot be submitted')
+
+  /* And in the MIDDLE of a range, which a check on the first book alone would
+     miss — the server walks every book in the range. */
+  ctx.from.value = '2'
+  ctx.to.value = '4'
+  ok(nw().length === 1, 'a part-sold book inside the range is caught too')
+  ok(ctx.ok.value === false, 'and still blocks the form')
+
+  cleanup()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
