@@ -92,9 +92,30 @@ export const ALIGN = [
  * `text` is the Myanmar chain, which cannot be measured here but can render a
  * buyer's name. The distinction is load-bearing, not cosmetic.
  */
+/*
+ * THE `stack` IS THE FACE THE PICKER RENDERS ITS OWN OPTIONS IN, so choosing a
+ * typeface shows the typeface instead of naming it.
+ *
+ * DUPLICATED FROM ticketart.js, the same way GAP_EM below is, and for the same
+ * reason: ticketart already imports THIS file, so importing it back would make
+ * the model depend on the thing that draws it. Unlike that one, this pair is
+ * pinned — tests/ticketart.test.mjs asserts these two strings are still
+ * FONT.family and TEXT_FAMILY, because a picker that previews a face the
+ * printer will not use is worse than a picker that shows no face at all.
+ */
 export const FAMILIES = [
-  { id: 'number', name: 'Times', why: 'Measured widths — serial numbers keep their column' },
-  { id: 'text', name: 'Padauk', why: 'Renders Burmese; widths are left to the browser' },
+  {
+    id: 'number',
+    name: 'Times',
+    why: 'Measured widths — serial numbers keep their column',
+    stack: '"Times New Roman", "Liberation Serif", Tinos, "Nimbus Roman No9 L", Times, serif',
+  },
+  {
+    id: 'text',
+    name: 'Padauk',
+    why: 'Renders Burmese; widths are left to the browser',
+    stack: 'Padauk, "Noto Sans Myanmar", "Myanmar Text", system-ui, -apple-system, "Segoe UI", sans-serif',
+  },
 ]
 
 const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0))

@@ -19,7 +19,11 @@
  * off", and it is reversible from the same control, which removal would not
  * be.
  */
+import { ref } from 'vue'
 import Icon from '../ui/Icon.vue'
+import ToolBar from '../ui/ToolBar.vue'
+import ToolButton from '../ui/ToolButton.vue'
+import { FAMILIES } from '../../lib/ticketelements.js'
 import Ink from '../ui/Ink.vue'
 
 const props = defineProps({
@@ -58,12 +62,40 @@ const ALIGN = [{ id: 'left', name: 'Left' }, { id: 'centre', name: 'Centre' }, {
  * FOR — and the Myanmar chain stays the default, because a raffle whose buyers
  * have Burmese names must not have to discover that the other one drops them.
  */
+/*
+ * "Figures", not "Serif", ruled by the user 2026-09-23 and relayed through
+ * kcho-shelter-51. It is also the name this panel's own reasoning above asks
+ * for: the digital side names a face for what it is FOR, and "Serif" names the
+ * shape of the letters instead — the printed side's kind of name, on the panel
+ * that deliberately does not use them.
+ *
+ * `stack` is the face each option draws ITSELF in, taken from FAMILIES so the
+ * two panels preview from one definition; FAMILIES' copy is pinned against the
+ * renderer in tests/ticketart.test.mjs. The NAMES stay this panel's own.
+ */
+/*
+ * TWO TABS, WHERE THERE WERE UP TO SIX STACKED GROUPS — the same change
+ * Inspector and DecorationInspector have made. Two rather than three because
+ * this panel has no effects: a card part is a box and some lettering.
+ *
+ * The part-specific extras — the motto's own words, the code's note — live
+ * under Style rather than earning a third tab that would be empty for six of
+ * the eight parts. A locked part gets no strip at all: there is nothing to
+ * choose between.
+ */
+const TABS = [
+  { id: 'box', icon: 'position', name: 'Box' },
+  { id: 'style', icon: 'design', name: 'Style' },
+]
+const tab = ref('box')
+
+const stackOf = (id) => FAMILIES.find((f) => f.id === id)?.stack
 const FACES = [
   /* One clause each. The second sentence of both said the same thing the first
      one implied, and these sit under a two-item select where the reader has
      already narrowed it to two. */
-  { id: 'text', name: 'Everyday', why: 'Renders Burmese. Use it for anything typed.' },
-  { id: 'number', name: 'Serif', why: 'Figures of one width, so numbers line up. English only.' },
+  { id: 'text', name: 'Everyday', why: 'Renders Burmese. Use it for anything typed.', stack: stackOf('text') },
+  { id: 'number', name: 'Figures', why: 'Figures of one width, so numbers line up. English only.', stack: stackOf('number') },
 ]
 
 const px = (part, k) => Math.round(part.box[k] * (k === 'left' || k === 'width' ? props.size.width : props.size.height))
@@ -108,8 +140,13 @@ const over = () => (props.motto || '').length > props.mottoMax
       </button>
     </div>
 
-    <div v-if="!part.locked" class="pgroup">
-      <h4 class="rubric">Its box</h4>
+    <!-- No strip on a locked part: there is nothing to choose between. -->
+    <ToolBar v-if="!part.locked" label="What to change" class="ctabs">
+      <ToolButton v-for="t in TABS" :key="t.id" :icon="t.icon" :label="t.name"
+                  wide :size="15" :active="tab === t.id" @click="tab = t.id" />
+    </ToolBar>
+
+    <div v-show="tab === 'box'" v-if="!part.locked" class="pgroup">
       <div class="quad">
         <label class="formrow"><span class="cap">Left</span>
           <span class="wrap">
@@ -154,8 +191,7 @@ const over = () => (props.motto || '').length > props.mottoMax
       <p v-else class="say">Lettering grows with the box.</p>
     </div>
 
-    <div v-if="part.textual" class="pgroup">
-      <h4 class="rubric">How it sits</h4>
+    <div v-show="tab === 'style'" v-if="part.textual" class="pgroup">
       <div class="seg">
         <button v-for="a in ALIGN" :key="a.id" type="button" class="segbtn"
                 :class="{ on: part.align === a.id }"
@@ -180,8 +216,11 @@ const over = () => (props.motto || '').length > props.mottoMax
       <div class="sitrow">
         <label class="formrow"><span class="cap">Lettering</span>
           <span class="wrap">
-            <select v-model="part.family">
-              <option v-for="f in FACES" :key="f.id" :value="f.id">{{ f.name }}</option>
+            <!-- Each option in its own face: this is the control whose whole
+                 subject is appearance, and it named two typefaces in words. -->
+            <select v-model="part.family" class="faces">
+              <option v-for="f in FACES" :key="f.id" :value="f.id"
+                      :style="{ fontFamily: f.stack }">{{ f.name }}</option>
             </select>
           </span>
         </label>
@@ -202,7 +241,7 @@ const over = () => (props.motto || '').length > props.mottoMax
       where the box around it belongs to this treatment's layout. Two owners,
       one panel, and the sentence under the field says which is which.
     -->
-    <div v-if="part.id === 'motto'" class="pgroup">
+    <div v-show="tab === 'style'" v-if="part.id === 'motto'" class="pgroup">
       <div class="spread">
         <h4 class="rubric" style="margin:0">Text</h4>
         <span class="tiny data" :class="over() ? 'bad' : 'muted'">
@@ -226,7 +265,7 @@ const over = () => (props.motto || '').length > props.mottoMax
       </p>
     </div>
 
-    <div v-if="part.id === 'code'" class="pgroup">
+    <div v-show="tab === 'style'" v-if="part.id === 'code'" class="pgroup">
       <h4 class="rubric">The code</h4>
       <p class="say"
          title="No placeholder underneath it to fight with, unlike the printed ticket — this card is drawn, not photographed.">
@@ -294,31 +333,15 @@ const over = () => (props.motto || '').length > props.mottoMax
          which end of it is right. -->
   </div>
 
-  <!--
-    A CONSEQUENCE, NOT AN EXPLANATION, so it keeps `.tiny` and its tone rather
-    than dropping to `.say` with the captions. What somebody is about to change
-    for every buyer is the one sentence in this panel that has to survive a
-    reader who is skimming.
-
-    Shortened, not shrunk. The clause about cards already issued being redrawn
-    IF THEY ARE SENT AGAIN was the half people misread as "already delivered
-    pictures change", so the two halves are now one line each and in the order
-    somebody worries about them.
-  -->
-  <div class="pgroup saving">
-    <h4 class="rubric">What saving changes</h4>
-    <p class="tiny">
-      Every card sent from now on is drawn this way, including ones already
-      issued if they are sent again.
-      <span class="muted">Pictures already delivered keep what they had.</span>
-    </p>
-  </div>
 </aside>
 </template>
 
 <style scoped src="./studio.css"></style>
 
 <style scoped>
+/* The tab strip is the panel's own control, so it sits above the first group
+   rather than inside one — the placement its two sibling inspectors use. */
+.ctabs { margin-bottom: var(--sp-2) }
 .phead { display: flex; align-items: flex-start; gap: 8px }
 .phead h3 { margin: 0; font-size: .95rem }
 .phead p { margin: 1px 0 0 }

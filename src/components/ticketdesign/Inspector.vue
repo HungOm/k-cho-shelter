@@ -19,7 +19,10 @@
  * OVERFLOW are facts about what an element can be, not state — a parent
  * handing them down would be a parent claiming to own them.
  */
+import { ref } from 'vue'
 import { SOURCES, SOURCE, FAMILIES, ALIGN, OVERFLOW, nameOf } from '../../lib/ticketelements.js'
+import ToolBar from '../ui/ToolBar.vue'
+import ToolButton from '../ui/ToolButton.vue'
 /*
  * THE COLOUR CONTROL, IMPORTED HERE RATHER THAN IN THE PARENT.
  *
@@ -68,6 +71,30 @@ defineProps({
  * opens the dropper and calls back with what was picked.
  */
 const emit = defineEmits(['remove', 'pick-colour'])
+
+/*
+ * SIX STACKED GROUPS BECAME THREE TABS — the change DecorationInspector already
+ * made, for the same reason: a panel that answers every question at once
+ * answers none of them first. Up to six .pgroups stood on screen together, two
+ * of which were not about the selection at all.
+ *
+ * The three are the three questions in the order somebody asks them: what does
+ * it say, where is it, how does it look. It opens on Box, which is what
+ * DecorationInspector opens on — the two panels are a v-if/v-else pair in one
+ * slot, so opening on different tabs would make the panel appear to jump
+ * between two elements that are a click apart. On a code element there is
+ * nothing to type, so that tab carries the code's own settings instead.
+ *
+ * "What saving changes" is gone from here. It was a property of the SAVE
+ * BUTTON being shown once per selection, so it repeated the same sentence on
+ * every click of every element; it now sits on the button it describes.
+ */
+const TABS = [
+  { id: 'what', icon: 'type', name: 'Prints' },
+  { id: 'box', icon: 'position', name: 'Box' },
+  { id: 'style', icon: 'design', name: 'Style' },
+]
+const tab = ref('box')
 </script>
 
 <template>
@@ -89,11 +116,26 @@ const emit = defineEmits(['remove', 'pick-colour'])
         <p v-if="half" class="rubric">{{ half }}</p>
         <h3>{{ nameOf(element) }}</h3>
       </div>
-      <button class="btn sm danger" :title="`Take ${nameOf(element)} off the ticket`"
-              @click="emit('remove', element.id)">Remove</button>
+      <!--
+        DESTRUCTIVE IS NOT BIG AND RED. This was a full-weight danger button in
+        the panel's own header, so the loudest thing in a panel about an element
+        was the control that deletes it — louder than the element's name beside
+        it. It is also the fifth remove in this studio and the only one that was
+        not the quiet trash the layer list, the library, the shapes panel and
+        the template rail all use.
+      -->
+      <ToolButton icon="trash" :label="`Remove ${nameOf(element)}`" :size="15"
+                  :hint="`Take ${nameOf(element)} off the ticket. Tickets already printed keep it.`"
+                  @click="emit('remove', element.id)" />
     </div>
 
-    <div class="pgroup">
+    <!-- THREE QUESTIONS, IN THE ORDER SOMEBODY ASKS THEM. -->
+    <ToolBar label="What to change" class="itabs">
+      <ToolButton v-for="t in TABS" :key="t.id" :icon="t.icon" :label="t.name"
+                  wide :size="15" :active="tab === t.id" @click="tab = t.id" />
+    </ToolBar>
+
+    <div v-show="tab === 'what'" class="pgroup">
       <label class="formrow">
         <span class="cap">What it prints</span>
         <span class="wrap">
@@ -119,8 +161,7 @@ const emit = defineEmits(['remove', 'pick-colour'])
       </p>
     </div>
 
-    <div class="pgroup">
-      <h4 class="rubric">Its box</h4>
+    <div v-show="tab === 'box'" class="pgroup">
       <div class="quad">
         <label class="formrow"><span class="cap">From left</span>
           <span class="wrap">
@@ -160,8 +201,7 @@ const emit = defineEmits(['remove', 'pick-colour'])
       <p class="say">The bottom edge is the baseline.</p>
     </div>
 
-    <div v-if="element.kind !== 'code'" class="pgroup">
-      <h4 class="rubric">How it sits</h4>
+    <div v-show="tab === 'style'" v-if="element.kind !== 'code'" class="pgroup">
       <div class="seg">
         <button v-for="a in ALIGN" :key="a.id" type="button" class="segbtn"
                 :class="{ on: element.align === a.id }"
@@ -174,8 +214,16 @@ const emit = defineEmits(['remove', 'pick-colour'])
       <div class="sitrow">
         <label class="formrow"><span class="cap">Lettering</span>
           <span class="wrap">
-            <select v-model="element.family">
-              <option v-for="f in FAMILIES" :key="f.id" :value="f.id">{{ f.name }}</option>
+            <!--
+              EACH OPTION IN ITS OWN FACE. This is the one tool on the screen
+              whose whole subject is how something looks, and it asked which
+              typeface with two words. The picture answers "which one is this";
+              the clause below answers "when do I use it". Both, because a name
+              is what lets somebody correctly give up when neither fits.
+            -->
+            <select v-model="element.family" class="faces">
+              <option v-for="f in FAMILIES" :key="f.id" :value="f.id"
+                      :style="{ fontFamily: f.stack }">{{ f.name }}</option>
             </select>
           </span>
         </label>
@@ -187,7 +235,7 @@ const emit = defineEmits(['remove', 'pick-colour'])
       <p class="say">{{ FAMILIES.find((f) => f.id === element.family)?.why }}</p>
     </div>
 
-    <div v-if="element.kind !== 'code'" class="pgroup">
+    <div v-show="tab === 'style'" v-if="element.kind !== 'code'" class="pgroup">
       <h4 class="rubric">When the text is too long</h4>
       <div class="seg">
         <button v-for="o in OVERFLOW" :key="o.id" type="button" class="segbtn"
@@ -200,7 +248,7 @@ const emit = defineEmits(['remove', 'pick-colour'])
       </div>
     </div>
 
-    <div v-else class="pgroup">
+    <div v-show="tab === 'what'" v-else class="pgroup">
       <h4 class="rubric">The code</h4>
       <label class="choice">
         <input v-model="element.backing" type="checkbox">
@@ -218,18 +266,6 @@ const emit = defineEmits(['remove', 'pick-colour'])
       </p>
     </div>
 
-    <!-- A CONSEQUENCE, so it keeps `.tiny` while the captions above drop to
-         `.say`. The half that surprises people — that digital tickets already
-         issued are redrawn from it — leads, and the half that reassures
-         follows quietly. -->
-    <div class="pgroup saving">
-      <h4 class="rubric">What saving changes</h4>
-      <p class="tiny">
-        Everything printed or sent from now on draws from this, including
-        digital tickets already issued.
-        <span class="muted">Paper already printed keeps what it had.</span>
-      </p>
-    </div>
   </template>
 
   <div v-else class="nothing">
@@ -245,7 +281,14 @@ const emit = defineEmits(['remove', 'pick-colour'])
 <style scoped src="./studio.css"></style>
 
 <style scoped>
-.panelhead { display: flex; align-items: flex-start; gap: 8px }
+.panelhead { display: flex; align-items: flex-start; gap: var(--sp-4) }
+/* The tab strip is the panel's own control, so it sits above the first group
+   rather than inside one — the same placement DecorationInspector uses. */
+.itabs { margin-bottom: var(--sp-2) }
+/* Each option draws in the face it selects. A select's own button text takes
+   the CHOSEN option's family in every engine that honours it, so the closed
+   control previews too, not just the open list. */
+.faces option { font-size: var(--fs-sm) }
 /*
  * THESE CAME BACK FROM TicketDesign.vue, stranded when this file took the
  * markup. A child's markup does not inherit a parent's scoped styles -- only
@@ -258,16 +301,16 @@ const emit = defineEmits(['remove', 'pick-colour'])
  * clean while they hold it. Adding them here is safe either way -- the parent's
  * are inert, so this is the only copy that does anything.
  */
-.panelhead h3 { margin: 2px 0 0; font-size: .95rem }
+.panelhead h3 { margin: var(--sp-1) 0 0; font-size: var(--fs-sm) }
 /* Lettering and Bold are ONE row: the checkbox belongs beside the select it
    qualifies, not under it. Unstyled, they stacked and the panel grew 33px. */
-.sitrow { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: end }
-.choice.bold { padding-bottom: 6px }
-.saving { color: var(--muted) }
+.sitrow { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3) var(--sp-5); align-items: end }
+.choice.bold { padding-bottom: var(--sp-3) }
+
 /* What happens to this text at its longest -- the whole point of the overflow
    group. Unstyled it was a bare sentence with no tone and no box at all. */
-.report { border-radius: 8px; padding: 8px 10px; font-size: .76rem }
-.report p { margin: 3px 0 0 }
+.report { border-radius: var(--r-md); padding: var(--sp-4) var(--sp-5); font-size: var(--fs-2xs) }
+.report p { margin: var(--sp-1) 0 0 }
 .report.ok { background: var(--ok-soft); color: var(--ok) }
 .report.warn { background: var(--warn-soft); color: var(--warn) }
 .report.info { background: var(--info-soft); color: var(--info) }

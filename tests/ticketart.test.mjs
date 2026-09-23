@@ -18,7 +18,7 @@
  * the app reads them from.
  */
 import { DEFAULT_DESIGN, REFERENCE, designFor, validateDesign } from '../src/lib/ticketdesign.js'
-import { legacyFromElements, validateElements } from '../src/lib/ticketelements.js'
+import { legacyFromElements, validateElements, FAMILIES } from '../src/lib/ticketelements.js'
 import { stubShare } from '../src/lib/ticketdesign.js'
 import { encode } from '../src/lib/qrcodegen.js'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -936,6 +936,25 @@ const appFiles = []
 const callers = appFiles.filter((f) => /\bcardSVG\s*\(/.test(readFileSync(f, 'utf8')))
 ok(callers.length > 0,
    `some screen calls cardSVG (${callers.map((f) => f.split('/').pop()).join(', ') || 'NONE'})`)
+
+console.log('the typeface picker previews the face that actually prints')
+{
+  /*
+   * FAMILIES carries a `stack` so the picker can render each option in its own
+   * face rather than naming it. That string is a COPY — ticketart already
+   * imports ticketelements, so importing back would make the model depend on
+   * the renderer, the same bind GAP_EM is in.
+   *
+   * A copy that drifts is worse here than no preview at all: the control whose
+   * entire subject is appearance would be showing a face the printer will not
+   * use, and nothing on screen would contradict it. So the copy is pinned.
+   */
+  const stackOf = (id) => FAMILIES.find((f) => f.id === id)?.stack
+  eq(stackOf('number'), FONT.family, "the number face previews as FONT.family")
+  eq(stackOf('text'), TEXT_FAMILY, 'and the text face as TEXT_FAMILY')
+  ok(FAMILIES.every((f) => f.stack && f.name && f.why),
+     'every family has a face to draw, a name to read and a reason to pick it')
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

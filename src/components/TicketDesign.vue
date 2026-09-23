@@ -2076,6 +2076,13 @@ const printedSize = computed(() => {
                 @click="saveCard">
           {{ cardSaving ? 'Saving…' : 'Save the card' }}
         </button>
+        <!-- Said once, beside the button it is about — it used to be a group
+             in the card inspector, restated for every part anybody clicked. -->
+        <p v-if="cardDirty" class="say saving">
+          Every card sent from now on is drawn this way, including ones already
+          issued if they are sent again. Pictures already delivered keep what
+          they had.
+        </p>
       </template>
       <template v-else>
         <button class="btn sm" :disabled="!active || !design"
@@ -2087,6 +2094,17 @@ const printedSize = computed(() => {
                 @click="saveDesign">
           {{ savingDesign ? 'Saving…' : changeCount ? `Save · ${changeCount}` : 'Save the design' }}
         </button>
+        <!--
+          WHAT SAVING REACHES, SAID ONCE AND BESIDE THE BUTTON IT IS ABOUT.
+          This lived in the inspector as a group titled "What saving changes",
+          which meant it was restated on every click of every element — six
+          groups deep in a panel about the selection, describing a control in
+          the bar. It belongs here, and only when there is something to save.
+        -->
+        <p v-if="dirty" class="say saving">
+          Reaches everything printed or sent from now on, including digital
+          tickets already issued. Paper already printed keeps what it had.
+        </p>
       </template>
     </header>
 

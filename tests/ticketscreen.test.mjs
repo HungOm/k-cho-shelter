@@ -239,7 +239,11 @@ console.log('every element is a box on the picture')
 console.log('picking one opens what it prints and where it sits')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' }, renderReal: ['Inspector.vue'],
+    /* ToolBar and ToolButton are real here because the panel's own tab strip is
+       built from them: stubbed, the control that reveals the box group renders
+       as nothing and the assertion below cannot see it. */
+    drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' },
+    renderReal: ['Inspector.vue', 'ToolBar.vue', 'ToolButton.vue'],
   })
   const text = visibleText(html)
   /*
@@ -259,7 +263,14 @@ console.log('picking one opens what it prints and where it sits')
   ok(!/Nothing selected/.test(text), 'and is no longer waiting for a pick')
   ok(text.includes("Buyer's name"), 'and which thing that is')
   ok(/What it prints/.test(text), 'what goes in it can be changed')
-  ok(/Its box/.test(text), 'where it sits can be changed')
+  /*
+   * "Its box" was the heading of one of six stacked groups. The panel is three
+   * tabs now and the group headings went with the stack — the control that
+   * selects a group IS its heading — so this asks for the control instead.
+   * What the group CONTAINS is asserted by the four-field loop just below,
+   * which is the stronger half and was always there.
+   */
+  ok(/>Box</.test(text) || /\bBox\b/.test(text), 'where it sits can be reached')
   ok(/When the text is too long/.test(text), 'and what happens when it will not fit')
 
   /* The four box fields are percentages, and each says so. A number with no
@@ -329,11 +340,36 @@ console.log('the screen says what it is storing')
    * than the full sentence, which is what rotted the first time.
    */
   const picked = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' },
+    drive: async (b) => {
+      await b.load()
+      b.sel.value = 'buyer-name'
+      /*
+       * AND MOVED SOMETHING, which this never did. The saving note is now
+       * gated on `dirty` — it appears when there is something to save rather
+       * than standing on the screen permanently — so a test that only selects
+       * can no longer see it. Driving a real edit is the better test anyway:
+       * the dirty path had no coverage here at all.
+       */
+      b.design.value.elements[0].box.left = 0.42
+    },
     renderReal: ['Inspector.vue'],
   })
   const chosenText = visibleText(picked)
-  ok(/Its box/.test(chosenText), 'the inspector really is showing a selected element')
+  /*
+   * RE-AIMED A THIRD TIME, 2026-09-23, and this time at the element itself.
+   *
+   * It matched /Its box/ — the heading of one of six stacked groups. The panel
+   * is now three tabs and the group headings are gone, because the tab that
+   * selects a group is the heading; so the string went, and with it a proxy
+   * that was only ever "some words this panel happens to print".
+   *
+   * The durable fact is that the panel is showing THE ELEMENT THAT WAS
+   * SELECTED, so that is what is asked: sel is 'buyer-name' and the panel
+   * names it. That cannot pass while showing a different element, an empty
+   * panel, or a skeleton — which is more than the old one could say.
+   */
+  ok(/Buyer's name/.test(chosenText), 'the inspector really is showing the selected element')
+  ok(/From left/.test(chosenText), 'and it opens on the box, the way its slot-mate does')
   /*
    * WHAT IT REACHES, in whatever words. This matched /belongs to the template/
    * — the ownership framing — and the 2026-09-22 cut replaced that abstraction
@@ -349,6 +385,14 @@ console.log('the screen says what it is storing')
    */
   ok(/from now on/.test(chosenText), 'and saving explains what it reaches')
   ok(/already issued/.test(chosenText), 'including the half people misread')
+  /*
+   * AND IT IS SAID ONCE. The sentence used to live in the inspector under a
+   * heading "What saving changes", which put it on screen again for every
+   * element anybody clicked — a property of the Save button, restated per
+   * selection. One occurrence is the whole point of having moved it.
+   */
+  const said = (chosenText.match(/already issued/g) || []).length
+  ok(said === 1, `once, not once per selection (found ${said})`)
 }
 
 console.log('an unsaved change says so, and can be undone')
