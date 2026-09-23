@@ -266,7 +266,7 @@ const tab = ref('box')
 
   <div v-else class="nothing">
     <p class="rubric">Nothing selected</p>
-    <p class="tiny muted">Click a box, or a name in the list.</p>
+    <p class="blank">Click a box, or a name in the list.</p>
   </div>
 </aside>
 </template>

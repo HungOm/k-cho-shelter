@@ -3392,7 +3392,7 @@ const printedSize = computed(() => {
                 </ul>
               </template>
 
-              <p v-if="!elements.length && !decorations.length" class="tiny muted">
+              <p v-if="!elements.length && !decorations.length" class="blank">
                 Nothing is printed on this ticket yet. Pick something above and draw a box.
               </p>
             </div>
@@ -4125,7 +4125,30 @@ const printedSize = computed(() => {
  */
 /* The kept-work offer: a line and its two answers on one row, above the tabs'
    content, the space under it matching the space between the studio's groups. */
-.draftbar { display: flex; align-items: center; gap: var(--sp-4); margin: 0 0 var(--sp-5) }
+/*
+ * THE OFFER IS NOT THE LOUDEST THING ON THE SCREEN.
+ *
+ * `.note.info` is a global panel at .95rem with 14/16 padding, sized for a
+ * page that has one thing to say. Here it sits above a studio, so it was
+ * setting the largest type in the column for a transient "there is a draft"
+ * remark — bigger than the artboard's own labels, bigger than every tool.
+ *
+ * .82 is the studio's voice for a consequence or an offer: quieter than the
+ * work, louder than a caption, and the same size as every other line that
+ * asks somebody to decide something. The padding comes in to match, so the
+ * bar is a strip rather than a slab.
+ */
+/*
+ * TWO CLASSES, BECAUSE ONE LOSES. `.note.info` is a two-class selector, so a
+ * bare `.draftbar` is less specific and the .95rem won every time — the rule
+ * was written, committed and had no effect whatsoever. The render is the only
+ * thing that showed it; the property was present in the file either way.
+ */
+.note.draftbar {
+  display: flex; align-items: center; gap: var(--sp-4); margin: 0 0 var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
+  font-size: var(--fs-xs);
+}
 .tabbtn {
   border: 0; background: none; color: var(--muted); cursor: pointer;
   padding: var(--sp-3) var(--sp-5); border-radius: var(--r-md);

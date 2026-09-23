@@ -200,9 +200,50 @@
  * a desk screen at tablet width or wider, dense by choice, where the artboard
  * is the thing and the caption is a footnote to a control.
  */
+/*
+ * THE EMPTY STATE, AT THE SAME VOLUME AS AN EXPLANATION.
+ *
+ * It was `.tiny muted` — .82rem, a raw literal in style.css — sitting under
+ * tile labels drawn at --fs-3xs (.66rem). The sentence explaining a panel was
+ * a QUARTER LARGER than the names of the things in it, so the eye landed on
+ * "None kept. Pick a colour, then +." before it landed on Rule, Double rule,
+ * Tint panel, Seal. An empty state was the loudest text in the rail.
+ *
+ * Ruling from the user, 2026-09-23, looking at that rail: "these texts still
+ * look unprofessional — make neat, padded and smaller, not competing with
+ * tools and icons". That supersedes the note below this one, which reasoned
+ * that an empty state is "the one place worth MORE words" and let the size
+ * follow the word count. More words is not the same instruction as bigger
+ * type, and only one of the two competes with a row of icons.
+ *
+ * The PADDING is the other half of it. These lines used to sit flush against
+ * the control above, so they read as a fourth item in the group rather than a
+ * remark about it; the space is what makes them an aside.
+ *
+ * `.tiny` + a tone is untouched and stays at .82: a refusal or a consequence
+ * has to survive being read at arm's length, and permissionui requires a
+ * disabled control's reason stay legible. A warning that shrinks with the
+ * captions is a warning nobody sees.
+ */
+.blank {
+  margin: 0;
+  padding: var(--sp-3) 0;
+  font-size: var(--fs-3xs);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 .say {
   margin: 0;
-  font-size: var(--fs-2xs);
+  /*
+   * --fs-3xs, NOT --fs-2xs, AND THE TILE LABELS ARE WHY. LibraryPanel draws
+   * "Rule", "Double rule", "Tint panel" at --fs-3xs. At --fs-2xs the sentence
+   * ABOUT the tiles was larger than the names OF the tiles, which is the
+   * inversion the user kept seeing: prose reading before content. The floor
+   * of the scale calls this "the smallest thing still a word", and a desk
+   * screen that refuses to open below tablet width is where it belongs.
+   */
+  font-size: var(--fs-3xs);
   line-height: 1.45;
   color: var(--muted);
 }

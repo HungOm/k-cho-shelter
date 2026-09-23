@@ -161,7 +161,7 @@ function confirmName() {
         </div>
       </li>
     </ul>
-    <p v-if="!templates.length" class="tiny muted">
+    <p v-if="!templates.length" class="blank">
       Nothing uploaded yet, so tickets cannot be printed.
     </p>
   </div>

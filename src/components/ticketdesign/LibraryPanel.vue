@@ -302,7 +302,7 @@ function confirmSave() {
        rule says this is the one place worth MORE words: what would put
        something here, and how. "No colours kept yet." was the class without
        the contract — it named the absence and stopped (R7). -->
-  <p v-else class="tiny muted">None kept. Pick a colour, then +.</p>
+  <p v-else class="blank">None kept. Pick a colour, then +.</p>
 
   <Section label="Lettering" :count="library?.styles?.length ?? 0">
     <template #action>
@@ -326,7 +326,7 @@ function confirmSave() {
                   @click="emit('remove-style', t.id)" />
     </div>
   </div>
-  <p v-else class="tiny muted">None kept. Select words, then +.</p>
+  <p v-else class="blank">None kept. Select words, then +.</p>
 </div>
 </template>
 

@@ -385,7 +385,7 @@ function setShadow(on) {
 
   <div v-else class="nothing">
     <p class="rubric">Nothing selected</p>
-    <p class="tiny muted">Draw a shape, or click one.</p>
+    <p class="blank">Draw a shape, or click one.</p>
   </div>
 </aside>
 </template>

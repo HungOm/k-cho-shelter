@@ -1211,7 +1211,7 @@ defineExpose({ sendTest, testing, act })
       <span class="say">what the buyer receives</span>
       <span class="specs data">{{ size.width }} &times; {{ size.height }} px</span>
       <span class="grow"></span>
-      <span v-if="testNote" class="tiny muted">{{ testNote }}</span>
+      <span v-if="testNote" class="say">{{ testNote }}</span>
     </div>
 
     <!--
