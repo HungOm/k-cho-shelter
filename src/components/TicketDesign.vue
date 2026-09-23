@@ -4033,9 +4033,9 @@ const printedSize = computed(() => {
 /* NOT A FLEX ITEM THAT GIVES. The title has no shorter form: shrunk, it wraps
    to two lines inside a row sized for one and lands on the control beside it.
    The picker and the `.grow` spacer are the slack in this bar. */
-.bar h2 { margin: 0; font-size: 1.05rem; flex: none; white-space: nowrap }
+.bar h2 { margin: 0; font-size: var(--fs-md); flex: none; white-space: nowrap }
 .picker select { min-height: 34px; padding: 4px 8px; width: auto; max-width: 220px }
-.specs { font-family: var(--font-data); font-size: .72rem; color: var(--muted) }
+.specs { font-family: var(--font-data); font-size: var(--fs-2xs); color: var(--muted) }
 .tabs { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: var(--r-sm) }
 /*
  * ONE LINE EACH, and it is not only a tidiness matter. "Artwork & paper" and
@@ -4064,14 +4064,14 @@ const printedSize = computed(() => {
  * move.
  */
 .statetxt {
-  font-size: .74rem; color: var(--muted);
+  font-size: var(--fs-2xs); color: var(--muted);
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   /* It may ellipsize a long sentence; it may not be squeezed down to one
      character. "s" where "saved" belongs is not a shortened status, it is a
      glyph wearing one. Its longest content is "edited 12:04". */
   flex: none;
 }
-.statetxt.unsaved { color: var(--warn); font-weight: 500 }
+.statetxt.unsaved { color: var(--warn); font-weight: var(--fw-medium) }
 
 /* ---- three columns: list, ticket, one thing's settings ---- */
 .panel { max-height: calc(100vh - 170px); overflow: auto }
@@ -4117,10 +4117,10 @@ const printedSize = computed(() => {
   gap: 8px; margin: 10px 0 2px;
 }
 .ellist li.on { background: var(--brand-soft); border-radius: 6px }
-.ellist li.off .elname, .ellist li.off .side { opacity: .5 }
+.ellist li.off .elname { opacity: .5 }
 .elname {
   flex: 1; min-width: 0; text-align: left; border: 0; background: none; cursor: pointer;
-  font-size: .84rem; color: var(--text); padding: 2px 0;
+  font-size: var(--fs-xs); color: var(--text); padding: 2px 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .elname:hover { color: var(--brand) }
@@ -4138,11 +4138,10 @@ const printedSize = computed(() => {
 .kind { flex: none; color: var(--muted) }
 .kind.code { color: var(--info) }
 .kind.text { color: var(--warn) }
-.side { font-size: .68rem; color: var(--muted) }
 .warnmark {
   flex: none; width: 15px; height: 15px; border-radius: 50%;
   background: var(--warn-soft); color: var(--warn);
-  font-size: .66rem; font-weight: 700; line-height: 15px; text-align: center; cursor: help;
+  font-size: var(--fs-3xs); font-weight: var(--fw-bold); line-height: 15px; text-align: center; cursor: help;
 }
 
 .stubrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
@@ -4346,14 +4345,14 @@ const printedSize = computed(() => {
 .stubline.still { cursor: default }
 .stubgrip {
   position: absolute; top: 50%; left: -21px; transform: translateY(-50%);
-  background: var(--info); color: var(--info-ink); font-size: .58rem; padding: 2px 3px;
+  background: var(--info); color: var(--info-ink); font-size: var(--fs-3xs); padding: 2px 3px;
   border-radius: 3px; font-family: var(--font-data);
   writing-mode: vertical-rl;
 }
 
 .readout {
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0;
-  font-size: .72rem; color: var(--muted);
+  font-size: var(--fs-2xs); color: var(--muted);
   font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
 .readout b { color: var(--text) }
@@ -4391,15 +4390,29 @@ const printedSize = computed(() => {
  * anywhere above in the DOM; the last element may not. Inspector has its own
  * copy, which is the one that has been doing the work.
  */
-.report { border-radius: 8px; padding: 8px 10px; font-size: .76rem }
-.report.ok { background: var(--ok-soft); color: var(--ok) }
-.report.warn { background: var(--warn-soft); color: var(--warn) }
-.report.info { background: var(--info-soft); color: var(--info) }
+/*
+ * `.report` AND `.big` WERE HERE AND ARE GONE. Neither class appears in this
+ * component's template, so both compiled to `[data-v-TicketDesign]` against
+ * markup that carries a different scope id, and neither has ever painted
+ * anything. Inspector.vue holds the live `.report` set — the same four rules,
+ * already on the tokens — and `.big` is global in style.css at 1.15rem, which
+ * is --fs-lg, so ArtworkVerdict's figures were never reading from here.
+ *
+ * The `!important` on `.big` was the tell: somebody fighting specificity that
+ * was never in play. Deleted rather than migrated, for the reason a stale
+ * `.statement` block was deleted from Money.vue — a rule that reads as
+ * load-bearing is a trap for the next reader, and this one had already set
+ * one: it was on the shortlist to be carefully migrated to --fs-xl.
+ *
+ * Same family as `.report p`, removed a commit earlier, and as `.vhead .dot`
+ * before that. reachableclass catches the descendant form; a bare single-class
+ * rule dead in its own file slips through, which is a known edge of that gate
+ * rather than a miss.
+ */
 
 /* ---- the artwork verdict ---- */
 /* The magnitude before the precision: the figure is what the eye lands on and
  * the sentence under it is what makes it mean something. */
-.big { font-size: 1.3rem; font-weight: 600; margin: 3px 0 !important }
 
 /* ---- accepted shapes ---- */
 /*

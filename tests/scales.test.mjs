@@ -311,11 +311,26 @@ console.log('and the population of raw literals is falling')
        ToolBar and LibraryPanel, migrated while open, plus the rules that went
        with the controls they styled — 15 sizes, 3 weights, 12 radii, 51
        spacing values, 10 border widths. Counted with the regexes below. */
-    'font-size': 163,
-    'font-weight': 76,
-    'border-radius': 64,
-    'spacing (px)': 614,
-    'border-width': 101,
+    /* Lowered again 2026-09-23 by the TicketDesign.vue type collapse
+       (kcho-shelter-25). Thirteen declarations left that file: ten font sizes
+       and three weights, of which seven sizes and two weights were MIGRATED
+       onto the --fs and --fw tokens, and the rest went with three dead rule
+       groups —
+       `.report` x4, `.big` and `.side` x2, none of which appeared in that
+       component's template and so had never painted anything. Deleting them
+       also took a border-radius, a padding pair and a margin with them, which
+       is why four keys move rather than two.
+
+       Set to the measured actual, not to "mine minus the baseline": two of the
+       twelve font sizes and the border-width drop are 258400f's, already
+       landed with the baseline not yet lowered. A ratchet left with slack is a
+       ratchet a regression can hide in. Counted with the regexes below, on the
+       same /components/ filter, not estimated. */
+    'font-size': 151,
+    'font-weight': 73,
+    'border-radius': 62,
+    'spacing (px)': 610,
+    'border-width': 98,
     'box-shadow': 16,
   }
   const comps = sources.filter(([f]) => f.includes('/components/'))
