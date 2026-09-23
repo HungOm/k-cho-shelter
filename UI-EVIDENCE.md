@@ -545,14 +545,71 @@ Two rules for the implementation:
   keeping the phase boundary exactly where it is, not for adding coverage.
   *(Both halves checked by kcho-shelter-25 rather than reasoned about.)*
 
-### Phase 4 — Absence names its cause (F6)
+### Phase 4 — Absence names its cause (F6) **DONE — and it mostly dissolved**
+
+*Landed `9d29899`, 2026-09-23.*
+
+**Five of the six sites were already correct**, each for its own reason, and
+opening them was the whole value of the phase:
+
+- `Agents.vue` and `Approvals.vue`'s pending list have no user filter feeding
+  them, so "Nobody added yet" and "Nothing waiting" are true statements rather
+  than generic ones.
+- `Money.vue` handles the searched-empty case separately, at the point of
+  search, with the cause named — it was already doing what this phase proposed.
+- `Books.vue:134` names the filter in its title (`No books ${status}`).
+- `Permissions.vue:250` is the *load-failure* branch and says so; the
+  filtered-to-nothing case has its own branch beside it, written for exactly
+  this reason.
+- `ui/Filters.vue` **hides a chip that would filter to nothing** — "a chip that
+  filters to nothing is a control that looks broken when pressed" — so the
+  filtered-to-zero state is unreachable by construction.
+
+**The one real gap was the opposite of an empty state: a cap nobody declared.**
+`Approvals.vue` sliced its settled list to 25 rows with nothing saying so,
+directly beneath chips carrying the *full* count per group. The chips said
+sixty-three and the list gave twenty-five. `Search.vue` has already paid for
+this exact shape and its comment records the fix. The cap stays — 25 is the
+right default — but it is now stated, in the same words `Money` uses over a
+capped list, so the two screens read as one product.
+
+### Phase 4 — the original plan, for the record
 
 Copy `Search.vue`'s two-branch pattern to the four screens with one branch: an
 empty state must distinguish **"there are none"** from **"none match what you
 asked for"**, and the second carries the way back. `Books.vue:134` already does
 a version of it.
 
-### Phase 5 — One word for "reveal the rest" (F4)
+### Phase 5 — One word for "reveal the rest" (F4) **DONE — and F4 was wrong**
+
+*Landed `9d29899`, 2026-09-23.*
+
+**F4 said "seven labels for one command". It is two commands, and collapsing
+them would have been a worse defect than the one filed.** P2's objective
+demands consistency *in proportion to similarity*, with explicitly less penalty
+for labelling dissimilar commands differently; this document had been reading it
+as "same words everywhere", which is the half that makes interfaces worse.
+
+The line is **whether the set is already known**:
+
+| | | |
+|---|---|---|
+| known, hidden by a cap or a filter | **name it** | "Show every ticket / seller / setting / request" |
+| not fetched yet | **cannot name it** | "Show" |
+
+One pattern with a slot is what a volunteer learns once. Naming a set you have
+not loaded is a promise the screen cannot keep.
+
+`Draw.vue` was making exactly that promise, and worse: *"Show them"* sat beside
+a heading that flips to *"Every sold ticket has a name and a phone number"*,
+offering to fetch a list the stat directly above reports as **zero**. It is now
+**disabled with the reason, not hidden** — `permissionui`'s shape for
+`permissionui`'s reason: a screen that changes shape between a healthy raffle
+and a faulty one teaches the reader that the control does not exist.
+
+`SellTicket.vue`'s pair was left alone; it is a mode switch, not this command.
+
+### Phase 5 — the original plan, for the record
 
 Seven sites, one word. `SellTicket.vue:228/255` is genuinely a different control
 — a mode switch between "all at once" and "one at a time" — and keeps its pair.
@@ -643,6 +700,42 @@ The weaker half the app already passes. The valuable half is the second: a
 branch whose only content is "Nothing to show" is what both books name as a
 failure and what P3 prices at seven seconds. Would have caught **F6**. Same
 enumeration guard.
+
+### `reachableclass.test.mjs` — found the hard way, 2026-09-23
+
+**Asserts:** every class a component's markup carries resolves to a rule that
+can actually reach it.
+
+`Money.vue`'s two tertiary buttons carried `class="linkish"`. The rule was
+written `.statement .linkish`, in `Money.vue`'s own scoped block, and
+`class="statement"` appears **nowhere in `Money.vue`** — it is on a table inside
+`SellerMoney.vue`. The selector had never matched its own markup, so both
+controls rendered as default browser buttons: bordered grey chips in a money
+column, which is word for word what the comment above that rule said it existed
+to prevent.
+
+**Nothing could see it.** The markup names a class, the stylesheet defines one,
+and neither is malformed — so there is no error, no warning, no failing
+assertion. It is the same shape as `Admin.vue`'s note about `.mono` ("a class
+that silently styled nothing"), and the same shape as the `--line` bug
+`tokens.test.mjs` was written for — **which is worth stating correctly, because
+the short version of it is backwards.** `--line` was *retired* when the verify
+page's palette was unified, so `var(--line, rgba(0,0,0,.1))` resolved to its
+fallback *every single time*: a hairline visible in light mode and invisible in
+dark. The fallback there is not a safety net, **it is the bug**, because it is
+what makes a dead token look alive. *(Caught by kcho-shelter-25, who opened
+`verify.css:600` instead of trusting my paraphrase of it.)*
+
+This repo has now been bitten by *a name that resolves to nothing* three times
+in three languages: a CSS custom property, a CSS class, and an undefined Vue
+component (`noundef`). Each was invisible for the same reason — the code reads
+as though the case is handled.
+
+The narrow, cheap version is the one to build: for each component, every class
+in its template either matches a selector in its own `<style>` that its markup
+can satisfy, or exists in `style.css`, or is on the known-global list. A full
+CSS resolver is not needed to catch a descendant selector whose ancestor is
+absent from the same file.
 
 ### Considered and not proposed: a grid-alignment gate
 
