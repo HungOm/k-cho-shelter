@@ -18,8 +18,8 @@
  * name typed, so it is the one that gets a labelled button.
  */
 import { computed, ref } from 'vue'
-import Icon from '../ui/Icon.vue'
 import ToolButton from '../ui/ToolButton.vue'
+import Section from './Section.vue'
 import { decorationLayerSVG } from '../../lib/designelements.js'
 import { PATHS } from '../../lib/iconpaths.js'
 import { BUILT_IN, MAX_SHAPES, MAX_COLOURS, MAX_STYLES, shapeFrom, nextLibId } from '../../lib/designlibrary.js'
@@ -211,7 +211,18 @@ function confirmSave() {
 
 <template>
 <div class="block">
-  <h3 class="rubric">Library</h3>
+  <!-- THE SAVE CONTROL SITS IN THE HEADER, like Colours' and Lettering's.
+       It was a full-width worded button under the tiles — the heaviest thing
+       in a rail of 32px icons, for the same job its two neighbours did with a
+       `+`. Three sections that all mean "keep this" now offer it one way. -->
+  <Section label="Library" :count="shapes.length">
+    <template #action>
+      <ToolButton
+        icon="plus" label="Keep the selection" :size="13" :why="whyNoSave"
+        hint="Keep the selection in the library to place again"
+        @click="naming = 'shape'" />
+    </template>
+  </Section>
 
   <!--
     THE REMOVE CONTROL IS A SIBLING OF THE TILE, NOT A CHILD OF IT.
@@ -242,15 +253,9 @@ function confirmSave() {
        to the foot of the panel with the whole Colours section in between. -->
   <p class="say">Click one to place it.</p>
 
-  <!-- SAVING IS THE ONE THING HERE THAT NEEDS A WORD, because it needs a name
+  <!-- NAMING IS THE ONE THING HERE THAT NEEDS A WORD, because a name has to be
        typed. Everything else is a click on a picture of itself. -->
-  <template v-if="!naming">
-    <button class="btn sm" :disabled="!!whyNoSave" :title="whyNoSave || 'Keep the selection to place again'"
-            @click="naming = 'shape'">
-      <Icon name="plus" :size="15" />Save the selection
-    </button>
-  </template>
-  <template v-else>
+  <template v-if="naming">
     <input v-model="name" maxlength="40"
            :placeholder="naming === 'colour' ? pickedColour : naming === 'style' ? 'Prize line, say' : 'Call it something'"
            @keyup.enter="confirmSave">
@@ -269,13 +274,18 @@ function confirmSave() {
     keep finds no row, no control and no reason. An empty row with its one
     sentence costs a line and answers the question.
   -->
-  <div class="colhead">
-    <h4 class="rubric">Colours</h4>
-    <ToolButton
-      icon="plus" label="Keep this colour" :size="13" :disabled="!!whyNoColour"
-      :hint="whyNoColour || `Keep ${pickedColour} to use on another ticket`"
-      @click="naming = 'colour'" />
-  </div>
+  <Section label="Colours" :count="library?.colours?.length ?? 0">
+    <template #action>
+      <!-- `why` rather than `disabled` + a hint that doubles as the reason:
+           ToolButton makes the reason's PRESENCE the thing that disables, so
+           there is no way to write a dead control without saying why (R8).
+           This one said it the other way and its neighbour said it this way. -->
+      <ToolButton
+        icon="plus" label="Keep this colour" :size="13" :why="whyNoColour"
+        :hint="`Keep ${pickedColour} to use on another ticket`"
+        @click="naming = 'colour'" />
+    </template>
+  </Section>
   <div v-if="library?.colours?.length" class="cols">
     <div v-for="c in library.colours" :key="c.id" class="colwrap">
       <button
@@ -288,15 +298,20 @@ function confirmSave() {
         @click="emit('remove-colour', c.id)" />
     </div>
   </div>
-  <p v-else class="tiny muted">No colours kept yet.</p>
+  <!-- `.tiny muted` is the studio's empty-state voice, and the note above its
+       rule says this is the one place worth MORE words: what would put
+       something here, and how. "No colours kept yet." was the class without
+       the contract — it named the absence and stopped (R7). -->
+  <p v-else class="tiny muted">None kept. Pick a colour, then +.</p>
 
-  <div class="colhead">
-    <h4 class="rubric">Lettering</h4>
-    <ToolButton
-      icon="plus" label="Keep this lettering" :size="13"
-      :why="whyNoStyle" hint="Keep the selection's face, weight, alignment, spacing and colour"
-      @click="naming = 'style'" />
-  </div>
+  <Section label="Lettering" :count="library?.styles?.length ?? 0">
+    <template #action>
+      <ToolButton
+        icon="plus" label="Keep this lettering" :size="13" :why="whyNoStyle"
+        hint="Keep the selection's face, weight, alignment, spacing and colour"
+        @click="naming = 'style'" />
+    </template>
+  </Section>
   <div v-if="library?.styles?.length" class="styles">
     <div v-for="t in library.styles" :key="t.id" class="tile">
       <!-- The style drawn as itself: "Aa" in its face, weight and colour. -->
@@ -311,7 +326,7 @@ function confirmSave() {
                   @click="emit('remove-style', t.id)" />
     </div>
   </div>
-  <p v-else class="tiny muted">No lettering kept yet.</p>
+  <p v-else class="tiny muted">None kept. Select words, then +.</p>
 </div>
 </template>
 
@@ -352,9 +367,6 @@ function confirmSave() {
 
 /* The heading and its one control on a line, because a section that can be
    added to should say so where the section is named. */
-.colhead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3) }
-.colhead .rubric { margin: 0 }
-
 /* The gap clears the remove badge, which overhangs its swatch by 6px — at the
    4px this started at, a badge sat on the NEIGHBOURING colour. */
 .cols { display: flex; flex-wrap: wrap; gap: var(--sp-4) }

@@ -136,6 +136,26 @@
   margin: 0; font-size: var(--fs-3xs); font-weight: var(--fw-medium); letter-spacing: .07em;
   text-transform: uppercase; color: var(--muted);
 }
+/*
+ * THE SECTION HEADER, drawn once for `Section.vue` and therefore for every
+ * panel. It lives here rather than in that component's own block because the
+ * rail, the inspectors and the sheet all import this file, and a rule that
+ * reaches only one of them is how the three shapes this replaced came about.
+ *
+ * `min-height` is the icon control's own height, so a section WITHOUT an action
+ * leaves the same gap above its contents as one with. Rows that jump by 4px
+ * between sections read as carelessness even when nobody can say why.
+ */
+.shead { display: flex; align-items: center; gap: var(--sp-3); min-height: 26px }
+.shead .rubric { margin: 0 }
+.sfill { flex: 1 }
+/* Tabular, because these sit in a column down the rail and a count that shifts
+   its digits sideways between sections is the numbers rule (§3) in miniature. */
+.scount {
+  font-size: var(--fs-3xs); font-weight: var(--fw-medium); color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .quad { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3) var(--sp-5) }
 .quad.one { grid-template-columns: 1fr }
 /* .seg / .segbtn live in src/style.css — a switch outside the studio used them
