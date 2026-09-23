@@ -72,6 +72,10 @@ import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
 import { toPayload, reject as rejectFile } from '../lib/templatefile.js'
 import { blankArtboardFile } from '../lib/blankticket.js'
+import {
+  browserStorage, designText, writeDraft, readDraft, clearDraft, compareDraft,
+} from '../lib/studiodraft.js'
+import Sheet from './ui/Sheet.vue'
 import SheetTab from './ticketdesign/SheetTab.vue'
 import ShapesPanel from './ticketdesign/ShapesPanel.vue'
 import TemplateRail from './ticketdesign/TemplateRail.vue'
@@ -182,6 +186,24 @@ const cardDirty = computed(() => cardState.value !== cardSavedState.value)
  * empty shell, with "Unhandled error during execution of watcher callback" as
  * the only clue and no mention of this file in it.
  */
+/*
+ * UNSAVED WORK KEPT ON THIS COMPUTER — see src/lib/studiodraft.js.
+ *
+ * Declared up here, above `loadCard`, for the same reason as the undo stack
+ * below: loadCard runs from an immediate watcher during setup and offers the
+ * card's draft, so anything it touches must already exist (watchorder).
+ *
+ * `drafts` is null where the browser will not lend its storage; every use
+ * below then does nothing, and the studio opens exactly as it did before.
+ */
+const drafts = browserStorage()
+const CARD_DRAFT = 'card'
+/* An offer waiting for a yes or a no: { id, state, design, editedAt, keptAt }.
+   While one is waiting, nothing new is written over it — a draft is not
+   discarded by being ignored. */
+const draftOffer = ref(null)
+const cardDraftOffer = ref(null)
+
 const cardHistory = ref([])
 /* The card's half of the same fork — see `future` on the printed side for why
    an undo you cannot reverse stops being pressed at all. */
@@ -200,6 +222,16 @@ function loadCard() {
   cardLayout.value = stored && typeof stored === 'object' ? JSON.parse(JSON.stringify(stored)) : {}
   cardParts.value = resolveParts(card.value.design, cardLayout.value)
   rebaseCard()
+  offerCardDraft()
+}
+
+function offerCardDraft() {
+  cardDraftOffer.value = null
+  if (!drafts) return
+  const d = readDraft(drafts, CARD_DRAFT)
+  const state = compareDraft(d, cardSavedState.value)
+  if (state === 'same') clearDraft(drafts, CARD_DRAFT)
+  if (state === 'newer' || state === 'stale') cardDraftOffer.value = { id: CARD_DRAFT, state, ...d }
 }
 watch(() => state.cfg, loadCard, { immediate: true, deep: true })
 
@@ -272,6 +304,7 @@ function redoCard() {
 }
 
 function revertCard() {
+  if (drafts) clearDraft(drafts, CARD_DRAFT)
   applyCard(JSON.parse(cardSavedState.value))
   cardHistory.value = []
   cardFuture.value = []
@@ -1434,6 +1467,7 @@ function adopt(r) {
   sel.value = ''
   /* A design that has just arrived from the server has no past to undo into. */
   rebase()
+  offerDraft()
 }
 
 async function load() {
@@ -1475,6 +1509,7 @@ onActivated(() => {
   /* Not on a screen about to say it needs a bigger one. */
   if (state.roomy) setFocus(true)
   window.addEventListener('keydown', onFocusKey)
+  window.addEventListener('beforeunload', onLeavePage)
   /* A caller asked for a particular tab — see goStudio. Read once and cleared,
      because the request belongs to that one arrival: leaving it set would send
      every later visit to the studio to whichever tab somebody last linked to. */
@@ -1487,6 +1522,9 @@ onActivated(() => {
 onDeactivated(() => {
   setFocus(false)
   window.removeEventListener('keydown', onFocusKey)
+  window.removeEventListener('beforeunload', onLeavePage)
+  keepDraftNow()
+  keepCardDraftNow()
 })
 /*
  * Turned off on the way down, never back on: a window dragged narrower must
@@ -1498,6 +1536,9 @@ watch(() => state.roomy, (roomy) => { if (!roomy) setFocus(false) })
 onUnmounted(() => {
   setFocus(false)
   window.removeEventListener('keydown', onFocusKey)
+  window.removeEventListener('beforeunload', onLeavePage)
+  keepDraftNow()
+  keepCardDraftNow()
 })
 
 /*
@@ -1572,8 +1613,138 @@ watch(activeId, () => {
   saved.value = JSON.parse(JSON.stringify(design.value))
   sel.value = ''
   rebase()
+  offerDraft()
   nextTick(fitToWidth)
 })
+
+/*
+ * ---------- keeping unsaved work ----------
+ *
+ * Written a moment after the design stops changing, not on every pointermove:
+ * a drag is sixty writes a second of a string up to 64k long, and storage is
+ * synchronous. Flushed at once on the way out — a switch, a hidden tab, the
+ * page closing — because a timer does not survive any of those.
+ */
+let draftTimer = 0
+function keepDraftNow() {
+  clearTimeout(draftTimer)
+  draftTimer = 0
+  const id = active.value?.id
+  if (!drafts || !id || !design.value || !saved.value || draftOffer.value) return
+  if (!dirty.value) { clearDraft(drafts, id); return }
+  writeDraft(drafts, id, {
+    design: designText(design.value), saved: designText(saved.value), editedAt: editedAt.value,
+  })
+}
+watch(design, () => {
+  if (!drafts) return
+  clearTimeout(draftTimer)
+  draftTimer = setTimeout(keepDraftNow, 600)
+}, { deep: true })
+
+let cardDraftTimer = 0
+function keepCardDraftNow() {
+  clearTimeout(cardDraftTimer)
+  cardDraftTimer = 0
+  if (!drafts || cardDraftOffer.value) return
+  if (!cardDirty.value) { clearDraft(drafts, CARD_DRAFT); return }
+  writeDraft(drafts, CARD_DRAFT, { design: cardState.value, saved: cardSavedState.value })
+}
+watch(cardState, () => {
+  if (!drafts) return
+  clearTimeout(cardDraftTimer)
+  cardDraftTimer = setTimeout(keepCardDraftNow, 600)
+})
+
+function offerDraft() {
+  draftOffer.value = null
+  const id = active.value?.id
+  if (!drafts || !id || !saved.value) return
+  const d = readDraft(drafts, id)
+  const state = compareDraft(d, designText(saved.value))
+  if (state === 'same') clearDraft(drafts, id)
+  if (state === 'newer' || state === 'stale') draftOffer.value = { id, state, ...d }
+}
+
+/* Restoring is one undo step, so the saved design is a press of Undo away. */
+function restoreDraft() {
+  const d = draftOffer.value
+  if (!d || !design.value) return
+  mark()
+  design.value = { ...JSON.parse(d.design), artwork: design.value.artwork }
+  draftOffer.value = null
+}
+function discardDraft() {
+  const d = draftOffer.value
+  if (d) clearDraft(drafts, d.id)
+  draftOffer.value = null
+}
+function restoreCardDraft() {
+  const d = cardDraftOffer.value
+  if (!d) return
+  markCard()
+  applyCard(JSON.parse(d.design))
+  cardDraftOffer.value = null
+}
+function discardCardDraft() {
+  if (cardDraftOffer.value) clearDraft(drafts, CARD_DRAFT)
+  cardDraftOffer.value = null
+}
+
+/* The offer that belongs to the tab on screen, the same rule as Save. */
+const shownDraft = computed(() => (tab.value === 'digital' ? cardDraftOffer.value : draftOffer.value))
+const draftLine = computed(() => {
+  const d = shownDraft.value
+  if (!d) return ''
+  const at = new Date(d.keptAt || Date.now())
+  const today = new Date().toDateString() === at.toDateString()
+  const when = today
+    ? at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : at.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  const what = tab.value === 'digital' ? 'card' : 'design'
+  return d.state === 'stale'
+    ? `Unsaved ${what} changes from ${when} were kept, but it has been saved since.`
+    : `Unsaved ${what} changes from ${when} were kept on this computer.`
+})
+
+/*
+ * ---------- switching template with unsaved work ----------
+ *
+ * The one move in the studio that takes work OFF the screen: the canvas is
+ * reloaded from the template being switched to. With a draft kept, nothing is
+ * lost and the dialog says where it went; without one, it is lost, and the
+ * dialog says that instead and makes discarding the thing you press.
+ *
+ * Leaving the studio is NOT guarded. The screen is kept alive between visits
+ * (App.vue's KeepAlive), so the work is exactly where it was on return, and a
+ * question on the way out would be friction that protects nothing.
+ */
+const pendingSwitch = ref(null)
+function askSwitch(id, proceed) {
+  if (!id || id === activeId.value) return
+  if (!dirty.value) { proceed(); return }
+  keepDraftNow()
+  pendingSwitch.value = { proceed }
+}
+function confirmSwitch() {
+  const go2 = pendingSwitch.value?.proceed
+  pendingSwitch.value = null
+  go2?.()
+}
+function pickTemplate(ev) {
+  const id = ev.target.value
+  /* Put the picker back until the answer is in; a refused switch must not
+     leave it naming a template the canvas is not showing. */
+  ev.target.value = activeId.value
+  askSwitch(id, () => { activeId.value = id })
+}
+
+/* Closing the page: flush what is kept, and ask the browser's own question. */
+function onLeavePage(e) {
+  keepDraftNow()
+  keepCardDraftNow()
+  if (dirty.value || cardDirty.value) { e.preventDefault(); e.returnValue = '' }
+}
 
 /*
  * DIRTY, AND WHEN.
@@ -1698,7 +1869,11 @@ async function useFile(file) {
   }
 }
 
-async function choose(id) {
+function choose(id) {
+  askSwitch(id, () => chooseNow(id))
+}
+
+async function chooseNow(id) {
   busy.value = true
   try {
     adopt(await api('set_active_template', { id }))
@@ -1741,6 +1916,7 @@ async function saveDesign() {
      */
     const payload = { ...rest, ...legacyFromElements(design.value) }
     adopt(await api('set_template_design', { id: active.value.id, design: payload }))
+    if (drafts && active.value) clearDraft(drafts, active.value.id)
     toast('Saved', 'ok')
   } catch (err) {
     toast(err.message, 'bad', err.code)
@@ -1857,6 +2033,7 @@ function redo() {
 function revertToSaved() {
   restoring = true
   design.value = saved.value ? JSON.parse(JSON.stringify(saved.value)) : null
+  if (drafts && active.value) clearDraft(drafts, active.value.id)
   rebase()
   nextTick(() => { restoring = false })
 }
@@ -2095,7 +2272,7 @@ const printedSize = computed(() => {
 
       <label v-if="templates.length" class="picker">
         <span class="sr">Template being designed</span>
-        <select v-model="activeId">
+        <select :value="activeId" @change="pickTemplate">
           <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
       </label>
@@ -2201,6 +2378,34 @@ const printedSize = computed(() => {
         </p>
       </template>
     </header>
+
+    <!--
+      AN OFFER, NOT A RESTORE. Work kept from a session that ended without a
+      save is shown with its time and waits for an answer; nothing on the
+      canvas changes until somebody presses Restore. A bar rather than a
+      dialog, because the studio underneath is usable either way.
+    -->
+    <div v-if="shownDraft" class="note info draftbar" role="status">
+      <span class="grow">{{ draftLine }}</span>
+      <button class="btn sm" type="button"
+              @click="tab === 'digital' ? restoreCardDraft() : restoreDraft()">Restore them</button>
+      <button class="btn sm ghost" type="button"
+              @click="tab === 'digital' ? discardCardDraft() : discardDraft()">Discard them</button>
+    </div>
+
+    <Sheet v-if="pendingSwitch" title="Unsaved changes" @close="pendingSwitch = null">
+      <p v-if="drafts">
+        Your changes to {{ active?.name }} are kept on this computer and offered back when you
+        open it again.
+      </p>
+      <p v-else>Your changes to {{ active?.name }} have not been saved and will be lost.</p>
+      <template #actions>
+        <button class="btn ghost" type="button" @click="pendingSwitch = null">Keep editing</button>
+        <button :class="['btn', drafts ? 'primary' : 'danger']" type="button" @click="confirmSwitch">
+          {{ drafts ? 'Switch template' : 'Discard changes' }}
+        </button>
+      </template>
+    </Sheet>
 
     <p v-if="loadErr" class="note bad">{{ loadErr }}</p>
     <p v-else-if="loading" class="muted">Loading&hellip;</p>
@@ -3017,6 +3222,9 @@ const printedSize = computed(() => {
  * `calc(100vh - 150px)`, an allowance for this bar and the footer, so a bar
  * that wraps pushes the footer's actions off the bottom of the frame.
  */
+/* The kept-work offer: a line and its two answers on one row, above the tabs'
+   content, the space under it matching the space between the studio's groups. */
+.draftbar { display: flex; align-items: center; gap: var(--sp-4); margin: 0 0 var(--sp-5) }
 .tabbtn {
   border: 0; background: none; color: var(--muted); cursor: pointer;
   padding: var(--sp-3) var(--sp-5); border-radius: var(--r-md);

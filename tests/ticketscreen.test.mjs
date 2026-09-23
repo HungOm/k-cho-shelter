@@ -17,6 +17,8 @@
  */
 import { renderScreen, visibleText, setupOf } from './screen.mjs'
 import { normalDecoration } from '../src/lib/designelements.js'
+import { designFor } from '../src/lib/ticketdesign.js'
+import { designText, draftKey } from '../src/lib/studiodraft.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -732,6 +734,54 @@ console.log('the arrange rail offers all six edges and all four stacking moves')
     ok(m && /disabled/.test(m[0]) && /title="Nothing is selected"/.test(m[0]),
       `"${t}" is disabled with its reason while nothing is selected`)
   }
+}
+
+console.log('work that was never saved is offered back, and only when it differs')
+{
+  /*
+   * A reload or a crashed tab used to lose every placement since the last Save,
+   * silently. The studio now keeps unsaved work per template in local storage
+   * (src/lib/studiodraft.js) and OFFERS it back — it is never restored without
+   * being asked. What this pins is the screen's half: the offer appears for
+   * work that differs from the save, says when the save moved on since, and
+   * does not appear for a draft that equals what is saved (an offer that
+   * changes nothing teaches people to dismiss offers).
+   *
+   * A Storage-shaped object on globalThis stands in for the browser's; the
+   * studio probes it at setup exactly as it would the real one.
+   */
+  const T = ONE.templates[0]
+  const savedText = designText(designFor(T))
+  const edited = designFor(T)
+  edited.stubAt = 0.61
+  const withDraft = async (draft) => {
+    const m = new Map()
+    if (draft) m.set(draftKey(T.id), JSON.stringify({ v: 1, keptAt: Date.now(), editedAt: '', ...draft }))
+    globalThis.localStorage = {
+      getItem: (k) => (m.has(k) ? m.get(k) : null),
+      setItem: (k, v) => { m.set(k, String(v)) },
+      removeItem: (k) => { m.delete(k) },
+    }
+    try {
+      return visibleText(await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+        drive: async (b) => { await b.load(); b.tab.value = 'place' },
+      }))
+    } finally { delete globalThis.localStorage }
+  }
+
+  const newer = await withDraft({ design: designText(edited), saved: savedText })
+  ok(/were kept on this computer/.test(newer), 'a draft made on top of this save is offered')
+  ok(/Restore them/.test(newer) && /Discard them/.test(newer), 'with both answers')
+
+  const stale = await withDraft({ design: designText(edited), saved: '{"older":true}' })
+  ok(/has been saved since/.test(stale), 'a draft made before somebody saved again says so')
+
+  const same = await withDraft({ design: savedText, saved: savedText })
+  ok(!/Restore them/.test(same), 'a draft that equals the save is not offered')
+
+  const none = await withDraft(null)
+  ok(!/Restore them/.test(none), 'and with nothing kept there is no offer')
+  ok(/Place|Ticket Studio/.test(none), 'which is the studio rendering, not a blank page reading as "no offer"')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
