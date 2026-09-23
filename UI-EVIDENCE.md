@@ -1,21 +1,21 @@
 # The interface, measured
 
-**Status: Phases 0–5 shipped. Phase 2's F3 held, Phase 6 ongoing. Updated
-2026-09-23.**
+**Status: Phases 0–5 complete. Phase 6 ongoing, ratcheted. Updated 2026-09-23.**
 
 | | | |
 |---|---|---|
 | **0** · the scales | `6253531` | 30 tokens, every value already in the tree |
 | **1** · one font vocabulary per surface | `1343354` | *ticket-studio-redesign* |
 | **2** · F2 typeface previews | reassigned | *ticket-studio-redesign*, same spec |
-| **2** · F3 header thumbnail | **held** | until `TicketDesign.vue` is free |
+| **2** · F3 header thumbnail | `04f986e` | thumbnail beside the select, not instead of it |
 | **3** · Setup grouped | `6913f1e` | four groups, one card moved |
 | **4** · absence names its cause | `9d29899` | five of six sites were already right |
 | **5** · one word per command | `9d29899` | F4 was mis-filed; see below |
 | **6** · migrate literals | ongoing | ratcheted by `scales.test.mjs` |
 
 New gates since: `scales`, `reachableclass` (*kcho-shelter-25*, to this
-document's spec).
+document's spec), `labelconsistency`, `imagecue`. One proposed gate — `absence` —
+was argued out and is recorded in §8 with the reason.
 
 Five sources were handed to this repo — three HCI papers and two books on
 interface design — with the instruction to use them to improve the Ticket Studio
@@ -509,10 +509,20 @@ the *digital* words and uses them on the *printed* tab.
   The header is already the upper-left, so this puts the answer to the question
   the header exists to answer directly in the Guess stage's landing zone.
 
-  **Held until the Studio session lands.** `TicketDesign.vue` is theirs for the
-  duration; two sessions in one file is what this repo keeps paying for. The one
-  constraint passed to them is that the `<select>` at `:1990` survives their
-  restructure in some form, because F3 adds to it rather than replacing it.
+  **Landed `04f986e`.** 34×22, cropped, guarded on `active?.url`. The crop is
+  the decision: a ticket is ~3.1:1, so a whole one is either a quarter of the
+  bar or an 11px letterboxed sliver. Cropping keeps what distinguishes two
+  artworks at that size — colour and texture. Nobody reads a ticket in a
+  header; they recognise one.
+
+  **The first render was the harness lying.** Hand-written bar CSS omitted the
+  `white-space: nowrap` the real file carries, so the tabs wrapped and the bar
+  grew a line — a fault that is not in the component. Re-rendered from the
+  component's verbatim scoped CSS. Another session hit the identical trap an
+  hour earlier, where a fixture's stand-in control carried the same wrong
+  height as the rule under test, so the fixture agreed with itself rather than
+  with the app. **A render harness must use the real stylesheet and the real
+  control, or it can only confirm what you already believed.**
 
 ### Phase 3 — Setup, grouped (F5) **DONE**
 
