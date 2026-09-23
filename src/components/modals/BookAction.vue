@@ -18,9 +18,18 @@
 import { ref, computed } from 'vue'
 import { state, api, toast, refresh, loadDelta } from '../../lib/store.js'
 import { inspectRange, bookNumber } from '../../lib/books.js'
-import { money, COUNTED_IN_HELP } from '../../lib/format.js'
+import { money, COUNTED_IN_HELP, BOOK_WORDS } from '../../lib/format.js'
+
 import Sheet from '../ui/Sheet.vue'
 import FreeRuns from '../ui/FreeRuns.vue'
+
+/*
+ * The three states a book can be MARKED as by hand, in the order somebody
+ * reaches for them. A subset of BOOK_WORDS rather than all of it: Out,
+ * Offered, Returned and Settled are reached by doing the thing, not by
+ * declaring it, and offering them here would be a control that lies.
+ */
+const MARK_AS = ['Lost', 'Void', 'Unassigned']
 
 const props = defineProps({
   kind: String,                               // 'transfer' | 'return' | 'restock' | 'mark'
@@ -201,10 +210,17 @@ async function go() {
     <template v-if="kind === 'mark'">
       <div class="field">
         <label for="bas">Mark them as</label>
+        <!--
+          THE WORDS COME FROM BOOK_WORDS, because this dialog SETS the state
+          the rest of the app then names. Typed out here, "Unassigned" was
+          offered as "Back in the office" while every book list calls it "In
+          the office" — so somebody chose one phrase and saw another a second
+          later, for the state they had just set themselves. Two of the three
+          copies still matched, which is what a retyped label does: it drifts
+          one at a time and the file looks fine.
+        -->
         <select id="bas" v-model="status">
-          <option value="Lost">Lost</option>
-          <option value="Void">Cancelled</option>
-          <option value="Unassigned">Back in the office</option>
+          <option v-for="s in MARK_AS" :key="s" :value="s">{{ BOOK_WORDS[s] }}</option>
         </select>
       </div>
       <div class="field">
