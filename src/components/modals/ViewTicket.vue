@@ -164,17 +164,14 @@ const logoUri = ref('')
 async function loadLogo() {
   const url = String(state.cfg?.orgLogoSmall || state.cfg?.orgLogo || '').trim()
   if (!url || logoUri.value) return
-  try {
-    const r = await fetch(url, { mode: 'cors' })
-    if (!r.ok) return
-    const blob = await r.blob()
-    logoUri.value = await new Promise((res) => {
-      const f = new FileReader()
-      f.onload = () => res(String(f.result))
-      f.onerror = () => res('')
-      f.readAsDataURL(blob)
-    })
-  } catch { /* no mark is a card with an initial on it, not a failure */ }
+  /*
+   * `fetchAsDataURI`, WHICH THIS FILE WAS ALREADY IMPORTING. The fetch, the
+   * blob and the FileReader were written out here a second time, five lines
+   * below an import of the function that does exactly that. Found when the
+   * studio needed the same mark and the obvious move was to extract a helper
+   * that already existed.
+   */
+  try { logoUri.value = await fetchAsDataURI(url) } catch { /* an initial is a mark, not a gap */ }
 }
 
 /* What goes on the card, from what this screen and the config already hold. */

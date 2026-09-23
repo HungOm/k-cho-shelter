@@ -37,6 +37,7 @@ import { CARD_SIZES, layoutFrom } from '../../lib/cardelements.js'
 import { boundsOf, alignBoxes, distributeBoxes, orderMoved } from '../../lib/arrange.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { inkFor } from '../../lib/brand.js'
+import { SLOTS } from '../../lib/ranks.js'
 import Icon from '../ui/Icon.vue'
 import Toggle from '../ui/Toggle.vue'
 import ToolBar from '../ui/ToolBar.vue'
@@ -102,24 +103,126 @@ const size = computed(() => CARD_SIZES[props.card.design] || CARD_SIZES.grand)
  * receives rather than a picture of the idea of one. The name is a long one on
  * purpose, for the same reason the printed tab defaults to its longest entry.
  */
+/*
+ * DECLARED HERE, ABOVE THE SPECIMEN THAT READS IT, rather than beside the other
+ * canvas toggles 260 lines down. `specimen` is a computed and computeds are
+ * lazy, so the old order happened to work — but "happened to" is the whole of
+ * why it worked, and a060dfb fixed a watcher in Admin.vue that had the same
+ * shape and did NOT get away with it. A value read during setup belongs above
+ * the thing that reads it.
+ */
+const asSent = ref(false)
+
+/*
+ * THE RAFFLE'S OWN MARK IN THE DESIGNER, NOT THE FALLBACK INITIAL.
+ *
+ * The card draws an uploaded logo when it has one and the organisation's
+ * initial when it does not — and the studio never supplied a logo at all, so
+ * every raffle designed its masthead against the letter. An initial and a
+ * wordmark are different shapes at different widths, which is the whole of
+ * what that box is for positioning.
+ *
+ * A URL WILL NOT DO. An SVG rendered through an <img> fetches nothing
+ * external, and both the buyer's card and this screen's "send a test" go
+ * through a canvas, so a logo referenced by URL is present on screen and
+ * absent from the picture. `fetchAsDataURI` is the function this repo already
+ * had for it — ViewTicket.vue imported it and then wrote the fetch out a
+ * second time five lines below, which is now also fixed.
+ *
+ * Silent on failure: a bucket without CORS, an offline machine, no logo
+ * uploaded. The card falls back to the initial, which is a mark and not a gap.
+ */
+const logoUri = ref('')
+async function loadLogo() {
+  const url = String(props.cfg?.orgLogoSmall || props.cfg?.orgLogo || '').trim()
+  if (!url || logoUri.value) return
+  try { logoUri.value = await fetchAsDataURI(url) } catch { /* the initial stands in */ }
+}
+onMounted(loadLogo)
+watch(() => props.cfg?.orgLogoSmall || props.cfg?.orgLogo, loadLogo)
+
 const specimen = computed(() => {
   const c = props.cfg || {}
   const brand = String(c.brandColor || '').trim()
+  const number = (c.ticketPrefix || '') + '1'.padStart(c.ticketDigits || 5, '0')
+
+  /*
+   * A BOX YOU CANNOT SEE IS A BOX YOU CANNOT PLACE.
+   *
+   * Reported from the screen: "why content empty on some fields — it should
+   * show at least sample text or content visibly for design purpose." Five of
+   * the Supporter card's twelve parts drew NOTHING in the studio — the seal,
+   * the rung title, the draw-and-prize pair, the reference under the QR and
+   * the good-luck line — so an organiser was asked to position an empty
+   * rectangle by dragging its handles and guessing what would land in it.
+   *
+   * They were empty for two different reasons and both are fixed here.
+   *
+   * ONE: the keys were never supplied. The Supporter card reads `category`,
+   * `rungSlot`, `rankName`, `rankCount`, `prize`, `impact`, `ref` and
+   * `goodLuck`. `cardValues()` in ViewTicket.vue — the path a real card takes
+   * — was extended with all eight when the card was built; this specimen was
+   * not. The renderer drew what it was given, which was nothing.
+   *
+   * TWO: the ones that WERE supplied fell back to ''. `drawOn` and `price`
+   * read the raffle's config and returned an empty string when it had none,
+   * so a raffle that has not set a draw date got an invisible draw line. The
+   * printed tab has never done this — `sampleValues` above falls back to
+   * '31 Dec 2026' — and this is the divergence, not a new rule.
+   *
+   * THE RAFFLE'S OWN VALUE WINS, EVERY TIME. The header above says specimen,
+   * not mock, and that still holds: the number, colour, organisation, price,
+   * draw date, category, rung words and prize are read from config wherever
+   * config has them. A sample is only ever what fills a gap, so a raffle that
+   * has configured everything sees no invented text at all.
+   *
+   * AND `asSent` GETS THE TRUTH. That toggle exists to stop seeing the design
+   * and see the picture, so it is the one place a sample would lie — an
+   * organiser checking what a buyer receives must see the blank where a blank
+   * is what goes out. See `sampleUnlessSent` below.
+   */
+  const fill = (real, sample) => {
+    const v = String(real ?? '').trim()
+    return v || (asSent.value ? '' : sample)
+  }
+
+  /*
+   * THE TOP RUNG, for the same reason the printed tab defaults to its longest
+   * entry: it carries the richest device and the longest word, so a layout
+   * that holds it holds the other four. The NAME is the raffle's own if it has
+   * configured a ladder — those words belong to the organiser and a specimen
+   * should not rename them.
+   */
+  const rungs = Array.isArray(c.supporterBands?.rungs) ? c.supporterBands.rungs : []
+  const top = rungs.length ? rungs[rungs.length - 1] : null
+
   return {
-    number: (c.ticketPrefix || '') + '1'.padStart(c.ticketDigits || 5, '0'),
+    number,
     name: 'Daw Hla Myint Aung',
     org: c.orgName || '',
     event: c.eventName || '',
-    price: c.ticketPrice ? `${c.currency ?? ''} ${c.ticketPrice}`.trim() : '',
+    price: c.ticketPrice ? `${c.currency ?? ''} ${c.ticketPrice}`.trim()
+      : fill('', `${c.currency ?? 'RM'} 10`),
     book: (c.bookPrefix || 'Book-') + '1'.padStart(c.bookDigits || 4, '0'),
     soldOn: '14 Sep 2026',
-    drawOn: c.drawDate ? String(c.drawDate).slice(0, 10) : '',
+    drawOn: c.drawDate ? String(c.drawDate).slice(0, 10) : fill('', '31 Dec 2026'),
     sold: true,
     motto: props.card.motto,
     brand,
     ink: inkFor(brand) || '#ffffff',
     thanks: 'Thank you — this keeps the shelter open.',
-    link: String(verifyBase.value).replace(/^https?:\/\//, '') + '/?' + ((c.ticketPrefix || '') + '1'.padStart(c.ticketDigits || 5, '0')),
+    link: String(verifyBase.value).replace(/^https?:\/\//, '') + '/?' + number,
+    logo: logoUri.value,
+
+    /* The eight the card reads and this specimen never sent. */
+    category: String(c.supporterBands?.preset ?? ''),
+    rungSlot: SLOTS[Math.max(0, Math.min(rungs.length, SLOTS.length) - 1)] || 'rung5',
+    rankName: fill(top?.name, 'Pillar'),
+    rankCount: fill('', '12 books'),
+    ref: fill('', 'SPECIMEN0000'),
+    prize: fill(c.topPrize, 'A motorbike'),
+    impact: fill(c.impactLine, 'Your RM 200 helps a family through a month.'),
+    goodLuck: fill('', 'Good luck, Daw!'),
   }
 })
 
@@ -307,7 +410,6 @@ const showSafe = ref(true)
 const showAllBoxes = ref(true)
 const snapping = ref(true)
 const gridding = ref(true)
-const asSent = ref(false)
 const GRID_PX = 8
 
 /*

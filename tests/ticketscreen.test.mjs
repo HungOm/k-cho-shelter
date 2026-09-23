@@ -1282,5 +1282,91 @@ console.log('the editing keys work through the studio\'s own handler, on both su
   await card.cleanup()
 }
 
+/*
+ * THE STUDIO SHOWS EVERYTHING THE CARD CAN DRAW.
+ *
+ * REPORTED FROM THE SCREEN: "why content empty on some fields — it should show
+ * at least sample text or content visibly for design purpose." Five of the
+ * Supporter card's twelve parts drew NOTHING in the digital studio — the rung
+ * seal, the rung title, the draw-and-prize pair, the reference under the QR
+ * and the good-luck line. An organiser was being asked to position an empty
+ * rectangle by dragging its handles and guessing what would land in it.
+ *
+ * THE CAUSE IS A CLASS, NOT AN INSTANCE. The card grew eight new values when
+ * the Supporter treatment was built. `cardValues()` in ViewTicket.vue — the
+ * path a card a buyer actually receives takes — was extended with all eight.
+ * The studio's `specimen` was not, and the renderer drew what it was given.
+ * Nothing failed: a part with no value draws nothing, which is correct
+ * behaviour on a real card and invisible-box behaviour in a designer.
+ *
+ * So the assertion is the AGREEMENT between the two, not a list of today's
+ * eight keys. Add a ninth value to the card tomorrow and wire it only into
+ * ViewTicket, and this goes red naming it.
+ *
+ * WHAT THIS CANNOT DO. It compares the KEYS each side supplies, never the
+ * values, so it cannot tell that a specimen key is present but always blank.
+ * It also reads two object literals out of two .vue files by brace matching,
+ * so both counts are asserted before anything is compared — a parse that
+ * stops matching would otherwise compare two empty sets and pass.
+ */
+console.log('the studio specimen supplies every value a real card is given')
+{
+  /** The keys of the object literal returned by `name`'s return statement. */
+  const returnedKeys = (src, marker) => {
+    const at = src.indexOf(marker)
+    if (at < 0) return []
+    const open = src.indexOf('return {', at)
+    if (open < 0) return []
+    let i = src.indexOf('{', open), depth = 0, end = -1
+    for (let j = i; j < src.length; j++) {
+      if (src[j] === '{') depth++
+      else if (src[j] === '}' && --depth === 0) { end = j; break }
+    }
+    if (end < 0) return []
+    const body = src.slice(i + 1, end)
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/^[ \t]*\/\/[^\n]*$/gm, ' ')
+    /* Top-level keys only: skip anything nested inside a brace or a paren. */
+    const keys = []
+    let d = 0
+    for (const line of body.split('\n')) {
+      /* `key: value` AND bare `key,` — the shorthand is a key like any other,
+         and reading only the colon form reported `number` missing from a
+         specimen that supplies it on the first line. */
+      const m = /^\s*([A-Za-z_$][\w$]*)\s*(?::|,\s*$)/.exec(line)
+      if (d === 0 && m) keys.push(m[1])
+      for (const ch of line) {
+        if ('{(['.includes(ch)) d++
+        else if ('})]'.includes(ch)) d--
+      }
+    }
+    return keys
+  }
+
+  const { readFileSync } = await import('node:fs')
+  const src = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
+  const viewTicket = src('../src/components/modals/ViewTicket.vue')
+  const digitalTab = src('../src/components/ticketdesign/DigitalTab.vue')
+  const real = returnedKeys(viewTicket, 'function cardValues')
+  const studio = returnedKeys(digitalTab, 'const specimen = computed')
+
+  /* The parse must prove it found something before it compares anything. */
+  ok(real.length >= 15, `read the real card's values (${real.length} keys)`)
+  ok(studio.length >= 15, `read the studio's specimen (${studio.length} keys)`)
+
+  /*
+   * `spans` is the one key the studio legitimately does not carry: it is the
+   * set of ticket ranges one buyer holds, and a specimen is one ticket. The
+   * card reads its absence as "a single ticket", which is what the studio is
+   * showing. Named rather than filtered by a rule, so the next exception has
+   * to be argued rather than pattern-matched into place.
+   */
+  const NOT_IN_A_SPECIMEN = new Set(['spans'])
+  const missing = real.filter((k) => !studio.includes(k) && !NOT_IN_A_SPECIMEN.has(k))
+  ok(missing.length === 0,
+    `the studio draws every value a real card gets — missing: ${missing.join(', ') || 'none'}. `
+    + 'A card value wired only into ViewTicket is a part that is invisible in the designer.')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
