@@ -103,6 +103,28 @@ function openingTags(code, tagName) {
  * something BEFORE the value moves — DecorationInspector records an undo step
  * first. The name pattern stopped at the colon, so the long form read as no
  * listener at all and the check asked for the undo step to be dropped.
+ *
+ * AND THE WIDENING REACHED ONE OF THE THREE COPIES. This file reads listeners
+ * in three places, and only `listenersFor` above was widened when the long
+ * form was added. `dynamicListeners` and the REVERSE check kept the old
+ * pattern — which does not mis-read `@update:family`, it does not see it at
+ * all: after capturing `update` it needs `\s*=` and finds `:`.
+ *
+ * The reverse check is the only PER-CALL-SITE check here, so it was examining
+ * zero of the eighteen `@update:*` listeners in src. The forward check cannot
+ * cover for it, because `listenersFor` unions across every file: <Lettering>
+ * is listened to from DecorationInspector, Inspector and CardInspector, so
+ * `@update:famly` in one of the three leaves `heard.has('update:family')` true
+ * from the other two and the reverse loop skips the typo. In
+ * DecorationInspector those are exactly the handlers that call `before()` — so
+ * the failure mode was losing the undo step on every lettering change,
+ * silently, with a green gate.
+ *
+ * Proved rather than assumed: with all three widened, a deliberate
+ * `@update:famly` in DecorationInspector fails with "listens for
+ * update:famly … which never emits it". Against the narrow pair it was 323
+ * passed, 0 failed. Widening also took the suite from 323 assertions to 342 —
+ * the nineteen it had never been looking at.
  */
 function listenersFor(tagName) {
   const found = new Set()
@@ -121,7 +143,7 @@ function dynamicListeners() {
   const app = source[path.join(SRC, 'App.vue')]
   const found = new Set()
   for (const attrs of openingTags(app, 'component')) {
-    for (const a of attrs.matchAll(/@([a-zA-Z][\w-]*)\s*=/g)) found.add(a[1])
+    for (const a of attrs.matchAll(/@([a-zA-Z][\w-]*(?::[a-zA-Z][\w-]*)?)\s*=/g)) found.add(a[1])
   }
   return found
 }
@@ -179,7 +201,7 @@ for (const [file, code] of Object.entries(source)) {
     const tag = path.basename(target).replace('.vue', '')
     const childEmits = new Set(declaredEmits(source[target]).flatMap(e => [e, camelToKebab(e)]))
     for (const attrs of openingTags(code, tag)) {
-      for (const a of attrs.matchAll(/@([a-zA-Z][\w-]*)\s*=/g)) {
+      for (const a of attrs.matchAll(/@([a-zA-Z][\w-]*(?::[a-zA-Z][\w-]*)?)\s*=/g)) {
         const ev = a[1]
         // Native DOM events pass through to the root element legitimately.
         if (['click', 'submit', 'input', 'change', 'keydown', 'focus', 'blur'].includes(ev)) continue
