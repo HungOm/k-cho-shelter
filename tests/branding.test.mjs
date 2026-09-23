@@ -149,6 +149,66 @@ console.log('a colour is a colour, and blank means the standard one')
   ok(/#0B7285/.test(msg), 'and the refusal shows what one looks like')
 }
 
+/*
+ * THE CARD LAYOUT IS RUN, NOT READ.
+ *
+ * THE OUTAGE THIS EXISTS FOR, 2026-09-23. `setCardDesign` validated each
+ * layout key with `ALLOWED.includes(treatment)` against a local array of
+ * treatment ids. When that array moved to _shared/cardtreatments.js the
+ * definition and one call site were updated and this one, thirty lines below,
+ * was not. The name did not go undefined — it rebound to the MODULE-LEVEL
+ * `ALLOWED` at the top of branding.ts, which is the allowed image MIME types
+ * and is a Record. A Record has no `.includes`, so every save carrying a
+ * cardLayout threw "ALLOWED.includes is not a function" and Ticket Studio
+ * could not save at all. Reported from the screen, by the person using it.
+ *
+ * NOTHING COULD SEE IT, and the reason is the level rather than the coverage.
+ * noundef cannot: the name IS defined. cardlayout.test.mjs already asserted
+ * this exact code path — `ok(/p\.cardLayout !== undefined/.test(brand))` — but
+ * that is a regex over the SOURCE, and a regex confirms a line exists while
+ * saying nothing about what happens when it runs. The handler had never been
+ * executed with a layout by anything.
+ *
+ * So this block CALLS it. A source check cannot raise a TypeError; only
+ * running the function can.
+ */
+console.log('a card layout is validated by running the handler, not by reading it')
+{
+  const set = (p) => branding.setCardDesign(p, users.admin, world().db.ctx)
+
+  /*
+   * CAUGHT, so the failure is a FAIL LINE rather than a stack trace. Against
+   * the broken build this throws TypeError, and an uncaught throw kills the
+   * suite before it prints its summary — which run.sh reads as no summary line
+   * at all rather than as a failure. The exit code still catches it, but the
+   * person looking at the log sees nothing about what broke.
+   */
+  let ok1 = null, why1 = ''
+  try {
+    ok1 = await set({ design: 'shelter', cardLayout: { shelter: { seal: { x: 10 } } } })
+  } catch (e) { why1 = e.message }
+  ok(!!ok1?.config,
+     `a layout for a real treatment is accepted and comes back on the config${why1 ? ' — threw: ' + why1 : ''}`)
+
+  eq(await codeOf(() => set({ design: 'shelter', cardLayout: { nosuch: { seal: {} } } })),
+     'BAD_CARD_LAYOUT', 'a treatment nobody has heard of is refused')
+
+  /*
+   * The refusal has to NAME the treatments. That is what turned the outage
+   * from "is not a function" into something an organiser could act on, and it
+   * is the half that silently disappeared when the array became a Record —
+   * `Record.join` does not exist either.
+   */
+  let msg = ''
+  try { await set({ design: 'shelter', cardLayout: { nosuch: {} } }) } catch (e) { msg = e.message }
+  ok(/grand/.test(msg) && /shelter/.test(msg),
+     'and the refusal lists the treatments that do exist')
+
+  /* Absent means "do not touch", which is the whole reason the key is optional. */
+  const ok2 = await set({ design: 'shelter' })
+  ok(!!ok2?.config, 'a save with no layout at all still works')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)

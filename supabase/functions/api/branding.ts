@@ -190,9 +190,23 @@ export async function setCardDesign(p: Record<string, unknown>, user: AppUser, c
       throw new ApiError('BAD_CARD_LAYOUT', 'That card layout could not be read.')
     }
     for (const [treatment, parts] of Object.entries(layout as Record<string, unknown>)) {
-      if (!ALLOWED.includes(treatment)) {
+      /*
+       * `isCardTreatment`, NOT A LOCAL `ALLOWED`. This read
+       * `ALLOWED.includes(treatment)` against a local array of treatment ids,
+       * and when that array moved to _shared/cardtreatments.js the call site
+       * thirty lines below the replacement was missed. The name did not go
+       * undefined — it rebound to the MODULE-LEVEL `ALLOWED` at the top of
+       * this file, which is the allowed IMAGE MIME TYPES and is a Record. A
+       * Record has no `.includes`, so every save carrying a cardLayout threw
+       * "ALLOWED.includes is not a function" and the studio could not save.
+       *
+       * noundef cannot see this: the name IS defined. That is the whole shape
+       * of it — deleting a local const does not break a reference, it silently
+       * hands it to an outer binding of a different type.
+       */
+      if (!isCardTreatment(treatment)) {
         throw new ApiError('BAD_CARD_LAYOUT',
-          `${treatment} is not one of the ticket treatments (${ALLOWED.join(', ')}).`)
+          `${treatment} is not one of the ticket treatments (${CARD_TREATMENT_IDS.join(', ')}).`)
       }
       if (!parts || typeof parts !== 'object' || Array.isArray(parts)) {
         throw new ApiError('BAD_CARD_LAYOUT', `The ${treatment} layout is not a set of parts.`)
