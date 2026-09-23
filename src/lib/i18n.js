@@ -378,6 +378,9 @@ export const MY_ERRORS = {
   /* Composed, like the rest of this file. "The digital ticket's arrangement
      could not be read." The English under it says which part and why. */
   BAD_CARD_LAYOUT: 'ဒစ်ဂျစ်တယ်လက်မှတ် အစီအစဉ်ကို ဖတ်၍ မရပါ',
+  /* Composed from the two lines above: "The drawings on the digital ticket
+     could not be saved." The English under it names the card and the fault. */
+  BAD_CARD_DECORATIONS: 'ဒစ်ဂျစ်တယ်လက်မှတ်ပေါ်ရှိ ပုံများကို သိမ်း၍ မရပါ',
   BAD_BANDS: 'ထောက်ပံ့သူ အဆင့်များကို သိမ်း၍ မရပါ',
   BAD_LIBRARY: 'သိမ်းထားသော ဒီဇိုင်းပစ္စည်းများကို သိမ်း၍ မရပါ',
   /* Composed, like the rest of this file. "Those tickets belong to more than

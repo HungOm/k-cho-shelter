@@ -14,6 +14,8 @@
 import { dayStart } from './deadlines.ts'
 import { DEFAULT_PRESET, ladderFrom } from '../_shared/ranks.ts'
 import { normalLibrary } from '../_shared/designlibrary.js'
+import { normalDecorations } from '../_shared/designelements.js'
+import { isCardTreatment } from '../_shared/cardtreatments.js'
 
 const num = (v: unknown, d: number) => {
   const n = parseInt(String(v ?? ''), 10)
@@ -31,6 +33,20 @@ const num = (v: unknown, d: number) => {
  * another.
  */
 /** A stored card layout, or nothing at all. Never throws — see the caller. */
+function parseDrawings(raw: unknown): Record<string, unknown[]> {
+  let o: unknown = raw
+  if (typeof o === 'string') {
+    if (!o.trim()) return {}
+    try { o = JSON.parse(o) } catch { return {} }
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return {}
+  const out: Record<string, unknown[]> = {}
+  for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+    if (isCardTreatment(k) && Array.isArray(v)) out[k] = normalDecorations(v)
+  }
+  return out
+}
+
 function parseLayout(raw: unknown): Record<string, unknown> {
   const text = String(raw ?? '').trim()
   if (!text) return {}
@@ -175,6 +191,13 @@ export function configPayload(cfg: Record<string, string>) {
      * where its motto is. It is small — only the parts somebody has moved.
      */
     cardLayout: parseLayout(cfg.CARD_LAYOUT),
+    /*
+     * WHAT HAS BEEN DRAWN ON THE CARD, per treatment — shapes, words, marks,
+     * pictures and paths (STUDIO-ESSENTIALS Phase 9). Read through the same
+     * normaliser the renderer uses, so a row somebody edited by hand still
+     * draws rather than throwing inside a buyer's ticket.
+     */
+    cardDecorations: parseDrawings(cfg.CARD_DECORATIONS),
     /*
      * The supporter ladder, bottom rung first — the order it is edited and
      * read in. It travels with the rest of config because the card in a

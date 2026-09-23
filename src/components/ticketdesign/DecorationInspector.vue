@@ -65,6 +65,12 @@ const props = defineProps({
   /** The raffle's own colour from Setup, offered first under every picker. */
   brand: { type: String, default: '' },
   canDrop: { type: Boolean, default: false },
+  /**
+   * The two faces, in the words of the surface this shape is on: the printed
+   * side's FAMILIES by default, the card's CARD_FACES on the Digital tab. The
+   * ids are the model's and the same on both; only the names differ.
+   */
+  faces: { type: Array, default: () => FAMILIES },
   /** What a press will not hold, for THIS shape. Printed tab only. */
   warnings: { type: Array, default: () => [] },
 })
@@ -295,7 +301,7 @@ function setShadow(on) {
              "Words" — one click apart on the rail — are lettered alike. This
              one also carries letter spacing, which the model and the renderer
              have held since drawn words were written and nothing could set. -->
-        <Lettering :faces="FAMILIES" :family="deco.text.family" :weight="deco.text.weight"
+        <Lettering :faces="faces" :family="deco.text.family" :weight="deco.text.weight"
                    :align="deco.text.align" :tracking="deco.text.tracking"
                    @update:family="(v) => { before(); deco.text.family = v }"
                    @update:weight="(v) => { before(); deco.text.weight = v }"

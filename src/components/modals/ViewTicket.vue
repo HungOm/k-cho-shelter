@@ -17,6 +17,7 @@ import { state, api, toast, go, goStudio } from '../../lib/store.js'
 import { designFor, stubShare } from '../../lib/ticketdesign.js'
 import { ladderFrom, rankFor, rankCount } from '../../lib/ranks.js'
 import { numberLayerSVG, ticketVerifyUrl, receiptVerifyUrl, cardSVG, CARD_DESIGNS, CARD } from '../../lib/ticketart.js'
+import { inlineImages, fetchAsDataURI } from '../../lib/ticketexport.js'
 /* What one buyer holds, folded into books and spans — see ticketspans.js. One
    definition, so the card, the message and the check page cannot describe the
    same purchase three different ways. */
@@ -565,7 +566,10 @@ const cardNote = computed(
  */
 const cardFor = (t) => {
   const code = codeFor(t)
-  return cardSVG(cardStyle.value, cardValues(t), {
+  /* What the organiser drew on this treatment's card (STUDIO-ESSENTIALS
+     Phase 9) — drawn over the card's parts, the way the studio shows it. */
+  const drawn = state.cfg?.cardDecorations?.[cardStyle.value] || []
+  return cardSVG(cardStyle.value, { ...cardValues(t), decorations: drawn }, {
     /* One QR for everything they hold, once there is a code for it. Until
        then this is the card for this ticket and carries the ticket's own. */
     qrUrl: code
@@ -603,7 +607,11 @@ async function pictureOf(t, mime = 'image/jpeg') {
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('this browser cannot draw the picture')
 
-  const svg = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(cardFor(t))}`
+  /* A picture drawn on the card is an address, and this SVG is drawn through an
+     <img>, which may not load anything from outside itself — so it would come
+     out blank on the buyer's copy. Inlined first, the way the logo already is. */
+  const { svg: inlined } = await inlineImages(cardFor(t), fetchAsDataURI)
+  const svg = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(inlined)}`
   ctx.drawImage(await loadImage(svg, false), 0, 0, W, H)
 
   const blob = await new Promise((res, rej) => {

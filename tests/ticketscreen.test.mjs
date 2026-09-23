@@ -1118,5 +1118,51 @@ console.log('the pen draws a path, and a path is edited by its nodes')
   await cleanup()
 }
 
+console.log('the digital card can be drawn on, and a drawing is part of the card')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 9, on the user's 2026-09-22 ruling that drawing
+   * belongs on both tabs. The card's own parts stay fixed — hidden, never
+   * removed — and drawings sit over them and come off again. What can go wrong
+   * without a sound: a drawing that does not make the card dirty is lost on the
+   * next load; one that is not in the undo state cannot be taken back; and a
+   * Remove that took a part would break the one rule the card was built on.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ctx.tab.value = 'digital'
+  eq(ctx.cardDirty.value, false, 'the card starts clean')
+  const rule = normalDecoration({ id: 'd-card-rule', kind: 'line', box: { left: 0.1, top: 0.1, width: 0.5, height: 0 } })
+  ctx.markCard()
+  ctx.setCardDrawn([rule])
+  ok(ctx.cardDirty.value, 'a drawing on the card makes it unsaved')
+  ok(JSON.parse(ctx.cardState.value).decorations?.[ctx.card.value.design]?.length === 1,
+    'and is in the state that is saved, undone and kept as a draft')
+  ctx.undoCard()
+  eq(ctx.cardDrawn.value.length, 0, 'Undo takes the drawing back off')
+  await cleanup()
+
+  const props = {
+    card: { design: 'grand', motto: '' }, parts: [], cfg: {}, sentWidth: 1200,
+    decorations: [rule], pictures: [], library: { shapes: [], colours: [], styles: [] },
+  }
+  const { resolveParts } = await import('../src/lib/cardelements.js')
+  props.parts = resolveParts('grand', {})
+  const html = await renderScreen('src/components/ticketdesign/DigitalTab.vue', store(ADMIN, ONE), {
+    props,
+    drive: async (b) => { b.sel.value = 'masthead' },
+    renderReal: ['ToolBar.vue', 'ToolButton.vue'],
+  })
+  const text = visibleText(html)
+  ok(/Drawn/.test(text) && /Rule/.test(text), 'the layer list shows what was drawn, above the card')
+  for (const t of ['Rectangle', 'Line', 'Pen', 'Picture']) {
+    ok(new RegExp(`aria-label="${t}"`).test(html), `the card has the ${t} tool`)
+  }
+  const remove = html.match(/<button[^>]*aria-label="Remove"[^>]*>/)
+  ok(remove && /disabled/.test(remove[0]) && /hidden with their eye/.test(remove[0]),
+    'and with a card part selected, Remove is disabled and says parts are hidden, not removed')
+  ok(/class="ebox deco/.test(html), 'the drawing has a box on the card to grab')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -23,8 +23,8 @@ import { ref } from 'vue'
 import Icon from '../ui/Icon.vue'
 import ToolBar from '../ui/ToolBar.vue'
 import ToolButton from '../ui/ToolButton.vue'
-import { FAMILIES } from '../../lib/ticketelements.js'
 import Ink from '../ui/Ink.vue'
+import { CARD_FACES } from '../../lib/cardfaces.js'
 import Lettering from './Lettering.vue'
 
 const props = defineProps({
@@ -89,14 +89,9 @@ const TABS = [
 ]
 const tab = ref('box')
 
-const stackOf = (id) => FAMILIES.find((f) => f.id === id)?.stack
-const FACES = [
-  /* One clause each. The second sentence of both said the same thing the first
-     one implied, and these sit under a two-item select where the reader has
-     already narrowed it to two. */
-  { id: 'text', name: 'Everyday', why: 'Renders Burmese. Use it for anything typed.', stack: stackOf('text') },
-  { id: 'number', name: 'Figures', why: 'Figures of one width, so numbers line up. English only.', stack: stackOf('number') },
-]
+/* The list lives in src/lib/cardfaces.js now, so the drawn-words panel on
+   this tab names the faces the same way (see that file). */
+const FACES = CARD_FACES
 
 const px = (part, k) => Math.round(part.box[k] * (k === 'left' || k === 'width' ? props.size.width : props.size.height))
 

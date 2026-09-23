@@ -42,6 +42,16 @@ import Toggle from '../ui/Toggle.vue'
 import ToolBar from '../ui/ToolBar.vue'
 import ToolButton from '../ui/ToolButton.vue'
 import CardInspector from './CardInspector.vue'
+import DecorationInspector from './DecorationInspector.vue'
+import LibraryPanel from './LibraryPanel.vue'
+import PicturePicker from './PicturePicker.vue'
+import { usePen } from './usePen.js'
+import { normalDecoration, nextDecoId, nextGroupId } from '../../lib/designelements.js'
+import { placeShape } from '../../lib/designlibrary.js'
+import { pathData } from '../../lib/pathgeometry.js'
+import { expandGroups, bandOf } from '../../lib/selection.js'
+import { CARD_FACES } from '../../lib/cardfaces.js'
+import { inlineImages, fetchAsDataURI } from '../../lib/ticketexport.js'
 
 const props = defineProps({
   /** `{ design, motto }` — the raffle's own two card settings, edited here. */
@@ -55,6 +65,17 @@ const props = defineProps({
   swatches: { type: Array, default: () => [] },
   canDrop: { type: Boolean, default: false },
   mottoMax: { type: Number, default: 48 },
+  /*
+   * WHAT HAS BEEN DRAWN ON THIS TREATMENT'S CARD (STUDIO-ESSENTIALS Phase 9).
+   * Edited in place like the parts; a drawing added or removed is a new list,
+   * sent up with `set-decorations`, because the parent owns which exist.
+   */
+  decorations: { type: Array, default: () => [] },
+  /** The raffle's library, the same one the printed tab places from. */
+  library: { type: Object, default: () => ({ shapes: [], colours: [], styles: [] }) },
+  libBusy: { type: Boolean, default: false },
+  /** The pictures this raffle has uploaded, for the Picture tool. */
+  pictures: { type: Array, default: () => [] },
 })
 /*
  * `mark` AND `drag` ARE THE UNDO STACK'S TWO SIGNALS, and they are separate on
@@ -63,7 +84,8 @@ const props = defineProps({
  * stops a pointermove every few milliseconds from recording fifty entries the
  * owner of the stack would then have to press Undo fifty times to get past.
  */
-const emit = defineEmits(['pick-colour', 'mark', 'drag'])
+const emit = defineEmits(['pick-colour', 'mark', 'drag', 'set-decorations',
+  'save-shape', 'remove-shape', 'save-colour', 'remove-colour', 'save-style', 'remove-style'])
 
 const size = computed(() => CARD_SIZES[props.card.design] || CARD_SIZES.grand)
 
@@ -116,7 +138,7 @@ const drawError = ref('')
 const preview = computed(() => {
   drawError.value = ''
   try {
-    return cardSVG(props.card.design, specimen.value, {
+    return cardSVG(props.card.design, { ...specimen.value, decorations: props.decorations }, {
       layout: layout.value, qrUrl: specimenUrl.value, encode,
     })
   } catch (err) {
@@ -154,8 +176,18 @@ const palette = computed(() => cardPalette(props.card.design, specimen.value))
 const sel = ref('')
 const also = ref([])
 
+/*
+ * A DRAWING IS KNOWN BY BEING IN THE LIST, NOT BY ITS NAME. The printed tab
+ * tells its two lists apart by a leading `d`; here a card PART is called
+ * `draw`, so that test would take the draw date for something somebody drew.
+ */
+const decoIds = computed(() => new Set(props.decorations.map((d) => d.id)))
+const isDeco = (id) => decoIds.value.has(id)
+const things = computed(() => [...props.parts, ...props.decorations])
+const thingById = (id) => things.value.find((t) => t.id === id) || null
+
 const picked = computed(() => {
-  const live = new Set(props.parts.filter((p) => !p.locked).map((p) => p.id))
+  const live = new Set([...props.parts.filter((p) => !p.locked).map((p) => p.id), ...decoIds.value])
   const out = []
   for (const id of [sel.value, ...also.value]) {
     if (id && live.has(id) && !out.includes(id)) out.push(id)
@@ -166,11 +198,14 @@ const picked = computed(() => {
    tab, where the same list feeds distribute's sort. */
 const pickedParts = computed(() => {
   const want = new Set(picked.value)
-  return props.parts.filter((p) => want.has(p.id))
+  return things.value.filter((p) => want.has(p.id))
 })
+const pickedDecos = computed(() => props.decorations.filter((d) => picked.value.includes(d.id)))
 const many = computed(() => picked.value.length > 1)
 
 const chosen = computed(() => props.parts.find((p) => p.id === sel.value) || null)
+const chosenDeco = computed(() => props.decorations.find((d) => d.id === sel.value) || null)
+const chosenThing = computed(() => thingById(sel.value))
 const watermark = computed(() => props.parts.find((p) => p.id === 'watermark') || null)
 const shown = computed(() => props.parts.filter((p) => p.enabled !== false).length)
 
@@ -178,13 +213,18 @@ const shown = computed(() => props.parts.filter((p) => p.enabled !== false).leng
    every drawing program reads: what is nearest the eye is nearest the top. */
 const layers = computed(() => [...props.parts].reverse())
 
-function pick(id, add = false) {
-  const part = props.parts.find((p) => p.id === id)
+function pick(id, add = false, solo = false) {
+  const part = thingById(id)
   /* The background is the card itself. It can be the primary so the inspector
      can say what it is, but it cannot join a multi-selection — aligning the
      card to itself is the kind of button that does nothing and looks broken. */
   if (add && (!part || part.locked)) return
-  if (!add) { sel.value = id; also.value = [] } else if (id === sel.value) {
+  /* A drawing in a group comes with its group, as on the printed tab; ⌘ takes
+     the one part. */
+  if (!add) {
+    sel.value = id
+    also.value = isDeco(id) && !solo ? expandGroups([id], props.decorations).filter((x) => x !== id) : []
+  } else if (id === sel.value) {
     sel.value = also.value[0] || ''
     also.value = also.value.slice(1)
   } else if (also.value.includes(id)) {
@@ -307,8 +347,9 @@ function snapTo(value, candidates, step) {
 function edgesExcept(id) {
   const xs = [0, 0.5, 1]
   const ys = [0, 0.5, 1]
-  for (const p of props.parts) {
-    if (p.id === id || p.locked) continue
+  const skip = id instanceof Set ? id : new Set([id])
+  for (const p of things.value) {
+    if (skip.has(p.id) || p.locked || p.enabled === false) continue
     xs.push(p.box.left, p.box.left + p.box.width)
     ys.push(p.box.top, p.box.top + p.box.height)
   }
@@ -327,21 +368,23 @@ function startMove(part, ev) {
   if (part.locked || part.enabled === false || asSent.value) return
   ev.stopPropagation()
 
-  /* Shift selects and does not drag — see the printed tab. */
-  if (ev.shiftKey || ev.metaKey) { pick(part.id, true); return }
+  /* Shift selects and does not drag; ⌘ takes one part of a group. */
+  if (ev.shiftKey) { pick(part.id, true); return }
 
   emit('mark')
   emit('drag', true)
-  if (!picked.value.includes(part.id)) pick(part.id)
+  if (ev.metaKey || ev.ctrlKey) pick(part.id, false, true)
+  else if (!picked.value.includes(part.id)) pick(part.id)
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
   drag.value = {
     mode: 'move', id: part.id, px: ev.clientX, py: ev.clientY, box: { ...part.box },
-    group: pickedParts.value.filter((p) => p.id !== part.id).map((p) => ({ id: p.id, box: { ...p.box } })),
+    group: pickedParts.value.filter((p) => p.id !== part.id && !p.locked).map((p) => ({ id: p.id, box: { ...p.box } })),
   }
 }
 
 function startResize(part, corner, ev) {
   ev.stopPropagation()
+  if (part.locked) return
   emit('mark')
   emit('drag', true)
   sel.value = part.id
@@ -351,13 +394,17 @@ function startResize(part, corner, ev) {
 
 function onPointerMove(ev) {
   const st = drag.value
+  if (!st && penDrawing.value) { pen.move(pointOf(ev), ev); return }
   if (!st) return
+  if (st.mode === 'pen') { pen.move(pointOf(ev), ev); return }
+  if (st.mode === 'grip') { pen.gripMove(pointOf(ev), ev); return }
+  if (st.mode === 'draw') { drawn.value = bandOf(st.origin, { left: pointOf(ev)[0], top: pointOf(ev)[1] }); return }
   const span = perShare()
   const dx = (ev.clientX - st.px) / span.x
   const dy = (ev.clientY - st.py) / span.y
-  const part = props.parts.find((p) => p.id === st.id)
+  const part = thingById(st.id)
   if (!part) return
-  const { xs, ys } = edgesExcept(st.id)
+  const { xs, ys } = edgesExcept(new Set([st.id, ...(st.group || []).map((g) => g.id)]))
   const sx = (v) => snapTo(v, xs, gridX.value)
   const sy = (v) => snapTo(v, ys, gridY.value)
 
@@ -376,7 +423,7 @@ function onPointerMove(ev) {
        and the raw delta would shear the group apart by the snap distance every
        time it caught. Same reasoning as the printed tab. */
     for (const g of st.group || []) {
-      const other = props.parts.find((p) => p.id === g.id)
+      const other = thingById(g.id)
       if (!other) continue
       other.box.left = share(g.box.left + (part.box.left - st.box.left))
       other.box.top = share(g.box.top + (part.box.top - st.box.top))
@@ -416,12 +463,25 @@ function onPointerMove(ev) {
   }
 }
 
-function endPointer() { drag.value = null; emit('drag', false) }
+function endPointer() {
+  const st = drag.value
+  if (st?.mode === 'pen') pen.up()
+  if (st?.mode === 'grip') pen.gripUp()
+  if (st?.mode === 'draw') {
+    const b = drawn.value
+    const tiny = !b || (b.width < 0.01 && b.height < 0.01)
+    const box = !tiny ? b : { left: st.origin.left, top: st.origin.top, width: 0.2, height: pending.value === 'line' ? 0 : 0.15 }
+    addDeco(pending.value, box)
+  }
+  drawn.value = null
+  drag.value = null
+  emit('drag', false)
+}
 
 /* Arrow keys nudge by one grid step, Shift by ten. In shares, so the nudge is
    the same distance on the card at any zoom. */
 function onKey(ev) {
-  const part = chosen.value
+  const part = chosenThing.value
   if (!part || part.locked) return
   const n = ev.shiftKey ? 10 : 1
   const map = {
@@ -439,6 +499,181 @@ function onKey(ev) {
 }
 
 const pc = (v) => `${(Number(v) * 100).toFixed(1)}%`
+
+/*
+ * ---------- drawing on the card (STUDIO-ESSENTIALS Phase 9) ----------
+ *
+ * The same seven tools as the printed tab and the same model, so a rule, a
+ * picture or a path drawn here is the same record the printed side draws. What
+ * differs is only where it is stored — per treatment, beside the card — and
+ * that the card's own PARTS still cannot be added or removed: a drawing sits
+ * on top of them and comes off again, which is the reversibility the
+ * no-adding rule was protecting (STUDIO-REDESIGN §13, reversed 2026-09-22).
+ */
+const TOOLS = [
+  { kind: 'rect', icon: 'shape', label: 'Rectangle', hint: 'A panel, a tint, a border' },
+  { kind: 'ellipse', icon: 'ellipse', label: 'Ellipse', hint: 'An ellipse or a circle' },
+  { kind: 'line', icon: 'minus', label: 'Line', hint: 'A rule — drag it flat for a level one' },
+  { kind: 'text', icon: 'type', label: 'Words', hint: 'Words of your own, the same on every card' },
+  { kind: 'icon', icon: 'design', label: 'Mark', hint: "One of the app's own drawings" },
+  { kind: 'path', icon: 'pen', label: 'Pen', hint: 'Click for corners, drag for curves, click the first point to close' },
+]
+const pending = ref('')
+const drawn = ref(null)
+const pendingPicture = ref('')
+const showPictures = ref(false)
+const changingPicture = ref('')
+
+function pointOf(ev) {
+  const r = frame.value?.getBoundingClientRect()
+  if (!r || !r.width) return [0, 0]
+  return [(ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height]
+}
+
+function beginDraw(kind) {
+  pending.value = pending.value === kind ? '' : kind
+  sel.value = ''
+  also.value = []
+}
+
+function addDeco(kind, box, extra = {}) {
+  if (!kind) return
+  emit('mark')
+  const colour = palette.value?.ink || '#111111'
+  const made = normalDecoration({
+    id: nextDecoId(), kind, box,
+    fill: { type: kind === 'line' || kind === 'image' || kind === 'path' ? 'none' : 'solid', colour },
+    stroke: kind === 'line' || kind === 'path' ? { width: 0.003, colour } : { width: 0, colour },
+    text: kind === 'text' ? { value: 'Your words' } : {},
+    icon: kind === 'icon' ? { name: 'ticket' } : {},
+    image: kind === 'image' ? { src: pendingPicture.value, fit: 'contain' } : {},
+    ...extra,
+  })
+  emit('set-decorations', [...props.decorations, made])
+  sel.value = made.id
+  also.value = []
+  pending.value = ''
+  pendingPicture.value = ''
+}
+
+const pen = usePen({
+  aspect: () => size.value.width / size.value.height,
+  mark: () => emit('mark'),
+  target: () => chosenDeco.value,
+  place: (p) => addDeco('path', p.box, { path: p.path }),
+})
+const { drawing: penDrawing, draftNodes, editing: penEditing, handles: penHandles, chosenNode } = pen
+const cardPx = ([x, y]) => [x * size.value.width, y * size.value.height]
+const penDraftD = computed(() => pathData(draftNodes.value, false, cardPx))
+const penEditD = computed(() => (penHandles.value.length && chosenDeco.value
+  ? pathData(penHandles.value, chosenDeco.value.path.closed, cardPx) : ''))
+const penPoints = computed(() => (penDrawing.value ? penDrawing.value.nodes : penHandles.value))
+watch(sel, (id) => { if (penEditing.value && id !== penEditing.value) pen.leave() })
+watch(pending, (p) => { if (p !== 'path' && penDrawing.value) pen.cancel() })
+
+function onFrameDown(ev) {
+  if (asSent.value) return
+  if (pending.value === 'path') {
+    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+    pen.down(pointOf(ev), ev)
+    drag.value = { mode: 'pen' }
+    return
+  }
+  if (pending.value) {
+    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+    const [left, top] = pointOf(ev)
+    drag.value = { mode: 'draw', origin: { left, top } }
+    return
+  }
+  if (penEditing.value) {
+    if (ev.altKey && pen.addNodeAt(pointOf(ev))) return
+    pen.leave()
+  }
+  sel.value = ''
+  also.value = []
+}
+
+function gripPen(i, which, ev) {
+  if (penDrawing.value) return
+  ev.currentTarget.setPointerCapture?.(ev.pointerId)
+  pen.gripDown(i, which, pointOf(ev))
+  drag.value = { mode: 'grip' }
+}
+
+/* Drawings come off; parts are hidden, never removed. */
+const whyNoRemove = computed(() => (pickedDecos.value.length ? ''
+  : picked.value.length ? "The card's own parts are hidden with their eye, not removed"
+    : 'Nothing is selected'))
+function removeDecos() {
+  if (whyNoRemove.value) return
+  emit('mark')
+  const going = new Set(pickedDecos.value.map((d) => d.id))
+  emit('set-decorations', props.decorations.filter((d) => !going.has(d.id)))
+  sel.value = ''
+  also.value = []
+}
+
+/* The library, placing onto this card. Saving goes up to the parent, which
+   owns the library write — the same one the printed tab uses. */
+function placeFromLibrary(shape) {
+  emit('mark')
+  const made = placeShape(shape, { left: 0.35, top: 0.35, width: 0.3, height: 0.3 }, nextDecoId)
+  const g = made.length > 1 ? nextGroupId() : ''
+  for (const d of made) d.group = g
+  emit('set-decorations', [...props.decorations, ...made])
+  sel.value = made[0]?.id || ''
+  also.value = made.slice(1).map((d) => d.id)
+}
+function useColour(value) {
+  if (!pickedParts.value.length) return
+  emit('mark')
+  for (const t of pickedParts.value) {
+    if (isDeco(t.id)) t.fill.colour = value
+    else t.ink = value
+  }
+}
+const pickedLettering = computed(() => {
+  const d = pickedDecos.value.find((x) => x.kind === 'text')
+  if (d) return { family: d.text.family, weight: d.text.weight, align: d.text.align, tracking: d.text.tracking || 0, colour: d.fill.colour }
+  const p = pickedParts.value.find((x) => !isDeco(x.id) && x.textual)
+  return p ? { family: p.family, weight: p.weight, align: p.align, tracking: 0, colour: p.ink || '' } : null
+})
+function useStyle(style) {
+  const list = pickedParts.value.filter((t) => (isDeco(t.id) ? t.kind === 'text' : t.textual))
+  if (!list.length) return
+  emit('mark')
+  for (const t of list) {
+    if (isDeco(t.id)) {
+      Object.assign(t.text, { family: style.family, weight: style.weight, align: style.align, tracking: style.tracking || 0 })
+      if (style.colour) t.fill.colour = style.colour
+    } else {
+      Object.assign(t, { family: style.family, weight: style.weight, align: style.align })
+      if (style.colour) t.ink = style.colour
+    }
+  }
+}
+
+function openPictures() {
+  if (!props.pictures.length) return
+  changingPicture.value = ''
+  showPictures.value = true
+}
+function pickPicture(src) {
+  showPictures.value = false
+  const d = changingPicture.value && props.decorations.find((x) => x.id === changingPicture.value)
+  changingPicture.value = ''
+  if (d) { emit('mark'); d.image.src = src; return }
+  pendingPicture.value = src
+  if (pending.value !== 'image') beginDraw('image')
+}
+
+/* Drawn back to front, like the parts' list; drawings sit over every part. */
+const drawnLayers = computed(() => [...props.decorations].reverse())
+const decoIcon = (k) => ({ text: 'type', icon: 'design', image: 'image', path: 'pen' }[k] || 'shape')
+/* The word for a kind — `icon` handled on its own, because the icons gate reads
+   every `icon: '…'` in the source as a glyph being asked for. */
+const DECO_WORD = { rect: 'Rectangle', ellipse: 'Ellipse', line: 'Rule', text: 'Words', image: 'Picture', path: 'Path' }
+const decoName = (d) => d.name || (d.kind === 'icon' ? 'Mark' : DECO_WORD[d.kind] || 'Shape')
 
 /*
  * WHERE THE SAFE AREA COMES FROM, because a guide nobody can justify is a line
@@ -503,11 +738,16 @@ async function sendTest() {
     canvas.height = H
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('this browser cannot draw the picture')
+    /* A picture drawn on the card is an address, and an SVG drawn through an
+       <img> may not load anything from outside itself — so it would come out
+       blank. Inlined first; anything that could not be fetched is named. */
+    const { svg: inlined, failed } = await inlineImages(preview.value, fetchAsDataURI)
+    if (failed.length) testNote.value = `${failed.length} picture(s) could not be fetched and are missing.`
     const img = new Image()
     await new Promise((res, rej) => {
       img.onload = res
       img.onerror = () => rej(new Error('the card could not be drawn'))
-      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(preview.value)}`
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(inlined)}`
     })
     ctx.drawImage(img, 0, 0, W, H)
     const blob = await new Promise((res, rej) => {
@@ -550,11 +790,45 @@ defineExpose({ sendTest, testing })
       <p class="say">{{ CARD_DESIGNS.find((d) => d.id === card.design)?.note }}</p>
     </div>
 
+    <!-- DRAWING ON THE CARD: the printed tab's tools, onto this treatment. -->
+    <div class="block">
+      <h3 class="rubric">Draw</h3>
+      <ToolBar label="Draw on the card">
+        <ToolButton v-for="t in TOOLS" :key="t.kind" :icon="t.icon" :label="t.label" :size="17"
+                    :active="pending === t.kind" :hint="t.hint" @click="beginDraw(t.kind)" />
+        <ToolButton icon="image" label="Picture" :size="17" :active="pending === 'image'"
+                    :why="pictures.length ? '' : 'There are no pictures yet — upload a logo in Setup, or artwork on the Artwork tab'"
+                    hint="The raffle's logo or an uploaded artwork, placed on the card"
+                    @click="openPictures" />
+      </ToolBar>
+    </div>
+
+    <LibraryPanel
+      :library="library" :selected="pickedDecos" :lettering="pickedLettering" :busy="libBusy"
+      @place="placeFromLibrary" @save="(s) => emit('save-shape', s)"
+      @save-colour="(c) => emit('save-colour', c)" @remove="(id) => emit('remove-shape', id)"
+      @remove-colour="(id) => emit('remove-colour', id)" @use-colour="useColour"
+      @save-style="(t) => emit('save-style', t)" @remove-style="(id) => emit('remove-style', id)"
+      @use-style="useStyle" />
+
     <div class="block grow">
       <p class="rubric halfhead">
         Layers
         <span class="count data">{{ shown }} of {{ parts.length }} shown</span>
       </p>
+      <!-- DRAWN FIRST, because it draws over every part of the card. -->
+      <template v-if="decorations.length">
+        <p class="rubric halfhead">Drawn <span class="count data">&middot; {{ decorations.length }}</span></p>
+        <ul class="ellist">
+          <li v-for="d in drawnLayers" :key="d.id" :class="{ on: sel === d.id, off: d.enabled === false }">
+            <Icon :name="decoIcon(d.kind)" :size="15" class="kind" :title="decoName(d)" />
+            <button type="button" class="elname"
+                    @click="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)">{{ decoName(d) }}</button>
+            <Toggle v-model="d.enabled" :label="decoName(d)" :size="15" />
+          </li>
+        </ul>
+        <p class="rubric halfhead">The card</p>
+      </template>
       <ul class="ellist">
         <li v-for="p in layers" :key="p.id"
             :class="{ on: sel === p.id, off: p.enabled === false }">
@@ -572,22 +846,24 @@ defineExpose({ sendTest, testing })
         </li>
       </ul>
       <p class="say" title="The parts of the card are this app's own drawing, not artwork you place things on.">
-        Nothing can be added or removed — these parts are the card.
+        These parts are the card: hidden, never removed. Draw over them instead.
       </p>
     </div>
 
     <div class="block">
       <h3 class="rubric">Canvas</h3>
-      <label class="choice tiny">
-        <input v-model="showAllBoxes" type="checkbox"> Every part's box
-      </label>
-      <label class="choice tiny">
-        <input v-model="showGuides" type="checkbox"> Grid &amp; guides
-      </label>
-      <label class="choice tiny"
-             title="A chat list thumbnail and the preview above a reply show a centred square of the picture. Keep the number and the mark inside it.">
-        <input v-model="showSafe" type="checkbox"> Safe area for WhatsApp
-      </label>
+      <!-- Tools that act at once, so pressed buttons rather than tick boxes —
+           the Place tab made the same change (STUDIO-ESSENTIALS A5). -->
+      <ToolBar label="What the canvas shows">
+        <ToolButton :icon="showAllBoxes ? 'preview' : 'previewOff'" label="Every box" wide :size="15"
+                    :active="showAllBoxes" hint="Outline every part and drawing, not only the selected one"
+                    @click="showAllBoxes = !showAllBoxes" />
+        <ToolButton icon="grid" label="Guides" wide :size="15" :active="showGuides"
+                    hint="The grid and the card's centre lines" @click="showGuides = !showGuides" />
+        <ToolButton icon="margins" label="Safe area" wide :size="15" :active="showSafe"
+                    hint="A chat list thumbnail and the preview above a reply show a centred square of the picture. Keep the number and the mark inside it."
+                    @click="showSafe = !showSafe" />
+      </ToolBar>
       <p class="say" title="Everything outside it is still on the card somebody opens.">
         The square a chat list crops to.
       </p>
@@ -619,15 +895,15 @@ defineExpose({ sendTest, testing })
     <div class="withrail">
     <ToolBar v-if="!asSent" label="Arrange" vertical>
       <span class="tgroup">
-        <ToolButton icon="align" label="Align left" :why="whyNoSelection"
+        <ToolButton icon="alignLeft" label="Align left" :why="whyNoSelection"
                     :hint="many ? 'Line the selected parts up on their left edges'
                                 : 'Put this part against the left edge of the card'"
                     @click="alignPicked('left')" />
-        <ToolButton icon="position" label="Centre across" :why="whyNoSelection"
+        <ToolButton icon="alignCentre" label="Centre across" :why="whyNoSelection"
                     :hint="many ? 'Centre the selected parts on each other, across'
                                 : 'Centre this part across the card'"
                     @click="alignPicked('centre')" />
-        <ToolButton icon="size" label="Centre down" :why="whyNoSelection"
+        <ToolButton icon="alignMiddle" label="Centre down" :why="whyNoSelection"
                     :hint="many ? 'Centre the selected parts on each other, down'
                                 : 'Centre this part down the card'"
                     @click="alignPicked('middle')" />
@@ -636,9 +912,14 @@ defineExpose({ sendTest, testing })
         <ToolButton icon="distribute" label="Space across" :why="whyNotDistribute"
                     hint="Even gaps between the selected parts, left to right. The outermost two stay where they are."
                     @click="distributePicked('across')" />
-        <ToolButton icon="margins" label="Space down" :why="whyNotDistribute"
+        <ToolButton icon="distributeV" label="Space down" :why="whyNotDistribute"
                     hint="Even gaps between the selected parts, top to bottom"
                     @click="distributePicked('down')" />
+      </span>
+      <span class="tgroup">
+        <ToolButton icon="trash" label="Remove" :why="whyNoRemove"
+                    hint="Take the selected drawings off the card. The card's own parts stay"
+                    @click="removeDecos" />
       </span>
     </ToolBar>
 
@@ -672,10 +953,10 @@ defineExpose({ sendTest, testing })
         </div>
 
         <div
-          ref="frame" class="frame"
+          ref="frame" class="frame" :class="{ drawing: !!pending }"
           :style="{ width: frameWidth + 'px', height: Math.round(frameWidth * (size.height / size.width)) + 'px' }"
           @pointermove="onPointerMove" @pointerup="endPointer" @pointercancel="endPointer"
-          @pointerdown="sel = ''; also = []">
+          @pointerdown="onFrameDown">
           <div class="cardart" v-html="preview"></div>
 
           <!-- The guides sit over the card and under the boxes: they are
@@ -715,6 +996,42 @@ defineExpose({ sendTest, testing })
                     @pointerdown="startResize(p, c, $event)"></span>
             </template>
           </div>
+
+          <!-- THE DRAWINGS' BOXES, over the parts' as the drawings are over the card. -->
+          <div
+            v-for="d in decorations" :key="d.id"
+            class="ebox deco"
+            :class="{ on: sel === d.id, too: also.includes(d.id), off: d.enabled === false,
+                      faint: !picked.includes(d.id), hidden: !showAllBoxes && !picked.includes(d.id) }"
+            :style="{ left: pc(d.box.left), top: pc(d.box.top), width: pc(d.box.width), height: pc(d.box.height) }"
+            :title="`${decoName(d)} — drag to move, or use the arrow keys`"
+            @pointerdown="startMove(d, $event)">
+            <button
+              type="button" class="grab" :aria-label="decoName(d)" :disabled="d.enabled === false || d.locked"
+              @keydown="onKey" @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
+              @dblclick.stop="d.kind === 'path' && (pick(d.id, false, true), pen.enter(d.id))"></button>
+            <template v-if="sel === d.id && !many && !d.locked && penEditing !== d.id">
+              <span v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
+                    class="hdl" :class="c"
+                    @pointerdown="startResize(d, c, $event)"></span>
+            </template>
+          </div>
+
+          <div v-if="drawn" class="ebox drawnbox"
+               :style="{ left: pc(drawn.left), top: pc(drawn.top), width: pc(drawn.width), height: pc(drawn.height) }"></div>
+
+          <!-- The pen's layer, as on the printed tab: the path being drawn, or
+               a selected path's nodes and handles. -->
+          <svg v-if="penDraftD || penEditD" class="penlayer" aria-hidden="true"
+               :viewBox="`0 0 ${size.width} ${size.height}`" preserveAspectRatio="none">
+            <path v-if="penDraftD" :d="penDraftD" class="pendraft" />
+            <path v-if="penEditD" :d="penEditD" class="penedit" />
+          </svg>
+          <span v-for="(n, i) in penPoints" :key="`n${i}`" class="pnode"
+                :class="{ smooth: n.hx1 !== undefined || n.hx2 !== undefined, on: chosenNode === i }"
+                :style="{ left: pc(n.x), top: pc(n.y) }"
+                @pointerdown.stop="penDrawing ? (i === 0 && pen.down([n.x, n.y], $event)) : gripPen(i, 'node', $event)"
+                @dblclick.stop="pen.toggleNode(i)"></span>
         </div>
       </template>
     </div>
@@ -734,12 +1051,13 @@ defineExpose({ sendTest, testing })
       settled that question the same way.
     -->
     <p class="readout">
-      <span class="zoom">
-        <button type="button" class="zbtn" title="Zoom out" @click="stepZoom(-1)">−</button>
+      <!-- The set's own drawings, as on the Place tab (STUDIO-ESSENTIALS A6). -->
+      <ToolBar label="Zoom">
+        <ToolButton icon="zoomOut" label="Zoom out" :size="15" @click="stepZoom(-1)" />
         <span class="zval">{{ Math.round(zoom * 100) }}%</span>
-        <button type="button" class="zbtn" title="Zoom in" @click="stepZoom(1)">+</button>
-        <button type="button" class="btn sm ghost" @click="fitToStage">Fit</button>
-      </span>
+        <ToolButton icon="zoomIn" label="Zoom in" :size="15" @click="stepZoom(1)" />
+        <ToolButton icon="fit" label="Fit" wide :size="15" hint="Fit the whole card to the canvas" @click="fitToStage" />
+      </ToolBar>
       <template v-if="chosen">
         <b>x {{ pc(chosen.box.left) }}</b> · y {{ pc(chosen.box.top) }} ·
         w {{ pc(chosen.box.width) }} · h {{ pc(chosen.box.height) }}
@@ -766,7 +1084,15 @@ defineExpose({ sendTest, testing })
   <!-- `v-model:motto`, not `@update:motto`. The motto belongs to the raffle
        and the panel is only where it is typed, so it travels down and back
        rather than being owned there. -->
+  <!-- A drawing gets the drawn-shape panel, in the card's own face names. -->
+  <DecorationInspector
+    v-if="chosenDeco" :deco="chosenDeco" :size="size" :faces="CARD_FACES"
+    :swatches="swatches" :brand="cfg?.brandColor || ''" :can-drop="canDrop"
+    @mark="emit('mark')" @pick-colour="(apply) => emit('pick-colour', apply)"
+    @pick-image="changingPicture = chosenDeco.id; showPictures = true"
+    @edit-nodes="pen.enter(chosenDeco.id)" />
   <CardInspector
+    v-else
     v-model:motto="card.motto"
     :part="chosen" :size="size" :brand="cfg?.brandColor || ''"
     :default-ink="chosen ? palette[chosen.role] || palette.ink : ''"
@@ -774,6 +1100,9 @@ defineExpose({ sendTest, testing })
     :watermark="watermark" :qr-density="qrDensity"
     :swatches="swatches" :can-drop="canDrop"
     @pick-colour="(apply) => emit('pick-colour', apply)" />
+
+  <PicturePicker v-if="showPictures" :pictures="pictures"
+                 @pick="pickPicture" @close="showPictures = false; changingPicture = ''" />
 </div>
 </template>
 
@@ -911,6 +1240,22 @@ defineExpose({ sendTest, testing })
   padding: 1px 5px; border-radius: 4px; font-family: var(--font-data);
 }
 .grab { position: absolute; inset: 0; border: 0; background: none; padding: 0; cursor: inherit }
+/* A drawing's box, in the printed tab's drawing cyan so a drawing and a part
+   read as two kinds of thing. Literal: it sits on the card's own colours. */
+.ebox.deco { outline-color: #12b5e5 }
+.ebox.deco.on { outline: 2px solid #12b5e5; background: rgba(18, 181, 229, .14) }
+.frame.drawing { cursor: crosshair }
+.ebox.drawnbox { outline: 2px solid #ffb300; background: rgba(255, 179, 0, .18); pointer-events: none }
+.penlayer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 3 }
+.penlayer path { fill: none; vector-effect: non-scaling-stroke }
+.pendraft { stroke: #12b5e5; stroke-width: 1.5 }
+.penedit { stroke: #12b5e5; stroke-width: 1 }
+.pnode {
+  position: absolute; z-index: 4; transform: translate(-50%, -50%); touch-action: none;
+  width: 9px; height: 9px; background: #fff; border: var(--rule-strong) solid #12b5e5; cursor: move;
+}
+.pnode.smooth { border-radius: var(--r-pill) }
+.pnode.on { background: #12b5e5 }
 .grab:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px }
 .hdl {
   position: absolute; width: 8px; height: 8px; background: #fff;
@@ -941,13 +1286,7 @@ defineExpose({ sendTest, testing })
   font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
 .readout b { color: var(--text) }
-.zoom { display: flex; align-items: center; gap: 4px }
-.zbtn {
-  width: 26px; height: 26px; border: 1px solid var(--border); background: var(--surface);
-  border-radius: 6px; cursor: pointer; color: var(--text); line-height: 1;
-}
-.zbtn:hover { border-color: var(--brand) }
-.zval { min-width: 42px; text-align: center; font-size: .76rem }
+.zval { min-width: 42px; text-align: center; font-size: var(--fs-2xs) }
 /* .tools and .tool lived here AND in TicketDesign.vue, ten identical lines in
    two files. Both are ui/ToolBar.vue and ui/ToolButton.vue now. */
 

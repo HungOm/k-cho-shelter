@@ -209,6 +209,53 @@ console.log('a card layout is validated by running the handler, not by reading i
   ok(!!ok2?.config, 'a save with no layout at all still works')
 }
 
+/*
+ * DRAWINGS ON THE CARD, RUN AND NOT READ (STUDIO-ESSENTIALS Phase 9).
+ *
+ * The card can now carry drawn shapes, per treatment, and the one rule that
+ * matters for them is the printed ticket's: nothing drawn over the QR. On a
+ * card the QR is a part whose place depends on the layout, so the check has to
+ * ask the parts table — which is why the table moved to _shared. What would go
+ * wrong silently: a tint across a buyer's code that looks fine and does not
+ * scan at a door; a save with no drawings key wiping every drawing because an
+ * older bundle does not send one.
+ */
+console.log('drawings on the card are stored per treatment, and never over its QR')
+{
+  const { resolveParts } = await import('../supabase/functions/_shared/cardparts.js')
+  const w = world()
+  const set = (p) => branding.setCardDesign(p, users.admin, w.db.ctx)
+  const code = resolveParts('shelter', {}).find((x) => x.id === 'code').box
+  const rule = { id: 'd1', kind: 'line', box: { left: 0.05, top: 0.05, width: 0.3, height: 0 } }
+  const over = { id: 'd2', kind: 'rect', box: { left: code.left, top: code.top, width: code.width / 2, height: code.height / 2 } }
+
+  let r = null, why = ''
+  try { r = await set({ design: 'shelter', cardDecorations: { shelter: [rule] } }) } catch (e) { why = e.message }
+  ok(!!r?.config, `a drawing clear of the code is accepted${why ? ' — threw: ' + why : ''}`)
+  eq(r?.config?.cardDecorations?.shelter?.length, 1, 'and comes back on the config, under its treatment')
+
+  eq(await codeOf(() => set({ design: 'shelter', cardDecorations: { shelter: [over] } })), 'BAD_CARD_DECORATIONS',
+    'a drawing over the treatment\'s QR is refused')
+  let msg = ''
+  try { await set({ design: 'shelter', cardDecorations: { shelter: [over] } }) } catch (e) { msg = e.message }
+  ok(/check code/.test(msg) && /shelter/.test(msg), 'and the refusal says which card and why')
+
+  /* Where the QR is depends on the layout: move the code, and a drawing where
+     it USED to be is fine, one where it now is is not. */
+  const moved = { shelter: { code: { box: { left: 0.02, top: 0.6, width: code.width, height: code.height } } } }
+  let r2 = null
+  try { r2 = await set({ design: 'shelter', cardLayout: moved, cardDecorations: { shelter: [over] } }) } catch { r2 = null }
+  ok(!!r2?.config, 'with the code moved by the same save, a drawing where it used to be is accepted')
+
+  eq(await codeOf(() => set({ design: 'shelter', cardDecorations: { nosuch: [rule] } })), 'BAD_CARD_DECORATIONS',
+    'a treatment nobody has heard of is refused')
+
+  const kept = await set({ design: 'shelter' })
+  ok((kept?.config?.cardDecorations?.shelter?.length ?? 0) > 0, 'a save with no drawings key leaves them where they were')
+  const cleared = await set({ design: 'shelter', cardDecorations: null })
+  eq(Object.keys(cleared?.config?.cardDecorations ?? {}).length, 0, 'and null clears them')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)

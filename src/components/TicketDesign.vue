@@ -159,6 +159,12 @@ const tab = ref('place')
  */
 const MOTTO_MAX = 48
 const card = ref({ design: 'grand', motto: '' })
+/*
+ * WHAT HAS BEEN DRAWN ON THE CARD, every treatment's, as config carries it
+ * (STUDIO-ESSENTIALS Phase 9). Declared up here with the card's other state
+ * because `loadCard` fills it from an immediate watcher during setup.
+ */
+const cardDecos = ref({})
 const cardLayout = ref({})
 const cardParts = ref([])
 const cardSaving = ref(false)
@@ -168,6 +174,13 @@ const mottoOver = computed(() => mottoLeft.value < 0)
 /* How wide the picture is actually sent, which is what decides whether the QR
    on it will scan. The template's own setting when there is one — the same
    number ViewTicket rasterises at — and its fallback when there is not. */
+/* This treatment's drawings, and a new list for it — the card tab edits
+   drawings in place and sends a new list when one is added or removed. */
+const cardDrawn = computed(() => cardDecos.value[card.value.design] || [])
+function setCardDrawn(list) {
+  cardDecos.value = { ...cardDecos.value, [card.value.design]: list }
+}
+
 const cardSentWidth = computed(() => Number(design.value?.digital?.widthPx ?? 1200))
 
 /*
@@ -182,6 +195,9 @@ const cardState = computed(() => JSON.stringify({
   design: card.value.design,
   motto: card.value.motto,
   layout: layoutFrom(card.value.design, cardParts.value, cardLayout.value),
+  /* In the saved state, so drawing makes the card dirty, is one undo step and
+     is kept in the draft like everything else about it. */
+  decorations: cardDecos.value,
 }))
 const cardSavedState = ref('')
 const cardDirty = computed(() => cardState.value !== cardSavedState.value)
@@ -234,6 +250,8 @@ function loadCard() {
   const stored = state.cfg?.cardLayout
   cardLayout.value = stored && typeof stored === 'object' ? JSON.parse(JSON.stringify(stored)) : {}
   cardParts.value = resolveParts(card.value.design, cardLayout.value)
+  const drawn = state.cfg?.cardDecorations
+  cardDecos.value = drawn && typeof drawn === 'object' ? JSON.parse(JSON.stringify(drawn)) : {}
   rebaseCard()
   offerCardDraft()
 }
@@ -277,7 +295,7 @@ function rebaseCard() {
   cardPush = 0
 }
 
-watch([card, cardParts], () => {
+watch([card, cardParts, cardDecos], () => {
   if (cardRestoring) return
   const now = cardState.value
   if (now === cardSnap) return
@@ -295,6 +313,7 @@ function applyCard(snap) {
   card.value.motto = snap.motto
   cardLayout.value = snap.layout
   cardParts.value = resolveParts(snap.design, snap.layout)
+  cardDecos.value = snap.decorations && typeof snap.decorations === 'object' ? snap.decorations : {}
   nextTick(() => { cardRestoring = false })
 }
 
@@ -341,6 +360,7 @@ async function saveCard() {
     const layout = layoutFrom(card.value.design, cardParts.value, cardLayout.value)
     const r = await api('set_card_design', {
       cardDesign: card.value.design, motto: card.value.motto, cardLayout: layout,
+      cardDecorations: cardDecos.value,
     })
     if (r?.config) setConfig(r.config)
     loadCard()
@@ -2982,7 +3002,7 @@ const printedSize = computed(() => {
                             :active="pendingDeco === 'rect'"
                             hint="Draw a rectangle — a tint behind a price, a panel, a border"
                             @click="beginAdd('d:rect')" />
-                <ToolButton icon="reset" label="Ellipse" :size="17" :keys="keyOf('toolEllipse')"
+                <ToolButton icon="ellipse" label="Ellipse" :size="17" :keys="keyOf('toolEllipse')"
                             :active="pendingDeco === 'ellipse'"
                             hint="Draw an ellipse or a circle"
                             @click="beginAdd('d:ellipse')" />
@@ -3660,8 +3680,12 @@ const printedSize = computed(() => {
         v-else ref="digital" :card="card" :parts="cardParts" :cfg="state.cfg"
         :sent-width="cardSentWidth" :motto-max="MOTTO_MAX"
         :swatches="swatches" :can-drop="canDrop"
+        :decorations="cardDrawn" :library="library" :lib-busy="libBusy" :pictures="pictures"
         @mark="markCard" @drag="(v) => { cardDragging = v }"
-        @pick-colour="dropper" />
+        @pick-colour="dropper" @set-decorations="setCardDrawn"
+        @save-shape="saveToLibrary" @remove-shape="removeFromLibrary"
+        @save-colour="saveColourToLibrary" @remove-colour="removeColourFromLibrary"
+        @save-style="saveStyleToLibrary" @remove-style="removeStyleFromLibrary" />
 
       <!--
         THE FOOTER SAYS WHAT THE MODEL IS. It is one sentence and it is the

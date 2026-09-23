@@ -19,6 +19,8 @@ import { CARD_TREATMENT_IDS, isCardTreatment } from '../_shared/cardtreatments.j
 import { configPayload } from './config.ts'
 import { PRESETS, SLOTS } from '../_shared/ranks.ts'
 import { libraryFaults, normalLibrary } from '../_shared/designlibrary.js'
+import { faultsIn } from '../_shared/designelements.js'
+import { resolveParts } from '../_shared/cardparts.js'
 
 type Ctx = {
   supabaseAdmin: {
@@ -265,6 +267,51 @@ export async function setCardDesign(p: Record<string, unknown>, user: AppUser, c
     words[key] = text
   }
 
+  /*
+   * THE CARD'S OWN DRAWINGS — shapes, words, marks, pictures and paths put on
+   * the digital ticket, per treatment (STUDIO-ESSENTIALS Phase 9). Stored whole,
+   * unlike the layout, because a drawing has no standard version to be a
+   * difference from.
+   *
+   * ABSENT MEANS "DO NOT TOUCH", `null` clears, the same as the layout above.
+   *
+   * THE RULE THAT MATTERS is the one the printed ticket already has: nothing
+   * may be drawn over the QR. On a card the QR is a PART, and where it sits
+   * depends on the layout — the one arriving with this save if there is one,
+   * otherwise the one stored — so the check asks the parts table where this
+   * treatment's code is under THAT layout. A drawing that is legal on its own
+   * and covers the code is refused, because it would look fine and not scan.
+   */
+  let drawings: Record<string, unknown> | undefined
+  if (p.cardDecorations !== undefined) {
+    const raw = p.cardDecorations === null ? {} : p.cardDecorations
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new ApiError('BAD_CARD_DECORATIONS', 'The card drawings could not be read.')
+    }
+    let stored: unknown = {}
+    try { stored = JSON.parse((await currentConfig(ctx)).CARD_LAYOUT || '{}') } catch { stored = {} }
+    const effective = layout !== undefined ? layout : stored
+    drawings = {}
+    for (const [treatment, list] of Object.entries(raw as Record<string, unknown>)) {
+      if (!isCardTreatment(treatment)) {
+        throw new ApiError('BAD_CARD_DECORATIONS',
+          `${treatment} is not one of the ticket treatments (${CARD_TREATMENT_IDS.join(', ')}).`)
+      }
+      const code = resolveParts(treatment, effective).find((part: { id: string }) => part.id === 'code')
+      const faults = faultsIn(list, { codeBoxes: code?.box ? [code.box] : [] })
+      if (faults.length) {
+        throw new ApiError('BAD_CARD_DECORATIONS', `On the ${treatment} card: ${faults[0]}`, { treatment, faults })
+      }
+      if (Array.isArray(list) && list.length) drawings[treatment] = list
+    }
+    const encoded = JSON.stringify(drawings)
+    if (encoded.length > 65536) {
+      throw new ApiError('BAD_CARD_DECORATIONS',
+        `The card drawings are ${encoded.length} characters. The limit is 65536 — they hold ` +
+        'coordinates and addresses, not pictures.')
+    }
+  }
+
   const rows: Record<string, string> = { CARD_DESIGN: design, MOTTO: motto, ...words }
   if (layout !== undefined) {
     /* An empty overlay is stored as the empty string rather than as "{}", so
@@ -273,6 +320,10 @@ export async function setCardDesign(p: Record<string, unknown>, user: AppUser, c
     const encoded = JSON.stringify(layout)
     rows.CARD_LAYOUT = encoded === '{}' ? '' : encoded
   }
+  if (drawings !== undefined) {
+    const encoded = JSON.stringify(drawings)
+    rows.CARD_DECORATIONS = encoded === '{}' ? '' : encoded
+  }
 
   await writeConfig(ctx, rows)
   await ctx.supabaseAdmin.from('audit_log').insert({
@@ -280,6 +331,8 @@ export async function setCardDesign(p: Record<string, unknown>, user: AppUser, c
     details: {
       design, motto, ...words,
       layout: layout === undefined ? 'unchanged' : Object.keys(layout as object),
+      drawings: drawings === undefined ? 'unchanged'
+        : Object.fromEntries(Object.entries(drawings).map(([k, v]) => [k, (v as unknown[]).length])),
     },
     email: user.email,
   })

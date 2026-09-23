@@ -688,6 +688,31 @@ nodes disabled with "Select a path first".
 
 ### Phase 9 — Decorations on the digital card (L, last)
 
+**Status 2026-09-23: built, gated, rendered** (kcho-shelter-0c).
+- Storage is `CARD_DECORATIONS`, seeded in `schema.sql` and by migration
+  `20260923120000_the_card_can_be_drawn_on.sql` (a key needs both halves: the
+  migration for the live raffle, the seed for a fresh install). `branding.ts`
+  refuses a drawing over the code part of its treatment with
+  `BAD_CARD_DECORATIONS`, which has its Burmese line.
+- The parts table moved to `_shared/cardparts.js`; `src/lib/cardelements.js`
+  re-exports it, and the golden render is unchanged.
+- `useDrag` was never cut (Phase 8 took the seam as `usePen.js`), so the card
+  tab keeps its own pointer code, extended to move parts and drawings
+  together. Drawings are told from parts by id SET, not by prefix: a card part
+  is called `draw`.
+- The card's Canvas checkboxes and its − / + / Fit zoom became tool buttons
+  (A5 and A6 applied to this tab too).
+- Two glyphs were redrawn while looking: the pen is a nib, distinct from the
+  pencil that marks Mark, and the Ellipse tool has an ellipse; it had borrowed
+  the refresh arrow on both tabs.
+- **Deployed before it was committed.** The `api` function was deployed from
+  the shared worktree while this was uncommitted, so the server half is live.
+  It is harmless without the migration, because a missing key reads as `{}`
+  and the live client never sends drawings. Apply the migration before the
+  client that sends them.
+- Seen and not fixed, because it predates this plan: the Treatment control's
+  "Supporter" label is cut off at the rail's width.
+
 - Storage: new config key `CARD_DECORATIONS` = `{ [treatment]: Decoration[] }`,
   exposed as `state.cfg.cardDecorations` from `config.ts`'s payload (the
   `cardLayout` / `designLibrary` pattern at `:177`, `:198`). Not inside

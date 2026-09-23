@@ -956,5 +956,22 @@ console.log('the typeface picker previews the face that actually prints')
      'every family has a face to draw, a name to read and a reason to pick it')
 }
 
+console.log('a drawing on the card is drawn over the card, after its last part')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 9. withDecorations has spliced a layer into every
+   * card since it was written, and no caller passed one; now the card tab and
+   * the buyer's view do. Drawn over the parts, so a rule under the masthead is
+   * not hidden by the background, and absent when nothing is drawn so every
+   * card that has no drawings is byte-for-byte what it was.
+   */
+  const plain = cardSVG('grand', {}, {})
+  const drawn = cardSVG('grand', { decorations: [{ id: 'd1', kind: 'rect', box: { left: 0.1, top: 0.1, width: 0.2, height: 0.1 } }] }, {})
+  ok(drawn.length > plain.length, 'a drawing adds to the card')
+  ok(drawn.lastIndexOf('<rect') > drawn.lastIndexOf('<text'), 'and it is drawn after the card\'s own words — over them')
+  ok(drawn.endsWith('</svg>'), 'inside the card\'s own document')
+  eq(cardSVG('grand', { decorations: [] }, {}), plain, 'and no drawings is exactly the card as it was')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
