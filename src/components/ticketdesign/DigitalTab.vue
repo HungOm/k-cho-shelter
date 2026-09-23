@@ -46,6 +46,7 @@ import CardInspector from './CardInspector.vue'
 import DecorationInspector from './DecorationInspector.vue'
 import LibraryPanel from './LibraryPanel.vue'
 import PicturePicker from './PicturePicker.vue'
+import Section from './Section.vue'
 import { usePen } from './usePen.js'
 import { normalDecoration, nextDecoId, nextGroupId } from '../../lib/designelements.js'
 import { placeShape } from '../../lib/designlibrary.js'
@@ -1153,7 +1154,7 @@ defineExpose({ sendTest, testing, act })
   <!-- ---------- the layers rail ---------- -->
   <aside class="rail">
     <div class="block">
-      <h3 class="rubric">Treatment</h3>
+      <Section label="Treatment" />
       <div class="seg">
         <button v-for="d in CARD_DESIGNS" :key="d.id" type="button" class="segbtn"
                 :class="{ on: card.design === d.id }" :title="d.note"
@@ -1164,7 +1165,7 @@ defineExpose({ sendTest, testing, act })
 
     <!-- DRAWING ON THE CARD: the printed tab's tools, onto this treatment. -->
     <div class="block">
-      <h3 class="rubric">Draw</h3>
+      <Section label="Draw" />
       <ToolBar label="Draw on the card">
         <ToolButton v-for="t in TOOLS" :key="t.kind" :icon="t.icon" :label="t.label" :size="17"
                     :active="pending === t.kind" :hint="t.hint" :keys="keyOf(TOOL_KEY[t.kind])" @click="beginDraw(t.kind)" />
@@ -1247,7 +1248,7 @@ defineExpose({ sendTest, testing, act })
     </div>
 
     <div class="block">
-      <h3 class="rubric">Canvas</h3>
+      <Section label="Canvas" />
       <!-- Tools that act at once, so pressed buttons rather than tick boxes —
            the Place tab made the same change (STUDIO-ESSENTIALS A5). -->
       <ToolBar label="What the canvas shows">

@@ -269,7 +269,7 @@ const over = () => (props.motto || '').length > props.mottoMax
   </template>
 
   <div v-else class="nothing">
-    <p class="rubric">Nothing selected</p>
+    <p class="blankhead">Nothing selected</p>
     <p class="blank">Click a part, or a name in the list.</p>
   </div>
 

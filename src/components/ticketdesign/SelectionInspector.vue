@@ -53,7 +53,7 @@ const px = (v, of) => Math.round(Number(v) * of)
   </div>
 
   <div v-if="bounds" class="pgroup">
-    <p class="rubric">Together</p>
+    <p class="figlabel">Together</p>
     <p class="mono tiny">
       x {{ pc(bounds.left) }} · y {{ pc(bounds.top) }} · {{ pc(bounds.width) }} &times; {{ pc(bounds.height) }}
     </p>

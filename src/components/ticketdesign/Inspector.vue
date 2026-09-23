@@ -124,7 +124,7 @@ const tab = ref('box')
   <template v-if="element">
     <div class="panelhead">
       <div>
-        <p v-if="half" class="rubric">{{ half }}</p>
+        <p v-if="half" class="eyebrow">{{ half }}</p>
         <h3>{{ nameOf(element) }}</h3>
       </div>
       <!--
@@ -265,7 +265,7 @@ const tab = ref('box')
   </template>
 
   <div v-else class="nothing">
-    <p class="rubric">Nothing selected</p>
+    <p class="blankhead">Nothing selected</p>
     <p class="blank">Click a box, or a name in the list.</p>
   </div>
 </aside>

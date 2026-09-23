@@ -39,7 +39,7 @@ defineProps({
   </p>
   <div class="vgrid">
     <div>
-      <p class="rubric">Shape</p>
+      <p class="figlabel">Shape</p>
       <p class="big mono">{{ report.ratio.toFixed(3) }}</p>
       <p class="tiny" :class="report.size ? 'okt' : 'badt'">
         <template v-if="report.size">
@@ -50,7 +50,7 @@ defineProps({
       </p>
     </div>
     <div>
-      <p class="rubric">Width in pixels</p>
+      <p class="figlabel">Width in pixels</p>
       <p class="big mono">{{ report.px }}</p>
       <p class="tiny" :class="report.enoughPx ? 'okt' : 'badt'">
         <template v-if="report.minPx">
@@ -61,7 +61,7 @@ defineProps({
       </p>
     </div>
     <div>
-      <p class="rubric">Placements still valid</p>
+      <p class="figlabel">Placements still valid</p>
       <p class="big mono">
         {{ report.placed - report.overflowing }} of {{ report.placed }}
       </p>

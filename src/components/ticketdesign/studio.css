@@ -130,9 +130,29 @@
   padding-top: var(--sp-5); border-top: var(--rule) solid var(--border);
 }
 .pgroup:first-of-type { border-top: 0; padding-top: 0 }
-.rubric {
-  /* .66 rather than the .68 this was: the nearest step on the scale, and a
-     2% difference no eye resolves. */
+/*
+ * FOUR JOBS THAT SHARE A TREATMENT, NOW SAYING SO.
+ *
+ * `.rubric` was all four of these at once, so none of them could be changed
+ * without changing the other three, and a reader could not tell from the
+ * markup which one a given line was. They are separate names carrying one
+ * declaration: the grouping records that they LOOK alike today, and splitting
+ * one out later is a one-line edit rather than an audit of every call site.
+ *
+ *   .rubric     a section's heading. Section.vue is the only thing that should
+ *               write it — every panel heading goes through that component.
+ *   .figlabel   the word above a number: "Shape", "Width in pixels",
+ *               "Placements still valid", "Together". §3 says numbers are the
+ *               product; this is the label on one.
+ *   .eyebrow    the line above a title, naming where the thing is rather than
+ *               what it is — "on the main half" over an element's own name.
+ *   .blankhead  the title of a panel with nothing selected, over the .blank
+ *               sentence that says what to do about it.
+ *
+ * The .66 is the nearest step on the scale to the .68 this once was, a 2%
+ * difference no eye resolves.
+ */
+.rubric, .figlabel, .eyebrow, .blankhead {
   margin: 0; font-size: var(--fs-3xs); font-weight: var(--fw-medium); letter-spacing: .07em;
   text-transform: uppercase; color: var(--muted);
 }

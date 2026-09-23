@@ -96,6 +96,7 @@ import SelectionInspector from './ticketdesign/SelectionInspector.vue'
 import Rulers from './ticketdesign/Rulers.vue'
 import ShortcutsSheet from './ticketdesign/ShortcutsSheet.vue'
 import PicturePicker from './ticketdesign/PicturePicker.vue'
+import Section from './ticketdesign/Section.vue'
 import { usePen } from './ticketdesign/usePen.js'
 import { pathData } from '../lib/pathgeometry.js'
 /* Ink went WITH the inspector: it was imported here and used only there,
@@ -3245,7 +3246,7 @@ const printedSize = computed(() => {
           -->
           <aside class="rail">
             <div class="block">
-              <h3 class="rubric">Put something on the ticket</h3>
+              <Section label="Put something on the ticket" />
               <div class="seg">
                 <button type="button" class="segbtn" :class="{ on: pending === 'field' }"
                         @click="beginAdd('field')">A field</button>
@@ -3275,7 +3276,7 @@ const printedSize = computed(() => {
               needs, and this is the drawing half of the screen.
             -->
             <div class="block">
-              <h3 class="rubric">Draw</h3>
+              <Section label="Draw" />
               <ToolBar label="Shapes to draw">
                 <ToolButton icon="shape" label="Rectangle" :size="17" :keys="keyOf('toolRect')"
                             :active="pendingDeco === 'rect'"
@@ -3331,9 +3332,7 @@ const printedSize = computed(() => {
               @use-style="useLibraryStyle" />
 
             <div class="block grow">
-              <h3 class="rubric">
-                On this template <span class="count">{{ elements.length }}</span>
-              </h3>
+              <Section label="On this template" :count="elements.length" />
               <!--
                 GROUPED BY HALF, which is how card 7a draws it and how the
                 ticket itself is organised: MAIN HALF and STUB are two different
@@ -3485,7 +3484,7 @@ const printedSize = computed(() => {
               something else. They are a pipeline task with a UI at the end.
             -->
             <div class="block">
-              <h3 class="rubric">Artboard</h3>
+              <Section label="Artboard" />
               <!-- TOOLS THAT ACT AT ONCE, so pressed buttons rather than tick
                    boxes: a tick box says "this is applied when you submit",
                    and nothing here is submitted. -->
@@ -3504,7 +3503,7 @@ const printedSize = computed(() => {
             </div>
 
             <div class="block">
-              <h3 class="rubric">Where the stub begins</h3>
+              <Section label="Where the stub begins" />
               <div class="stubrow">
                 <input
                   class="pcfield" type="number" step="0.1" min="5" max="95"
