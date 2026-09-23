@@ -455,7 +455,12 @@ ok(printText.includes('Organisers only'), 'and says who may use it')
 const noArt = await renderScreen(PRINT, printing(''),
                                  { props: { payload: { book: 'Book-001' } } })
 const noArtText = visibleText(noArt)
-ok(noArtText.includes('There is no ticket artwork yet'),
+/* The words shortened — "There is no ticket artwork yet, so nothing can be
+     printed. Upload it on the Ticket Studio screen first." was 103 characters
+     of refusal. The ASSERTION is about which branch renders, not about the
+     copy, so it matches the part that identifies the state rather than a whole
+     sentence somebody will reasonably reword again. */
+  ok(noArtText.includes('No ticket artwork yet'),
    'with no artwork it says so instead')
 ok(!noArtText.includes('What to print'),
    'and does not also offer controls that cannot print anything')

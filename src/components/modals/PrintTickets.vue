@@ -545,8 +545,7 @@ async function printThem() {
            : 'a book, a run of books, the whole raffle, or ten samples'"
          wide @close="emit('close')">
     <p v-if="!hasArtwork" class="note bad">
-      There is no ticket artwork yet, so nothing can be printed. Upload it on the
-      Ticket Studio screen first.
+      No ticket artwork yet. Upload it in Ticket Studio first.
     </p>
 
     <template v-else>
@@ -632,7 +631,7 @@ async function printThem() {
                 <label class="choice"><input v-model="runSheet.cutlines" type="checkbox"> Cut lines</label>
               </div>
               <p class="tiny mono" :class="fit.fits ? 'muted' : 'bad'">{{ pageSum }}</p>
-              <p class="tiny muted">This run only. The template's own setup is on Ticket Studio.</p>
+              <p class="tiny muted">This run only — the template's setup is in Ticket Studio.</p>
             </div>
           </template>
 
@@ -655,7 +654,6 @@ async function printThem() {
             <p class="head">Nothing drawn yet</p>
             <p class="tiny muted">
               Pick a batch, then <b>See what is there</b>.
-              The sheets are drawn here before anything reaches a printer.
             </p>
           </div>
         </div>
@@ -684,13 +682,13 @@ async function printThem() {
 
             <label class="choice"><input v-model="mode" type="radio" value="sample"> Sample book</label>
             <div v-if="isSample" class="samplebox">
-              <p class="tiny">
-                <b>Ten watermarked samples.</b> Not in the raffle, cannot be sold,
-                nothing written down.
-              </p>
+              <!-- Three facts became one. "Cannot be sold" was the third, and
+                   the checkbox directly below is the reader confirming exactly
+                   that — the box argued a point its own control already makes. -->
+              <p class="tiny"><b>Ten watermarked samples.</b> Never in the raffle, never recorded.</p>
               <label class="choice tiny">
                 <input v-model="sampleOk" type="checkbox">
-                <span>I understand these are not sellable tickets</span>
+                <span>I understand these cannot be sold</span>
               </label>
             </div>
 
@@ -700,10 +698,7 @@ async function printThem() {
             <label class="choice">
               <input v-model="withBuyer" type="checkbox">
               <span>Fill in the buyer's details
-                <span class="why">
-                  Only for tickets already sold. A blank book going out to a seller
-                  must print blank lines.
-                </span>
+                <span class="why">Only for tickets already sold — a blank book needs blank lines.</span>
               </span>
             </label>
 
@@ -749,14 +744,13 @@ async function printThem() {
               -->
               <p v-if="missing.length" class="tiny muted">
                 {{ missing.slice(0, 6).join(', ') }}<template v-if="missing.length > 6">, and
-                {{ missing.length - 6 }} more</template>. Print without generating and these
-                are left out — a code is never invented to fill a gap.
+                {{ missing.length - 6 }} more</template>. Print without generating and these are left out.
               </p>
             </div>
 
             <div class="cgroup">
               <p class="rubric"><span class="step" v-if="!isSample">2</span> Put them on paper</p>
-              <p v-if="isSample" class="tiny muted">Nothing is stamped as printed. Print as many as you like.</p>
+              <p v-if="isSample" class="tiny muted">Never marked as printed — run off as many as you like.</p>
               <button v-if="!isSample" class="btn sm primary wide" :disabled="busy || !tickets.length"
                       :title="tickets.length ? 'Marks this batch printed, then opens the print dialog' : 'Nothing to print'"
                       @click="printThem">
@@ -805,8 +799,7 @@ async function printThem() {
                 at {{ qrFacts.widthMM }} mm wide
               </p>
               <p class="tiny muted">
-                Printed codes outlive the raffle, so the address stays a setting you
-                control.
+                Printed codes outlive the raffle — the address stays yours to set.
               </p>
             </div>
           </template>
@@ -814,7 +807,7 @@ async function printThem() {
       </div>
 
       <p class="tiny muted foot">
-        Generating is written to the audit. Printing stamps the book as printed.
+        Generating is audited; printing stamps the book.
         <template v-if="result">
           <span class="grow"></span>
           <b>{{ withCodes }}</b> of {{ inBatch }} in this batch have codes.
