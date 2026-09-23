@@ -28,9 +28,22 @@ The goal is not "fancy". The goal is an interface that is specific to this
 product, operationally efficient, trustworthy with money, and coherent —
 memorable without being distracting.
 
-Most of what follows is about judgement. Two things are not: this product has a
-design system already, and this repo enforces several design rules as tests.
-Start there, because both constrain everything else.
+Most of what follows is about judgement. Three things are not: this product has
+a design system already, this repo enforces several design rules as tests, and
+there is a per-unit standard every component must pass. Start there, because all
+three constrain everything else.
+
+**Read `UI-STANDARD.md` at the repo root before designing or reviewing
+anything.** It is the per-unit layer this skill does not cover: ten rules, a
+clause per component kind, a text budget, and a stated precedence for when rules
+collide. This skill governs *redesigning a screen* — diagnosis first, findings,
+scope. The standard governs *whether one button, row, card or modal may be
+committed*. A screen redesign has to pass the standard unit by unit as well;
+they are not alternatives, and neither is a summary of the other.
+
+Its evidence sits in `UI-EVIDENCE.md` — three papers and two books, with a rule
+promoted only where two sources assert it and a coefficient quoted only where a
+paper prices it.
 
 ---
 
@@ -321,6 +334,10 @@ findings and nothing else.
 
 When you believe it's done:
 
+0. **Run `UI-STANDARD.md` §7** over every unit you touched — its ten rules, the
+   clause for each unit's kind, and its empty and broken states. A screen that
+   passes a diagnosis and fails the standard on one card is not done; the card
+   is where the eye stops.
 1. Run `./tests/run.sh`.
 2. **Look at it.** Use the `browser-automation` skill to load the page and read
    what actually rendered, rather than reasoning about the CSS or asking the
