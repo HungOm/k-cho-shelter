@@ -698,7 +698,13 @@ shrinking as Phase 6 proceeds — a gate that fails on day one gets disabled on
 day two. `tokens.test.mjs` is the precedent: it asserts every `var()` name used
 exists, and this is its dimensional twin.
 
-### `labelconsistency.test.mjs` — P2, eq. (13)/(14)
+### `labelconsistency.test.mjs` — P2, eq. (13)/(14) — **BUILT** `b2abcba`
+
+*Day-one catch: `BOOK_WORDS.Unassigned` is "In the office"; `BookAction.vue`, the
+dialog that puts a book there, offered "Back in the office". Two of its three
+inline copies still matched — which is what a retyped label does, it drifts one
+at a time. Checks inline literals only; two named constants disagreeing about one
+id is a decision, not drift.*
 
 **Asserts:** where two call sites offer a choice over the same set of ids, the
 label for a given id is identical.
@@ -713,7 +719,14 @@ false positives and be disabled within a week.
 **It must assert its enumeration found something.** A consistency test that
 discovers zero vocabulary pairs passes silently and forever.
 
-### `imagecue.test.mjs` — P3, +1.28–1.45 s
+### `imagecue.test.mjs` — P3, +1.28–1.45 s — **BUILT**
+
+*Two named lists rather than one, so a new dropdown cannot pass by being
+unmentioned: every `<select>` must be declared as naming words (fine) or naming
+a picture (a finding, with an owner). It also protects the four controls that
+already show what they choose — `Lettering`, `TemplateRail`, `LibraryPanel`,
+`Ink` — so a "simplification" back to a dropdown goes red. F3 is its one open
+entry. Two-list design kcho-shelter-25's.*
 
 **Asserts:** a control that chooses among *visually distinguishable* things
 renders the thing, not only its name.
@@ -723,7 +736,32 @@ kinds, colours, ticket sizes. Would have caught **F2** and **F3**; would *pass*
 `TemplateRail`, `LibraryPanel` and the Draw rail — which is the point. It
 encodes what this repo already does well so the next panel does it too.
 
-### `absence.test.mjs` — P3, +6.97 s
+### `absence.test.mjs` — **PROPOSED AND DROPPED**
+
+Not built, and the reason is more useful than the gate would have been.
+
+**It is §10's withdrawn finding wearing a test.** This document already records
+*"`Empty` is imported in only 6 of ~60 components"* as **overstated** — every
+list screen has one, and the real finding was the much narrower F6. A gate
+asserting "every collection has an empty branch" re-finds precisely the cases
+that dissolved on being opened: the panel whose collection can never be empty
+because it has built-ins, the table whose empty state is unreachable because you
+are signed in. Somebody would spend an afternoon disproving them again, and the
+gate would be switched off — correctly.
+
+**And it would have passed on the bug it was meant to catch.** Setup's rung
+editor threw on every warm mount and left `{ preset: '', rungs: [] }`. An empty
+branch existed. It was correct. It was also indistinguishable from the wreckage,
+which is why nobody noticed for months. A test counting empty branches would
+have been green for the entire time that screen was broken.
+
+The assertion actually worth making is **empty and broken must not look the
+same** — and there is no mechanical version of it, which by the criterion in
+UI-STANDARD.md §6 means it does not earn a gate yet. F6 was fixed narrowly
+instead (Phase 4), and this note exists so the next reader does not rediscover
+the broad version as a gap. *(Argument kcho-shelter-25's, against my proposal.)*
+
+### `absence.test.mjs` — the original proposal, for the record
 
 **Asserts:** every screen rendering a collection has a branch for the empty case,
 and that branch names a cause.
