@@ -170,6 +170,156 @@
   --shadow: 0 1px 2px rgba(16,24,40,.05), 0 6px 20px rgba(16,24,40,.07);
   --shadow-lg: 0 10px 40px rgba(16,24,40,.16);
   --ease: cubic-bezier(.2,.8,.2,1);
+
+  /*
+   * ============================ THE SCALES ============================
+   *
+   * THE COLOUR HALF OF THIS SYSTEM WAS FINISHED AND THE DIMENSIONAL HALF WAS
+   * NEVER STARTED, which is the whole finding of UI-EVIDENCE.md §4. Counted
+   * over style.css, src/components and src/verify, this app was drawing with:
+   *
+   *     62 font sizes      across rem, px AND em
+   *      9 font weights    including 550, 650 and 850
+   *     29 spacing values  every integer from 2 to 14 in use
+   *     16 radii           plus three spellings of "pill"
+   *      6 border widths   including .5px
+   *     25 shadows         against two tokens
+   *
+   * against ONE font-size token and no spacing token at all. That is not a
+   * scale with exceptions; it is the absence of a scale, and it is why one
+   * screen (TicketDesign.vue) declares twelve font sizes of its own where
+   * Designing User Interfaces asks for three or four.
+   *
+   * WHY IT HAPPENED HERE AND NOWHERE IN THE COLOUR. `--brand` exists, so
+   * nobody picks a teal. No `--fs-*` existed, so everybody picked a size —
+   * and picking is how `.8rem`, `.82rem` and `.84rem` all come to be in one
+   * codebase, 2.5% apart, each of them correct in the moment it was typed.
+   * Refactoring UI's first chapter is about exactly this: "avoid having to
+   * make the same minor decision twice."
+   *
+   * NOTHING BELOW CHANGES A RENDERED VALUE. Every token here is set to a
+   * number already in the tree, so this block moves nothing on screen and
+   * footerfit / screenrender / cardlayout cannot see it. Its job is to give
+   * the next person something to reach for; UI-EVIDENCE.md §7.6 migrates the
+   * literals file by file, as each file is opened for another reason.
+   *
+   * tests/scales.test.mjs ratchets the count of remaining literals. It may
+   * fall and never rise.
+   */
+
+  /*
+   * TYPE — ten steps on the existing 17px base, hand-crafted rather than
+   * modular. A modular scale lands on fractional pixels and gives the wrong
+   * resolution for UI work, where the crowded end of the range is small text.
+   * The base stays 1rem = 17px because that is a decision with a reason
+   * behind it: readable at arm's length by somebody not confident with phones.
+   *
+   * Sizes in comments are the rendered px at that base.
+   */
+  --fs-3xs: .66rem;   /* 11px — a legend key; the smallest thing still a word */
+  --fs-2xs: .74rem;   /* 13px — dense table text, captions. = .dense --fs-ui  */
+  --fs-xs:  .82rem;   /* 14px — the supporting line under a row's lead        */
+  --fs-sm:  .9rem;    /* 15px — secondary body                               */
+  --fs-md:  1rem;     /* 17px — base. Same value as --fs-ui                   */
+  --fs-lg:  1.15rem;  /* 20px — a row's lead, a card heading                  */
+  --fs-xl:  1.4rem;   /* 24px — a screen heading                              */
+  --fs-2xl: 1.65rem;  /* 28px — a figure that carries a panel                 */
+  --fs-3xl: 2.2rem;   /* 37px — the one number a screen is about              */
+  --fs-4xl: 3.2rem;   /* 54px — the hero figure, used once                    */
+  /*
+   * EVERY STEP ABOVE IS A VALUE THIS APP ALREADY DRAWS WITH, and that is an
+   * assertion, not a claim — scales.test.mjs looks each one up in the tree. A
+   * scale invented in a vacuum is a second system competing with the first;
+   * this one is the first system with the duplicates removed.
+   *
+   * The one place the ≥25% rule is not met is 1.4 -> 1.65 (18%). That rule is
+   * Refactoring UI's for SPACING; its own published type scale runs as tight
+   * as 11%, because the eye reads a headline against body text rather than
+   * against the next headline size.
+   */
+
+  /*
+   * WEIGHT — three, down from nine. Refactoring UI says two are usually
+   * enough; the third exists because `--font-data` carries figures and a
+   * column of money wants more weight than a sentence does.
+   *
+   * 550, 650 and 850 are the tell that there was no system: those are values
+   * you arrive at by nudging, not by choosing. They retire into the nearest
+   * kept weight, as do 500 (-> medium) and 800 (-> bold).
+   */
+  --fw-regular: 400;
+  --fw-medium: 600;
+  --fw-bold: 700;
+
+  /*
+   * SPACE — nine steps, and the gaps are the point. A linear scale ("make
+   * everything a multiple of 4") does not help you choose, because it leaves
+   * 8px and 10px both available and 25% apart in perception but 2px apart on
+   * the page. Every gap below is at least 33%.
+   *
+   * WHAT THIS COSTS AT MIGRATION, said here rather than discovered later:
+   * 10px is the most-used spacing in the app (113 sites) and 14px is fifth
+   * (86 sites), and NEITHER IS IN THIS SCALE. They are the two values that
+   * exist only because nothing stopped them. Each site becomes --sp-4/--sp-5
+   * or --sp-5/--sp-6 on its own merits; that is the single largest mechanical
+   * change in the migration and it is deliberately not being done by find and
+   * replace.
+   */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 24px;
+  --sp-8: 32px;
+  --sp-9: 48px;
+
+  /*
+   * RADIUS — the existing three, plus the two shapes they could not express.
+   * `--r-md` covers the 6/7/8/9/10px cluster that had no token and so was
+   * typed out twenty-nine times; `--r-pill` replaces `50%`, `99px` and
+   * `999px`, which were three answers to one question. `50%` stays correct
+   * for anything actually circular, where it is a different statement.
+   */
+  --r-xs: 3px;
+  --r-md: 8px;
+  --r-pill: 999px;
+
+  /*
+   * LINE WEIGHT — two, down from six. Named for the job rather than the
+   * number, and deliberately NOT `--line`: that name belonged to the verify
+   * page's retired palette and is named in two comments as the token whose
+   * silent fallback drew a hairline that was not there.
+   *
+   * `.5px` goes. It renders as 1px, 0px or a grey smear depending on the
+   * device, which means it is three different designs.
+   *
+   * Reads as `border: var(--rule) solid var(--border)` — the width token and
+   * the colour token side by side, each saying its own half.
+   */
+  --rule: 1px;
+  --rule-strong: 1.5px;
+
+  /*
+   * ELEVATION — five heights, so that choosing a shadow means choosing how
+   * far off the page a thing sits rather than picking a blur radius. There
+   * were two tokens and twenty-three one-off values.
+   *
+   * --elev-2 and --elev-5 ARE the existing --shadow and --shadow-lg, kept
+   * bit-identical so nothing moves; the old names stay as the aliases below
+   * and are not deprecated. 1, 3 and 4 are new and currently unused, which
+   * means they can be tuned the first time somebody puts one on a screen and
+   * looks at it. They are written to Refactoring UI's two-part form — a large
+   * soft shadow for the cast light, a tight dark one for the ambient
+   * occlusion under the edge — with the tight half fading as height grows,
+   * the way it does on a desk.
+   */
+  --elev-1: 0 1px 2px rgba(16,24,40,.06);                                  /* a row, a chip: barely off the page */
+  --elev-2: 0 1px 2px rgba(16,24,40,.05), 0 6px 20px rgba(16,24,40,.07);   /* a card. = --shadow */
+  --elev-3: 0 4px 10px rgba(16,24,40,.10), 0 1px 3px rgba(16,24,40,.06);   /* a dropdown, a popover */
+  --elev-4: 0 8px 24px rgba(16,24,40,.13), 0 2px 6px rgba(16,24,40,.07);   /* a sheet */
+  --elev-5: 0 10px 40px rgba(16,24,40,.16);                                /* a modal. = --shadow-lg */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -223,6 +373,28 @@
 
     --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 20px rgba(0,0,0,.3);
     --shadow-lg: 0 10px 40px rgba(0,0,0,.5);
+
+    /*
+     * THE ELEVATION LADDER FLIPS, AND FORGETTING THAT WAS A REAL BUG that
+     * tokens.test.mjs caught the first time this block was written. The
+     * scales in :root are dimensions — a font size has no theme — so it is
+     * easy to file the whole Phase 0 addition under "theme-free" and move on.
+     * But a shadow is not a dimension. It is rgba, it is a COLOUR, and a
+     * shadow tuned for ink on paper is invisible against #0d1211.
+     *
+     * --elev-2 and --elev-5 stay bit-identical to --shadow and --shadow-lg
+     * here exactly as they are in the light block; scales.test.mjs compares
+     * both pairs in both themes, because an alias that holds in one theme and
+     * drifts in the other is the half-bug that looks fixed.
+     *
+     * Dark shadows are deeper and darker: on a dark surface a shadow has less
+     * contrast to work with, so the opacity climbs rather than the blur.
+     */
+    --elev-1: 0 1px 2px rgba(0,0,0,.4);
+    --elev-2: 0 1px 2px rgba(0,0,0,.35), 0 6px 20px rgba(0,0,0,.3);
+    --elev-3: 0 4px 10px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.35);
+    --elev-4: 0 8px 24px rgba(0,0,0,.48), 0 2px 6px rgba(0,0,0,.35);
+    --elev-5: 0 10px 40px rgba(0,0,0,.5);
   }
 }
 

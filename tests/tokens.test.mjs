@@ -125,8 +125,28 @@ console.log('and every token that varies by theme has a dark value')
    *                 under any lamp, and the design system says it is never
    *                 chrome. The verify page's --seal is the same argument.
    */
+  /*
+   * AND THE DIMENSIONAL SCALES, added with Phase 0 of UI-EVIDENCE.md. A font
+   * size, a gap, a radius and a line weight have no theme — 12px is 12px under
+   * any lamp — so they are named here for the same reason the six above are:
+   * the set that is exempt is the set that is written down.
+   *
+   * --elev-* IS NOT IN THIS LIST AND MUST NOT BE. A shadow is rgba, which
+   * makes it a colour wearing a dimension's name, and a shadow tuned for ink
+   * on paper is invisible against #0d1211. The first draft of the scales
+   * block declared the elevation ladder in :root only; this check is what
+   * found it, which is the whole reason the exemption is by name rather than
+   * by a rule like "anything that is not a colour".
+   */
   const THEME_FREE = ['--ease', '--font-data', '--r', '--r-sm', '--tap',
-                      '--ticket-gold', '--paper']
+                      '--ticket-gold', '--paper',
+                      '--fs-3xs', '--fs-2xs', '--fs-xs', '--fs-sm', '--fs-md',
+                      '--fs-lg', '--fs-xl', '--fs-2xl', '--fs-3xl', '--fs-4xl',
+                      '--fw-regular', '--fw-medium', '--fw-bold',
+                      '--sp-1', '--sp-2', '--sp-3', '--sp-4', '--sp-5',
+                      '--sp-6', '--sp-7', '--sp-8', '--sp-9',
+                      '--r-xs', '--r-md', '--r-pill',
+                      '--rule', '--rule-strong']
 
   const css = readFileSync(ROOT + 'src/style.css', 'utf8')
   const darkAt = css.indexOf('@media (prefers-color-scheme: dark)')
