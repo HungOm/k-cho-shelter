@@ -516,6 +516,19 @@ field that IS the drawn shape's inspector heading, showing its kind until named.
 
 ### Phase 6 — Export, the grey check, brand swatch, text styles (M)
 
+**Status 2026-09-23: built, gated, rendered** (kcho-shelter-0c).
+- **CORS confirmed, not assumed:** a header request to the hosted project's
+  public `ticket-artwork` path answered `access-control-allow-origin: *`, so
+  the artwork is drawn to the canvas untainted.
+- A PNG was produced in a browser through the real button: 2244 × 725 px, the
+  artwork, every field, a working sample QR and the SAMPLE watermark. The
+  sample is watermarked because a file that travels must not pass for a real
+  ticket; the SVG is sized in millimetres so it opens at print size.
+- Kept lettering applies to fields as well as drawn words. The brand swatch
+  landed in Phase 0.
+- `exportSize` refused a zero-width artwork only after its test did: the
+  ratio is Infinity, which passes `> 0`.
+
 - New `src/lib/ticketexport.js`: `exportSize(design, dpi = 300)`;
   `sampleTicketSVG(design, active, values, { encode, qrUrl })` → rooted
   `<svg viewBox="0 0 W H">` with the artwork `<image>` then the element layer;

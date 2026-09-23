@@ -71,6 +71,9 @@ import { bandOf, isClick, hitsIn, expandGroups, mergeSelection } from '../lib/se
 import { copyRecords, pasteRecords } from '../lib/clipboard.js'
 import { snapEdges, snapNear, snapSpan } from '../lib/studiocanvas.js'
 import { KEYS, keyLabel, findBinding } from '../lib/studiokeys.js'
+import {
+  exportSize, ticketSVG, layerDocument, inlineImages, fetchAsDataURI, rasterise, downloadBlob,
+} from '../lib/ticketexport.js'
 import { placeShape, normalLibrary, nextLibId } from '../lib/designlibrary.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
@@ -401,6 +404,8 @@ const sampleNumber = computed(() => sampleValues.value['ticket.number'])
 
 const realQr = ref(true)
 const showGuides = ref(false)
+/* The artboard as a grey press will print it — a view, never saved. */
+const inGrey = ref(false)
 const showAllBoxes = ref(true)
 const snapping = ref(true)
 /*
@@ -936,6 +941,42 @@ function saveColourToLibrary(colour) {
 function removeColourFromLibrary(id) {
   writeLibrary({ ...library.value, colours: library.value.colours.filter((c) => c.id !== id) },
     'Taken out of the library')
+}
+
+/*
+ * LETTERING, KEPT AND USED. The selection's lettering is read off the first
+ * lettered thing in it — drawn words, or a field or own words (a code has
+ * none) — and a kept style is put on every lettered thing selected.
+ */
+const lettered = (t) => (isDeco(t.id) ? t.kind === 'text' : t.kind !== 'code')
+const pickedLettering = computed(() => {
+  const t = pickedThings.value.find(lettered)
+  if (!t) return null
+  return isDeco(t.id)
+    ? { family: t.text.family, weight: t.text.weight, align: t.text.align,
+        tracking: t.text.tracking || 0, colour: t.fill?.colour || '' }
+    : { family: t.family, weight: t.weight, align: t.align, tracking: 0, colour: t.ink || '' }
+})
+
+function saveStyleToLibrary(style) {
+  writeLibrary({ ...library.value, styles: [...library.value.styles, style] }, `Kept “${style.name}”`)
+}
+function removeStyleFromLibrary(id) {
+  writeLibrary({ ...library.value, styles: library.value.styles.filter((t) => t.id !== id) }, 'Removed')
+}
+function useLibraryStyle(style) {
+  const things = pickedThings.value.filter(lettered)
+  if (!things.length) { toast('Select a field or some words to letter them', 'warn'); return }
+  mark()
+  for (const t of things) {
+    if (isDeco(t.id)) {
+      Object.assign(t.text, { family: style.family, weight: style.weight, align: style.align, tracking: style.tracking || 0 })
+      if (style.colour) t.fill.colour = style.colour
+    } else {
+      Object.assign(t, { family: style.family, weight: style.weight, align: style.align })
+      if (style.colour) t.ink = style.colour
+    }
+  }
 }
 
 function useLibraryColour(value) {
@@ -2456,6 +2497,51 @@ function printTest() {
  * artwork's own shape times the width, because a second number is a second
  * thing to get wrong and getting it wrong stretches the artwork off its
  * baseline. */
+/*
+ * ---------- one sample ticket, as a file ----------
+ *
+ * A proof for a print shop, or a picture to show somebody: the sample values
+ * the canvas shows, a working sample QR, and the SAMPLE watermark the test
+ * page carries — a file that travels must not pass for a real ticket.
+ */
+const exporting = ref('')
+async function downloadSample(kind) {
+  const t = active.value
+  if (!design.value || !t || exporting.value) return
+  exporting.value = kind
+  try {
+    const layer = elementLayerSVG(design.value, sampleValues.value, {
+      qrUrl: ticketVerifyUrl(sampleVerifyBase.value, sampleNumber.value, 'SAMPLE0CODE0'),
+      encode, watermark: 'SAMPLE',
+    })
+    const name = `${t.name} - sample ticket`
+    if (kind === 'svg') {
+      /* Sized in millimetres, so it opens at the size it prints. */
+      const svg = ticketSVG({
+        layer, artworkHref: t.url, artWidth: t.width, artHeight: t.height,
+        width: `${Number(design.value.sheet.widthMM).toFixed(2)}mm`,
+        height: `${printedHeightMM.value.toFixed(2)}mm`,
+      })
+      downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${name}.svg`)
+    } else {
+      const size = exportSize(design.value.sheet.widthMM, t.width, t.height, 300)
+      const { svg, failed } = await inlineImages(
+        layerDocument({ layer, artWidth: t.width, artHeight: t.height }), fetchAsDataURI)
+      const blob = await rasterise({ layerSVG: svg, artworkHref: t.url, ...size })
+      downloadBlob(blob, `${name}.png`)
+      if (failed.length) {
+        toast(`${failed.length} placed ${failed.length === 1 ? 'picture' : 'pictures'} could not be fetched and ${failed.length === 1 ? 'is' : 'are'} missing from the file`, 'bad')
+      }
+    }
+  } catch (err) {
+    toast(`The ticket could not be saved: ${err?.message || err}`, 'bad')
+  } finally {
+    exporting.value = ''
+  }
+}
+const whyNoExport = computed(() => (exporting.value ? 'Saving the last one…'
+  : !active.value || !design.value ? 'Upload some artwork first' : ''))
+
 /* The printed height in millimetres — derived, never stored, the same rule as
    the line below. */
 const printedHeightMM = computed(() => {
@@ -2758,10 +2844,12 @@ const printedSize = computed(() => {
               you look at is the list it just joined.
             -->
             <LibraryPanel
-              :library="library" :selected="pickedDecos" :busy="libBusy"
+              :library="library" :selected="pickedDecos" :lettering="pickedLettering" :busy="libBusy"
               @place="placeFromLibrary" @save="saveToLibrary"
               @save-colour="saveColourToLibrary" @remove="removeFromLibrary"
-              @remove-colour="removeColourFromLibrary" @use-colour="useLibraryColour" />
+              @remove-colour="removeColourFromLibrary" @use-colour="useLibraryColour"
+              @save-style="saveStyleToLibrary" @remove-style="removeStyleFromLibrary"
+              @use-style="useLibraryStyle" />
 
             <div class="block grow">
               <h3 class="rubric">
@@ -2911,6 +2999,9 @@ const printedSize = computed(() => {
                 <ToolButton icon="code" label="Real QR" wide :size="15" :active="realQr"
                             hint="Draw a real, scannable code in each code box rather than a placeholder"
                             @click="realQr = !realQr" />
+                <ToolButton icon="greyscale" label="In grey" wide :size="15" :active="inGrey"
+                            hint="Show the ticket as a grey press will print it — colours that differ only in hue disappear"
+                            @click="inGrey = !inGrey" />
               </ToolBar>
             </div>
 
@@ -2960,6 +3051,15 @@ const printedSize = computed(() => {
 
                 All of it is data, so all of it takes --font-data.
               -->
+              <!-- A sample ticket as a file, beside the numbers it is made at. -->
+              <ToolBar label="Download a sample ticket">
+                <ToolButton icon="download" label="PNG" wide :size="15" :why="whyNoExport"
+                            hint="A sample ticket as a 300 dpi picture, watermarked SAMPLE — for a proof or to show somebody"
+                            @click="downloadSample('png')" />
+                <ToolButton icon="download" label="SVG" wide :size="15" :why="whyNoExport"
+                            hint="The same sample as a vector drawing, at print size, for a designer to open"
+                            @click="downloadSample('svg')" />
+              </ToolBar>
               <span v-if="active && design" class="specs data">
                 {{ printedSize }} · {{ active.width }} × {{ active.height }} px<template
                   v-if="dpi"> · {{ dpi.v }} dpi</template>
@@ -3107,7 +3207,7 @@ const printedSize = computed(() => {
               <Rulers :width-m-m="Number(design.sheet.widthMM)" :height-m-m="printedHeightMM"
                       :width-px="frameWidth" :height-px="frameWidth * (active.height / active.width)">
               <div
-                ref="frame" class="frame" :class="{ drawing: !!pending, panning: spaceHeld }"
+                ref="frame" class="frame" :class="{ drawing: !!pending, panning: spaceHeld, grey: inGrey }"
                 :style="{ width: frameWidth + 'px' }"
                 @pointerdown="onFrameDown" @pointermove="onPointerMove"
                 @pointerup="endPointer" @pointercancel="endPointer">
@@ -3675,6 +3775,9 @@ const printedSize = computed(() => {
 .guide.v { top: 0; bottom: 0; width: 1px; margin-left: -.5px }
 .guide.h { left: 0; right: 0; height: 1px; margin-top: -.5px }
 .frame.panning, .frame.panning .ebox { cursor: grab }
+/* In grey: the artwork and what is drawn on it, not the boxes and handles,
+   which are the studio's and stay in colour so they can still be found. */
+.frame.grey > img, .frame.grey > .overlay { filter: grayscale(1) }
 
 /*
  * --paper, not --surface. This is the sheet the ticket prints on, and it was

@@ -273,6 +273,8 @@ const PATHS = {
   /* A mirror line with a triangle and its reflection either side of it. */
   flipH:      'M12 4v16M9.5 7 4 17h5.5zM14.5 7l5.5 10h-5.5z',
   flipV:      'M4 12h16M7 9.5 17 4v5.5zM7 14.5l10 5.5v-5.5z',
+  /* A disc, half of it hatched: the ticket as a grey press will print it. */
+  greyscale:  'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 3v18M12 7h4.5M12 11h6.5M12 15h6M12 19h3',
 
   /*
    * NOT A DRAWING — what is shown when a name does not exist.

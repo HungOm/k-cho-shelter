@@ -22,16 +22,23 @@ import Icon from '../ui/Icon.vue'
 import ToolButton from '../ui/ToolButton.vue'
 import { decorationLayerSVG } from '../../lib/designelements.js'
 import { PATHS } from '../../lib/iconpaths.js'
-import { BUILT_IN, MAX_SHAPES, MAX_COLOURS, shapeFrom, nextLibId } from '../../lib/designlibrary.js'
+import { BUILT_IN, MAX_SHAPES, MAX_COLOURS, MAX_STYLES, shapeFrom, nextLibId } from '../../lib/designlibrary.js'
+import { FAMILIES } from '../../lib/ticketelements.js'
 
 const props = defineProps({
   /** The raffle's own library, as config carries it. */
   library: { type: Object, default: () => ({ shapes: [], colours: [], styles: [] }) },
   /** What is selected on the artboard, so it can be saved. */
   selected: { type: Array, default: () => [] },
+  /**
+   * The lettering of the selected field or words — { family, weight, align,
+   * tracking, colour } — or null when nothing lettered is selected.
+   */
+  lettering: { type: Object, default: null },
   busy: { type: Boolean, default: false },
 })
-const emit = defineEmits(['place', 'save', 'save-colour', 'remove', 'remove-colour', 'use-colour'])
+const emit = defineEmits(['place', 'save', 'save-colour', 'remove', 'remove-colour', 'use-colour',
+  'save-style', 'remove-style', 'use-style'])
 
 /* '' | 'shape' | 'colour' — one naming row serving both, because both need
    the same thing: a word typed before the server will take it. */
@@ -162,7 +169,29 @@ const whyNoSave = computed(() => {
   return canSave.value ? '' : 'Select something on the ticket first'
 })
 
+/*
+ * LETTERING, KEPT. The library's model has held named text styles since it was
+ * written, and nothing could make or use one — so "the gold serif we use for
+ * the prize line" was retyped on every ticket. A kept style is the face, the
+ * weight, the alignment, the spacing and the colour of whatever lettered thing
+ * is selected, and a click puts all five on whatever is selected next.
+ */
+const stackOf = (id) => FAMILIES.find((f) => f.id === id)?.stack || 'inherit'
+const stylesFull = computed(() => (props.library?.styles?.length ?? 0) >= MAX_STYLES)
+const whyNoStyle = computed(() => {
+  if (props.busy) return 'Saving…'
+  if (stylesFull.value) return `The library holds ${MAX_STYLES} lettering styles. Remove one to keep another.`
+  return props.lettering ? '' : 'Select a field or some words first'
+})
+
 function confirmSave() {
+  if (naming.value === 'style') {
+    if (!props.lettering) return
+    emit('save-style', { ...props.lettering, id: nextLibId('t'), name: name.value.trim() || 'Lettering' })
+    naming.value = ''
+    name.value = ''
+    return
+  }
   if (naming.value === 'colour') {
     if (!pickedColour.value) return
     emit('save-colour', {
@@ -223,7 +252,7 @@ function confirmSave() {
   </template>
   <template v-else>
     <input v-model="name" maxlength="40"
-           :placeholder="naming === 'colour' ? pickedColour : 'Call it something'"
+           :placeholder="naming === 'colour' ? pickedColour : naming === 'style' ? 'Prize line, say' : 'Call it something'"
            @keyup.enter="confirmSave">
     <div class="row">
       <button class="btn sm ghost" @click="naming = ''; name = ''">Cancel</button>
@@ -260,6 +289,29 @@ function confirmSave() {
     </div>
   </div>
   <p v-else class="tiny muted">No colours kept yet.</p>
+
+  <div class="colhead">
+    <h4 class="rubric">Lettering</h4>
+    <ToolButton
+      icon="plus" label="Keep this lettering" :size="13"
+      :why="whyNoStyle" hint="Keep the selection's face, weight, alignment, spacing and colour"
+      @click="naming = 'style'" />
+  </div>
+  <div v-if="library?.styles?.length" class="styles">
+    <div v-for="t in library.styles" :key="t.id" class="tile">
+      <!-- The style drawn as itself: "Aa" in its face, weight and colour. -->
+      <button type="button" class="place" :title="`Letter the selection like ${t.name}`"
+              :aria-label="`Use ${t.name}`" @click="emit('use-style', t)">
+        <span class="aa" :style="{ fontFamily: stackOf(t.family), fontWeight: t.weight === 'bold' ? 700 : 400,
+                                   color: t.colour || undefined, letterSpacing: `${t.tracking || 0}em` }">Aa</span>
+        <span class="tname">{{ t.name }}</span>
+      </button>
+      <ToolButton icon="trash" :label="`Remove ${t.name}`" :size="13" class="tx"
+                  hint="Take it out of the library. Lettering already on a ticket stays."
+                  @click="emit('remove-style', t.id)" />
+    </div>
+  </div>
+  <p v-else class="tiny muted">No lettering kept yet.</p>
 </div>
 </template>
 
@@ -306,6 +358,9 @@ function confirmSave() {
 /* The gap clears the remove badge, which overhangs its swatch by 6px — at the
    4px this started at, a badge sat on the NEIGHBOURING colour. */
 .cols { display: flex; flex-wrap: wrap; gap: var(--sp-4) }
+.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2) }
+/* Large enough to see the face: the tile's whole job is to show it. */
+.aa { font-size: var(--fs-xl); line-height: 1.1; color: var(--text) }
 .colwrap { position: relative }
 /*
  * THE REMOVE BADGE CARRIES ITS OWN GROUND, which a swatch is the one place in

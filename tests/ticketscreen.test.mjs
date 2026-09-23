@@ -981,5 +981,44 @@ console.log('a drawn shape is called what somebody named it')
   await cleanup()
 }
 
+console.log('the ticket can be seen in grey, handed over as a file, and lettered from the library')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 6. The grey view must reach the artwork and not
+   * the studio's own boxes (which stay findable in colour); the sample must be
+   * downloadable from the stage bar; and a kept lettering style must land on
+   * a field AND on drawn words, which store their lettering differently.
+   */
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => { await b.load(); b.tab.value = 'place'; b.inGrey.value = true },
+    renderReal: ['ToolBar.vue', 'ToolButton.vue'],
+  })
+  ok(/class="frame[^"]*\bgrey\b/.test(html), 'the grey view marks the artboard')
+  for (const t of ['PNG', 'SVG']) {
+    const m = html.match(new RegExp(`<button[^>]*aria-label="${t}"[^>]*>`))
+    ok(m && !/disabled/.test(m[0]), `a sample can be downloaded as ${t} once there is artwork`)
+  }
+
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ok(!ctx.whyNoExport.value, 'with artwork, nothing stands in the way of a download')
+  const words = normalDecoration({ id: 'd-words', kind: 'text', text: { value: 'Grand prize' } })
+  ctx.design.value.decorations = [words]
+  ctx.sel.value = 'buyer-name'
+  ctx.also.value = ['d-words']
+  const style = { id: 't1', name: 'Prize line', family: 'number', weight: 'bold', align: 'centre', tracking: 0.1, colour: '#b8860b' }
+  ctx.useLibraryStyle(style)
+  const field = ctx.design.value.elements.find((e) => e.id === 'buyer-name')
+  const w = ctx.design.value.decorations[0]
+  ok(field.family === 'number' && field.weight === 'bold' && field.align === 'centre' && field.ink === '#b8860b',
+    'a kept style letters a field — face, weight, alignment and ink')
+  ok(w.text.family === 'number' && w.text.tracking === 0.1 && w.fill.colour === '#b8860b',
+    'and drawn words, with their spacing and colour')
+  ctx.sel.value = 'd-words'
+  ctx.also.value = []
+  eq(ctx.pickedLettering.value?.weight, 'bold', 'and the lettering read back off a selection is what was put on it')
+  await cleanup()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
