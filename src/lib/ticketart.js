@@ -1692,8 +1692,11 @@ export function shelterCardSVG(values = {}, opts = {}) {
   const bold = (p) => (p.weight === 'bold' ? 'font-weight="700"' : '')
   const paint = (p, role) => p.ink || role
   const op = (v) => String(round(v, 4)).replace(/^0\./, '.')
-  const cap = (p, str, dy) =>
-    t(str, ax(p), p.y + dy * p.k, 22 * p.k, quiet, TEXT_FAMILY,
+  /* `tint` defaults to the quiet ink, so every existing caller is unchanged.
+     The one that passes gold is the supporter's title, which is a compliment
+     and not a label — see the block comment at "the person" below. */
+  const cap = (p, str, dy, tint = quiet) =>
+    t(str, ax(p), p.y + dy * p.k, 22 * p.k, tint, TEXT_FAMILY,
       `${anch(p)}letter-spacing="${round(3 * p.k)}"`)
 
   /* ---- the mark, the organisation and the event ---- */
@@ -1781,12 +1784,47 @@ export function shelterCardSVG(values = {}, opts = {}) {
     : ''
 
   /* ---- the person ---- */
+  /*
+   * THE EARNED WORD TAKES THE LABEL, AND THE GENERIC ONE GOES.
+   *
+   * This drew SUPPORTER / JOHN KUI / WELL-WISHER \u00b7 1 ticket. The label slot
+   * was spent on a word that is identical on every card this raffle will ever
+   * send, and the word the raffle chose for THIS person was pushed into the
+   * caption under their name, at the same 22 as the label above it. Nobody
+   * learns anything from being told they are a supporter while holding the
+   * card; "Well-wisher" or "Pillar" is the whole of what a rung ladder is for,
+   * and it was the least prominent of the three lines.
+   *
+   * So the title takes the label position in gold, and the count stands alone
+   * beneath it in the quiet ink at 19. That split is the rule verify.css
+   * already states for the same fact on the check page — the compliment is
+   * coloured, the proof is not — and the two surfaces showing one person's
+   * rung should not disagree about which half is which.
+   *
+   * NO PLURAL IS DECIDED HERE. `rankCount` arrives as a finished phrase from
+   * the shared ladder: "3 books", "1 ticket". The check page had an incident
+   * from substituting {n} into one string and telling a one-ticket buyer they
+   * held "1 tickets" — that reader is exactly who the bottom rung is for.
+   *
+   * NOT ESCAPED ON THE WAY IN. `t` escapes what it is given; bandLine does its
+   * own because it builds the <text> by hand. Passing esc() here would have
+   * put "&amp;amp;" on the card of anyone whose rung name has an ampersand.
+   *
+   * WITHOUT A RUNG NOTHING MOVES. A raffle with no ladder configured sends a
+   * card with no rankName, and that card still reads SUPPORTER over the name
+   * with no third line, exactly as before. The rung is what this is about and
+   * a card without one should not be able to tell.
+   */
   const B = P.buyer
-  const buyer = (B.on ? cap(B, 'SUPPORTER', 26) : '')
-    + (B.on ? t(name, ax(B), B.y + 82 * B.k, 54 * B.k, paint(B, ink), fam(B), `${anch(B)}${bold(B)}`) : '')
-    + (B.on
-      ? bandLine(values, { x: ax(B), y: B.y + 118 * B.k, size: 22 * B.k, ink: gold, quiet, anchor: anch(B).trim() })
+  const title = s(values.rankName)
+  const earned = s(values.rankCount)
+  const buyer = !B.on ? '' : (
+    cap(B, title ? title.toUpperCase() : 'SUPPORTER', 26, title ? gold : quiet)
+    + t(name, ax(B), B.y + 82 * B.k, 54 * B.k, paint(B, ink), fam(B), `${anch(B)}${bold(B)}`)
+    + (title && earned
+      ? t(earned, ax(B), B.y + 118 * B.k, 19 * B.k, quiet, TEXT_FAMILY, anch(B).trim())
       : '')
+  )
 
   /* ---- what they hold ---- */
   /*

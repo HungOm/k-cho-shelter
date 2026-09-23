@@ -461,14 +461,32 @@ console.log('all three treatments draw the rung, and none of them invents one')
     ok(svg.includes('KEEPER'), `${d.id} draws the rung`)
     ok(svg.includes('4 books'), `${d.id} draws the count beside it`)
     /*
-     * ONE ELEMENT, NOT TWO. The count sits after a name of unknown width, and
-     * the only way to place a separate element there is to measure the first —
-     * which this file cannot do for anything set in the Myanmar chain. A tspan
-     * is laid out by the renderer; an estimated x is the bug that once printed
-     * "Klang" as "K l a n g".
+     * NOBODY MEASURES A NAME. The count used to sit after a name of unknown
+     * width on every treatment, and the only way to place a separate element
+     * there is to measure the first — which this file cannot do for anything
+     * set in the Myanmar chain. A tspan is laid out by the renderer; an
+     * estimated x is the bug that once printed "Klang" as "K l a n g".
+     *
+     * RE-AIMED 2026-09-23, because the Supporter card stopped placing it
+     * beside anything. Its count is now a line of its own under the name, at
+     * the person block's own left edge, so there is nothing to estimate. The
+     * invariant did not change — the count must not be positioned from a
+     * name's width — but there are now two shapes that satisfy it, and the old
+     * assertion named one shape rather than the rule.
+     *
+     * The standalone shape is checked by insisting the count's x is an x some
+     * OTHER text in the card also uses. That is what makes it a shared edge
+     * rather than an offset: an estimated position is arrived at by adding a
+     * guessed width to something, so it lands on a value nothing else has.
      */
-    ok(/<tspan[^>]*>\s*·\s*4 books<\/tspan>/.test(svg),
-      `${d.id} places the count with a tspan rather than an estimated x`)
+    const tspanned = /<tspan[^>]*>\s*·\s*4 books<\/tspan>/.test(svg)
+    const onItsOwnEdge = (() => {
+      const mine = /<text x="(-?[\d.]+)"[^>]*>4 books<\/text>/.exec(svg)
+      if (!mine) return false
+      return [...svg.matchAll(/<text x="(-?[\d.]+)"/g)].filter((h) => h[1] === mine[1]).length > 1
+    })()
+    ok(tspanned || onItsOwnEdge,
+      `${d.id} places the count without estimating where a name ended`)
 
     /*
      * AND WITH NO RUNG, NOTHING — not an empty label, not a stray separator.

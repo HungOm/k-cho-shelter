@@ -15,6 +15,27 @@
  * and the sale date all absent, because that is the state where the cards move
  * their own lines about and where a mistake would hide.
  *
+ * ONE RENDER HAS BEEN REISSUED SINCE, DELIBERATELY. On 2026-09-23 the
+ * Supporter card's person block was recomposed: the rung's name took the
+ * label slot in gold, the generic word "SUPPORTER" came off, and the count
+ * moved to a quiet line of its own. That is a change to the drawing, so the
+ * `shelter` entry was re-rendered from the new code and no other entry was
+ * touched — checked by diffing every key against `git show HEAD:` and finding
+ * exactly one changed.
+ *
+ * Reissuing a golden entry is the move this header warns against, so it is
+ * worth saying what makes this one legitimate and what would not be. The
+ * guard is "the drawing did not change BY ACCIDENT". A render reissued
+ * because somebody decided to redraw it, in the same commit as the redraw,
+ * with the decision written down, still guards everything after it. A render
+ * reissued to make a red suite go green guards nothing — and the tell is
+ * whether the person doing it can say which pixels moved and why.
+ *
+ * `shelter:bare` did NOT move, and that is the load-bearing half of the
+ * check: BARE carries no rankName, so a card from a raffle with no ladder
+ * configured is byte-for-byte what it was. The recomposition reaches cards
+ * that have a rung and no others, and this fixture is the evidence.
+ *
  * The fixture is rendered WITHOUT the encoder, so it holds no QR. That is what
  * keeps it 21 KB instead of 300, and the QR is not lost: `thecodeissquare`
  * below renders one for real and checks the box it lands in, which is the only
