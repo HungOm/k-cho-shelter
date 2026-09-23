@@ -284,6 +284,9 @@ const PATHS = {
   /* An ellipse, wider than tall, so it reads as the Ellipse tool and not as a
      refresh arrow — which is what the tool borrowed until now. */
   ellipse: 'M12 5c4.97 0 9 3.13 9 7s-4.03 7-9 7-9-3.13-9-7 4.03-7 9-7Z',
+  /* A chevron, pointing right: a folded group in the layer list. Turned a
+     quarter down by the list when the group is open. */
+  disclose: 'M9.5 5.5 16 12l-6.5 6.5',
 
   /*
    * NOT A DRAWING — what is shown when a name does not exist.

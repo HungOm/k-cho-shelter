@@ -1396,5 +1396,48 @@ console.log('the studio specimen supplies every value a real card is given')
     + 'A card value wired only into ViewTicket is a part that is invisible in the designer.')
 }
 
+console.log('a group is one row in the layer list, on both tabs')
+{
+  /*
+   * The user grouped seventeen copies of a logo and the list still showed
+   * seventeen "Picture" rows, pushing every other layer off the panel. A group
+   * is one row now that opens. Rendered, because the fold is in the template.
+   */
+  const box = (left) => ({ left, top: 0.1, width: 0.05, height: 0.1 })
+  const logos = [1, 2, 3].map((i) => normalDecoration({ id: `d-lg${i}`, kind: 'image', group: 'logos', box: box(i / 10) }))
+  const tint = normalDecoration({ id: 'd-tint', kind: 'rect', box: box(0.5) })
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => { await b.load(); b.tab.value = 'place'; b.design.value.decorations = [...logos, tint] },
+    renderReal: ['ToolBar.vue', 'ToolButton.vue', 'Toggle.vue', 'Section.vue'],
+  })
+  const list = html.slice(html.indexOf('3 pictures') - 2000, html.indexOf('3 pictures') + 3000)
+  ok(html.includes('3 pictures'), 'three grouped pictures read as one row called "3 pictures"')
+  eq((list.match(/>Picture</g) || []).length, 0, 'and their three rows are folded away')
+  ok(/aria-expanded="false"[^>]*aria-label="Open 3 pictures"/.test(html), 'the row has a chevron that says it opens')
+  ok(/aria-label="Pin 3 pictures"/.test(html), 'and a pin for the whole group')
+
+  const { reactive } = await import('vue')
+  const { resolveParts } = await import('../src/lib/cardelements.js')
+  const props = reactive({
+    card: { design: 'grand', motto: '' }, parts: resolveParts('grand', {}), cfg: {}, sentWidth: 1200,
+    decorations: [...logos.map((d) => ({ ...d })), { ...tint, locked: true }],
+    pictures: [], library: { shapes: [], colours: [], styles: [] }, hand: false,
+  })
+  const card = await setupOf('src/components/ticketdesign/DigitalTab.vue', store(ADMIN, ONE), props)
+  const c = card.ctx
+  eq(c.drawnRows.value.map((r) => r.id).join(), 'd-tint,group:logos', 'the card folds the group the same way')
+  c.pick('d-tint')
+  c.pick('d-lg1', true)
+  eq([...c.picked.value].sort().join(), 'd-lg1,d-lg2,d-lg3,d-tint',
+    'shift-clicking a grouped drawing on the card adds the whole group, as on the printed tab')
+  eq(c.decoName({ kind: 'text', text: { value: 'Grand prize' } }), '“Grand prize”', 'and the card names words by their words')
+  await card.cleanup()
+  const cardHtml = await renderScreen('src/components/ticketdesign/DigitalTab.vue', store(ADMIN, ONE), {
+    props: { ...props, decorations: [{ ...tint, locked: true }] },
+  })
+  ok(/title="Rectangle is pinned — unpin it in the list to move it"/.test(cardHtml),
+    'a pinned drawing on the card says it is pinned, not "drag to move"')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

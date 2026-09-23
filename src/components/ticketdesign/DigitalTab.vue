@@ -53,6 +53,7 @@ import { pathData } from '../../lib/pathgeometry.js'
 import { expandGroups, drawBox, aboutCentre } from '../../lib/selection.js'
 import { copyRecords, pasteRecords, repeatStep } from '../../lib/clipboard.js'
 import { KEYS, keyLabel } from '../../lib/studiokeys.js'
+import { layerRows, nextPinned, nextShown, drawingName, drawingIcon } from '../../lib/layergroups.js'
 import { CARD_FACES } from '../../lib/cardfaces.js'
 import { inlineImages, fetchAsDataURI } from '../../lib/ticketexport.js'
 
@@ -326,7 +327,9 @@ function pick(id, add = false, solo = false) {
   /* The background is the card itself. It can be the primary so the inspector
      can say what it is, but it cannot join a multi-selection — aligning the
      card to itself is the kind of button that does nothing and looks broken. */
-  if (add && (!part || part.locked)) return
+  /* `locked` on a PART means the background; on a drawing it means pinned,
+     and a pinned drawing is still selected — that is how it gets unpinned. */
+  if (add && (!part || (part.locked && !isDeco(id)))) return
   /* A drawing in a group comes with its group, as on the printed tab; ⌘ takes
      the one part. */
   if (!add) {
@@ -338,10 +341,15 @@ function pick(id, add = false, solo = false) {
   } else if (also.value.includes(id)) {
     also.value = also.value.filter((x) => x !== id)
   } else if (sel.value) {
-    also.value = [...also.value, sel.value]
+    /* Shift adds the whole group, as a fresh click takes it — and as the
+       printed tab does. ⌘ with shift adds the one part. */
+    const whole = isDeco(id) && !solo ? expandGroups([id], props.decorations) : [id]
+    also.value = [...new Set([...also.value, sel.value, ...whole.filter((x) => x !== id)])]
+      .filter((x) => x !== id)
     sel.value = id
   } else {
     sel.value = id
+    also.value = isDeco(id) && !solo ? expandGroups([id], props.decorations).filter((x) => x !== id) : []
   }
 }
 
@@ -833,12 +841,39 @@ function pickPicture(src) {
 }
 
 /* Drawn back to front, like the parts' list; drawings sit over every part. */
-const drawnLayers = computed(() => [...props.decorations].reverse())
-const decoIcon = (k) => ({ text: 'type', icon: 'design', image: 'image', path: 'pen' }[k] || 'shape')
-/* The word for a kind — `icon` handled on its own, because the icons gate reads
-   every `icon: '…'` in the source as a glyph being asked for. */
-const DECO_WORD = { rect: 'Rectangle', ellipse: 'Ellipse', line: 'Rule', text: 'Words', image: 'Picture', path: 'Path' }
-const decoName = (d) => d.name || (d.kind === 'icon' ? 'Mark' : DECO_WORD[d.kind] || 'Shape')
+/* Drawn front first, and a group folded into one row that opens
+   (src/lib/layergroups.js) — seventeen grouped logos are one thing. */
+const openGroups = ref(new Set())
+const drawnRows = computed(() => layerRows(props.decorations, { open: openGroups.value, picked: picked.value }))
+function toggleOpen(g) {
+  const next = new Set(openGroups.value)
+  if (next.has(g)) next.delete(g); else next.add(g)
+  openGroups.value = next
+}
+/* A group row selects the group; shift adds all of it to the selection. */
+function pickGroup(r, ev) {
+  const ids = r.members.map((m) => m.id)
+  if (ev.shiftKey && sel.value) {
+    also.value = [...new Set([...also.value, sel.value, ...ids])].filter((x) => x !== ids[0])
+    sel.value = ids[0]
+    return
+  }
+  sel.value = ids[0]
+  also.value = ids.slice(1)
+}
+function pinGroup(r) {
+  emit('mark')
+  const pin = nextPinned(r.members)
+  for (const m of r.members) m.locked = pin
+}
+function showGroup(r) {
+  emit('mark')
+  const show = nextShown(r.members)
+  for (const m of r.members) m.enabled = show
+}
+const decoIcon = drawingIcon
+/* Named as the printed tab names it — the same function (layergroups.js). */
+const decoName = drawingName
 
 /*
  * WHERE THE SAFE AREA COMES FROM, because a guide nobody can justify is a line
@@ -1155,11 +1190,35 @@ defineExpose({ sendTest, testing, act })
       <template v-if="decorations.length">
         <p class="rubric halfhead">Drawn <span class="count data">&middot; {{ decorations.length }}</span></p>
         <ul class="ellist">
-          <li v-for="d in drawnLayers" :key="d.id" :class="{ on: sel === d.id, off: d.enabled === false }">
-            <Icon :name="decoIcon(d.kind)" :size="15" class="kind" :title="decoName(d)" />
-            <button type="button" class="elname"
-                    @click="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)">{{ decoName(d) }}</button>
-            <Toggle v-model="d.enabled" :label="decoName(d)" :size="15" />
+          <li v-for="r in drawnRows" :key="r.id"
+              :class="r.kind === 'group'
+                ? { on: r.picked, off: !r.shown, grouprow: true }
+                : { on: sel === r.id, off: r.deco.enabled === false, inner: r.depth === 1 }">
+            <template v-if="r.kind === 'group'">
+              <button type="button" class="disclose" :aria-expanded="r.open"
+                      :aria-label="`${r.open ? 'Fold' : 'Open'} ${r.label}`"
+                      :title="r.open ? 'Fold the group into one row' : 'Show each part of the group'"
+                      @click="toggleOpen(r.group)"><Icon name="disclose" :size="14" /></button>
+              <Icon name="group" :size="15" class="kind" title="Group" />
+              <button type="button" class="elname" :title="`Select all ${r.members.length} — double-click one on the card to work on it alone`"
+                      @click="pickGroup(r, $event)">{{ r.label }}</button>
+              <ToolButton :icon="r.pinned ? 'lock' : 'position'"
+                          :label="r.pinned ? `Unpin ${r.label}` : `Pin ${r.label}`" :active="r.pinned" :size="15"
+                          :hint="r.pinned ? 'Every part is pinned. Click to release them all.' : 'Pin every part of the group'"
+                          @click="pinGroup(r)" />
+              <Toggle :model-value="r.shown" :label="r.label" :size="15" @update:model-value="showGroup(r)" />
+            </template>
+            <template v-else>
+              <Icon :name="decoIcon(r.deco.kind)" :size="15" class="kind" :title="decoName(r.deco)" />
+              <button type="button" class="elname"
+                      @click="pick(r.id, $event.shiftKey, r.depth === 1 || $event.metaKey || $event.ctrlKey)">{{ decoName(r.deco) }}</button>
+              <ToolButton :icon="r.deco.locked ? 'lock' : 'position'"
+                          :label="r.deco.locked ? `Unpin ${decoName(r.deco)}` : `Pin ${decoName(r.deco)}`"
+                          :active="r.deco.locked" :size="15"
+                          :hint="r.deco.locked ? 'Pinned — a drag will not move it. Click to release.' : 'Pin it, so working over it does not keep catching it'"
+                          @click="emit('mark'); r.deco.locked = !r.deco.locked" />
+              <Toggle v-model="r.deco.enabled" :label="decoName(r.deco)" :size="15" />
+            </template>
           </li>
         </ul>
         <p class="rubric halfhead">The card</p>
@@ -1339,10 +1398,14 @@ defineExpose({ sendTest, testing, act })
             :class="{ on: sel === d.id, too: also.includes(d.id), off: d.enabled === false,
                       faint: !picked.includes(d.id), hidden: !showAllBoxes && !picked.includes(d.id) }"
             :style="{ left: pc(d.box.left), top: pc(d.box.top), width: pc(d.box.width), height: pc(d.box.height) }"
-            :title="`${decoName(d)} — drag to move, or use the arrow keys`"
+            :title="d.locked ? `${decoName(d)} is pinned — unpin it in the list to move it`
+                             : `${decoName(d)} — drag to move, or use the arrow keys`"
             @pointerdown="startMove(d, $event)">
             <button
               type="button" class="grab" :aria-label="decoName(d)" :disabled="d.enabled === false || d.locked"
+              :title="d.enabled === false ? `${decoName(d)} is hidden — show it with its eye in the list`
+                : d.locked ? `${decoName(d)} is pinned — unpin it in the list to move it`
+                : `${decoName(d)} — drag to move, or use the arrow keys`"
               @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
               @dblclick.stop="enterThing(d)"></button>
             <template v-if="sel === d.id && !many && !d.locked && penEditing !== d.id">
@@ -1469,6 +1532,19 @@ defineExpose({ sendTest, testing, act })
 }
 .ellist li.on { background: var(--brand-soft); border-radius: 6px }
 .ellist li.off .elname { opacity: .5 }
+/* A group's parts sit under it, indented by the width of its chevron, so the
+   eye reads them as belonging to the row above rather than as more layers. */
+.ellist li.inner { padding-left: var(--sp-7) }
+/* The chevron: a quarter turn down when the group is open. Its hit area is the
+   row's height, so it is not a pinpoint beside a full-width name. */
+.disclose {
+  flex: none; display: grid; place-items: center; width: 24px; min-height: 28px; padding: 0;
+  border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: var(--r-xs);
+}
+.disclose:hover { color: var(--text) }
+.disclose:focus-visible { outline: 2px solid var(--brand); outline-offset: calc(-1 * var(--rule)) }
+.disclose :deep(svg) { transition: transform .12s var(--ease) }
+.disclose[aria-expanded="true"] :deep(svg) { transform: rotate(90deg) }
 .elname {
   flex: 1; min-width: 0; text-align: left; border: 0; background: none; cursor: pointer;
   font-size: .84rem; color: var(--text); padding: 2px 0;

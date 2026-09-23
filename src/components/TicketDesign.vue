@@ -69,6 +69,7 @@ import {
 } from '../lib/designelements.js'
 import { isClick, hitsIn, expandGroups, mergeSelection, drawBox, aboutCentre } from '../lib/selection.js'
 import { copyRecords, pasteRecords, repeatStep } from '../lib/clipboard.js'
+import { layerRows, nextPinned, nextShown, drawingName, drawingWord, drawingIcon } from '../lib/layergroups.js'
 import { snapEdges, snapNear, snapSpan } from '../lib/studiocanvas.js'
 import { KEYS, keyLabel, findBinding, fieldOwns } from '../lib/studiokeys.js'
 import {
@@ -1064,49 +1065,38 @@ function useLibraryColour(value) {
 }
 
 /*
- * WHAT TO CALL A SHAPE SOMEBODY DREW.
- *
- * It has no name of its own — that is what makes it a decoration rather than a
- * part — so the list has to say something, and "Decoration 4" is the worst of
- * the available answers: it changes when anything above it is deleted, so the
- * row somebody is looking for is never where they left it.
- *
- * The words if it has words, the mark's name if it is a mark, the kind
- * otherwise. Every one of those is stable under deletion and says what the
- * thing IS.
+ * WHAT TO CALL A SHAPE SOMEBODY DREW, and the glyph its row wears: its own
+ * name, else its words, else the mark's name, else the kind — stable when
+ * anything above it is deleted, which "Decoration 4" is not. One function for
+ * both tabs, in src/lib/layergroups.js; the card had a copy of its own that
+ * stopped at the kind, so the same drawing was called two things.
  */
-const DECO_WORD = {
-  rect: 'Rectangle', ellipse: 'Ellipse', line: 'Rule', text: 'Words', image: 'Picture', path: 'Path',
-}
+const decoIcon = drawingIcon
+const decoWord = drawingWord
+const decoName = drawingName
+
 /*
- * `icon` IS SPELLED OUT HERE RATHER THAN PUT IN THE TABLE ABOVE, and the
- * reason is a convention this codebase enforces with a test.
- *
- * `icon: '…'` means an icon NAME everywhere in this app, and icons.test.mjs
- * scans every file for that pattern to check the drawing exists. A label
- * filed under that key reads to it as a request for a drawing called "Mark",
- * and it failed exactly that way. The test is right and the table was wrong:
- * one key spelling meaning two different things is how a scanner ends up
- * unable to tell them apart, and the scanner is the thing that catches typos
- * in the other 54 cases.
+ * THE DRAWN LIST, WITH GROUPS FOLDED. Seventeen grouped logos are one thing to
+ * whoever grouped them and were seventeen rows here, pushing every other layer
+ * off the panel. A group is one row now, that opens (layergroups.js); pin and
+ * eye on it mean all of it, the same rule as ⇧⌘L.
  */
-/* The drawing a drawn thing is shown by — the same one its tool on the rail
-   wears, so the list and the rail name a kind the same way. */
-function decoIcon(kind) {
-  return { text: 'type', icon: 'design', image: 'image', path: 'pen' }[kind] || 'shape'
+const openGroups = ref(new Set())
+const drawnRows = computed(() => layerRows(decorations.value, { open: openGroups.value, picked: picked.value }))
+function toggleOpen(g) {
+  const next = new Set(openGroups.value)
+  if (next.has(g)) next.delete(g); else next.add(g)
+  openGroups.value = next
 }
-
-function decoWord(kind) {
-  return kind === 'icon' ? 'Mark' : (DECO_WORD[kind] || 'Shape')
+function pinGroup(r) {
+  mark()
+  const pin = nextPinned(r.members)
+  for (const m of r.members) m.locked = pin
 }
-
-function decoName(d) {
-  /* What somebody called it comes first; everything below is the fallback. */
-  if (d?.name) return d.name
-  const typed = String(d?.text?.value ?? '').trim()
-  if (d?.kind === 'text' && typed) return `“${typed.length > 22 ? `${typed.slice(0, 21)}…` : typed}”`
-  if (d?.kind === 'icon' && d.icon?.name) return `Mark · ${d.icon.name}`
-  return decoWord(d?.kind)
+function showGroup(r) {
+  mark()
+  const show = nextShown(r.members)
+  for (const m of r.members) m.enabled = show
 }
 
 /*
@@ -3416,18 +3406,37 @@ const printedSize = computed(() => {
                   Drawn <span class="count data">&middot; {{ decorations.length }}</span>
                 </p>
                 <ul class="ellist">
-                  <li v-for="d in [...decorations].reverse()" :key="d.id"
-                      :class="{ on: sel === d.id, off: d.enabled === false }">
-                    <Icon :name="decoIcon(d.kind)" :size="15" class="kind" :title="decoWord(d.kind)" />
-                    <input v-if="renaming === d.id" class="elname rename" :value="d.name"
-                           :placeholder="decoWord(d.kind)" maxlength="40" :aria-label="`Name for ${decoName(d)}`"
+                  <li v-for="r in drawnRows" :key="r.id"
+                      :class="r.kind === 'group'
+                        ? { on: r.picked, off: !r.shown, grouprow: true }
+                        : { on: sel === r.id, off: r.deco.enabled === false, inner: r.depth === 1 }">
+                    <template v-if="r.kind === 'group'">
+                      <button type="button" class="disclose" :aria-expanded="r.open"
+                              :aria-label="`${r.open ? 'Fold' : 'Open'} ${r.label}`"
+                              :title="r.open ? 'Fold the group into one row' : 'Show each part of the group'"
+                              @click="toggleOpen(r.group)"><Icon name="disclose" :size="14" /></button>
+                      <Icon name="group" :size="15" class="kind" title="Group" />
+                      <button type="button" class="elname"
+                              :title="`Select all ${r.members.length} — double-click one on the ticket to work on it alone`"
+                              @click="pick(r.members[0].id, $event.shiftKey)">{{ r.label }}</button>
+                      <ToolButton :icon="r.pinned ? 'lock' : 'position'"
+                                  :label="r.pinned ? `Unpin ${r.label}` : `Pin ${r.label}`"
+                                  :active="r.pinned" :size="15"
+                                  :hint="r.pinned ? 'Every part is pinned. Click to release them all.' : 'Pin every part of the group'"
+                                  @click="pinGroup(r)" />
+                      <Toggle :model-value="r.shown" :label="r.label" :size="15" @update:model-value="showGroup(r)" />
+                    </template>
+                    <template v-else>
+                    <Icon :name="decoIcon(r.deco.kind)" :size="15" class="kind" :title="decoWord(r.deco.kind)" />
+                    <input v-if="renaming === r.id" class="elname rename" :value="r.deco.name"
+                           :placeholder="decoWord(r.deco.kind)" maxlength="40" :aria-label="`Name for ${decoName(r.deco)}`"
                            @vue:mounted="({ el }) => { el.focus(); el.select() }"
-                           @keydown.enter.prevent="commitRename(d, $event.target.value)"
+                           @keydown.enter.prevent="commitRename(r.deco, $event.target.value)"
                            @keydown.escape.stop="renaming = ''"
-                           @blur="commitRename(d, $event.target.value)">
+                           @blur="commitRename(r.deco, $event.target.value)">
                     <button v-else type="button" class="elname" title="Double-click to rename"
-                            @click="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
-                            @dblclick="renaming = d.id">{{ decoName(d) }}</button>
+                            @click="pick(r.id, $event.shiftKey, r.depth === 1 || $event.metaKey || $event.ctrlKey)"
+                            @dblclick="renaming = r.id">{{ decoName(r.deco) }}</button>
                     <!--
                       PINNED, NOT LOCKED-OUT. A drawn background is the thing
                       somebody keeps catching while working on what sits over
@@ -3435,13 +3444,14 @@ const printedSize = computed(() => {
                       DRAG and nothing else. It is not a permission and it does
                       not travel to anybody else.
                     -->
-                    <ToolButton :icon="d.locked ? 'lock' : 'position'"
-                                :label="d.locked ? `Unpin ${decoName(d)}` : `Pin ${decoName(d)}`"
-                                :active="d.locked" :size="15"
-                                :hint="d.locked ? 'Pinned — a drag will not move it. Click to release.'
-                                                : 'Pin it, so working over it does not keep catching it'"
-                                @click="mark(); d.locked = !d.locked" />
-                    <Toggle v-model="d.enabled" :label="decoName(d)" :size="15" />
+                    <ToolButton :icon="r.deco.locked ? 'lock' : 'position'"
+                                :label="r.deco.locked ? `Unpin ${decoName(r.deco)}` : `Pin ${decoName(r.deco)}`"
+                                :active="r.deco.locked" :size="15"
+                                :hint="r.deco.locked ? 'Pinned — a drag will not move it. Click to release.'
+                                                     : 'Pin it, so working over it does not keep catching it'"
+                                @click="mark(); r.deco.locked = !r.deco.locked" />
+                    <Toggle v-model="r.deco.enabled" :label="decoName(r.deco)" :size="15" />
+                    </template>
                   </li>
                 </ul>
               </template>
@@ -4297,6 +4307,19 @@ const printedSize = computed(() => {
 }
 .ellist li.on { background: var(--brand-soft); border-radius: 6px }
 .ellist li.off .elname { opacity: .5 }
+/* A group's parts sit under it, indented by the width of its chevron, so the
+   eye reads them as belonging to the row above rather than as more layers. */
+.ellist li.inner { padding-left: var(--sp-7) }
+/* The chevron: a quarter turn down when the group is open. Its hit area is the
+   row's height, so it is not a pinpoint beside a full-width name. */
+.disclose {
+  flex: none; display: grid; place-items: center; width: 24px; min-height: 28px; padding: 0;
+  border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: var(--r-xs);
+}
+.disclose:hover { color: var(--text) }
+.disclose:focus-visible { outline: 2px solid var(--brand); outline-offset: calc(-1 * var(--rule)) }
+.disclose :deep(svg) { transition: transform .12s var(--ease) }
+.disclose[aria-expanded="true"] :deep(svg) { transform: rotate(90deg) }
 .elname {
   flex: 1; min-width: 0; text-align: left; border: 0; background: none; cursor: pointer;
   font-size: var(--fs-xs); color: var(--text); padding: 2px 0;
