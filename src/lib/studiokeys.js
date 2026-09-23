@@ -202,6 +202,14 @@ export function keyMatches(c, e) {
   return k.length === 1 ? k.toLowerCase() === c.key.toLowerCase() : k === c.key
 }
 
+/*
+ * THE CANVAS KEYS THE STUDIO ANSWERS ITSELF, ON BOTH SURFACES. Every other
+ * canvas key on the Digital ticket tab is the card's, and only the card's —
+ * the studio never runs the printed tab's action for it, whatever the card
+ * answers. The hand is here because the studio holds it for both tabs.
+ */
+export const STUDIO_HOLDS = ['hand', 'toolHand']
+
 /** Whether a row answers on this tab: 'place', 'digital', or any other tab's id. */
 export const answersOn = (row, where) => row.when === 'any' || row.when === where
   || (row.when === 'canvas' && (where === 'place' || where === 'digital'))

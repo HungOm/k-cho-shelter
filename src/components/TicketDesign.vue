@@ -71,7 +71,7 @@ import { isClick, hitsIn, expandGroups, mergeSelection, drawBox, aboutCentre } f
 import { copyRecords, pasteRecords, repeatStep } from '../lib/clipboard.js'
 import { layerRows, nextPinned, nextShown, drawingName, drawingWord, drawingIcon } from '../lib/layergroups.js'
 import { snapEdges, snapNear, snapSpan } from '../lib/studiocanvas.js'
-import { KEYS, keyLabel, findBinding, fieldOwns } from '../lib/studiokeys.js'
+import { KEYS, keyLabel, findBinding, fieldOwns, STUDIO_HOLDS } from '../lib/studiokeys.js'
 import {
   exportSize, ticketSVG, layerDocument, inlineImages, fetchAsDataURI, rasterise, downloadBlob,
 } from '../lib/ticketexport.js'
@@ -2249,9 +2249,17 @@ const showKeys = ref('')
  */
 function runRow(row, e = {}) {
   if (row.group === 'Tools' && row.action !== 'toolHand') handTool.value = false
-  if (tab.value === 'digital' && row.when === 'canvas') {
-    const r = digital.value?.act?.(row.action, e)
-    if (r !== undefined) return r
+  /*
+   * ON THE CARD'S TAB A CANVAS KEY IS THE CARD'S, AND ONLY THE CARD'S. This
+   * used to fall through to the printed tab's action whenever the card
+   * answered `undefined` — which is what every card handler that simply ends
+   * without a `return` answers. So Delete on a drawing on the card also
+   * deleted whatever was still selected on the Place tab, out of sight. The
+   * few keys the studio holds for both surfaces are NAMED (STUDIO_HOLDS); no
+   * return value can send a key to the other tab any more.
+   */
+  if (tab.value === 'digital' && row.when === 'canvas' && !STUDIO_HOLDS.includes(row.action)) {
+    return digital.value?.act?.(row.action, e) ?? false
   }
   return ACTIONS[row.action]?.(e)
 }

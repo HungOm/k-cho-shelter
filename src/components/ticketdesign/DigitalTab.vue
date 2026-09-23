@@ -1118,11 +1118,13 @@ const CARD_ACTIONS = {
   toggleGrid: () => { gridding.value = !gridding.value },
 }
 
-/** What the studio calls with a key. `undefined` means "not the card's —
-    the studio answers it" (the hand); false means "nothing to act on". */
+/** What the studio calls with a key: true when the card acted, false when
+    there was nothing to act on (the key is then left to the page). Never
+    undefined — a handler that ends without a `return` acted, and says so. */
 function act(name, e = {}) {
   const f = CARD_ACTIONS[name]
-  return f ? f(e) : undefined
+  if (!f) return false
+  return f(e) !== false
 }
 
 /* ⌘-scroll and a pinch zoom about the pointer, as on the printed tab. */

@@ -1303,7 +1303,13 @@ console.log('the editing keys work through the studio\'s own handler, on both su
   eq(props.decorations.length, 1, 'Delete removes the drawing')
   c.sel.value = 'masthead'
   eq(c.act('remove'), false, 'and leaves a card part alone — parts are hidden, not removed')
-  eq(c.act('hand'), undefined, 'the hand is left to the studio, which holds it for both tabs')
+  /* Every answer is true or false — never undefined, which the studio once
+     read as "not the card's" and then ran the PRINTED action as well. */
+  const { KEYS } = await import('../src/lib/studiokeys.js')
+  const names = [...new Set(KEYS.filter((k) => k.action && k.when === 'canvas').map((k) => k.action))]
+  ok(names.length > 30, `${names.length} canvas actions to ask the card about`)
+  const loose = names.filter((n) => typeof c.act(n, { key: 'ArrowRight' }) !== 'boolean')
+  eq(loose.join() || 'none', 'none', 'the card answers every canvas key with true or false')
   c.act('toolRect')
   eq(c.pending.value, 'rect', 'R picks up the rectangle on the card')
   ok(said.includes('mark'), 'and every change marked an undo step')
@@ -1437,6 +1443,35 @@ console.log('a group is one row in the layer list, on both tabs')
   })
   ok(/title="Rectangle is pinned — unpin it in the list to move it"/.test(cardHtml),
     'a pinned drawing on the card says it is pinned, not "drag to move"')
+}
+
+console.log('a key pressed on the card never reaches the printed ticket')
+{
+  /*
+   * THE DATA LOSS THIS PINS. With a field selected on the Place tab, switch to
+   * the Digital ticket tab, select a drawing, press Delete: the drawing went,
+   * and so did the printed field — the card's handler ended without a return,
+   * and the studio took `undefined` to mean "not the card's" and ran the
+   * printed Delete too. Out of sight, with a step on the printed undo stack.
+   * Pressed here with no card mounted at all, which is the harshest case: a
+   * canvas key on the card's tab must do NOTHING to the printed design.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ctx.tab.value = 'place'
+  const field = ctx.design.value.elements.find((e) => e.id === 'buyer-name')
+  ok(!!field, 'the fixture has a field to select')
+  ctx.sel.value = 'buyer-name'
+  ctx.also.value = []
+  ctx.tab.value = 'digital'
+  const key = (k, mods = {}) => ({ key: k, code: '', metaKey: false, ctrlKey: false, shiftKey: false, altKey: false,
+    target: null, preventDefault() {}, ...mods })
+  const before = JSON.stringify(ctx.design.value)
+  for (const k of [key('Delete'), key('Backspace'), key('x', { metaKey: true }), key('d', { metaKey: true }),
+    key('g', { metaKey: true }), key('ArrowRight'), key('v', { metaKey: true })]) ctx.onFocusKey(k)
+  eq(JSON.stringify(ctx.design.value) === before, true, 'Delete, cut, duplicate, group, nudge and paste on the card leave the printed design as it was')
+  ok(ctx.design.value.elements.some((e) => e.id === 'buyer-name'), 'and the printed field selected before the switch is still there')
+  await cleanup()
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

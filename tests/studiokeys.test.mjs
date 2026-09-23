@@ -26,7 +26,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { KEYS, keyMatches, findBinding, keyLabel, comboLabel, combosOf, fieldOwns, docLabel } from '../src/lib/studiokeys.js'
+import { KEYS, keyMatches, findBinding, keyLabel, comboLabel, combosOf, fieldOwns, docLabel, STUDIO_HOLDS } from '../src/lib/studiokeys.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -165,12 +165,14 @@ console.log('the studio runs every action on the table, and nothing that is not 
   const cardDoes = new Set([...cbody.matchAll(/^ {2}([a-zA-Z]+):/gm)].map((m) => m[1]))
   ok(cardDoes.size > 30, `found ${cardDoes.size} actions on the card`)
   const canvas = new Set(KEYS.filter((k) => k.action && k.when === 'canvas').map((k) => k.action))
-  const STUDIO_HOLDS = new Set(['hand', 'toolHand'])
+  const holds = new Set(STUDIO_HOLDS)
   for (const a of canvas) {
-    ok(cardDoes.has(a) || STUDIO_HOLDS.has(a), `the canvas row "${a}" is answered on the card`)
+    ok(cardDoes.has(a) !== holds.has(a), `the canvas row "${a}" is answered by exactly one of the card and the studio`)
   }
   for (const a of cardDoes) ok(canvas.has(a), `the card's "${a}" is a canvas row on the table`)
-  ok(/\.act\?\.\(row\.action, e\)/.test(shell), 'and the studio hands canvas rows to the card on its tab')
+  ok(/\.act\?\.\(row\.action, e\) \?\? false/.test(shell),
+    'and the studio hands canvas rows to the card on its tab, and runs nothing of its own when the card is missing')
+  ok(!/r !== undefined/.test(shell), 'no longer reading "undefined" as "not the card\'s" — the sentinel a missing return produces')
   const cardAsks = [...card.matchAll(/keyOf\('([a-zA-Z]+)'\)|'(tool[A-Za-z]+)'/g)].map((m) => m[1] || m[2])
   ok(cardAsks.length >= 8, `${cardAsks.length} of the card's tooltips ask for a key`)
   const allIds = new Set(KEYS.map((k) => k.id))
