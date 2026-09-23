@@ -980,10 +980,27 @@ function decoWord(kind) {
 }
 
 function decoName(d) {
+  /* What somebody called it comes first; everything below is the fallback. */
+  if (d?.name) return d.name
   const typed = String(d?.text?.value ?? '').trim()
   if (d?.kind === 'text' && typed) return `“${typed.length > 22 ? `${typed.slice(0, 21)}…` : typed}”`
   if (d?.kind === 'icon' && d.icon?.name) return `Mark · ${d.icon.name}`
   return decoWord(d?.kind)
+}
+
+/*
+ * RENAMING A DRAWN SHAPE IN THE LIST — double-click its name. The field takes
+ * the row's place and gives it back on Enter or when it loses focus; Escape
+ * leaves the name as it was. One undo step, like every other change.
+ */
+const renaming = ref('')
+function commitRename(d, value) {
+  if (renaming.value !== d.id) return
+  renaming.value = ''
+  const next = String(value ?? '').replace(/[<>]/g, '').trim().slice(0, 40)
+  if (next === (d.name || '')) return
+  mark()
+  d.name = next
 }
 
 /*
@@ -2834,8 +2851,15 @@ const printedSize = computed(() => {
                       :class="{ on: sel === d.id, off: d.enabled === false }">
                     <Icon :name="d.kind === 'text' ? 'type' : d.kind === 'icon' ? 'design' : 'shape'"
                           :size="15" class="kind" :title="decoWord(d.kind)" />
-                    <button type="button" class="elname"
-                            @click="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)">{{ decoName(d) }}</button>
+                    <input v-if="renaming === d.id" class="elname rename" :value="d.name"
+                           :placeholder="decoWord(d.kind)" maxlength="40" :aria-label="`Name for ${decoName(d)}`"
+                           @vue:mounted="({ el }) => { el.focus(); el.select() }"
+                           @keydown.enter.prevent="commitRename(d, $event.target.value)"
+                           @keydown.escape.stop="renaming = ''"
+                           @blur="commitRename(d, $event.target.value)">
+                    <button v-else type="button" class="elname" title="Double-click to rename"
+                            @click="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
+                            @dblclick="renaming = d.id">{{ decoName(d) }}</button>
                     <!--
                       PINNED, NOT LOCKED-OUT. A drawn background is the thing
                       somebody keeps catching while working on what sits over
@@ -3574,6 +3598,12 @@ const printedSize = computed(() => {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .elname:hover { color: var(--brand) }
+/* The rename field takes the name's place and keeps its size, so the row does
+   not jump when somebody starts typing. */
+.elname.rename {
+  min-height: 0; padding: 0 var(--sp-2); border: var(--rule) solid var(--brand);
+  border-radius: var(--r-xs); font: inherit; width: 100%;
+}
 .elname:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; border-radius: 3px }
 /* The kind, as a drawing. It keeps the three-letter badges' colour coding,
  * because that told the eye which rows were alike at a glance -- but the colour

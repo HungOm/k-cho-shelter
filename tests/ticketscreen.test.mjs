@@ -948,5 +948,38 @@ console.log('the canvas measures the paper, draws its grid, and zooms from the k
   await cleanup()
 }
 
+console.log('a drawn shape is called what somebody named it')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 5. A layer list of "Rectangle, Rectangle,
+   * Rectangle" is a list somebody clicks through to find the tint behind the
+   * price. A named shape must be called by its name everywhere the studio
+   * names it — the list, and the box on the canvas a screen reader announces.
+   */
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => {
+      await b.load(); b.tab.value = 'place'
+      b.design.value.decorations = [normalDecoration({ id: 'd-named', kind: 'rect', name: 'Price tint' })]
+    },
+  })
+  ok(/Price tint/.test(visibleText(html)), 'the layer list calls it by its name')
+  ok(/aria-label="Price tint"/.test(html), 'and so does its box on the artboard')
+
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  const d = normalDecoration({ id: 'd-r', kind: 'rect' })
+  ctx.design.value.decorations = [d]
+  const live = () => ctx.design.value.decorations[0]
+  const undoBefore = ctx.history.value.length
+  ctx.renaming.value = 'd-r'
+  ctx.commitRename(live(), '  Stub panel  ')
+  eq(live().name, 'Stub panel', 'a rename is kept, trimmed')
+  eq(ctx.history.value.length, undoBefore + 1, 'as one undo step')
+  eq(ctx.renaming.value, '', 'and the field gives the row back')
+  ctx.commitRename(live(), 'Ignored')
+  eq(live().name, 'Stub panel', 'a commit with no rename in progress changes nothing — Escape then blur must not save')
+  await cleanup()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -118,6 +118,8 @@ const MARKS = Object.keys(PATHS).filter((n) => n !== 'missing')
 const isText = computed(() => props.deco?.kind === 'text')
 const isIcon = computed(() => props.deco?.kind === 'icon')
 const hasArea = computed(() => props.deco && props.deco.kind !== 'line')
+const kindWord = computed(() => (isText.value ? 'Words' : isIcon.value ? 'Mark'
+  : props.deco?.kind === 'line' ? 'Rule' : props.deco?.kind === 'ellipse' ? 'Ellipse' : 'Rectangle'))
 
 /* Every change is one undo step, and the parent owns the stack. Called before
    a value moves rather than after, which is the contract `mark` has everywhere
@@ -136,8 +138,12 @@ function setShadow(on) {
     <div class="phead">
       <span class="pglyph"><Icon :name="isText ? 'type' : isIcon ? 'design' : 'shape'" :size="16" /></span>
       <div class="pname">
-        <h3>{{ isText ? 'Words' : isIcon ? 'Mark' : deco.kind === 'line' ? 'Rule'
-              : deco.kind === 'ellipse' ? 'Ellipse' : 'Rectangle' }}</h3>
+        <!-- THE NAME IS THE HEADING, and the heading can be typed into. Empty,
+             it shows the kind — what the list calls it — as a placeholder, so
+             the panel still says what it is describing before anybody names it. -->
+        <input class="title" :value="deco.name" maxlength="40" :placeholder="kindWord"
+               aria-label="Name" title="Name it, so the layer list says what it is for"
+               @focus="before()" @input="deco.name = $event.target.value.replace(/[<>]/g, '')">
         <p class="say">{{ deco.half === 'stub' ? 'on the stub' : 'on the main half' }}</p>
       </div>
     </div>
@@ -342,6 +348,15 @@ function setShadow(on) {
 /* The tab strip is the panel's own control, so it sits above the first group
    rather than inside one. */
 .dtabs { margin-bottom: var(--sp-2) }
+/* A heading that can be typed into: set as the heading, with an edge only when
+   it is being pointed at or typed in, so it reads as a name and not as a form. */
+.title {
+  width: 100%; min-height: 0; padding: 0 var(--sp-1); margin-left: calc(-1 * var(--sp-1));
+  font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text);
+  border: var(--rule) solid transparent; border-radius: var(--r-xs); background: none;
+}
+.title:hover { border-color: var(--border) }
+.title:focus { border-color: var(--brand); outline: none }
 /*
  * FIFTY-THREE MARKS IN A 300px PANEL. A grid rather than a wrapping row so the
  * columns line up down the panel — a ragged right edge on a picker this dense

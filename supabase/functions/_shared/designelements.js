@@ -159,6 +159,13 @@ export function normalDecoration(raw) {
      */
     group: groupOf(raw?.group),
     /*
+     * WHAT SOMEBODY CALLED IT, or '' to be called by its kind. A layer list of
+     * "Rectangle, Rectangle, Rectangle" is a list somebody has to click through
+     * to find the tint behind the price; "Price tint" is found by reading.
+     * Forty characters, and no angle brackets — it is shown in markup.
+     */
+    name: String(raw?.name ?? '').replace(/[<>]/g, '').trim().slice(0, 40),
+    /*
      * MIRRORED, across its own centre. Two booleans rather than a negative
      * width, because a box with a negative side is a box every other piece of
      * arithmetic in this studio would have to learn to read.
@@ -265,6 +272,9 @@ export function faultsIn(list, opts = {}) {
     else if (seen.has(id)) bad.push(`${where} repeats the id ${id}.`)
     seen.add(id)
 
+    if (d.name !== undefined && (typeof d.name !== 'string' || d.name.length > 40 || /[<>]/.test(d.name))) {
+      bad.push(`${where} has a name over forty characters, or with < or > in it.`)
+    }
     if (d.group !== undefined && (typeof d.group !== 'string' || d.group !== groupOf(d.group))) {
       bad.push(`${where} has a group name the studio could not have made — letters and digits, forty at most.`)
     }

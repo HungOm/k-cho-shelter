@@ -493,6 +493,14 @@ differs from the text below:
 
 ### Phase 5 — Layers: rename, one component (M)
 
+**Status 2026-09-23: rename built, gated, rendered** (kcho-shelter-0c).
+**`LayerList.vue` was not extracted**, deliberately: renaming does not need the
+seam, and moving the markup would orphan the shell's `.ellist` rules and hide
+the list from a dozen `ticketscreen` assertions that render it in place. It
+comes out with drag-to-reorder, which does need it. Renaming is a double-click
+on the row (Enter or blur keeps, Escape abandons, one undo step) and a name
+field that IS the drawn shape's inspector heading, showing its kind until named.
+
 - Model: `name` (≤ 40, no `<>`) on decorations; `decoName :812` prefers it.
 - New `src/components/ticketdesign/LayerList.vue` from `:2214–2317`: props
   `{ elements, decorations, byHalf, halves, sel, picked, decoName, trouble }`;

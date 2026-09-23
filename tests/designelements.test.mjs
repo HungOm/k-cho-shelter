@@ -372,5 +372,16 @@ console.log('a group is a shared name, and a mirror is about the shape\'s own ce
     'and a shape that is only turned is drawn exactly as it was before mirrors existed')
 }
 
+console.log('a drawn shape can be called something, within reason')
+{
+  eq(normalDecoration({ kind: 'rect', name: '  Price tint  ' }).name, 'Price tint', 'a name is kept, trimmed')
+  eq(normalDecoration({ kind: 'rect' }).name, '', 'and without one it is called by its kind on screen')
+  eq(normalDecoration({ kind: 'rect', name: 'a<b>c' }).name, 'abc', 'angle brackets never reach the markup it is shown in')
+  eq(normalDecoration({ kind: 'rect', name: 'x'.repeat(60) }).name.length, 40, 'forty characters at most')
+  ok(faultsIn([{ id: 'd1', kind: 'rect', name: 'x'.repeat(41) }]).some((f) => /name/.test(f)), 'a longer one is refused on save')
+  ok(faultsIn([{ id: 'd1', kind: 'rect', name: '<b>' }]).some((f) => /name/.test(f)), 'and so is markup')
+  ok(!faultsIn([{ id: 'd1', kind: 'rect', name: 'Price tint' }]).some((f) => /name/.test(f)), 'while an ordinary one is fine')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
