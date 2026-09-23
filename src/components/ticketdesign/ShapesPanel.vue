@@ -30,6 +30,29 @@ defineProps({
   busy: { type: Boolean, default: false },
 })
 const emit = defineEmits(['add', 'save', 'remove'])
+
+/**
+ * A tolerance as the per cent it stands for, for the unit slot.
+ *
+ * `.formrow .unit` in style.css says why this belongs there rather than in a
+ * sentence: "a number with no unit is a number somebody has to go and look
+ * up, so the unit sits inside the box at the trailing edge rather than in a
+ * caption that scrolls away from it." Three of these four fields already
+ * obeyed that — mm, mm, px — and the fourth explained itself in a line under
+ * the whole panel, which is the caption that rule forbids.
+ *
+ * NOT ± AND NOT A FRACTION. The slot is 34px wide and set at .8rem, so "2%"
+ * fits at any tolerance an organiser would type and "±3.5%" is already close
+ * to the number. Per cent is also the form the removed sentence reached for
+ * when it had to explain itself, which is a fair sign of what people read.
+ *
+ * Blank while the field is empty or mid-edit, because "NaN%" in a unit slot
+ * is worse than no unit at all.
+ */
+const pct = (v) => {
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? `${+(n * 100).toFixed(2)}%` : ''
+}
 </script>
 
 <template>
@@ -83,6 +106,7 @@ const emit = defineEmits(['add', 'save', 'remove'])
             <span class="wrap">
               <input v-model.number="s.tolerance" type="number" step="0.005"
                      :aria-label="`Tolerance for ${s.label}`">
+              <span class="unit">{{ pct(s.tolerance) }}</span>
             </span>
           </label>
         </div>
@@ -96,14 +120,15 @@ const emit = defineEmits(['add', 'save', 'remove'])
       </button>
     </div>
     <!--
-      ONE SENTENCE, AND IT IS THE ONE THAT IS NOT GUESSABLE. The heading above
-      carried a four-clause paragraph in its title and this restated its first
-      clause underneath; between them they explained what a shape is, which the
-      four labelled number fields already say. What no control here reveals is
-      the UNIT on tolerance — 0.02 could be millimetres, per cent or pixels,
-      and it is a fraction of the aspect ratio.
+      THE SENTENCE IS GONE BECAUSE THE FIELD NOW SAYS IT.
+      It read "Tolerance is a fraction of the shape: 0.02 allows two per cent
+      out" — kept, correctly, because the unit on tolerance was the one thing
+      no control revealed: 0.02 could have been millimetres, per cent or
+      pixels. The answer was to put the unit where the other three have
+      theirs. `0.02` now shows `2%` in the same slot that shows mm and px, so
+      the relationship is read rather than explained, and a caption under the
+      panel is no longer carrying a fact about one field four rows up.
     -->
-    <p class="say">Tolerance is a fraction of the shape: 0.02 allows two per cent out.</p>
   </div>
 
 </aside>
