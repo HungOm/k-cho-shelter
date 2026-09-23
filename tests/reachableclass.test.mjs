@@ -47,6 +47,18 @@
  * frozen sha: `git archive <sha> | tar -x -C <scratch>` and run it there. A red
  * run in this tree is a question about who else is mid-edit, not an answer.
  *
+ * A RULE AND ITS EXEMPTION MOVE IN THE SAME COMMIT, OR A SHA IS RED FOR
+ * EVERYBODY. Deleting a dead rule in one commit and its name from the list in
+ * the next leaves a tip, in between, where the name matches nothing and the
+ * shrink-check below fails — on a branch that gates the Pages deploy, under
+ * whoever pushes next rather than under whoever split the change.
+ *
+ * It held across the four commits that emptied this list on the day it was
+ * written: 1668b8b and f1c444d each carry the `.sgrid` rule AND its exemption,
+ * f951bfc and 8c7620c carry neither, and all four run 3/0 from a clean
+ * archive. That was structure rather than luck, and it is the whole of what
+ * makes an exemption list safe to carry through somebody else's refactor.
+ *
  * AND A DEAD RULE IS NOT A MISSING STYLE. This file says a rule cannot match.
  * It does not say the property is unset — a global in style.css, a child's own
  * scoped block, or a browser default may be painting it. On the day this was
