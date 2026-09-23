@@ -2420,11 +2420,15 @@ const changeCount = computed(() => {
   return n
 })
 
-async function pickFile(ev) {
-  const file = ev.target.files?.[0]
-  ev.target.value = ''
+/*
+ * THE RAIL NAMES THE FILE BEFORE IT ARRIVES HERE, so this takes `{ file, name }`
+ * rather than a DOM event. The organiser's word for it, not a filesystem's:
+ * "CEAM SHELTER Raffle Ticket Final draft 001 png" was `file.name` with the
+ * extension left on, because that used to be the whole naming step.
+ */
+async function pickFile({ file, name }) {
   if (!file) return
-  await useFile(file)
+  await useFile(file, name)
 }
 
 /*
@@ -2447,14 +2451,16 @@ async function startBlank(sz) {
     const file = await blankArtboardFile(
       sz.widthMM, sz.heightMM, stubShare(design.value), 300, sz.label || 'Blank ticket')
     busy.value = false
-    await useFile(file)
+    /* Named already, by the size label passed above — this route never asks
+       twice for a word it already has. */
+    await useFile(file, file.name)
   } catch (err) {
     busy.value = false
     uploadErr.value = err.message
   }
 }
 
-async function useFile(file) {
+async function useFile(file, name = '') {
   uploadErr.value = ''
   uploadNote.value = ''
   const why = rejectFile(file)
@@ -2477,7 +2483,7 @@ async function useFile(file) {
     adopt(await api('upload_template', {
       data: payload.data,
       contentType: payload.contentType,
-      name: file.name.replace(/\.[^.]+$/, ''),
+      name: name || file.name.replace(/\.[^.]+$/, ''),
     }))
 
     if (pal && usable(pal.ink) && design.value && active.value) {

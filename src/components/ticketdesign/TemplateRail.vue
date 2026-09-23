@@ -69,10 +69,44 @@ const kb = (n) => (n >= 1024 * 1024
   ? `${Math.round(n / 1024 / 1024 * 10) / 10} MB`
   : `${Math.round(n / 1024)} KB`)
 
-/* The event carries the File, not the input. */
+/*
+ * NAMING IS A STEP, NOT A BY-PRODUCT OF A FILENAME.
+ *
+ * The rail used to send `file.name` straight through, so the list read
+ * "CEAM SHELTER Raffle Ticket Final draft 001 png" — whatever the export
+ * dialog on somebody's computer happened to write, extension and all. That is
+ * not a name; it is a filesystem's opinion, and it is the only thing a person
+ * scanning this list has to tell two drafts apart by.
+ *
+ * The interaction is LibraryPanel's: a picture is chosen, a field opens for
+ * the one thing that needs a word, Enter or Save confirms it. Two components
+ * asking "keep this, and what do you call it" now ask it the same way.
+ *
+ * THE DEFAULT IS THE FILENAME, CLEANED — the extension dropped and separators
+ * turned to spaces — because most uploads are not worth typing a name for and
+ * the field is there for the one that is. Nothing is uploaded until this is
+ * confirmed, so choosing the wrong file and cancelling costs nothing: the
+ * input is reset so the SAME file can be chosen again.
+ */
+const pending = ref(null)
+const name = ref('')
+
 function onPick(e) {
   const file = e?.target?.files?.[0]
-  if (file) emit('file', e)
+  e.target.value = ''
+  if (!file) return
+  pending.value = file
+  name.value = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim()
+}
+function cancelName() {
+  pending.value = null
+  name.value = ''
+}
+function confirmName() {
+  if (!pending.value) return
+  emit('file', { file: pending.value, name: name.value.trim() })
+  pending.value = null
+  name.value = ''
 }
 </script>
 
@@ -133,16 +167,31 @@ function onPick(e) {
   </div>
 
   <div class="block">
-    <button class="btn sm primary wide" :disabled="!!whyNoUpload"
-            :title="whyNoUpload || 'Add another ticket picture to this raffle'"
-            @click="fileInput?.click()">
-      <Icon name="upload" :size="15" />{{ busy ? 'Working…' : 'Upload new artwork' }}
-    </button>
-    <!-- The reason is on the button for a pointer and repeated here for a
-         keyboard or a phone, which never see a `title`. It only appears when
-         the control is actually dead, so it costs a line at the ceiling and
-         nothing the rest of the time. -->
-    <p v-if="full" class="tiny warn">{{ whyNoUpload }}</p>
+    <!-- NAMING IS THE ONE THING HERE THAT NEEDS A WORD, the same rule
+         LibraryPanel's save uses: everything else is a click on a picture of
+         itself, or in this case a click on a file dialog. -->
+    <template v-if="pending">
+      <input v-model="name" maxlength="60" placeholder="Call it something"
+             @keyup.enter="confirmName" @keyup.esc="cancelName">
+      <div class="row">
+        <button class="btn sm ghost" @click="cancelName">Cancel</button>
+        <button class="btn sm primary" :disabled="busy" @click="confirmName">
+          <Icon name="upload" :size="15" />{{ busy ? 'Working…' : 'Save' }}
+        </button>
+      </div>
+    </template>
+    <template v-else>
+      <button class="btn sm primary wide" :disabled="!!whyNoUpload"
+              :title="whyNoUpload || 'Add another ticket picture to this raffle'"
+              @click="fileInput?.click()">
+        <Icon name="upload" :size="15" />Upload new artwork
+      </button>
+      <!-- The reason is on the button for a pointer and repeated here for a
+           keyboard or a phone, which never see a `title`. It only appears when
+           the control is actually dead, so it costs a line at the ceiling and
+           nothing the rest of the time. -->
+      <p v-if="full" class="tiny warn">{{ whyNoUpload }}</p>
+    </template>
     <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp"
            :disabled="busy" @change="onPick" hidden>
     <!--
