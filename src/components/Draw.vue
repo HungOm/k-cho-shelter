@@ -284,7 +284,7 @@ async function exportEntries() {
           behind this card is name OR phone, and a crossed-out handset says only
           the second, under a heading that says the first.
         -->
-        <h3 class="head" style="margin:0">
+        <h3 class="head">
           <Icon v-if="contactState !== 'unknown'"
                 :name="contactState === 'none' ? 'check' : 'missing'" :size="18"
                 :class="contactState === 'none' ? 'ok' : 'bad'" />
@@ -359,7 +359,7 @@ async function exportEntries() {
     <!-- THE PRIZE BOARD. What is on offer, in the order it is read out, with
          the running count an announcer actually needs beside each line. -->
     <div class="card">
-      <div class="spread"><h3 style="margin:0">The prizes</h3>
+      <div class="spread"><h3>The prizes</h3>
         <button v-if="isAdmin && !prizesUnavailable" class="btn sm primary"
                 @click="emit('edit-prize', null)">
           Add a prize
@@ -421,7 +421,7 @@ async function exportEntries() {
     </div>
 
     <div class="card">
-      <div class="spread"><h3 style="margin:0">Winners</h3>
+      <div class="spread"><h3>Winners</h3>
         <button v-if="isSuper" class="btn sm primary" @click="emit('record-winner')">Add a winner</button></div>
       <div v-if="winners.length">
         <div v-for="w in winners" :key="w.ticket || w.tickets?.number" class="winner">

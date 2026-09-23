@@ -586,6 +586,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .col   { display: flex; flex-direction: column; gap: 10px; }
 .grow  { flex: 1; min-width: 0; }
 .spread{ display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/*
+ * A HEADING IN A ROW DOES NOT WANT A BLOCK MARGIN, and eighteen call sites had
+ * each said so by hand — `style="margin:0"` on an h1 or h3 inside a `.spread`,
+ * across Home, Books, Sell, Draw, Agents, Admin, YourStock and DeskStock. An
+ * inline style is the one declaration nothing can override and no gate counts,
+ * so the same fact was restated eighteen times and could drift in eighteen
+ * places.
+ *
+ * DESCENDANT, NOT CHILD, because half of them are not direct children: the
+ * common shape is a heading and a subtitle wrapped together in a plain `div`
+ * or a `.grow` so the pair sits opposite a control. A `>` selector would have
+ * covered ten of the eighteen and left the rest needing the inline style,
+ * which is the worst of both.
+ *
+ * `h1, h2, h3` carry `margin: 0 0 .35em` from the base rule at (0,0,1); this
+ * is (0,1,1) and wins. h4 has no base margin and is included so the next one
+ * added does not reintroduce the problem.
+ */
+.spread :is(h1, h2, h3, h4) { margin: 0; }
 .center{ text-align: center; }
 .nowrap{ white-space: nowrap; }
 .hr    { height: 1px; background: var(--border); margin: 16px 0; border: 0; }

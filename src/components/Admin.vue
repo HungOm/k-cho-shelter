@@ -868,7 +868,7 @@ function details(d) {
          against a deploy log, and 48ed3f8 against 48e6f38 is exactly the
          comparison a proportional face makes hardest. -->
     <div class="spread" style="margin-bottom:16px">
-      <h1 style="margin:0">Setup</h1>
+      <h1>Setup</h1>
       <p class="muted tiny" style="margin:0">
         {{ APP_NAME }} v{{ appVersion }} &middot; <span class="data">{{ appSha }}</span>
       </p>
@@ -906,7 +906,7 @@ function details(d) {
     <h2 class="section">People</h2>
 
     <div class="card">
-      <div class="spread"><h3 style="margin:0">Who can sign in</h3>
+      <div class="spread"><h3>Who can sign in</h3>
         <button class="btn sm primary" @click="emit('add-user')">Add someone</button></div>
       <p class="muted small">Turn someone off here and they lose access within a minute.</p>
 
@@ -970,7 +970,7 @@ function details(d) {
     <div v-if="isSuper" class="card">
       <div class="spread">
         <div class="grow">
-          <h3 style="margin:0">Who can do what</h3>
+          <h3>Who can do what</h3>
           <p class="muted small" style="margin:4px 0 0">
             Turn any feature on or off for each kind of user.
           </p>
@@ -982,7 +982,7 @@ function details(d) {
          behind isSuper, which meant the person actually running the raffle
          could not answer "who changed this book" about their own books. -->
     <div class="card">
-      <div class="spread"><h3 style="margin:0">What people have been doing</h3>
+      <div class="spread"><h3>What people have been doing</h3>
         <button class="btn sm" @click="loadAudit">Show</button></div>
       <div v-if="audit === 'loading'" class="col" style="gap:10px">
         <div v-for="i in 3" :key="i" class="skel"></div>
@@ -1009,7 +1009,7 @@ function details(d) {
     <div v-if="isSuper && c" class="card">
       <div class="spread">
         <div class="grow">
-          <h3 style="margin:0">Tickets in play</h3>
+          <h3>Tickets in play</h3>
           <p class="muted small" style="margin:4px 0 0">
             <template v-if="waiting">
               {{ live.toLocaleString() }} of {{ made.toLocaleString() }} can be sold.
@@ -1640,7 +1640,7 @@ function details(d) {
     -->
     <div v-if="isSuper" class="card fill">
       <div class="spread">
-        <h3 style="margin:0">Fill this raffle with sample data</h3>
+        <h3>Fill this raffle with sample data</h3>
         <button class="btn sm" :disabled="seedBusy || seedUnavailable"
                 :title="seedUnavailable ? 'The server has not been updated with this yet' : 'Work out what would be made'"
                 @click="previewSeed">
@@ -1758,7 +1758,7 @@ function details(d) {
     -->
     <div v-if="isSuper" class="card wipe">
       <div class="spread">
-        <h3 style="margin:0">Reset this raffle</h3>
+        <h3>Reset this raffle</h3>
         <button class="btn sm" :disabled="resetBusy || resetUnavailable"
                 :title="resetUnavailable ? 'The server has not been updated with this yet' : 'Count what a reset would destroy'"
                 @click="previewReset">

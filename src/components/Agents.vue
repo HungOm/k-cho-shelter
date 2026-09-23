@@ -98,7 +98,7 @@ function waLink(o) {
        phone. --tap is never overridden. -->
   <div class="dense">
     <div class="spread" style="margin-bottom:6px">
-      <h1 style="margin:0">Sellers</h1>
+      <h1>Sellers</h1>
       <button v-if="isAdmin" class="btn primary" @click="emit('add-agent')">Add someone</button>
     </div>
     <p class="muted">
@@ -108,7 +108,7 @@ function waLink(o) {
 
     <div v-if="notReported.length" class="card report">
       <div class="spread" style="margin-bottom:8px">
-        <h3 style="margin:0">Still to report</h3>
+        <h3>Still to report</h3>
         <span :class="['pill', lateReporting ? 'bad' : 'warn']">{{ notReported.length }}</span>
       </div>
       <p class="tiny muted" style="margin:0 0 10px">

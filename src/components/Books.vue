@@ -45,7 +45,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
        phone. --tap is never overridden. -->
   <div class="dense">
     <div class="spread" style="margin-bottom:14px">
-      <h1 style="margin:0">Books</h1>
+      <h1>Books</h1>
       <div class="row">
         <button class="btn primary" @click="emit('sell-book')">Sell a whole book</button>
         <button v-if="isAdmin" class="btn" @click="emit('issue')">Give out books</button>
@@ -63,7 +63,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
 
     <div class="card">
       <div class="spread" style="margin-bottom:14px">
-        <h3 style="margin:0">Where every book is</h3>
+        <h3>Where every book is</h3>
         <select v-model="agent" style="max-width:210px" aria-label="Filter by seller">
           <option value="">Everyone</option>
           <option v-for="a in state.agents" :key="a.id" :value="a.id">{{ a.name }}</option>

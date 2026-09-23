@@ -340,7 +340,7 @@ function phoneWarning(phone) {
 
     <div class="card">
       <div class="spread" style="margin-bottom:6px">
-        <h3 style="margin:0"><Bi text="A pile of stubs" /></h3>
+        <h3><Bi text="A pile of stubs" /></h3>
       </div>
       <!-- WORDED FOR WHOEVER IS READING IT. "For when a seller brings back their
            book" is a sentence about somebody else, and a seller reading it on

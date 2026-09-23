@@ -183,7 +183,7 @@ function doStep(action) {
     <!-- the whole raffle at a glance -->
     <div class="card">
       <div class="spread" style="margin-bottom:14px">
-        <h3 style="margin:0"><Bi text="All the books" /></h3>
+        <h3><Bi text="All the books" /></h3>
         <button class="btn sm" @click="go('books')"><Bi text="See list" /></button>
       </div>
       <BookGrid :books="state.books" :limit="180"

@@ -79,7 +79,7 @@ defineExpose({ hasStock: computed(() => myBooks.value.length > 0) })
   <div v-if="isSeller && myBooks.length" class="card mine">
     <div class="spread" style="margin-bottom:10px">
       <div>
-        <h3 style="margin:0"><Bi :text="title" /></h3>
+        <h3><Bi :text="title" /></h3>
         <p class="muted small" style="margin:2px 0 0">
           {{ sellable.length }} left in {{ myBooks.length }}
           {{ myBooks.length === 1 ? 'book' : 'books' }}
