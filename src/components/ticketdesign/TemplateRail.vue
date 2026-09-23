@@ -96,7 +96,16 @@ function onPick(e) {
         <div class="tthumb" :title="`${t.width} × ${t.height} px · ${kb(t.bytes)}`
                + (t.uploadedAt ? ` · uploaded ${String(t.uploadedAt).slice(0, 10)}` : '')
                + (t.uploadedBy ? ` by ${t.uploadedBy}` : '')">
-          <img :src="t.url" :alt="t.name" loading="lazy">
+          <!--
+            GUARDED, BECAUSE AN EMPTY src IS NOT AN ABSENT ONE. `url` is
+            `text not null default ''` in the schema and the server sends
+            `String(r.url ?? '')`, so a row may legitimately carry a blank.
+            `<img src="">` resolves against the page and draws the browser's
+            BROKEN-IMAGE mark — the one state that looks like a bug in the
+            artwork rather than a template without a picture.
+          -->
+          <img v-if="t.url" :src="t.url" :alt="t.name" loading="lazy">
+          <span v-else class="nopic">no preview</span>
           <span v-if="t.id === activeId" class="pill ok">printing</span>
         </div>
         <b class="tname">{{ t.name }}</b>
@@ -196,6 +205,13 @@ function onPick(e) {
   overflow: hidden; background: var(--surface-2);
 }
 .tthumb img { display: block; width: 100%; height: 100%; object-fit: cover }
+/* Says which of the two silent states this is — a template with no picture,
+   not an artwork rail that has broken. Quiet, because it is a fact about the
+   row rather than something to act on. */
+.nopic {
+  display: flex; align-items: center; justify-content: center; height: 100%;
+  font-size: var(--fs-3xs); color: var(--muted);
+}
 .tthumb .pill { position: absolute; left: 6px; top: 6px }
 .tname { display: block; margin: var(--sp-3) 0 var(--sp-2); font-size: var(--fs-sm); line-height: 1.25 }
 .trow { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap }

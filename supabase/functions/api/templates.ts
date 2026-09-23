@@ -367,6 +367,26 @@ export async function uploadTemplate(p: Record<string, unknown>, user: AppUser, 
   if (upErr) throw new ApiError('UPLOAD_FAILED', upErr.message)
   const { data: pub } = bucket.getPublicUrl(name)
   const url = String(pub?.publicUrl ?? '')
+  /*
+   * A TEMPLATE WITH NO URL IS NOT A TEMPLATE, so it is refused here rather
+   * than stored and drawn as a broken image.
+   *
+   * `?? ''` admits the empty case and nothing downstream checked it: the row
+   * would insert with `url: ''` — legal, since the column is `text not null
+   * default ''` — and TemplateRail would render `<img src="">`, which resolves
+   * against the page and draws the browser's broken-image mark. The organiser
+   * sees a rail that looks broken rather than an upload that failed.
+   *
+   * The FILE is already in the bucket at this point, which is why the message
+   * says to try again rather than pretending nothing happened: the upsert is
+   * keyed on the same name, so a retry overwrites it rather than orphaning a
+   * second copy.
+   */
+  if (!url) {
+    throw new ApiError('UPLOAD_FAILED',
+      'The artwork was stored but no address came back for it, so it could not be '
+      + 'added to the list. Try the upload again.')
+  }
 
   const { error } = await ctx.supabaseAdmin.from('ticket_templates').insert({
     id,

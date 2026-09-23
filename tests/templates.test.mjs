@@ -397,6 +397,53 @@ console.log("the rail's copy of the ceiling is the server's number")
   eq(m?.[1], String(templates.MAX_TEMPLATES), 'and it is what the server enforces')
 }
 
+/*
+ * AN ARTWORK WITH NO ADDRESS IS NOT STORED AS ONE.
+ *
+ * `getPublicUrl` is read as `String(pub?.publicUrl ?? '')`, and that `?? ''`
+ * was admitted and never checked. The row would insert with `url: ''` — legal,
+ * because the column is `text not null default ''` — and TemplateRail renders
+ * `<img :src="t.url">`, which for an empty string resolves against the page
+ * and draws the browser's BROKEN-IMAGE mark. The organiser sees an artwork
+ * rail that looks broken rather than an upload that failed.
+ *
+ * Same family as `.linkish` matching no element and `var(--line, …)` resolving
+ * to its fallback: nothing is malformed, nothing errors, and the failure is
+ * only visible as a picture. Flagged by kcho-shelter-51 while reading the data
+ * shape for the studio's template picker; the reachability was checked against
+ * schema.sql before it was believed.
+ *
+ * WHAT THIS CANNOT DO. It does not prove getPublicUrl ever returns empty in
+ * production — supabase-js builds that string locally, so it is unlikely. The
+ * assertion is about what the handler does WHEN it does, which is the half
+ * that was missing: the `?? ''` says the case is possible and nothing acted
+ * on it.
+ */
+console.log('an upload whose address comes back empty is refused, not stored')
+{
+  const w = world()
+  /* The one thing changed from the good world: the bucket answers with no
+     public url. Everything else — the bytes, the type, the size — is the
+     payload that succeeds two blocks up. */
+  w.db.ctx.supabaseAdmin.storage = {
+    from: () => ({
+      upload: async () => ({ error: null }),
+      remove: async () => ({ error: null }),
+      getPublicUrl: () => ({ data: { publicUrl: '' } }),
+    }),
+  }
+  eq(await codeOf(() => upload(w, { data: TICKET, contentType: 'image/png', name: 'Front' })),
+     'UPLOAD_FAILED', 'the upload is refused rather than half-succeeding')
+
+  eq(w.db.table('ticket_templates').length, 0,
+     'and no template row is written, so the rail has nothing broken to draw')
+
+  let msg = ''
+  try { await upload(w, { data: TICKET, contentType: 'image/png', name: 'Front' }) } catch (e) { msg = e.message }
+  ok(/again/i.test(msg),
+     'and the refusal says to try again, because the file IS in the bucket and a retry overwrites it')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 cleanup()
 process.exit(fail ? 1 : 0)
