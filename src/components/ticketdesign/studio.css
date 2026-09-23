@@ -142,11 +142,19 @@
  * rail, the inspectors and the sheet all import this file, and a rule that
  * reaches only one of them is how the three shapes this replaced came about.
  *
- * `min-height` is the icon control's own height, so a section WITHOUT an action
- * leaves the same gap above its contents as one with. Rows that jump by 4px
- * between sections read as carelessness even when nobody can say why.
+ * `min-height` IS ToolButton's 32px square (ToolButton.vue:110), so a section
+ * without an action leaves the same gap above its contents as one with. Rows
+ * that jump between sections read as carelessness even when nobody can say why.
+ *
+ * IT SAID 26px AND CLAIMED THE SAME REASON, which was wrong twice over: the
+ * control is 32, and at 26 the rule did nothing at all where an action exists
+ * — the button set the row height — while an action-LESS header came out 6px
+ * shorter, which is precisely the mismatch it was written to prevent. A static
+ * fixture of the row missed it because the fixture's stand-in control was 26px
+ * too, so the two agreed with each other and not with the app. If this number
+ * and ToolButton's ever part company again, this is the line to change.
  */
-.shead { display: flex; align-items: center; gap: var(--sp-3); min-height: 26px }
+.shead { display: flex; align-items: center; gap: var(--sp-3); min-height: 32px }
 .shead .rubric { margin: 0 }
 .sfill { flex: 1 }
 /* Tabular, because these sit in a column down the rail and a count that shifts
