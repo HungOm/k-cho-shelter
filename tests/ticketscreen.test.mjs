@@ -562,10 +562,12 @@ console.log('the canvas is fitted when it appears, not only when the artwork cha
       ok(b.fittedTo.value !== b.activeId.value,
         'with the canvas off screen nothing has been fitted to this artwork')
 
-      /* The column, once it exists. 1000 - 32 of breathing room over 1600. */
+      /* The column, once it exists: 1000, less 32 of breathing room and the
+         16 px ruler down the left side the artboard now shares it with
+         (STUDIO-ESSENTIALS Phase 3), over 1600. */
       b.stage.value = { clientWidth: 1000, scrollLeft: 0 }
       b.fitToWidth()
-      ok(Math.abs(b.zoom.value - 0.605) < 1e-9,
+      ok(Math.abs(b.zoom.value - 0.595) < 1e-9,
         `a fit with the canvas on screen sizes it to the column (got ${b.zoom.value})`)
       ok(b.fittedTo.value === b.activeId.value,
         'and records which artwork the zoom now belongs to')
@@ -899,6 +901,51 @@ console.log('several things selected get a panel of their own, and the rail its 
     ok(m && /disabled/.test(m[0]) && /title="[^"]+"/.test(m[0]),
       `"${t}" is disabled with a reason when only fields are selected`)
   }
+}
+
+console.log('the canvas measures the paper, draws its grid, and zooms from the keyboard')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 3. The ruler read shares (0, 25%, 50%…) across the
+   * top only, and the 2 mm grid the snapping used was invisible, so a box
+   * jumping to it had no reason on screen. Rendered at the fixture's zoom —
+   * 800 px for 190 mm, about 4.2 px a millimetre — the ruler must read
+   * millimetres both ways and the grid must be drawn.
+   */
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => { await b.load(); b.tab.value = 'place'; b.zoom.value = 0.5 },
+    renderReal: ['Rulers.vue'],
+  })
+  ok(/class="rulers"/.test(html), 'the artboard sits inside its rulers')
+  const labels = [...html.matchAll(/<text[^>]*>(\d+)<\/text>/g)].map((m) => Number(m[1]))
+  ok(labels.length > 6, `the rulers carry labels (${labels.length})`)
+  ok(labels.includes(190), 'the top ruler reaches the ticket\'s 190 mm')
+  ok(labels.includes(60), 'the side ruler reaches its 60-odd mm, which was on no ruler before')
+  ok(!/>25%</.test(html), 'and no ruler reads in shares any more')
+  ok(/class="gridlines"/.test(html), 'the 2 mm grid the snapping uses is drawn')
+
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ctx.tab.value = 'place'
+  const key = (k, mods = {}) => ({ key: k, metaKey: false, ctrlKey: false, shiftKey: false,
+    target: null, preventDefault() {}, ...mods })
+  ctx.zoom.value = 0.5
+  ctx.onFocusKey(key('+'))
+  eq(ctx.zoom.value, 0.75, '+ steps the zoom in')
+  ctx.onFocusKey(key('-'))
+  eq(ctx.zoom.value, 0.5, 'and − steps it back out')
+  ctx.onFocusKey(key('1', { metaKey: true }))
+  eq(ctx.zoom.value, 1, '⌘1 is actual size — one artwork pixel to one screen pixel')
+  ctx.onFocusKey(key(' '))
+  ok(ctx.spaceHeld.value, 'holding Space picks up the hand')
+  ctx.onFocusKeyUp({ key: ' ' })
+  ok(!ctx.spaceHeld.value, 'and letting go puts it down')
+
+  const { xs } = ctx.edgesExcept(new Set(['number-main']))
+  ok(xs.includes(0.5), 'a moving box may snap to the artboard\'s centre')
+  const bm = ctx.design.value.elements.find((e) => e.id === 'book-main').box
+  ok(xs.some((x) => Math.abs(x - (bm.left + bm.width / 2)) < 1e-9), 'and to the centre of another box')
+  await cleanup()
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

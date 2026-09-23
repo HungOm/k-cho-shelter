@@ -421,6 +421,17 @@ differs from the text below:
 
 ### Phase 3 — Canvas feedback: guides, grid, rulers, zoom, pan (M)
 
+**Status 2026-09-23: built, gated, rendered** (kcho-shelter-0c). Notes:
+- A moving box snaps by whichever of its leading edge, centre or trailing edge
+  is nearest a line; candidates include every other box's centre and the
+  artboard's. Nearest wins between a line and the grid, so with the grid on a
+  guide appears only when a line is the closer catch — rendered both ways.
+- `+` / `−` step the zoom, `⌘0` fits, `⌘1` is actual size; bare keys, because
+  `⌘+`/`⌘−` are the browser's own page zoom. Space + drag pans the stage.
+- The fit leaves room for the 16 px side ruler; `ticketscreen`'s fit assertion
+  was re-aimed at that arithmetic (0.605 → 0.595), with the reason in place.
+- The registry for these keys is Phase 4; they are bound directly for now.
+
 - New `src/lib/studiocanvas.js`: `snapEdges(things, movingIds, { stubAt,
   centres })` → `{ xs: [{ at, kind: 'edge'|'centre'|'board'|'stub' }], ys }`;
   `snapNear(value, candidates, step, threshold)` → `{ value, hit }`;

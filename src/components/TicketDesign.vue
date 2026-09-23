@@ -69,6 +69,7 @@ import {
 } from '../lib/designelements.js'
 import { bandOf, isClick, hitsIn, expandGroups, mergeSelection } from '../lib/selection.js'
 import { copyRecords, pasteRecords } from '../lib/clipboard.js'
+import { snapEdges, snapNear, snapSpan } from '../lib/studiocanvas.js'
 import { placeShape, normalLibrary, nextLibId } from '../lib/designlibrary.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
@@ -87,6 +88,7 @@ import DecorationInspector from './ticketdesign/DecorationInspector.vue'
 import LibraryPanel from './ticketdesign/LibraryPanel.vue'
 import DigitalTab from './ticketdesign/DigitalTab.vue'
 import SelectionInspector from './ticketdesign/SelectionInspector.vue'
+import Rulers from './ticketdesign/Rulers.vue'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
 import Icon from './ui/Icon.vue'
@@ -1118,6 +1120,13 @@ const ZOOMS = [0.25, 0.33, 0.5, 0.75, 1, 1.5, 2]
  * job is placing things on a raster. */
 const frameWidth = computed(() => Math.round((design.value?.artwork?.width ?? 1600) * zoom.value))
 
+/* One pixel of the artwork to one pixel of the screen — the only zoom at
+   which a hairline on screen is a hairline on the file. */
+function zoomActual() { zoom.value = 1 }
+
+/* The hand: Space held turns a press on the artboard into a pan. */
+const spaceHeld = ref(false)
+
 function stepZoom(dir) {
   const i = ZOOMS.findIndex((z) => z >= zoom.value - 1e-6)
   const next = dir > 0 ? ZOOMS[Math.min(ZOOMS.length - 1, i + 1)] : ZOOMS[Math.max(0, i - 1)]
@@ -1140,8 +1149,9 @@ function fitToWidth() {
   const el = stage.value
   const aw = design.value?.artwork?.width || 0
   if (!el || !aw) return
-  /* 32px of breathing room, so the ticket is not jammed against the scroller. */
-  zoom.value = Math.max(0.05, (el.clientWidth - 32) / aw)
+  /* Breathing room, so the ticket is not jammed against the scroller — and the
+     ruler down the left side, which the artboard now shares the width with. */
+  zoom.value = Math.max(0.05, (el.clientWidth - 48) / aw)
   fittedTo.value = activeId.value
 }
 
@@ -1194,22 +1204,21 @@ const SNAP = 0.004
  * `step` is already 0 when the grid is off, so the two gates are separate: the
  * `snapping` check guards the neighbours only.
  */
+/* The line the last snap on each axis caught, or null — read by the drag to
+   draw a guide where the box landed. */
+let caughtX = null
+let caughtY = null
 function snapTo(value, candidates, step = 0) {
-  let best = value
-  let dist = SNAP
-  if (snapping.value) {
-    for (const c of candidates) {
-      const d = Math.abs(c - value)
-      if (d < dist) { dist = d; best = c }
-    }
-  }
-  if (step > 0) {
-    const g = Math.round(value / step) * step
-    const d = Math.abs(g - value)
-    if (d < dist) { dist = d; best = g }
-  }
-  return best
+  return snapNear(value, snapping.value ? candidates : [], step, SNAP)
 }
+
+/*
+ * THE GUIDES: a hairline across the artboard at whatever line the moving box
+ * just caught — another box's edge or centre, the artboard's centre, the stub.
+ * Null when nothing did, which is most of the time. A grid catch draws none;
+ * the grid is already on screen.
+ */
+const snapLines = ref({ x: null, y: null })
 
 /*
  * TWO MILLIMETRES IS TWO MILLIMETRES ON BOTH AXES, and that is the whole
@@ -1235,8 +1244,8 @@ const gridY = computed(() => {
   if (!gridding.value || !mm || !t?.width || !t?.height) return 0
   return GRID_MM / (mm * (t.height / t.width))
 })
-const snapX = (v, xs) => snapTo(v, xs, gridX.value)
-const snapY = (v, ys) => snapTo(v, ys, gridY.value)
+const snapX = (v, xs) => { const r = snapTo(v, xs, gridX.value); if (r.hit !== null) caughtX = r.hit; return r.value }
+const snapY = (v, ys) => { const r = snapTo(v, ys, gridY.value); if (r.hit !== null) caughtY = r.hit; return r.value }
 
 /*
  * WHAT A MOVING BOX MAY SNAP TO: every edge of every OTHER thing on the ticket.
@@ -1252,20 +1261,13 @@ const snapY = (v, ys) => snapTo(v, ys, gridY.value)
  * cannot explain.
  */
 function edgesExcept(moving) {
-  const skip = moving instanceof Set ? moving : new Set([moving])
-  const xs = []
-  const ys = []
-  for (const e of [...elements.value, ...decorations.value]) {
-    if (skip.has(e.id) || e.enabled === false) continue
-    xs.push(e.box.left, e.box.left + e.box.width)
-    ys.push(e.box.top, e.box.top + e.box.height)
-  }
-  xs.push(0, 1, stubShare(design.value))
-  ys.push(0, 1)
-  return { xs, ys }
+  /* Edges AND centres now, and the artboard's own centre — src/lib/
+     studiocanvas.js, where the tests can reach the arithmetic. */
+  return snapEdges([...elements.value, ...decorations.value], moving, { stubAt: stubShare(design.value) })
 }
 
 function startMove(el, ev) {
+  if (spaceHeld.value) { ev.stopPropagation(); onFrameDown(ev); return }
   if (el.enabled === false || el.locked) return
   ev.stopPropagation()
 
@@ -1324,6 +1326,14 @@ function startResize(el, corner, ev) {
  */
 function onFrameDown(ev) {
   if (!frame.value) return
+  /* Space held: the hand. The artboard scrolls under the pointer instead of
+     anything being drawn or selected. */
+  if (spaceHeld.value) {
+    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+    drag.value = { mode: 'pan', px: ev.clientX, py: ev.clientY,
+      sl: stage.value?.scrollLeft || 0, st: stage.value?.scrollTop || 0 }
+    return
+  }
   const r = frame.value.getBoundingClientRect()
   const left = (ev.clientX - r.left) / r.width
   const top = (ev.clientY - r.top) / r.height
@@ -1350,6 +1360,14 @@ function onPointerMove(ev) {
     ? lockAxis((ev.clientX - st.px) / span.x, (ev.clientY - st.py) / span.y)
     : [(ev.clientX - st.px) / span.x, (ev.clientY - st.py) / span.y]
 
+  if (st.mode === 'pan') {
+    if (stage.value) {
+      stage.value.scrollLeft = st.sl - (ev.clientX - st.px)
+      stage.value.scrollTop = st.st - (ev.clientY - st.py)
+    }
+    return
+  }
+
   if (st.mode === 'draw' || st.mode === 'band') {
     const r = frame.value.getBoundingClientRect()
     drawn.value = bandOf(st.origin, {
@@ -1371,14 +1389,15 @@ function onPointerMove(ev) {
   const { xs, ys } = edgesExcept(new Set([st.id, ...(st.group || []).map((g) => g.id)]))
 
   if (st.mode === 'move') {
-    const left = snapX(st.box.left + dx, xs)
-    const top = snapY(st.box.top + dy, ys)
-    /* Snapping the trailing edge too, so a box lines up on whichever of its
-     * sides is nearest something — the left edge is not privileged. */
-    const right = snapX(st.box.left + dx + st.box.width, xs) - st.box.width
-    const bottom = snapY(st.box.top + dy + st.box.height, ys) - st.box.height
-    el.box.left = Math.abs(left - (st.box.left + dx)) <= Math.abs(right - (st.box.left + dx)) ? left : right
-    el.box.top = Math.abs(top - (st.box.top + dy)) <= Math.abs(bottom - (st.box.top + dy)) ? top : bottom
+    /* Whichever of the box's three lines — leading edge, centre, trailing edge
+     * — comes nearest something wins, so no side is privileged and centring
+     * one thing under another is a drag, not a sum. */
+    const on = snapping.value
+    const sx = snapSpan(st.box.left + dx, st.box.width, on ? xs : [], gridX.value)
+    const sy = snapSpan(st.box.top + dy, st.box.height, on ? ys : [], gridY.value)
+    el.box.left = sx.start
+    el.box.top = sy.start
+    snapLines.value = { x: sx.hit, y: sy.hit }
 
     /*
      * THE REST OF THE SELECTION FOLLOWS THE PRIMARY'S SETTLED POSITION, not the
@@ -1397,6 +1416,8 @@ function onPointerMove(ev) {
   }
 
   if (st.mode === 'resize') {
+    caughtX = null
+    caughtY = null
     const c = st.corner
     /* Shift on a corner keeps the shape it already had. Width leads, because
      * these boxes are wider than they are tall and width is what is being
@@ -1426,6 +1447,7 @@ function onPointerMove(ev) {
       el.box.top = Math.min(top, bottom - 0.002)
       el.box.height = bottom - el.box.top
     }
+    snapLines.value = { x: caughtX, y: caughtY }
   }
 }
 
@@ -1460,6 +1482,7 @@ function endPointer() {
   }
   drag.value = null
   drawn.value = null
+  snapLines.value = { x: null, y: null }
 }
 
 function startStubDrag(ev) {
@@ -1662,6 +1685,8 @@ onActivated(() => {
   /* Not on a screen about to say it needs a bigger one. */
   if (state.roomy) setFocus(true)
   window.addEventListener('keydown', onFocusKey)
+  window.addEventListener('keyup', onFocusKeyUp)
+  window.addEventListener('blur', dropHand)
   window.addEventListener('beforeunload', onLeavePage)
   /* A caller asked for a particular tab — see goStudio. Read once and cleared,
      because the request belongs to that one arrival: leaving it set would send
@@ -1675,6 +1700,8 @@ onActivated(() => {
 onDeactivated(() => {
   setFocus(false)
   window.removeEventListener('keydown', onFocusKey)
+  window.removeEventListener('keyup', onFocusKeyUp)
+  window.removeEventListener('blur', dropHand)
   window.removeEventListener('beforeunload', onLeavePage)
   keepDraftNow()
   keepCardDraftNow()
@@ -1689,6 +1716,8 @@ watch(() => state.roomy, (roomy) => { if (!roomy) setFocus(false) })
 onUnmounted(() => {
   setFocus(false)
   window.removeEventListener('keydown', onFocusKey)
+  window.removeEventListener('keyup', onFocusKeyUp)
+  window.removeEventListener('blur', dropHand)
   window.removeEventListener('beforeunload', onLeavePage)
   keepDraftNow()
   keepCardDraftNow()
@@ -1712,6 +1741,11 @@ function inAField(t) {
     || t.tagName === 'SELECT' || t.isContentEditable)
 }
 
+/* Letting go of Space puts the hand down. So does leaving the window, or the
+   hand would stay up for somebody who tabbed away mid-pan and came back. */
+function onFocusKeyUp(e) { if (e.key === ' ') spaceHeld.value = false }
+function dropHand() { spaceHeld.value = false }
+
 function onFocusKey(e) {
   // ⌘\ on a Mac, Ctrl+\ elsewhere. Not a bare key: this screen is full of
   // text fields and a single letter would fire while somebody types a motto.
@@ -1724,6 +1758,14 @@ function onFocusKey(e) {
   /* The arrange shortcuts belong to the Place tab, where the selection is. */
   if (tab.value !== 'place' || inAField(e.target)) return
   const cmd = e.metaKey || e.ctrlKey
+
+  if (e.key === ' ') { e.preventDefault(); spaceHeld.value = true; return }
+  /* The view: in and out a step, fit, and actual size. Bare + and − because
+     ⌘+ and ⌘− belong to the browser's own zoom, which scales the whole page. */
+  if (!cmd && (e.key === '+' || e.key === '=')) { e.preventDefault(); stepZoom(1); return }
+  if (!cmd && (e.key === '-' || e.key === '_')) { e.preventDefault(); stepZoom(-1); return }
+  if (cmd && e.key === '0') { e.preventDefault(); fitToWidth(); return }
+  if (cmd && e.key === '1') { e.preventDefault(); zoomActual(); return }
 
   if (cmd && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicatePicked(); return }
   if (cmd && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); copyPicked(); return }
@@ -2389,6 +2431,22 @@ function printTest() {
  * artwork's own shape times the width, because a second number is a second
  * thing to get wrong and getting it wrong stretches the artwork off its
  * baseline. */
+/* The printed height in millimetres — derived, never stored, the same rule as
+   the line below. */
+const printedHeightMM = computed(() => {
+  const t = active.value
+  const w = Number(design.value?.sheet?.widthMM ?? 0)
+  return t && w ? w * (t.height / t.width) : 0
+})
+/* The 2 mm grid as drawn. Two millimetres is the same number of pixels on both
+   axes at any zoom, so the cell is square; below six pixels it is a tint, not
+   a grid, and is not drawn. */
+const gridCellPx = computed(() => {
+  const w = Number(design.value?.sheet?.widthMM ?? 0)
+  return w ? (GRID_MM / w) * frameWidth.value : 0
+})
+const gridShown = computed(() => gridding.value && gridCellPx.value >= 6)
+
 const printedSize = computed(() => {
   const t = active.value
   const w = Number(design.value?.sheet?.widthMM ?? 0)
@@ -2846,8 +2904,12 @@ const printedSize = computed(() => {
                             :why="zoom >= ZOOMS[ZOOMS.length - 1] ? 'This is as far in as it goes' : ''"
                             @click="stepZoom(1)" />
                 <ToolButton icon="fit" label="Fit" wide :size="15"
-                            hint="Fit the whole ticket to the width of the canvas"
+                            hint="Fit the whole ticket to the width of the canvas · ⌘0"
                             @click="fitToWidth" />
+                <ToolButton icon="actualSize" label="Actual size" :size="15"
+                            :active="zoom === 1"
+                            hint="One pixel of the artwork to one pixel of the screen · ⌘1"
+                            @click="zoomActual" />
               </ToolBar>
               <span class="grow"></span>
               <!--
@@ -3002,23 +3064,21 @@ const printedSize = computed(() => {
             </ToolBar>
 
             <div ref="stage" class="stage">
-              <!-- The ruler reads in shares, because that is what is stored; the
-                   width in millimetres is the one absolute fact on it. -->
-              <div class="ruler" :style="{ width: frameWidth + 'px' }">
-                <span style="left:0">0</span>
-                <span style="left:25%">25%</span>
-                <span style="left:50%">50%</span>
-                <span style="left:75%">75%</span>
-                <span class="right">{{ Number(design.sheet.widthMM).toFixed(1) }} mm</span>
-              </div>
-
+              <!-- Millimetres along the top and down the side, as the ticket
+                   prints; the share is in the inspector, beside the pixels. -->
+              <Rulers :width-m-m="Number(design.sheet.widthMM)" :height-m-m="printedHeightMM"
+                      :width-px="frameWidth" :height-px="frameWidth * (active.height / active.width)">
               <div
-                ref="frame" class="frame" :class="{ drawing: !!pending }"
+                ref="frame" class="frame" :class="{ drawing: !!pending, panning: spaceHeld }"
                 :style="{ width: frameWidth + 'px' }"
                 @pointerdown="onFrameDown" @pointermove="onPointerMove"
                 @pointerup="endPointer" @pointercancel="endPointer">
                 <img :src="active.url" alt="" draggable="false">
                 <div class="overlay" v-html="preview"></div>
+                <!-- The 2 mm grid the snapping uses, drawn, so a box jumping to
+                     it has a reason on screen. -->
+                <div v-if="gridShown" class="gridlines"
+                     :style="{ backgroundSize: `${gridCellPx}px ${gridCellPx}px` }"></div>
 
                 <!--
                   THE DRAWN SHAPES' BOXES, FIRST, so they sit under the fields'
@@ -3097,7 +3157,12 @@ const printedSize = computed(() => {
                     {{ pc(design.stubAt) }}
                   </span>
                 </div>
+
+                <!-- What the moving box just caught, while it is caught. -->
+                <div v-if="snapLines.x !== null" class="guide v" :style="{ left: pc(snapLines.x) }"></div>
+                <div v-if="snapLines.y !== null" class="guide h" :style="{ top: pc(snapLines.y) }"></div>
               </div>
+              </Rulers>
             </div>
             </div><!-- .withrail -->
 
@@ -3549,12 +3614,23 @@ const printedSize = computed(() => {
  * with nothing pointing at it; this is the surface it was cut for. */
 .stage { overflow: auto; padding: 0 0 8px; background: var(--stage); border-radius: var(--r-sm) }
 .stage.plain { padding-bottom: 0 }
-.ruler {
-  position: relative; height: 15px; margin: 0 auto; font-size: .6rem; color: var(--muted);
-  font-family: var(--font-data);
+/*
+ * THE GRID AND THE GUIDES, drawn over the artwork and under nothing that can
+ * be pressed. Literal colours for the reason every mark on the artboard is: it
+ * sits on somebody's artwork, which can be any colour, so it takes the
+ * selection's own cyan — faint for the grid, which is always there, and full
+ * for a guide, which is there for the half second something is caught.
+ */
+.gridlines {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(18, 181, 229, .22) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(18, 181, 229, .22) 1px, transparent 1px);
 }
-.ruler span { position: absolute; top: 2px; padding-left: 3px; border-left: 1px solid var(--border) }
-.ruler .right { right: 0; border-left: 0; border-right: 1px solid var(--border); padding: 0 3px 0 0 }
+.guide { position: absolute; pointer-events: none; background: #12b5e5; z-index: 2 }
+.guide.v { top: 0; bottom: 0; width: 1px; margin-left: -.5px }
+.guide.h { left: 0; right: 0; height: 1px; margin-top: -.5px }
+.frame.panning, .frame.panning .ebox { cursor: grab }
 
 /*
  * --paper, not --surface. This is the sheet the ticket prints on, and it was
