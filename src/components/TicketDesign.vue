@@ -2900,13 +2900,27 @@ const printedSize = computed(() => {
       the screen. Neither is slack. Beneath the button it is about, it is
       still beside it, still visible, and quieter than the bar.
     -->
+    <!--
+      ONE REGISTER FOR BOTH TABS, AND THE BLAST RADIUS STAYS VISIBLE.
+      The digital half had been cut to seven words and the printed half left at
+      twenty, so one control said one thing in two registers. Both now open
+      "Applies to".
+      WHAT WAS CUT AND WHAT WAS NOT. The second sentence went — "Paper already
+      printed keeps what it had" is reassurance about a thing that cannot
+      happen, and it is on the title. "Including digital tickets already
+      issued" STAYS ON SCREEN: it is the half people misread, it is the reason
+      somebody about to commit a press run reads this at all, and
+      ticketscreen.test.mjs pins it for exactly that reason. It caught this
+      when the first attempt moved it to the title — which is also what R6 of
+      UI-STANDARD.md forbids, since a hover is a click by another name.
+    -->
     <p v-if="tab === 'digital' ? cardDirty : dirty" class="say saving savingline"
-       :title="tab === 'digital' ? 'Cards already delivered keep the picture they were sent. A card issued earlier is drawn this way only if it is sent again.' : null">
-      <template v-if="tab === 'digital'">Applies to cards sent from now on.</template>
-      <template v-else>
-        Reaches everything printed or sent from now on, including digital
-        tickets already issued. Paper already printed keeps what it had.
-      </template>
+       :title="tab === 'digital'
+         ? 'A card issued earlier is drawn this way only if it is sent again. Pictures already delivered keep what they had.'
+         : 'Paper already printed keeps what it had.'">
+      {{ tab === 'digital'
+        ? 'Applies to cards sent from now on.'
+        : 'Applies to everything printed or sent from now on, including digital tickets already issued.' }}
     </p>
 
     <!--
@@ -3536,9 +3550,16 @@ const printedSize = computed(() => {
                 — on this template {{ inPixels.x }}, {{ inPixels.y }},
                 {{ inPixels.w }} × {{ inPixels.h }} px
               </template>
-              <template v-else>
-                Nothing selected — click a box, or a name in the list.
-              </template>
+              <!--
+                THE PANEL ALREADY SAYS THIS, three feet to the right and at
+                the moment somebody is looking for it: Inspector.vue's empty
+                state is "Nothing selected" over "Click a box, or a name in
+                the list." Both were on screen at once, verbatim, and the two
+                had already started to drift — one sentence with an em dash
+                here, two lines there. A readout says WHAT IS TRUE; the panel
+                says what to DO about it. This keeps the first half only.
+              -->
+              <template v-else>Nothing selected</template>
               <span class="grow"></span>
               <span class="muted">
                 Shown with the {{ showLongest ? 'longest' : 'typical' }} entry the designer knows.

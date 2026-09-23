@@ -163,5 +163,55 @@ console.log('inking a design moves the colours and nothing else')
   eq(DEFAULT_DESIGN.main.ink, before.main.ink, 'and the defaults were not mutated')
 }
 
+/*
+ * THE SHAPE THE ONLY CALLER ACTUALLY PASSES.
+ *
+ * REPORTED FROM THE SCREEN: "Failed to execute 'structuredClone' on 'Window':
+ * #<Object> could not be cloned." Detecting an artwork's colours died there and
+ * the Artwork tab could not be used.
+ *
+ * WHY EVERY TEST ABOVE PASSED WHILE THE FEATURE HAD NEVER WORKED. They hand
+ * inkDesign a PLAIN OBJECT — DEFAULT_DESIGN. TicketDesign.vue hands it
+ * `design.value`, which is a Vue reactive PROXY, and structuredClone refuses a
+ * Proxy outright. So the fixture was more generous than production in the one
+ * dimension that mattered, and the function threw on its first real use rather
+ * than on some edge case.
+ *
+ * That is the same trap as a screen fixture that populates config at tick 0
+ * when production populates it later: a test input that is easier to handle
+ * than the real one tests a function that does not exist.
+ *
+ * So this block uses a REAL reactive proxy from Vue, which is already a
+ * dependency and is what the caller has.
+ */
+console.log('a design that cannot be structured-cloned is still inked')
+{
+  const { reactive } = await import('vue')
+
+  /* Exactly what the browser threw on, reproduced: Node raises DOMException
+     "#<Object> could not be cloned" for this value. Asserted, so that a future
+     runtime where Proxies DO clone does not leave this test quietly proving
+     nothing. */
+  const live = reactive({
+    main: { ink: '#000000' },
+    stub: { ink: '#000000' },
+    buyer: { fields: { name: { ink: '#000000' } } },
+  })
+  let refused = false
+  try { structuredClone(live) } catch { refused = true }
+  ok(refused, 'the input really is one structuredClone refuses, so this test is testing something')
+
+  /* Caught, so a broken inkDesign FAILS rather than killing the suite before
+     its summary — run.sh reads a missing summary as no line at all. */
+  let out = null, threw = ''
+  try { out = inkDesign(live, { accent: '#123456', ink: '#abcdef' }) } catch (e) { threw = e.message }
+  ok(!!out, `inkDesign returns a design rather than throwing${threw ? ' — threw: ' + threw : ''}`)
+  if (!out) out = { main: {}, stub: {}, buyer: { fields: { name: {} } } }
+  eq(out.main.ink, '#123456', 'the buyer half takes the accent')
+  eq(out.stub.ink, '#abcdef', 'the stub takes the ink')
+  eq(out.buyer.fields.name.ink, '#abcdef', 'and every buyer field takes the stub ink')
+  eq(live.main.ink, '#000000', 'and the design it was given is not mutated')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

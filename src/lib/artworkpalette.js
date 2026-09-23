@@ -185,11 +185,48 @@ export function paletteOf(img, doc = typeof document !== 'undefined' ? document 
  * different colours, so they are not given the same ink: the buyer's half is
  * the accent where that reads against the paper, the stub falls back to ink.
  */
+/**
+ * A deep copy that survives what the caller actually hands us.
+ *
+ * THE CRASH THIS EXISTS FOR, reported from the Artwork tab: "Failed to execute
+ * 'structuredClone' on 'Window': #<Object> could not be cloned." Detecting the
+ * artwork's colours died on that line and the tab was unusable.
+ *
+ * This read `structuredClone ? structuredClone(design) : JSON.parse(...)`. The
+ * ternary is a FEATURE CHECK — does this runtime have the function — and the
+ * failure is a THROW from a function that is very much present. So the JSON
+ * fallback sitting right there was unreachable in the one case it was written
+ * for. A fallback guarded on the wrong condition is not a fallback.
+ *
+ * WHAT IT CHOKED ON. `TicketDesign.vue` passes `design.value`, and that is a
+ * Vue reactive PROXY. structuredClone refuses a Proxy outright, so this was
+ * never going to work from the only caller it has — it threw on the first real
+ * use, not on some edge case. Verified in Node: `structuredClone(reactive({}))`
+ * raises DOMException with that exact message.
+ *
+ * try/catch RATHER THAN toRaw(). This module knows nothing about Vue and
+ * should not learn: it is plain arithmetic over a design object, tested with
+ * plain objects, and importing a framework here to unwrap one caller's
+ * argument would put a UI dependency under a colour function. The catch also
+ * covers the next uncloneable thing somebody passes — a Date subclass, a
+ * function left on a config — which toRaw would not.
+ */
+function deepCopy(v) {
+  try {
+    return structuredClone(v)
+  } catch {
+    /* Proxies, functions and class instances all land here. JSON drops
+       functions and undefined, which is correct for a design: every field it
+       carries is a number, a string or a plain object. */
+    return JSON.parse(JSON.stringify(v))
+  }
+}
+
 export function inkDesign(design, pal) {
   if (!design || !pal) return design
   const main = pal.accent || pal.ink
   const stub = pal.ink || pal.accent
-  const d = structuredClone ? structuredClone(design) : JSON.parse(JSON.stringify(design))
+  const d = deepCopy(design)
   if (d.main) d.main.ink = main
   if (d.stub) d.stub.ink = stub
   if (d.book?.main) d.book.main.ink = main
