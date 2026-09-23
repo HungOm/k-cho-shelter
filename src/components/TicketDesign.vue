@@ -752,7 +752,7 @@ function makeCopies(opts = {}) {
   also.value = made.slice(1).map((x) => x.id)
   lastCopies.value = got.pairs.filter((p) => made.some((m) => m.id === p.copy))
   if (got.refused) {
-    toast(`${got.refused} drawn ${got.refused === 1 ? 'shape was' : 'shapes were'} left out — a ticket holds ${MAX_DECORATIONS}`, 'bad')
+    toast(fullMessage(got.refused), 'bad')
   }
   return got.pairs
 }
@@ -819,7 +819,7 @@ function pastePicked(inPlace = false) {
   sel.value = made[0]?.id || ''
   also.value = made.slice(1).map((x) => x.id)
   if (got.refused) {
-    toast(`${got.refused} drawn ${got.refused === 1 ? 'shape was' : 'shapes were'} left out — a ticket holds ${MAX_DECORATIONS}`, 'bad')
+    toast(fullMessage(got.refused), 'bad')
   }
 }
 
@@ -898,7 +898,36 @@ const pickedOneGroup = computed(() => {
  * ToolButton, which disables on the presence of a reason — so there is no way
  * to draw one of these enabled without an answer to "why not".
  */
-const whyNoSelection = computed(() => (picked.value.length ? '' : 'Nothing is selected'))
+/*
+ * THE REASON SAYS HOW TO FIX IT, because this is where somebody asks.
+ *
+ * Reported twice: an organiser looked at eighteen greyed-out buttons and asked
+ * why the toolbar could not be used, then asked whether group selection
+ * existed at all. It does — a band drag, shift-click, ⌘A, ⌘G, ⌘D and ⌘⇧L are
+ * all wired on both tabs and have been. Nothing on screen said so, and
+ * "Nothing is selected" is a true sentence that answers a question nobody
+ * asked. They knew nothing was selected. They wanted to know how to select.
+ *
+ * IT GOES HERE AND NOT IN THE EMPTY STATE. `:why` reaches all eighteen
+ * buttons and ToolButton puts it in the disabled control's `title`, which is
+ * the pointer's destination when somebody wonders why a control is dead —
+ * permissionui requires a refusal to carry its reason there, and studio.css
+ * says the same above `.blank`. The inspector's own empty line stays one short
+ * sentence: the user's standing instruction is minimum text on screen with the
+ * explanation smaller and out of the way, and a hover is out of the way.
+ *
+ * NOT because a size rule forbids words. quietvoice.test.mjs asserts that
+ * prose is never drawn LARGER than the labels it describes and has no opinion
+ * about length; R7 of UI-STANDARD asks an empty state to say what to DO. I had
+ * that backwards when I first argued for this, and a correct change with a
+ * false reason attached is one nobody revisits.
+ *
+ * The key names come from `keyOf`, so a Windows machine reads Ctrl.
+ */
+const whyNoSelection = computed(() => (picked.value.length
+  ? ''
+  : `Nothing is selected — drag a box round them, ${keyOf('addToSelection')} to add one, `
+    + `${keyOf('selectAll')} for everything`))
 /* What a press will not hold, as findings rather than refusals — see
    designelements.js. Only the printed tab asks for them. */
 const riskOpts = () => ({ printed: true, widthMM: Number(design.value?.sheet?.widthMM ?? 0), pictureWidths: pictureWidths.value })
@@ -1844,6 +1873,31 @@ function lockPicked() {
   toast(pin ? `Pinned ${list.length}` : `Unpinned ${list.length}`, 'ok')
   return true
 }
+
+/*
+ * THE REFUSAL SAYS WHAT IS TRUE OF THIS TICKET, not only what the rule is.
+ *
+ * It read "16 drawn shapes were left out — a ticket holds 60", which states
+ * the limit and leaves the reader to work out that they have reached it. The
+ * user duplicated a row, got that in red, and asked why it had happened —
+ * which is the question a refusal is supposed to have already answered.
+ *
+ * "Full" is not a guess. `room` is MAX_DECORATIONS minus what is already
+ * there, so anything is refused only once that room is used up: if `refused`
+ * is above nought the list is now exactly at the cap, every time.
+ *
+ * The cap itself is not a bug and is not being raised — designelements.js
+ * says why, and it is the honest place to stop rather than discovering it at
+ * print time.
+ */
+const fullMessage = (n) =>
+  `This ticket is full at ${MAX_DECORATIONS} drawn shapes — ${n} left out`
+
+/* Pinned only when ALL of it is — the same test lockPicked uses to decide
+   which way it is about to go, so the button never offers Unpin on a
+   selection that pressing it would pin. */
+const pinnedAll = computed(() =>
+  pickedThings.value.length > 0 && pickedThings.value.every((t) => t.locked))
 
 /* ⌘B: bold lettering on, or off when all of it is bold already. */
 function boldPicked() {
@@ -3616,6 +3670,30 @@ const printedSize = computed(() => {
                 <ToolButton icon="ungroup" label="Ungroup" :keys="keyOf('ungroup')" :why="whyNotUngroup"
                             hint="Let the parts be selected one at a time again"
                             @click="ungroupPicked" />
+                <!--
+                  PINNING A WHOLE SELECTION, which nothing could do.
+                  Every layer row already carries its own Pin — that half was
+                  never missing, and it stays as it is. What had no control was
+                  pinning the six things you just drew a box round: ⌘⇧L did it
+                  and no button said so, which reads as a feature that does not
+                  exist. It sits with Group and Ungroup because those are the
+                  other verbs that act on a selection rather than on one thing.
+
+                  The label follows `lockPicked`, which pins when ANY member is
+                  loose: a half-pinned selection offers Pin, because finishing
+                  the job is what somebody means by pressing it twice.
+                -->
+                <!-- `lock` when pinned, `position` when not — the same pairing the
+                     layer rows use at :3360 and :3419, so the two controls for
+                     one fact do not draw it two ways. There is no `unlock`
+                     glyph and inventing one would be a third. -->
+                <ToolButton :icon="pinnedAll ? 'lock' : 'position'"
+                            :label="pinnedAll ? 'Unpin' : 'Pin'" :keys="keyOf('lock')"
+                            :why="whyNoSelection"
+                            :hint="pinnedAll
+                              ? 'Let these be dragged again'
+                              : 'Hold these still, so working around them does not keep catching them'"
+                            @click="lockPicked" />
               </span>
               <span class="tgroup">
                 <ToolButton icon="duplicate" label="Duplicate" :keys="keyOf('duplicate')" :why="whyNoSelection"

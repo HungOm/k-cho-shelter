@@ -745,9 +745,37 @@ console.log('the arrange rail offers all six edges and all four stacking moves')
   for (const t of tools) {
     const m = html.match(new RegExp(`<button[^>]*aria-label="${t}"[^>]*>`))
     ok(m, `the rail has "${t}"`)
-    ok(m && /disabled/.test(m[0]) && /title="Nothing is selected"/.test(m[0]),
+    /*
+     * A PREFIX, NOT THE WHOLE SENTENCE. This required
+     * title="Nothing is selected" exactly, which pinned the wording rather
+     * than the rule the comment above states — present, disabled, and
+     * carrying a reason. The reason now goes on to say HOW to select, because
+     * an organiser looked at these eighteen greyed buttons and asked whether
+     * group selection existed at all; it does, and nothing said so. Matching
+     * the opening still fails on a missing title, an enabled button, or a
+     * reason about something else, which is everything permissionui forbids.
+     */
+    ok(m && /disabled/.test(m[0]) && /title="Nothing is selected/.test(m[0]),
       `"${t}" is disabled with its reason while nothing is selected`)
   }
+
+  /*
+   * AND PINNING REACHES A WHOLE SELECTION.
+   *
+   * Every layer row has carried its own Pin for a long time; the rail had
+   * none, so the only way to hold six things still at once was ⌘⇧L, which
+   * nothing on screen mentioned. The user read that as the feature being
+   * absent — "no group selection, group lock, and grouping features?" — when
+   * all three existed and one of them was keyboard-only.
+   *
+   * Asserted on the RAIL specifically, by its aria-label, so the row pins
+   * cannot satisfy it: those are a different control for a different job and
+   * they are what made this gap hard to see.
+   */
+  const pin = html.match(/<button[^>]*aria-label="Pin"[^>]*>/)
+  ok(pin, 'the rail can pin the whole selection, not only one row at a time')
+  ok(pin && /disabled/.test(pin[0]) && /title="Nothing is selected/.test(pin[0]),
+    'and it is disabled with the same reason as the rest of the rail')
 }
 
 console.log('work that was never saved is offered back, and only when it differs')
