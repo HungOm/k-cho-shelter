@@ -70,6 +70,7 @@ import {
 import { bandOf, isClick, hitsIn, expandGroups, mergeSelection } from '../lib/selection.js'
 import { copyRecords, pasteRecords } from '../lib/clipboard.js'
 import { snapEdges, snapNear, snapSpan } from '../lib/studiocanvas.js'
+import { KEYS, keyLabel, findBinding } from '../lib/studiokeys.js'
 import { placeShape, normalLibrary, nextLibId } from '../lib/designlibrary.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
@@ -89,6 +90,7 @@ import LibraryPanel from './ticketdesign/LibraryPanel.vue'
 import DigitalTab from './ticketdesign/DigitalTab.vue'
 import SelectionInspector from './ticketdesign/SelectionInspector.vue'
 import Rulers from './ticketdesign/Rulers.vue'
+import ShortcutsSheet from './ticketdesign/ShortcutsSheet.vue'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
 import Icon from './ui/Icon.vue'
@@ -1746,70 +1748,76 @@ function inAField(t) {
 function onFocusKeyUp(e) { if (e.key === ' ') spaceHeld.value = false }
 function dropHand() { spaceHeld.value = false }
 
-function onFocusKey(e) {
-  // ⌘\ on a Mac, Ctrl+\ elsewhere. Not a bare key: this screen is full of
-  // text fields and a single letter would fire while somebody types a motto.
-  if (e.key === '\\' && (e.metaKey || e.ctrlKey)) {
-    e.preventDefault()
-    setFocus(!state.focus)
-    return
-  }
-
-  /* The arrange shortcuts belong to the Place tab, where the selection is. */
-  if (tab.value !== 'place' || inAField(e.target)) return
-  const cmd = e.metaKey || e.ctrlKey
-
-  if (e.key === ' ') { e.preventDefault(); spaceHeld.value = true; return }
-  /* The view: in and out a step, fit, and actual size. Bare + and − because
-     ⌘+ and ⌘− belong to the browser's own zoom, which scales the whole page. */
-  if (!cmd && (e.key === '+' || e.key === '=')) { e.preventDefault(); stepZoom(1); return }
-  if (!cmd && (e.key === '-' || e.key === '_')) { e.preventDefault(); stepZoom(-1); return }
-  if (cmd && e.key === '0') { e.preventDefault(); fitToWidth(); return }
-  if (cmd && e.key === '1') { e.preventDefault(); zoomActual(); return }
-
-  if (cmd && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicatePicked(); return }
-  if (cmd && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); copyPicked(); return }
-  if (cmd && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); cutPicked(); return }
-  if (cmd && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); pastePicked(); return }
-  if (cmd && (e.key === 'g' || e.key === 'G')) {
-    e.preventDefault()
-    if (e.shiftKey) ungroupPicked(); else groupPicked()
-    return
-  }
-  if (cmd && (e.key === 'a' || e.key === 'A')) {
-    e.preventDefault()
+/*
+ * EVERY KEY IS LOOKED UP, not tested for one at a time. The table is
+ * src/lib/studiokeys.js, which the shortcuts sheet lists from too; ACTIONS is
+ * what each row's `action` runs here. tests/studiokeys.test.mjs holds the two
+ * to one another in both directions, so a key cannot work without being on
+ * the sheet, or be on the sheet without working.
+ */
+const choose1 = (kind) => () => { if (pending.value !== kind) beginAdd(kind) }
+const ACTIONS = {
+  toolSelect: () => { pending.value = '' },
+  toolRect: choose1('d:rect'),
+  toolEllipse: choose1('d:ellipse'),
+  toolLine: choose1('d:line'),
+  toolWords: choose1('d:text'),
+  toolMark: choose1('d:icon'),
+  selectAll: () => {
     /* Everything that is on the ticket. A hidden element selected by ⌘A is one
        that arrange tools would move where nobody can see it happen. */
     const live = [...elements.value, ...decorations.value]
       .filter((t) => t.enabled !== false).map((t) => t.id)
     sel.value = live[0] || ''
     also.value = live.slice(1)
-    return
-  }
-  if (cmd && (e.key === 'z' || e.key === 'Z')) {
-    e.preventDefault()
-    /* ⇧⌘Z for redo, which is what this platform's own apps use. Ctrl+Y is the
-       Windows spelling and is not bound: this screen is a Mac-first organiser's
-       tool and a second binding nobody presses is a second thing to keep. */
-    if (e.shiftKey) redo(); else undo()
-    return
-  }
+  },
   /* Escape puts a waiting tool down first, then lets go of the selection. */
-  if (e.key === 'Escape' && pending.value) {
-    e.preventDefault()
-    pending.value = ''
-    return
-  }
-  if (e.key === 'Escape' && picked.value.length) {
-    e.preventDefault()
+  escape: () => {
+    if (pending.value) { pending.value = ''; return }
     sel.value = ''
     also.value = []
-    return
-  }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && picked.value.length) {
-    e.preventDefault()
-    deletePicked()
-  }
+  },
+  copy: () => copyPicked(),
+  cut: () => cutPicked(),
+  paste: () => pastePicked(),
+  duplicate: () => duplicatePicked(),
+  remove: () => deletePicked(),
+  group: () => groupPicked(),
+  ungroup: () => ungroupPicked(),
+  forward: () => orderPicked('forward'),
+  backward: () => orderPicked('backward'),
+  front: () => orderPicked('front'),
+  back: () => orderPicked('back'),
+  /* ⇧⌘Z for redo, which is what this platform's own apps use. Ctrl+Y is the
+     Windows spelling and is not bound: a second binding nobody presses is a
+     second thing to keep. */
+  undo: () => (tab.value === 'digital' ? undoCard() : undo()),
+  redo: () => (tab.value === 'digital' ? redoCard() : redo()),
+  zoomIn: () => stepZoom(1),
+  zoomOut: () => stepZoom(-1),
+  fit: () => fitToWidth(),
+  actual: () => zoomActual(),
+  hand: () => { spaceHeld.value = true },
+  focus: () => setFocus(!state.focus),
+  help: () => { showKeys.value = true },
+}
+
+/* The keys' written form, for a tooltip: keyOf('duplicate') is "⌘D". */
+const keyOf = (id) => keyLabel(KEYS.find((k) => k.id === id))
+
+/* The shortcuts sheet, opened by ? or the key drawing in the bar. */
+const showKeys = ref(false)
+
+function onFocusKey(e) {
+  /* A dialog is up: its own keys (Escape closes it) are the only ones that
+     mean anything, and a Delete behind it would remove a selection nobody can
+     see. */
+  if (showKeys.value || pendingSwitch.value) return
+  const row = findBinding(e, tab.value === 'place' ? 'place' : 'any')
+  if (!row) return
+  if (!row.inFields && inAField(e.target)) return
+  e.preventDefault()
+  ACTIONS[row.action]?.()
 }
 
 /* Out of the studio entirely, as distinct from bringing the nav back. */
@@ -2494,6 +2502,10 @@ const printedSize = computed(() => {
         <Icon name="arrowLeft" :size="16" />Exit studio
       </button>
       <h2>Ticket Studio</h2>
+      <!-- Every key the studio answers, listed from the table it answers them
+           from. Beside the title because it is about the whole studio. -->
+      <ToolButton icon="help" label="Shortcuts" :size="16" :keys="keyOf('help')"
+                  hint="Every key this studio answers" @click="showKeys = true" />
 
       <label v-if="templates.length" class="picker">
         <span class="sr">Template being designed</span>
@@ -2618,6 +2630,8 @@ const printedSize = computed(() => {
               @click="tab === 'digital' ? discardCardDraft() : discardDraft()">Discard them</button>
     </div>
 
+    <ShortcutsSheet v-if="showKeys" @close="showKeys = false" />
+
     <Sheet v-if="pendingSwitch" title="Unsaved changes" @close="pendingSwitch = null">
       <p v-if="drafts">
         Your changes to {{ active?.name }} are kept on this computer and offered back when you
@@ -2689,23 +2703,23 @@ const printedSize = computed(() => {
             <div class="block">
               <h3 class="rubric">Draw</h3>
               <ToolBar label="Shapes to draw">
-                <ToolButton icon="shape" label="Rectangle" :size="17"
+                <ToolButton icon="shape" label="Rectangle" :size="17" :keys="keyOf('toolRect')"
                             :active="pendingDeco === 'rect'"
                             hint="Draw a rectangle — a tint behind a price, a panel, a border"
                             @click="beginAdd('d:rect')" />
-                <ToolButton icon="reset" label="Ellipse" :size="17"
+                <ToolButton icon="reset" label="Ellipse" :size="17" :keys="keyOf('toolEllipse')"
                             :active="pendingDeco === 'ellipse'"
                             hint="Draw an ellipse or a circle"
                             @click="beginAdd('d:ellipse')" />
-                <ToolButton icon="minus" label="Line" :size="17"
+                <ToolButton icon="minus" label="Line" :size="17" :keys="keyOf('toolLine')"
                             :active="pendingDeco === 'line'"
                             hint="Draw a rule. Drag it flat for a horizontal one — a line with no height is a line, not a mistake"
                             @click="beginAdd('d:line')" />
-                <ToolButton icon="type" label="Words" :size="17"
+                <ToolButton icon="type" label="Words" :size="17" :keys="keyOf('toolWords')"
                             :active="pendingDeco === 'text'"
                             hint="Words you type, which print the same on every ticket. Unlike a field, the raffle puts nothing in it"
                             @click="beginAdd('d:text')" />
-                <ToolButton icon="design" label="Mark" :size="17"
+                <ToolButton icon="design" label="Mark" :size="17" :keys="keyOf('toolMark')"
                             :active="pendingDeco === 'icon'"
                             hint="One of the app's own drawings, placed on the ticket"
                             @click="beginAdd('d:icon')" />
@@ -2896,19 +2910,19 @@ const printedSize = computed(() => {
                    word — the only three controls on this bar that were typed
                    characters beside a row of icons. -->
               <ToolBar label="Zoom">
-                <ToolButton icon="zoomOut" label="Zoom out" :size="15"
+                <ToolButton icon="zoomOut" label="Zoom out" :size="15" :keys="keyOf('zoomOut')"
                             :why="zoom <= ZOOMS[0] ? 'This is as far out as it goes' : ''"
                             @click="stepZoom(-1)" />
                 <span class="zval">{{ Math.round(zoom * 100) }}%</span>
-                <ToolButton icon="zoomIn" label="Zoom in" :size="15"
+                <ToolButton icon="zoomIn" label="Zoom in" :size="15" :keys="keyOf('zoomIn')"
                             :why="zoom >= ZOOMS[ZOOMS.length - 1] ? 'This is as far in as it goes' : ''"
                             @click="stepZoom(1)" />
                 <ToolButton icon="fit" label="Fit" wide :size="15"
-                            hint="Fit the whole ticket to the width of the canvas · ⌘0"
+                            hint="Fit the whole ticket to the width of the canvas" :keys="keyOf('fit')"
                             @click="fitToWidth" />
                 <ToolButton icon="actualSize" label="Actual size" :size="15"
                             :active="zoom === 1"
-                            hint="One pixel of the artwork to one pixel of the screen · ⌘1"
+                            hint="One pixel of the artwork to one pixel of the screen" :keys="keyOf('actual')"
                             @click="zoomActual" />
               </ToolBar>
               <span class="grow"></span>
@@ -3026,16 +3040,16 @@ const printedSize = computed(() => {
                             @click="distributePicked('down')" />
               </span>
               <span class="tgroup">
-                <ToolButton icon="arrowUp" label="Bring forward" :why="whyNotOrder"
+                <ToolButton icon="arrowUp" label="Bring forward" :keys="keyOf('forward')" :why="whyNotOrder"
                             hint="One place nearer the front, so it prints over what it overlaps"
                             @click="orderPicked('forward')" />
-                <ToolButton icon="arrowDown" label="Send backward" :why="whyNotOrder"
+                <ToolButton icon="arrowDown" label="Send backward" :keys="keyOf('backward')" :why="whyNotOrder"
                             hint="One place further back"
                             @click="orderPicked('backward')" />
-                <ToolButton icon="layers" label="Bring to front" :why="whyNotOrder"
+                <ToolButton icon="layers" label="Bring to front" :keys="keyOf('front')" :why="whyNotOrder"
                             hint="All the way to the front of the stack"
                             @click="orderPicked('front')" />
-                <ToolButton icon="toBack" label="Send to back" :why="whyNotOrder"
+                <ToolButton icon="toBack" label="Send to back" :keys="keyOf('back')" :why="whyNotOrder"
                             hint="All the way to the back, so everything it overlaps prints over it"
                             @click="orderPicked('back')" />
               </span>
@@ -3046,18 +3060,18 @@ const printedSize = computed(() => {
                 <ToolButton icon="flipV" label="Flip down" :why="whyNotFlip"
                             hint="Mirror top for bottom"
                             @click="flipPicked('down')" />
-                <ToolButton icon="group" label="Group" :why="whyNotGroup"
+                <ToolButton icon="group" label="Group" :keys="keyOf('group')" :why="whyNotGroup"
                             hint="Make these one thing: a click on any part takes them all. ⌘-click still reaches one part"
                             @click="groupPicked" />
-                <ToolButton icon="ungroup" label="Ungroup" :why="whyNotUngroup"
+                <ToolButton icon="ungroup" label="Ungroup" :keys="keyOf('ungroup')" :why="whyNotUngroup"
                             hint="Let the parts be selected one at a time again"
                             @click="ungroupPicked" />
               </span>
               <span class="tgroup">
-                <ToolButton icon="duplicate" label="Duplicate" :why="whyNoSelection"
+                <ToolButton icon="duplicate" label="Duplicate" :keys="keyOf('duplicate')" :why="whyNoSelection"
                             hint="A copy, nudged down and right so it is visibly a copy"
                             @click="duplicatePicked" />
-                <ToolButton icon="trash" label="Remove" :why="whyNoSelection"
+                <ToolButton icon="trash" label="Remove" :keys="keyOf('remove')" :why="whyNoSelection"
                             hint="Take the selection off the ticket"
                             @click="deletePicked" />
               </span>
@@ -3350,10 +3364,10 @@ const printedSize = computed(() => {
                 :title="cardDirty ? 'Throw away every change since the last save' : 'Nothing has changed since the last save'"
                 @click="revertCard">Back to saved</button>
         <button class="btn sm" :disabled="!cardHistory.length"
-                :title="cardHistory.length ? 'Undo the last change' : 'Nothing to undo'"
+                :title="cardHistory.length ? `Undo the last change · ${keyOf('undo')}` : 'Nothing to undo'"
                 @click="undoCard">Undo</button>
                 <button class="btn sm" :disabled="!cardFuture.length"
-                :title="cardFuture.length ? 'Put back what Undo took \u2014 \u21e7\u2318Z' : 'Nothing to redo'"
+                :title="cardFuture.length ? `Put back what Undo took · ${keyOf('redo')}` : 'Nothing to redo'"
                 @click="redoCard">Redo</button>
       </footer>
       <footer v-else class="footbar">
@@ -3378,13 +3392,13 @@ const printedSize = computed(() => {
                 :title="dirty ? 'Throw away every change since the last save' : 'Nothing has changed since the last save'"
                 @click="revertToSaved">Back to saved</button>
         <button class="btn sm" :disabled="!history.length"
-                :title="history.length ? 'Undo the last change — \u2318Z' : 'Nothing to undo'"
+                :title="history.length ? `Undo the last change · ${keyOf('undo')}` : 'Nothing to undo'"
                 @click="undo">Undo</button>
         <!-- Beside Undo rather than hidden behind the shortcut. A redo nobody
              can see is one nobody knows exists, and the whole reason it is here
              is to make pressing Undo a cheap look rather than a commitment. -->
         <button class="btn sm" :disabled="!future.length"
-                :title="future.length ? 'Put back what Undo took — \u21e7\u2318Z' : 'Nothing to redo'"
+                :title="future.length ? `Put back what Undo took · ${keyOf('redo')}` : 'Nothing to redo'"
                 @click="redo">Redo</button>
       </footer>
     </template>

@@ -68,12 +68,19 @@ const props = defineProps({
   /** Show the word beside the drawing. Off by default: a rail is icons. */
   wide: { type: Boolean, default: false },
   size: { type: Number, default: 18 },
+  /**
+   * The key that does the same, as written — "⌘D". Appended to the tooltip so
+   * the hover teaches the shortcut for the thing somebody is already looking
+   * at. A string, not a lookup: the studio's registry (studiokeys.js) is the
+   * one source, and this component stays ignorant of which screen it is on.
+   */
+  keys: { type: String, default: '' },
 })
 defineEmits(['click'])
 
 /* The reason wins over the description: somebody hovering a dead control is
    asking why it is dead, not what it would have done. */
-const tip = () => props.why || props.hint || props.label
+const tip = () => props.why || `${props.hint || props.label}${props.keys ? ` · ${props.keys}` : ''}`
 </script>
 
 <template>
