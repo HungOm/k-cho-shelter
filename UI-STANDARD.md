@@ -401,6 +401,7 @@ states one.
 | The dimensional scales | `scales` | a scale value invented rather than derived |
 | Icons exist and are distinct | `icons` | a glyph name that draws nothing |
 | The card did not silently redraw | `cardlayout`, `ranks` | an accidental change to a buyer's card |
+| **R10**, every class resolves | `reachableclass` | a scoped rule whose ancestor class its own template never draws |
 
 **Do not add a test per rule in §1.** Most of them are judgements about one
 unit's composition, and a test anchored to a class name or a font weight dies on
@@ -412,14 +413,22 @@ source or a render, not from taste — **and** either a paper prices it or this
 repo has already paid for it. That second clause is why `noundef` and
 `watchorder` exist: nothing published prices them, and both had shipped.
 
-By that test, most of §1 does not qualify and **R10 does**. Whether every class
-a unit carries resolves to a rule that reaches it is decidable by reading the
-template and the scoped block, it has no taste in it, and the repo has now paid
-for it three times — `.linkish` reaching nothing, `--line` resolving to its
-fallback after the token was retired, and `.req` colliding with a global
-utility. It is the open gate candidate
-from this file. `UI-EVIDENCE.md` §8 holds the others, with the evidence each
-would need.
+By that test, most of §1 does not qualify and **R10 did**, so it was built:
+`reachableclass.test.mjs`. Whether a scoped rule's leading class is one its own
+template ever draws is decidable from two blocks of one file, it has no taste in
+it, and the repo has paid for it three times — `.linkish` reaching nothing,
+`--line` resolving to its fallback after the token was retired, and `.req`
+colliding with a global utility.
+
+It went in **green with sixteen named exemptions**, because it found sixteen
+more dead rules on the day it was written, in two files other sessions were
+editing. That is the honest shape for a gate arriving after the debt: stop the
+next one, list the existing ones by exact selector, let the list only shrink.
+Keyed on the class rather than the whole selector it would have been neater and
+useless — exempting `Money.vue .statement` licences every future rule under
+`.statement`, including the original bug. The red-check caught that, not review.
+
+`UI-EVIDENCE.md` §8 holds the remaining candidates with the evidence each needs.
 
 ---
 
