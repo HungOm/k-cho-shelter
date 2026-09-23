@@ -684,6 +684,64 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .linkish:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 2px; }
 .linkish:disabled { color: var(--muted); cursor: not-allowed; }
 
+/*
+ * A PAGE SECTION'S LABEL — the divider in a long scroll of cards.
+ *
+ * WHAT IT IS FOR. A screen of a dozen sibling cards is a screen that has
+ * declined to express hierarchy: every card is a visual equal, so the eye has
+ * nothing to prune by and reads them in order or not at all. Grouping is the
+ * cheapest fix there is, and it is a HEADING PLUS SPACE — not a box. Four
+ * containers around twelve containers adds eight edges and removes none, and
+ * edge density is the most expensive kind of visual complexity there is.
+ *
+ * SMALLER THAN THE CARDS IT GOVERNS, WHICH IS DELIBERATE. Refactoring UI:
+ * "section titles act more like labels than headings — they are supportive
+ * content, they shouldn't be stealing all the attention." The cards' own <h3>s
+ * are what somebody came to read. This is the rail they hang off.
+ *
+ * THE SPACE IS THE OTHER HALF, and the rule it obeys is "more space around a
+ * group than within it": cards sit 14px apart, so a section opens 32px clear
+ * of the one above. Proximity is the cheapest grouping tool there is and it is
+ * free — which is why this rule is mostly margin.
+ *
+ * --muted, NEVER --muted-2. This is small text, and --muted-2 is 3.03:1 —
+ * large text, icons and rules only. The token says so where it is declared.
+ *
+ * RELATED BUT NOT THE SAME: `.rubric` in ticketdesign/studio.css is this idea
+ * at panel scale — a group heading inside a 300px rail, scoped to the studio.
+ * Same family, different job and different size. If the two ever want to be
+ * one thing, that is a decision to make on purpose with both on screen, not a
+ * rename made in passing.
+ */
+.section {
+  margin: var(--sp-8) 0 var(--sp-5);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+/*
+ * NO SPECIAL CASE FOR THE FIRST ONE, and the first draft had one — 16px
+ * instead of 32 on the theory that the h1 above had already done the
+ * separating. Looking at it said otherwise, twice over.
+ *
+ * ADJACENT MARGINS COLLAPSE. The heading row above carries margin-bottom:16px,
+ * so a 16px margin-top collapses to 16px rather than summing to 32 — the first
+ * label ended up at HALF the gap the other three got, which is the opposite of
+ * what the reasoning intended.
+ *
+ * AND 16px PUT IT WHERE A SUBTITLE GOES. Tucked under "Setup" it read as a
+ * description of the screen rather than the label of the first group — the
+ * same mistake Admin.vue records at the top of its own template, where the
+ * version string had to move out from under the h1 for exactly this reason.
+ *
+ * So every section gets the same 32px. It collapses against the 14px between
+ * cards and against the heading row's 16px alike, which means one value
+ * produces one rhythm everywhere. This is only visible by rendering it: the
+ * markup, the tokens and the suite were all green with the special case in.
+ */
+
 /* ---------- forms ---------- */
 .field { margin-bottom: 16px; }
 label {

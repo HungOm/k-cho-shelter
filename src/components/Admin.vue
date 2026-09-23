@@ -874,6 +874,37 @@ function details(d) {
       </p>
     </div>
 
+    <!--
+      FOUR GROUPS, AND THE GROUP IS A HEADING PLUS SPACE, NOT A BOX.
+
+      This screen was twelve sibling `.card` blocks at one visual weight, every
+      heading an h3, in no stated order. That is not merely slow to scan: a
+      stack of equals is the measured signature of a design people rate badly,
+      because the eye has nothing to prune by and ends up reading everything or
+      nothing.
+
+      IT ALSO HID A BROKEN CARD FOR MONTHS. `Supporter titles` had a watcher
+      throwing inside a const's temporal dead zone, so its list never loaded on
+      warm navigation — and nobody noticed, because an empty rung list is
+      exactly what a raffle that has not set its rungs up looks like. There was
+      no anomaly to see. A card at the same weight as eleven others gets
+      scanned, not read, and that was the last cue gone.
+
+      NO NEW CONTAINERS. Four boxes around twelve boxes adds eight edges and
+      removes none, and edge density is the most expensive kind of visual
+      complexity there is. A group here is a small label and 32px of air above
+      it, against the 14px that separates two cards — more space around a group
+      than within it, which is the whole mechanism.
+
+      AND NOTHING INSIDE A CARD IS TOUCHED. The regroup moves cards; it does
+      not rewrite them. That boundary is what stops a grouping pass quietly
+      undoing somebody else's work — `Supporter titles` and the printed
+      Supporter card were deliberately aligned to say the earned word first
+      with the evidence quiet underneath, and a pass that edits card internals
+      can flatten that without anybody noticing.
+    -->
+    <h2 class="section">People</h2>
+
     <div class="card">
       <div class="spread"><h3 style="margin:0">Who can sign in</h3>
         <button class="btn sm primary" @click="emit('add-user')">Add someone</button></div>
@@ -947,6 +978,33 @@ function details(d) {
         <button class="btn" @click="go('permissions')">Open</button>
       </div>
     </div>
+    <!-- An organiser may read the change log of their own raffle. It used to be
+         behind isSuper, which meant the person actually running the raffle
+         could not answer "who changed this book" about their own books. -->
+    <div class="card">
+      <div class="spread"><h3 style="margin:0">What people have been doing</h3>
+        <button class="btn sm" @click="loadAudit">Show</button></div>
+      <div v-if="audit === 'loading'" class="col" style="gap:10px">
+        <div v-for="i in 3" :key="i" class="skel"></div>
+      </div>
+      <div v-else-if="audit">
+        <!-- Said out loud, so "the system admin" reads as a deliberate omission
+             rather than as a gap somebody has to wonder about. -->
+        <p v-if="scrubbed" class="tiny muted">
+          Everything is here. The system admin's own actions show as
+          <b>the system admin</b> rather than by email address.
+        </p>
+        <div v-for="(e, i) in audit" :key="i" class="log">
+          <div class="small"><b>{{ e.action }}</b> <span class="muted">{{ e.email }}</span></div>
+          <!-- e.time never existed: the column is `at`, so every line read "—". -->
+          <div class="tiny muted">{{ dateTime(e.at) }}<template v-if="details(e.details)"> · {{ details(e.details).slice(0, 160) }}</template></div>
+        </div>
+      </div>
+      <p v-else class="hint">Every change anybody has made, most recent first.</p>
+    </div>
+
+
+    <h2 class="section">The raffle itself</h2>
 
     <div v-if="isSuper && c" class="card">
       <div class="spread">
@@ -1105,6 +1163,8 @@ function details(d) {
         the <b>config</b> table, which whoever set this up can open.
       </p>
     </div>
+
+    <h2 class="section">What a buyer sees</h2>
 
     <!--
       ITS OWN CARD, AND NOT A BLOCK INSIDE THE ONE ABOVE. These are settings
@@ -1562,30 +1622,17 @@ function details(d) {
       </div>
     </div>
 
-    <!-- An organiser may read the change log of their own raffle. It used to be
-         behind isSuper, which meant the person actually running the raffle
-         could not answer "who changed this book" about their own books. -->
-    <div class="card">
-      <div class="spread"><h3 style="margin:0">What people have been doing</h3>
-        <button class="btn sm" @click="loadAudit">Show</button></div>
-      <div v-if="audit === 'loading'" class="col" style="gap:10px">
-        <div v-for="i in 3" :key="i" class="skel"></div>
-      </div>
-      <div v-else-if="audit">
-        <!-- Said out loud, so "the system admin" reads as a deliberate omission
-             rather than as a gap somebody has to wonder about. -->
-        <p v-if="scrubbed" class="tiny muted">
-          Everything is here. The system admin's own actions show as
-          <b>the system admin</b> rather than by email address.
-        </p>
-        <div v-for="(e, i) in audit" :key="i" class="log">
-          <div class="small"><b>{{ e.action }}</b> <span class="muted">{{ e.email }}</span></div>
-          <!-- e.time never existed: the column is `at`, so every line read "—". -->
-          <div class="tiny muted">{{ dateTime(e.at) }}<template v-if="details(e.details)"> · {{ details(e.details).slice(0, 160) }}</template></div>
-        </div>
-      </div>
-      <p v-else class="hint">Every change anybody has made, most recent first.</p>
-    </div>
+
+    <!--
+      THE TWO THAT ACT ON EVERYTHING. Every other card on this screen changes
+      one setting; these two put the whole raffle into a different state. That
+      difference in KIND is what the heading states, and it is the only thing
+      that was missing — both cards already carry a coloured left edge, and
+      both keep their red behind a preview you have to ask for, which is where
+      a destructive action's emphasis belongs: on the confirmation step, where
+      it genuinely is the primary action, not on the card in the list.
+    -->
+    <h2 class="section">The whole raffle at once</h2>
 
     <!--
       THE SEED, above the reset, because this is what an empty install needs and
