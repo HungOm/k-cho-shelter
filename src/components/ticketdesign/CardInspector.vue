@@ -290,10 +290,7 @@ const over = () => (props.motto || '').length > props.mottoMax
 
   <div v-else class="nothing">
     <p class="rubric">Nothing selected</p>
-    <p class="tiny muted">
-      Click a part of the card, or a name in the list, to move it or change
-      how it looks.
-    </p>
+    <p class="tiny muted">Click a part, or a name in the list.</p>
   </div>
 
   <!--
@@ -311,7 +308,7 @@ const over = () => (props.motto || '').length > props.mottoMax
     </div>
     <p class="say"
        title="The lettering on top is worked out for readability rather than chosen, so a pale colour does not produce an unreadable card.">
-      From the raffle's theme, in Setup.
+      Set in Setup.
     </p>
   </div>
 

@@ -2077,11 +2077,14 @@ const printedSize = computed(() => {
           {{ cardSaving ? 'Saving…' : 'Save the card' }}
         </button>
         <!-- Said once, beside the button it is about — it used to be a group
-             in the card inspector, restated for every part anybody clicked. -->
-        <p v-if="cardDirty" class="say saving">
-          Every card sent from now on is drawn this way, including ones already
-          issued if they are sent again. Pictures already delivered keep what
-          they had.
+             in the card inspector, restated for every part anybody clicked.
+             TWENTY-SEVEN WORDS CUT TO SEVEN. "From now on" already carries the
+             second sentence: a picture that has been delivered cannot be
+             redrawn, so saying so was explaining the absence of a thing
+             nobody had asked about. The rest is on the title. -->
+        <p v-if="cardDirty" class="say saving"
+           title="Cards already delivered keep the picture they were sent. A card issued earlier is drawn this way only if it is sent again.">
+          Applies to cards sent from now on.
         </p>
       </template>
       <template v-else>
@@ -2596,7 +2599,7 @@ const printedSize = computed(() => {
                 {{ inPixels.w }} × {{ inPixels.h }} px
               </template>
               <template v-else>
-                Nothing selected. Pick something from the list, or click a box on the ticket.
+                Nothing selected — click a box, or a name in the list.
               </template>
               <span class="grow"></span>
               <span class="muted">

@@ -324,9 +324,7 @@ function setShadow(on) {
 
   <div v-else class="nothing">
     <p class="rubric">Nothing selected</p>
-    <p class="tiny muted">
-      Draw a shape, or click one on the ticket, to change how it looks.
-    </p>
+    <p class="tiny muted">Draw a shape, or click one.</p>
   </div>
 </aside>
 </template>

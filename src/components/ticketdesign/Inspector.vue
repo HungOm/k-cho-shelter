@@ -270,10 +270,7 @@ const tab = ref('box')
 
   <div v-else class="nothing">
     <p class="rubric">Nothing selected</p>
-    <p class="tiny muted">
-      Click a box on the ticket, or a name in the list, to change what it prints
-      and where it sits.
-    </p>
+    <p class="tiny muted">Click a box, or a name in the list.</p>
   </div>
 </aside>
 </template>
