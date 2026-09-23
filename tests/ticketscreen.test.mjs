@@ -1020,5 +1020,41 @@ console.log('the ticket can be seen in grey, handed over as a file, and lettered
   await cleanup()
 }
 
+console.log('a picture the raffle already has can be placed, fitted whole, and changed')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 7. The model and renderer could draw a picture and
+   * nothing could place one. What is pinned here is the screen's half: the
+   * tool offers what the raffle has uploaded, a placed picture starts fitted
+   * whole (a logo cropped to fill its box has lost its edges), and "Change
+   * picture" replaces the address in one undo step rather than adding a second.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ctx.tab.value = 'place'
+  ok(ctx.pictures.value.some((p) => p.src === ONE.templates[0].url), 'the uploaded artwork is on offer')
+  eq(ctx.whyNoPicture.value, '', 'so the tool is not disabled')
+
+  ctx.pickPicture(ONE.templates[0].url)
+  eq(ctx.pending.value, 'd:image', 'picking a picture waits for its box to be drawn')
+  ctx.addDecorationAt('image', { left: 0.1, top: 0.1, width: 0.1, height: 0.1 })
+  const placed = ctx.design.value.decorations[ctx.design.value.decorations.length - 1]
+  eq(placed.kind, 'image', 'drawing the box places a picture')
+  eq(placed.image.src, ONE.templates[0].url, 'of the picture chosen')
+  eq(placed.image.fit, 'contain', 'fitted whole to start with')
+  eq(ctx.pendingPicture.value, '', 'and nothing is left waiting')
+
+  const before = ctx.design.value.decorations.length
+  const undo = ctx.history.value.length
+  ctx.sel.value = placed.id
+  ctx.changePicture()
+  ok(ctx.showPictures.value, '"Change picture" opens the picker')
+  ctx.pickPicture('https://x.org/other.png')
+  eq(ctx.design.value.decorations.length, before, 'and a new choice replaces the picture rather than adding one')
+  eq(ctx.design.value.decorations[ctx.design.value.decorations.length - 1].image.src, 'https://x.org/other.png', 'at the new address')
+  eq(ctx.history.value.length, undo + 1, 'in one undo step')
+  await cleanup()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

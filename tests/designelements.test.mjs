@@ -383,5 +383,35 @@ console.log('a drawn shape can be called something, within reason')
   ok(!faultsIn([{ id: 'd1', kind: 'rect', name: 'Price tint' }]).some((f) => /name/.test(f)), 'while an ordinary one is fine')
 }
 
+console.log('a picture fits or fills its box, can be clipped to a shape, and says when it will print soft')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 7. A logo wants to be shown whole (`contain`); a
+   * photograph wants to fill (`cover`, the old behaviour, kept as default so no
+   * existing design redraws). Clipping uses the box itself as the shape. And a
+   * header-sized logo placed large prints as blur, which nobody sees on screen.
+   */
+  const pic = { kind: 'image', box: at(0.1, 0.1, 0.2, 0.2), image: { src: 'https://x.org/logo.png' } }
+  ok(/preserveAspectRatio="xMidYMid slice"/.test(decorationSVG(pic, W, H)), 'unset, a picture fills its box as it always did')
+  ok(/xMidYMid meet/.test(decorationSVG({ ...pic, image: { ...pic.image, fit: 'contain' } }, W, H)),
+    'fitted, it is shown whole')
+  const oval = decorationSVG({ ...pic, image: { ...pic.image, clip: 'ellipse' } }, W, H)
+  ok(/<clipPath id="[^"]+c"><ellipse /.test(oval) && /clip-path="url\(#/.test(oval), 'clipped to an ellipse')
+  const round = decorationSVG({ ...pic, radius: 0.2, image: { ...pic.image, clip: 'rounded' } }, W, H)
+  ok(/<clipPath[^>]*><rect [^>]*rx="16\.00"/.test(round), 'or to its box with the corners rounded by its radius')
+  ok(!/clipPath/.test(decorationSVG(pic, W, H)), 'and unclipped, it carries no clip at all')
+  eq(normalDecoration({ kind: 'image', image: { fit: 'stretch', clip: 'star' } }).image.fit, 'cover', 'an unknown fit reads as the default')
+  ok(faultsIn([{ id: 'd1', kind: 'image', image: { clip: 'star' } }]).some((f) => /clipped/.test(f)), 'and is refused on save')
+
+  const soft = printWarnings([{ ...pic, box: at(0.1, 0.1, 0.3, 0.3) }],
+    { printed: true, widthMM: 190, pictureWidths: { 'https://x.org/logo.png': 200 } })
+  ok(soft.some((w) => /dpi/.test(w)), 'a 200 px logo placed 57 mm wide is reported as printing soft')
+  const sharp = printWarnings([{ ...pic, box: at(0.1, 0.1, 0.05, 0.05) }],
+    { printed: true, widthMM: 190, pictureWidths: { 'https://x.org/logo.png': 200 } })
+  ok(!sharp.some((w) => /dpi/.test(w)), 'while the same logo placed small is not')
+  ok(!printWarnings([pic], { printed: true, widthMM: 190 }).some((w) => /dpi/.test(w)),
+    'and a picture whose width is not known yet is not guessed at')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

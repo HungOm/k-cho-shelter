@@ -41,6 +41,8 @@ export {
   FAMILIES,
   ALIGNS,
   BLENDS,
+  FITS,
+  CLIPS,
   MAX_DECORATIONS,
   nextDecoId,
   nextGroupId,

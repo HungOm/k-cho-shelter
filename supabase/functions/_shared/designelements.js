@@ -71,6 +71,10 @@ export const ALIGNS = ['left', 'centre', 'right']
  */
 export const BLENDS = ['normal', 'multiply', 'screen', 'overlay']
 
+/** How a picture sits in its box, and what shape the box cuts it to. */
+export const FITS = ['contain', 'cover']
+export const CLIPS = ['none', 'ellipse', 'rounded']
+
 /* ---------- normalising, which never throws ---------- */
 
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d)
@@ -231,7 +235,23 @@ export function normalDecoration(raw) {
     },
 
     icon: { name: String(raw?.icon?.name ?? '').replace(/[^a-zA-Z]/g, '').slice(0, 40) },
-    image: { src: String(raw?.image?.src ?? '').slice(0, 512) },
+    image: {
+      src: String(raw?.image?.src ?? '').slice(0, 512),
+      /*
+       * FIT OR FILL. `contain` shows the whole picture inside the box — right
+       * for a logo, whose edges are the point. `cover` fills the box and crops
+       * what spills — right for a photograph. `cover` is the default because it
+       * is how every image drew before this was a choice.
+       */
+      fit: pick(raw?.image?.fit, FITS, 'cover'),
+      /*
+       * CLIPPED TO A SHAPE — the box as an ellipse, or with its corners
+       * rounded by `radius`. The spec's "clip a picture to a shape" without a
+       * mask tool: the shape is the decoration's own box, so there is nothing
+       * second to draw, select or lose.
+       */
+      clip: pick(raw?.image?.clip, CLIPS, 'none'),
+    },
   }
 }
 
@@ -272,6 +292,12 @@ export function faultsIn(list, opts = {}) {
     else if (seen.has(id)) bad.push(`${where} repeats the id ${id}.`)
     seen.add(id)
 
+    if (d.image?.fit !== undefined && !FITS.includes(d.image.fit)) {
+      bad.push(`${where} is fitted "${d.image.fit}", which is not one of ${FITS.join(', ')}.`)
+    }
+    if (d.image?.clip !== undefined && !CLIPS.includes(d.image.clip)) {
+      bad.push(`${where} is clipped to "${d.image.clip}", which is not one of ${CLIPS.join(', ')}.`)
+    }
     if (d.name !== undefined && (typeof d.name !== 'string' || d.name.length > 40 || /[<>]/.test(d.name))) {
       bad.push(`${where} has a name over forty characters, or with < or > in it.`)
     }
@@ -490,9 +516,18 @@ export function decorationSVG(d, w, h, ctx = {}) {
       + 'stroke-linecap="round" stroke-linejoin="round"/></g>'
   } else if (el.kind === 'image') {
     if (!el.image.src) return ''
+    let clip = ''
+    if (el.image.clip !== 'none') {
+      const shape = el.image.clip === 'ellipse'
+        ? `<ellipse cx="${(x + bw / 2).toFixed(2)}" cy="${(y + bh / 2).toFixed(2)}" rx="${(bw / 2).toFixed(2)}" ry="${(bh / 2).toFixed(2)}"/>`
+        : `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" `
+          + `rx="${(el.radius * Math.min(bw, bh)).toFixed(2)}"/>`
+      defs.push(`<clipPath id="${uid}c">${shape}</clipPath>`)
+      clip = ` clip-path="url(#${uid}c)"`
+    }
     body = `<image x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${bw.toFixed(2)}" `
       + `height="${bh.toFixed(2)}" href="${esc(el.image.src)}" `
-      + 'preserveAspectRatio="xMidYMid slice"/>'
+      + `preserveAspectRatio="xMidYMid ${el.image.fit === 'contain' ? 'meet' : 'slice'}"${clip}/>`
   }
   if (!body) return ''
 
@@ -554,6 +589,21 @@ export function printWarnings(list, opts = {}) {
     if (d.blend !== 'normal' && d.blend !== 'multiply') {
       out.push(`${where} uses ${d.blend}. Only multiply behaves on paper the way `
         + 'it does on screen — the others are worked out in light.')
+    }
+    /*
+     * A PICTURE STRETCHED PAST ITS PIXELS. A logo uploaded for the app's header
+     * is a few hundred pixels across; placed two centimetres wide on a ticket
+     * it prints at a resolution a press shows as blur. Only checkable once the
+     * picture has loaded and its width is known, so it is skipped otherwise.
+     */
+    const natural = Number(opts.pictureWidths?.[d.image?.src])
+    const mm = Number(opts.widthMM)
+    if (d.kind === 'image' && natural > 0 && mm > 0 && d.box.width > 0) {
+      const dpi = natural / ((d.box.width * mm) / 25.4)
+      if (dpi < 200) {
+        out.push(`${where} is a picture that will print at about ${Math.round(dpi)} dpi. `
+          + 'Under 200 it prints soft — make it smaller, or use a larger picture.')
+      }
     }
     if (d.stroke.width > 0 && d.stroke.width < 0.0004) {
       out.push(`${where} has a hairline that is thinner than most presses can hold. `

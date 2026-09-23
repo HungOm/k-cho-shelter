@@ -94,6 +94,7 @@ import DigitalTab from './ticketdesign/DigitalTab.vue'
 import SelectionInspector from './ticketdesign/SelectionInspector.vue'
 import Rulers from './ticketdesign/Rulers.vue'
 import ShortcutsSheet from './ticketdesign/ShortcutsSheet.vue'
+import PicturePicker from './ticketdesign/PicturePicker.vue'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
 import Icon from './ui/Icon.vue'
@@ -857,7 +858,8 @@ const pickedOneGroup = computed(() => {
 const whyNoSelection = computed(() => (picked.value.length ? '' : 'Nothing is selected'))
 /* What a press will not hold, as findings rather than refusals — see
    designelements.js. Only the printed tab asks for them. */
-const printRisks = computed(() => printWarnings(decorations.value, { printed: true }))
+const riskOpts = () => ({ printed: true, widthMM: Number(design.value?.sheet?.widthMM ?? 0), pictureWidths: pictureWidths.value })
+const printRisks = computed(() => printWarnings(decorations.value, riskOpts()))
 
 /*
  * THE WARNINGS FOR ONE SHAPE, for the panel that is showing it. The rail's line
@@ -865,7 +867,7 @@ const printRisks = computed(() => printWarnings(decorations.value, { printed: tr
  * front of you, which is the only place somebody can act on one.
  */
 function risksFor(d) {
-  return d ? printWarnings([d], { printed: true }) : []
+  return d ? printWarnings([d], riskOpts()) : []
 }
 
 /* ---------- the library ---------- */
@@ -1114,6 +1116,62 @@ function beginAdd(kind) {
  * and the same function a new ELEMENT uses, rather than black on a dark green
  * field. A line takes it as a stroke, because a filled line is a rectangle.
  */
+/*
+ * ---------- pictures ----------
+ *
+ * What can be placed is what this raffle has already uploaded: its logo, from
+ * Setup, and the artwork in this studio. A picture is stored by address, so it
+ * has to be somewhere already; uploading a new one from here is its own piece
+ * of server work, and the picker says what it offers.
+ */
+const pictures = computed(() => [
+  ...(state.cfg?.orgLogo ? [{ src: state.cfg.orgLogo, name: "The raffle's logo", kind: 'logo' }] : []),
+  ...templates.value.filter((t) => t.url).map((t) => ({ src: t.url, name: t.name, kind: 'artwork' })),
+])
+const whyNoPicture = computed(() => (pictures.value.length ? ''
+  : "There are no pictures yet — upload a logo in Setup, or artwork on the Artwork tab"))
+const showPictures = ref(false)
+/* The picture waiting for its box to be drawn, and — when the picker was
+   opened from the inspector — the placed picture it will replace instead. */
+const pendingPicture = ref('')
+const changingPicture = ref('')
+
+function openPictures() {
+  if (whyNoPicture.value) return
+  changingPicture.value = ''
+  showPictures.value = true
+}
+function changePicture() {
+  if (!chosenDeco.value) return
+  changingPicture.value = chosenDeco.value.id
+  showPictures.value = true
+}
+function pickPicture(src) {
+  showPictures.value = false
+  const d = changingPicture.value && decorations.value.find((x) => x.id === changingPicture.value)
+  changingPicture.value = ''
+  if (d) { mark(); d.image.src = src; return }
+  pendingPicture.value = src
+  if (pending.value !== 'd:image') beginAdd('d:image')
+}
+
+/*
+ * HOW MANY PIXELS EACH PLACED PICTURE HAS, learnt by loading it — the only way
+ * to know, and what lets the studio warn that a header-sized logo placed large
+ * will print soft. Browser only; a picture not yet loaded is not warned about.
+ */
+const pictureWidths = ref({})
+watch(() => decorations.value.filter((d) => d.kind === 'image' && d.image?.src).map((d) => d.image.src).join('\n'),
+  (joined) => {
+    if (typeof Image === 'undefined') return
+    for (const src of joined.split('\n').filter(Boolean)) {
+      if (pictureWidths.value[src]) continue
+      const img = new Image()
+      img.onload = () => { pictureWidths.value = { ...pictureWidths.value, [src]: img.naturalWidth } }
+      img.src = src
+    }
+  })
+
 function addDecorationAt(kind, box) {
   const side = box.left + box.width / 2 >= stubShare(design.value) ? 'stub' : 'half'
   const colour = inkNear(side)
@@ -1126,7 +1184,12 @@ function addDecorationAt(kind, box) {
     stroke: kind === 'line' ? { width: 0.002, colour } : { width: 0, colour },
     text: kind === 'text' ? { value: 'Your words' } : {},
     icon: kind === 'icon' ? { name: 'ticket' } : {},
+    /* A picture is fitted whole to start with: the one placed most is a logo,
+       and a logo cropped to fill its box has lost its edges. */
+    image: kind === 'image' ? { src: pendingPicture.value, fit: 'contain' } : {},
+    ...(kind === 'image' ? { fill: { type: 'none', colour } } : {}),
   })
+  if (kind === 'image') pendingPicture.value = ''
   design.value.decorations = [...decorations.value, made]
   sel.value = made.id
   also.value = []
@@ -1821,6 +1884,7 @@ const ACTIONS = {
   toolLine: choose1('d:line'),
   toolWords: choose1('d:text'),
   toolMark: choose1('d:icon'),
+  toolPicture: () => openPictures(),
   selectAll: () => {
     /* Everything that is on the ticket. A hidden element selected by ⌘A is one
        that arrange tools would move where nobody can see it happen. */
@@ -1870,7 +1934,7 @@ function onFocusKey(e) {
   /* A dialog is up: its own keys (Escape closes it) are the only ones that
      mean anything, and a Delete behind it would remove a selection nobody can
      see. */
-  if (showKeys.value || pendingSwitch.value) return
+  if (showKeys.value || pendingSwitch.value || showPictures.value) return
   const row = findBinding(e, tab.value === 'place' ? 'place' : 'any')
   if (!row) return
   if (!row.inFields && inAField(e.target)) return
@@ -2690,10 +2754,6 @@ const printedSize = computed(() => {
              second sentence: a picture that has been delivered cannot be
              redrawn, so saying so was explaining the absence of a thing
              nobody had asked about. The rest is on the title. -->
-        <p v-if="cardDirty" class="say saving"
-           title="Cards already delivered keep the picture they were sent. A card issued earlier is drawn this way only if it is sent again.">
-          Applies to cards sent from now on.
-        </p>
       </template>
       <template v-else>
         <button class="btn sm" :disabled="!active || !design"
@@ -2712,12 +2772,25 @@ const printedSize = computed(() => {
           groups deep in a panel about the selection, describing a control in
           the bar. It belongs here, and only when there is something to save.
         -->
-        <p v-if="dirty" class="say saving">
-          Reaches everything printed or sent from now on, including digital
-          tickets already issued. Paper already printed keeps what it had.
-        </p>
       </template>
     </header>
+    <!--
+      WHAT SAVING REACHES, on its own line under the bar, right-aligned beneath
+      Save. It sat IN the bar, and at desk width the bar does not wrap, so it
+      and the template picker fought for one row: the picker lost every pixel
+      and showed an empty sliver, and when the picker was given a floor the
+      sentence became a column one word wide and the bar grew to a quarter of
+      the screen. Neither is slack. Beneath the button it is about, it is
+      still beside it, still visible, and quieter than the bar.
+    -->
+    <p v-if="tab === 'digital' ? cardDirty : dirty" class="say saving savingline"
+       :title="tab === 'digital' ? 'Cards already delivered keep the picture they were sent. A card issued earlier is drawn this way only if it is sent again.' : null">
+      <template v-if="tab === 'digital'">Applies to cards sent from now on.</template>
+      <template v-else>
+        Reaches everything printed or sent from now on, including digital
+        tickets already issued. Paper already printed keeps what it had.
+      </template>
+    </p>
 
     <!--
       AN OFFER, NOT A RESTORE. Work kept from a session that ended without a
@@ -2734,6 +2807,8 @@ const printedSize = computed(() => {
     </div>
 
     <ShortcutsSheet v-if="showKeys" @close="showKeys = false" />
+    <PicturePicker v-if="showPictures" :pictures="pictures"
+                   @pick="pickPicture" @close="showPictures = false; changingPicture = ''" />
 
     <Sheet v-if="pendingSwitch" title="Unsaved changes" @close="pendingSwitch = null">
       <p v-if="drafts">
@@ -2822,6 +2897,10 @@ const printedSize = computed(() => {
                             :active="pendingDeco === 'text'"
                             hint="Words you type, which print the same on every ticket. Unlike a field, the raffle puts nothing in it"
                             @click="beginAdd('d:text')" />
+                <ToolButton icon="image" label="Picture" :size="17" :keys="keyOf('toolPicture')"
+                            :active="pendingDeco === 'image'" :why="whyNoPicture"
+                            hint="The raffle's logo or an uploaded artwork, placed on the ticket"
+                            @click="openPictures" />
                 <ToolButton icon="design" label="Mark" :size="17" :keys="keyOf('toolMark')"
                             :active="pendingDeco === 'icon'"
                             hint="One of the app's own drawings, placed on the ticket"
@@ -3346,7 +3425,7 @@ const printedSize = computed(() => {
             :deco="chosenDeco" :size="{ width: active.width, height: active.height }"
             :swatches="swatches" :brand="brandInk" :can-drop="canDrop"
             :warnings="risksFor(chosenDeco)"
-            @mark="mark" @pick-colour="dropper" />
+            @mark="mark" @pick-colour="dropper" @pick-image="changePicture" />
           <Inspector v-else :element="chosen" :report="fitReport"
                      :sheet-width-m-m="design.sheet.widthMM"
                      :qr-density="qrDensity"
@@ -3580,7 +3659,11 @@ const printedSize = computed(() => {
  */
 @media (min-width: 1200px) {
   .bar { flex-wrap: nowrap; }
-  .bar .picker { min-width: 0; flex: 0 1 auto; }
+  /* A FLOOR, NOT ZERO. With the design dirty the bar also carries the saving
+     note, and a picker allowed to shrink to nothing lost every pixel to it —
+     an empty sliver in the one control that says which template is on the
+     canvas. The note is the slack: it is helper text and may wrap. */
+  .bar .picker { min-width: 120px; flex: 0 1 auto; }
   /*
    * `width: 100%` is the whole fix. A select with only a max-width keeps its
    * intrinsic width while the label around it shrinks to nothing, so the
@@ -3935,6 +4018,7 @@ const printedSize = computed(() => {
 .prow { display: flex; gap: 6px; flex-wrap: wrap }
 .nothing { padding: 8px 0 }
 .saving { color: var(--muted) }
+.savingline { margin: var(--sp-2) 0 0; text-align: right }
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--border)) }
 .wide { width: 100% }
 

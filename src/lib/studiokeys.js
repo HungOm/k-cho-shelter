@@ -39,6 +39,7 @@ export const KEYS = [
   { id: 'toolLine', group: 'Tools', label: 'Line', action: 'toolLine', when: 'place', combo: { key: 'l' } },
   { id: 'toolWords', group: 'Tools', label: 'Words', action: 'toolWords', when: 'place', combo: { key: 't' } },
   { id: 'toolMark', group: 'Tools', label: 'Mark', action: 'toolMark', when: 'place', combo: { key: 'm' } },
+  { id: 'toolPicture', group: 'Tools', label: 'Picture', action: 'toolPicture', when: 'place', combo: { key: 'i' } },
 
   /* ---- the selection ---- */
   { id: 'selectAll', group: 'Selection', label: 'Select everything on the ticket', action: 'selectAll', when: 'place', combo: { key: 'a', cmd: true } },

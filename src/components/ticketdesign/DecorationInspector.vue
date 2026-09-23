@@ -68,7 +68,7 @@ const props = defineProps({
   /** What a press will not hold, for THIS shape. Printed tab only. */
   warnings: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['pick-colour', 'mark'])
+const emit = defineEmits(['pick-colour', 'mark', 'pick-image'])
 
 const TABS = [
   { id: 'box', icon: 'position', name: 'Box' },
@@ -117,8 +117,14 @@ const MARKS = Object.keys(PATHS).filter((n) => n !== 'missing')
 
 const isText = computed(() => props.deco?.kind === 'text')
 const isIcon = computed(() => props.deco?.kind === 'icon')
+const isImage = computed(() => props.deco?.kind === 'image')
+/* Words for the two picture choices: no drawing tells "whole" from "fill" at
+   sixteen pixels, and three and two are few enough for a segment. */
+const FITS = [{ id: 'contain', name: 'Whole' }, { id: 'cover', name: 'Fill' }]
+const CLIPS = [{ id: 'none', name: 'None' }, { id: 'ellipse', name: 'Oval' }, { id: 'rounded', name: 'Rounded' }]
 const hasArea = computed(() => props.deco && props.deco.kind !== 'line')
 const kindWord = computed(() => (isText.value ? 'Words' : isIcon.value ? 'Mark'
+  : isImage.value ? 'Picture'
   : props.deco?.kind === 'line' ? 'Rule' : props.deco?.kind === 'ellipse' ? 'Ellipse' : 'Rectangle'))
 
 /* Every change is one undo step, and the parent owns the stack. Called before
@@ -183,7 +189,27 @@ function setShadow(on) {
 
     <!-- ---------- what it is made of ---------- -->
     <div v-show="tab === 'style'" class="pgroup">
-      <template v-if="!isIcon">
+      <!-- A PICTURE: the picture itself, how it sits in its box, and what shape
+           the box cuts it to. It has no fill and no outline of its own. -->
+      <template v-if="isImage">
+        <div class="picrow">
+          <span class="picthumb"><img :src="deco.image.src" alt=""></span>
+          <button class="btn sm" type="button" @click="emit('pick-image')">Change picture</button>
+        </div>
+        <h4 class="rubric">Fit</h4>
+        <div class="seg" role="group" aria-label="How the picture sits in its box">
+          <button v-for="f in FITS" :key="f.id" type="button" class="segbtn"
+                  :class="{ on: deco.image.fit === f.id }" :aria-pressed="deco.image.fit === f.id"
+                  @click="before(); deco.image.fit = f.id">{{ f.name }}</button>
+        </div>
+        <h4 class="rubric">Clip</h4>
+        <div class="seg" role="group" aria-label="What shape the box cuts the picture to">
+          <button v-for="c in CLIPS" :key="c.id" type="button" class="segbtn"
+                  :class="{ on: deco.image.clip === c.id }" :aria-pressed="deco.image.clip === c.id"
+                  @click="before(); deco.image.clip = c.id">{{ c.name }}</button>
+        </div>
+      </template>
+      <template v-if="!isIcon && !isImage">
         <h4 class="rubric">Fill</h4>
         <ToolBar label="Fill">
           <ToolButton v-for="f in FILL_ICONS" :key="f.id" :icon="f.icon" :label="f.name"
@@ -210,7 +236,7 @@ function setShadow(on) {
         </template>
       </template>
 
-      <h4 class="rubric">{{ isIcon ? 'Mark' : 'Line' }}</h4>
+      <h4 v-if="!isImage" class="rubric">{{ isIcon ? 'Mark' : 'Line' }}</h4>
       <template v-if="isIcon">
         <!-- A GRID OF THE APP'S OWN DRAWINGS. Named for a screen reader by
              ToolButton, so 53 unlabelled squares are 53 named controls. -->
@@ -223,7 +249,7 @@ function setShadow(on) {
              @update:model-value="(v) => { before(); deco.fill.colour = v }"
              @pick="emit('pick-colour', (c) => { before(); deco.fill.colour = c })" />
       </template>
-      <template v-else>
+      <template v-else-if="!isImage">
         <label class="formrow">
           <span class="cap">Thickness</span>
           <span class="wrap">
@@ -262,7 +288,7 @@ function setShadow(on) {
                    @update:tracking="(v) => { before(); deco.text.tracking = v }" />
       </template>
 
-      <template v-if="hasArea && !isText && !isIcon">
+      <template v-if="hasArea && !isText && !isIcon && (!isImage || deco.image.clip === 'rounded')">
         <label class="formrow">
           <span class="cap">Corners</span>
           <span class="wrap">
@@ -369,6 +395,13 @@ function setShadow(on) {
 }
 /* A label and the switch it names on one line, the switch to the right of it
    (Designing User Interfaces p250). */
+.picrow { display: flex; align-items: center; gap: var(--sp-4) }
+/* On paper colour whatever the theme: it is judged as it will print. */
+.picthumb {
+  flex: none; display: grid; place-items: center; width: 72px; height: 48px; overflow: hidden;
+  background: var(--paper); border: var(--rule) solid var(--border); border-radius: var(--r-xs);
+}
+.picthumb img { max-width: 100%; max-height: 100%; object-fit: contain }
 .switchrow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4) }
 .switchrow > .cap { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--muted) }
 .seg .segbtn { flex: 1 }

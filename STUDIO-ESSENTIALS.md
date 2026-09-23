@@ -563,6 +563,19 @@ field that IS the drawn shape's inspector heading, showing its kind until named.
 
 ### Phase 7 — The Picture tool, and clip to shape (M)
 
+**Status 2026-09-23: built, gated, rendered** (kcho-shelter-0c). Notes:
+- A picture is fitted "Whole" (contain) when placed; unset, the renderer keeps
+  its old "Fill" (cover) so nothing already drawn redraws. Clip is None / Oval /
+  Rounded, the box as the shape. `I` opens the picker.
+- The low-resolution warning needs the picture's pixel width, learnt by loading
+  it in the browser; until then it says nothing rather than guess.
+- **Found by looking, pre-existing:** with the design dirty, the saving note in
+  the bar squeezed the template picker to an empty sliver at desk width. Given
+  a floor, the note became a one-word column instead. It now has its own line
+  under the bar, right-aligned beneath Save — rendered at 1440 and 1200.
+- Still to do, named so it is not mistaken for done: **uploading any picture**
+  from the studio (server bucket, size gate, organiser-only action).
+
 - Sources: the organisation logo (`state.cfg.orgLogo` / `orgLogoSmall`,
   `config.ts:106`, public branding bucket) and every uploaded artwork
   (`templates[].url`). Shell computed `pictures = [{ src, name, kind }]`.
