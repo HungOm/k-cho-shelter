@@ -340,7 +340,7 @@ Each verified by opening the file. Line numbers as of `d349841`.
 | # | Finding | Where | Why | Cost |
 |---|---|---|---|---|
 | **F1** | **The printed tab carries two names for one font.** `DecorationInspector.vue:209–210` hard-codes a copy of the *digital* card's words onto the *printed* tab. The Place rail offers two ways to put words on a ticket, forty lines apart — `TicketDesign.vue:161` "Own words" → `Inspector` → **"Padauk"**, and `:201` "Words" → `DecorationInspector` → **"Everyday"**. Same tab, same panel slot (a `v-if`/`v-else` pair — *"Two components, one slot"*), same font, one click apart. | 3 files | P2 eq. (13)/(14), maximum-penalty case; P1 lists inconsistency as a defining property of its bad set | S |
-| **F2** | **No typeface picker shows a typeface.** Three `<select>` lists of names, in the one tool whose entire subject is visual appearance, on a screen that shows the thing in four other places. | `Inspector.vue:177`, `CardInspector.vue:183`, `DecorationInspector.vue:207` | P3 image cue, +1.28–1.45 s; RU "labels are a last resort" | S |
+| **F2** | **No typeface picker shows a typeface.** Three `<select>` lists of names, in the one tool whose entire subject is visual appearance, on a screen that shows the thing in four other places. | `Inspector.vue:178`, `CardInspector.vue:184`, `DecorationInspector.vue:233` — the last moved in `1343354` and **no longer hard-codes anything**; it is in scope because it still names rather than shows | P3 image cue, +1.28–1.45 s; RU "labels are a last resort" | S |
 | **F3** | **The active template is a picture in the rail and a name in the header.** The header's own comment says *"which template am I editing" is the question a screen with three tabs and two side panels most easily loses* — then answers it with a dropdown, on every tab, while the thumbnail list that answers it properly is reachable only on Artwork. | `TicketDesign.vue:1990` | P3 image cue; P3 Guess stage (the header *is* the upper-left) | S |
 | **F4** | **Seven labels for one command.** "Show them" · "Show all" · "Show all at once" · "One at a time" · "Show them all" · "Show everybody" · "Show". Each defensible alone; the set is what P2 penalises and what a volunteer has to learn. | `Draw.vue:295`, `Permissions.vue:263`, `SellTicket.vue:228/255`, `Money.vue:423/449`, `Admin.vue:1520` | P2 eq. (13)/(14) | S |
 | **F5** | **Setup is twelve sibling cards at one visual weight**, every heading an `<h3>`, no grouping, no rank — and the two destructive actions (`Reset this raffle`, `Fill with sample data`) sit at the same weight as `How this raffle looks`. See the incident below, which is the strongest evidence in this document. | `Admin.vue:19, 81, 93, 136, 193, 260, 379, 422, 610, 684, 710, 828` | P1's measured signature of a bad design is fixations spread evenly with nothing to anchor them; RU "destructive ≠ big and red" and "hierarchy is everything" | M |
@@ -392,6 +392,21 @@ makes it a colour wearing a dimension's name. `scales.test.mjs` now checks both
 pairs in both themes, because an alias that holds in one theme and drifts in the
 other is the half-bug that looks fixed.
 
+**Why it would have survived**, which is the part worth keeping: the two tokens
+were *bit-identical* in light mode — a genuine coincidence of values. Every
+check that could run in one theme passed, and the defect lived entirely in the
+theme nobody renders while working. It is also the argument for
+`tokens.test.mjs` naming its exemptions rather than writing a rule like
+"anything that is not a colour": such a rule waves through precisely the token
+nobody thought to classify. *(Framing kcho-shelter-25's.)*
+
+This is **the same lesson** as F5's watcher bug — the path that gets exercised
+is not the path that breaks — and **a different mechanism**, which is worth
+keeping separate. Here two values coincided, so the wrong one was never
+rendered. There, the *same code* took a different number of runs: the cold path
+worked because the watcher re-ran correctly *after* the throw. Merging them into
+one story would lose both. *(Distinction kcho-shelter-25's, who checked.)*
+
 The test's shape was rebuilt after a correction from **kcho-shelter-25**. It was
 going to assert that Phase 0 *changed nothing*, which is an **absence**: it
 passes identically against a Phase 0 never written, a `:root` that failed to
@@ -426,7 +441,16 @@ because nothing they measure has changed.
 This phase is the one that makes the other five stop recurring. Nothing after it
 should introduce a dimension that is not a token.
 
-### Phase 1 — Two vocabularies for two surfaces, one per surface (F1)
+### Phase 1 — Two vocabularies for two surfaces, one per surface (F1) **DONE**
+
+*Landed `1343354` by **ticket-studio-redesign**, 2026-09-22.
+`DecorationInspector.vue` imports `FAMILIES` and gains the `why` line it never
+had. Verified: the printed/digital split is preserved, and the commit carries
+the caveat that it holds only while decorations are printed-only.*
+
+**Outstanding from this phase:** `CardInspector.vue:66` still reads
+`Serif`. The ruling is **Everyday / Figures** — handed to the Studio session
+with F2, since it is the same file and the same control.
 
 **Corrected from the first draft of this document, by the session working on the
 Studio, and verified.** The printed/digital split is *intentional* and its
@@ -453,15 +477,27 @@ the *digital* words and uses them on the *printed* tab.
 
 ### Phase 2 — Show the typeface, and the template (F2, F3)
 
-- **Typeface options render in their own face** — one `style` binding per
-  `<option>`. The `why` clause under the select stays: the picture answers
+- **F2 — typeface options render in their own face**, one `style` binding per
+  `<option>`. The `why` clause under the select **stays**: the picture answers
   "which one is this", the clause answers "when do I use it", and P3's
   absent-target result is that the *text* cue is the one that helps you
   correctly give up. Both, not either.
-- **A thumbnail of the active template in the header**, beside the existing
-  `<select>` rather than replacing it — the select stays keyboard-navigable. The
-  header is already the upper-left, so this puts the answer to the question the
-  header exists to answer directly in the Guess stage's landing zone.
+
+  **Reassigned to the Studio session**, who are restructuring all three
+  inspectors and moving the selects themselves — doing F2 separately would mean
+  merging a control that has changed address. The specification above is
+  unchanged; only the hands are different. `CardInspector`'s
+  `Serif` → `Figures` rides along, same file, same control.
+
+- **F3 — a thumbnail of the active template in the header**, beside the existing
+  `<select>` rather than replacing it, so the control stays keyboard-navigable.
+  The header is already the upper-left, so this puts the answer to the question
+  the header exists to answer directly in the Guess stage's landing zone.
+
+  **Held until the Studio session lands.** `TicketDesign.vue` is theirs for the
+  duration; two sessions in one file is what this repo keeps paying for. The one
+  constraint passed to them is that the `<select>` at `:1990` survives their
+  restructure in some form, because F3 adds to it rather than replacing it.
 
 ### Phase 3 — Setup, grouped (F5)
 
@@ -489,6 +525,25 @@ Two rules for the implementation:
   red on the confirmation step where it genuinely is the primary action. That is
   also P2's frequency-weighted placement: prominence follows how often, not how
   severe.
+- **Group the cards; do not edit inside them.** The regroup moves headings and
+  spacing and nothing else. The moment it starts rewriting a card's internals it
+  acquires the ability to undo other people's work by accident — and there is a
+  live example: `Admin.vue`'s *Supporter titles* card and the Supporter card in
+  `ticketart.js` were deliberately aligned by **kcho-shelter-25** to say the
+  same thing in the same order, **the earned word first, the evidence quiet
+  underneath**.
+
+  **Half of that is pinned and half is deliberately not.** The *card* side
+  cannot be undone by accident: flattening it in a scratch archive fails
+  `cardlayout` (3, the golden `shelter` render is byte-for-byte) and `ranks`
+  (1, the count stops sharing an x with the title and name) — two independent
+  reasons, which is what you want. The *Setup* side has no test and should not
+  get one: the only assertable facts there are a class name and a font weight,
+  and a test anchored to a class name dies on the next tidy-up while teaching
+  nothing, besides asserting an invariant the card already pins. So this note
+  and the two files' comments *are* the mechanism. That is an argument for
+  keeping the phase boundary exactly where it is, not for adding coverage.
+  *(Both halves checked by kcho-shelter-25 rather than reasoned about.)*
 
 ### Phase 4 — Absence names its cause (F6)
 
@@ -502,6 +557,16 @@ a version of it.
 Seven sites, one word. `SellTicket.vue:228/255` is genuinely a different control
 — a mode switch between "all at once" and "one at a time" — and keeps its pair.
 The remaining five converge.
+
+*Briefly held for a shared `ui/Explain.vue`; that component is not being built,
+so F4 is independent and picks its own word. The reason it was dropped belongs
+in §9 — see **visible and smaller, not hidden**.*
+
+The verb is worth stating precisely, because it is what keeps F4 separate from
+that abandoned work: these five controls **reveal data rows somebody is looking
+for**, and a row that is not on screen genuinely cannot be read. That is P3's
+absent-target case. An explanation that is merely quiet is already on screen and
+is a different problem.
 
 ### Phase 6 — Migrate to the scales, file by file
 
@@ -611,6 +676,16 @@ back in the target's quadrant. A result found in a list and confirmed by a panel
 across the screen makes the eye pay the journey twice. `Search.vue`'s row-level
 controls — history, ask-for-book, status pill, all on the row — already follow
 this.
+
+**Visible and smaller, not hidden.** A ruling from the user, 2026-09-23, given
+to the Studio session and general enough to sit here: *"helper text must be
+visible and smaller, not competing for attention with tools icons."* It killed a
+plan to move 51 explanatory sentences behind ⓘ affordances — hiding prose behind
+a click satisfies "not competing" by *deleting it from the screen*, which is not
+what was asked and is the wrong side of §2's number. Prose gets **shorter and
+quieter in place**. The lever for de-emphasis is weight, size and colour, never
+removal; Refactoring UI's "emphasize by de-emphasizing" is the same instrument,
+and it never reaches for a click.
 
 **And the uncomfortable one.** P1's bad set sits in **low** valence and **low**
 arousal — flat, not ugly — and its discriminating signal is whether fixations
