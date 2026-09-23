@@ -219,6 +219,15 @@ export function normalElement(raw) {
     text: kind === 'text' ? String(raw?.text ?? '') : '',
     half: raw?.half === 'stub' ? 'stub' : 'main',
     enabled: raw?.enabled !== false,
+    /*
+     * PINNED — a drag and the arrow keys leave it where it is, and nothing
+     * else. The same pin a drawn shape has, and for the same reason: a field
+     * measured to the tenth of a millimetre is the thing somebody keeps
+     * catching while they work on what sits around it. Not carried into the
+     * old fixed slots (legacyFromElements), which have nowhere to put it and
+     * are read only by a browser too old to pin anything.
+     */
+    locked: raw?.locked === true,
     box: normalBox(raw?.box),
     align: ALIGN.some((a) => a.id === raw?.align) ? raw.align : 'left',
     overflow: OVERFLOW.some((o) => o.id === raw?.overflow) ? raw.overflow : 'shrink',

@@ -263,6 +263,16 @@ const PATHS = {
    * inline in a component — outside this table and outside the rules above.
    */
   dropper:    'M15.5 3.5a2.1 2.1 0 0 1 3 3l-2 2 1 1-1.5 1.5-1-1L7 17.5 4 18l.5-3 8.5-8.5-1-1L13.5 4l1 1 1-1.5Z',
+  /*
+   * GROUPING. Two shapes inside the corners of one box, against the same two
+   * shapes standing apart — so the pair reads as a before and after, and
+   * neither can be taken for `duplicate`, which is two overlapping sheets.
+   */
+  group:      'M3.5 7V3.5H7M17 3.5h3.5V7M20.5 17v3.5H17M7 20.5H3.5V17M8 8h4v4H8zM12.5 12.5H16V16h-3.5z',
+  ungroup:    'M4.5 4.5h6v6h-6zM13.5 13.5h6v6h-6z',
+  /* A mirror line with a triangle and its reflection either side of it. */
+  flipH:      'M12 4v16M9.5 7 4 17h5.5zM14.5 7l5.5 10h-5.5z',
+  flipV:      'M4 12h16M7 9.5 17 4v5.5zM7 14.5l10 5.5v-5.5z',
 
   /*
    * NOT A DRAWING — what is shown when a name does not exist.

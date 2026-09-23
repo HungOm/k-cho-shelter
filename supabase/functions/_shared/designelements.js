@@ -118,6 +118,11 @@ const box = (b, kind) => ({
 
 let seq = 0
 export const nextDecoId = () => `d${Date.now().toString(36)}${(seq++).toString(36)}`
+/* A group is only an id its members share; nothing else stores it. */
+export const nextGroupId = () => `g${Date.now().toString(36)}${(seq++).toString(36)}`
+
+/* Letters and digits, forty at most — the same bound the server applies. */
+const groupOf = (v) => String(v ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 40)
 
 /**
  * One decoration, with every field present and sane.
@@ -146,6 +151,20 @@ export function normalDecoration(raw) {
        somebody puts in a background they have finished placing so they stop
        catching it while working on what sits over it. */
     locked: raw?.locked === true,
+    /*
+     * WHICH GROUP IT BELONGS TO, or '' for none. A group is its members sharing
+     * this string and nothing more — no group record, no nesting — so a group
+     * cannot outlive its shapes or point at one that has gone. A placed library
+     * shape is its parts under one group, so a click on any part takes them all.
+     */
+    group: groupOf(raw?.group),
+    /*
+     * MIRRORED, across its own centre. Two booleans rather than a negative
+     * width, because a box with a negative side is a box every other piece of
+     * arithmetic in this studio would have to learn to read.
+     */
+    flipX: raw?.flipX === true,
+    flipY: raw?.flipY === true,
     box: box(raw?.box, kind),
     /* Degrees, and whole ones. A rotation of 0.3° is a value somebody cannot
        have meant and cannot see; it arrives from a drag that was not quite
@@ -246,6 +265,9 @@ export function faultsIn(list, opts = {}) {
     else if (seen.has(id)) bad.push(`${where} repeats the id ${id}.`)
     seen.add(id)
 
+    if (d.group !== undefined && (typeof d.group !== 'string' || d.group !== groupOf(d.group))) {
+      bad.push(`${where} has a group name the studio could not have made — letters and digits, forty at most.`)
+    }
     if (d.kind !== undefined && !KINDS.includes(d.kind)) {
       bad.push(`${where} is a "${d.kind}", which is not one of ${KINDS.join(', ')}.`)
     }
@@ -468,8 +490,23 @@ export function decorationSVG(d, w, h, ctx = {}) {
   if (el.opacity < 1) wrap.push(`opacity="${el.opacity}"`)
   if (el.blend !== 'normal') wrap.push(`style="mix-blend-mode:${el.blend}"`)
   if (el.shadow) wrap.push(`filter="url(#${uid}s)"`)
-  if (el.rotation) {
-    wrap.push(`transform="rotate(${el.rotation} ${(x + bw / 2).toFixed(2)} ${(y + bh / 2).toFixed(2)})"`)
+  /*
+   * TURNED AND MIRRORED ABOUT THE BOX'S OWN CENTRE, in one transform. SVG
+   * applies a transform list right to left, so this reads: move the centre to
+   * the origin, mirror, turn, move back — a mirrored shape turns the way it
+   * LOOKS, not the way it was before it was mirrored.
+   */
+  const cx = (x + bw / 2).toFixed(2), cy = (y + bh / 2).toFixed(2)
+  if (el.flipX || el.flipY) {
+    const parts = [`translate(${cx} ${cy})`]
+    if (el.rotation) parts.push(`rotate(${el.rotation})`)
+    parts.push(`scale(${el.flipX ? -1 : 1} ${el.flipY ? -1 : 1})`)
+    parts.push(`translate(${-cx} ${-cy})`)
+    wrap.push(`transform="${parts.join(' ')}"`)
+  } else if (el.rotation) {
+    /* Unmirrored, the form every design saved before flipping existed was
+       drawn in — kept byte for byte, so those tickets print as they did. */
+    wrap.push(`transform="rotate(${el.rotation} ${cx} ${cy})"`)
   }
 
   const inner = (defs.length ? `<defs>${defs.join('')}</defs>` : '') + body

@@ -336,5 +336,41 @@ console.log('what will not survive a press is reported, and only for paper')
     'an ordinary filled rectangle is warned about nothing')
 }
 
+console.log('a group is a shared name, and a mirror is about the shape\'s own centre')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 2. A placed library shape is several parts under
+   * one group, so a click on any part takes them all; a pasted group must get
+   * a NEW group, or clicking the copy selects the original too. The model's
+   * half is that a group survives normalising, and that a name the studio
+   * could not have made is refused where it is saved.
+   */
+  const g = normalDecoration({ kind: 'rect', group: 'g1abc', box: at(0.1, 0.1, 0.2, 0.2) })
+  eq(g.group, 'g1abc', 'a group name survives normalising')
+  eq(normalDecoration({ kind: 'rect' }).group, '', 'and a shape with none is in no group')
+  eq(normalDecoration({ kind: 'rect', group: 'a b<c>' }).group, 'abc', 'odd characters are dropped on the way in')
+  eq(normalDecorations([{ kind: 'rect', group: 'gx' }, { kind: 'line', group: 'gx' }])
+    .filter((d) => d.group === 'gx').length, 2, 'two parts keep one group through a whole list')
+  ok(faultsIn([{ id: 'd1', kind: 'rect', group: 'x'.repeat(41) }]).some((f) => /group/.test(f)),
+    'a forty-one character group is refused where it is saved')
+  ok(faultsIn([{ id: 'd1', kind: 'rect', group: 'a b' }]).some((f) => /group/.test(f)),
+    'and so is one the studio could not have made')
+  ok(!faultsIn([{ id: 'd1', kind: 'rect', group: 'g12' }]).some((f) => /group/.test(f)),
+    'while a real one is accepted')
+
+  const base = { kind: 'rect', box: at(0.1, 0.1, 0.3, 0.2) }
+  const flat = decorationSVG(base, W, H)
+  const across = decorationSVG({ ...base, flipX: true }, W, H)
+  const down = decorationSVG({ ...base, flipY: true }, W, H)
+  ok(!/scale\(/.test(flat), 'an unmirrored shape carries no mirror')
+  ok(/scale\(-1 1\)/.test(across), 'flipped across, it is mirrored left for right')
+  ok(/scale\(1 -1\)/.test(down), 'flipped down, top for bottom')
+  ok(/translate\(250\.00 80\.00\)/.test(across), 'about the centre of its own box (250, 80), not the corner of the ticket')
+  const both = decorationSVG({ ...base, flipX: true, rotation: 30 }, W, H)
+  ok(/rotate\(30\) scale\(-1 1\)/.test(both), 'turned and mirrored in one transform, mirror applied first')
+  ok(/rotate\(15 250\.00 80\.00\)/.test(decorationSVG({ ...base, rotation: 15 }, W, H)),
+    'and a shape that is only turned is drawn exactly as it was before mirrors existed')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

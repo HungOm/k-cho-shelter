@@ -355,6 +355,21 @@ from the text below, each decided on reading the code:
 
 ### Phase 2 — Selection, clipboard, group, pin, flip (L)
 
+**Status 2026-09-23: built, gated, rendered** (kcho-shelter-0c). Where it
+differs from the text below:
+- **`useDrag.js` is not extracted yet — moved to Phase 8.** Nothing in this
+  phase needs the seam; the pen tool and the card tab do, so it is cut there,
+  with that reason (STUDIO-PLAN §1: reopen a seam with a reason). The marquee
+  is the frame's own `onFrameDown`, reusing the draw state.
+- Shift adds to a selection on both lists; ⌘-click takes one part of a group
+  (and ⌘-drag moves it alone). ⌘-click used to mean "add".
+- **Looking found the rail too tall.** Eighteen tools in one column pushed
+  Save, Undo and Redo below a laptop window, so the rail is two tools wide:
+  the six alignments as a matrix, every other group rows of two. Checked at
+  1280 × 800 with the footer on screen.
+- Copy / cut / paste keep an in-memory clip (the system clipboard asks
+  permission to be read); a paste past sixty shapes toasts what it left out.
+
 - New `src/lib/selection.js`: `bandOf(origin, point)`, `hitsIn(things, band)`
   (enabled things whose box intersects), `expandGroups(ids, decorations)`,
   `mergeSelection(current, hits, add)` → `{ sel, also }`.

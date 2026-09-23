@@ -65,8 +65,10 @@ import {
   EDGES, boundsOf, alignBoxes, distributeBoxes, orderMoved, offsetBox,
 } from '../lib/arrange.js'
 import {
-  KINDS as DECO_KINDS, normalDecoration, nextDecoId, printWarnings,
+  KINDS as DECO_KINDS, MAX_DECORATIONS, normalDecoration, nextDecoId, nextGroupId, printWarnings,
 } from '../lib/designelements.js'
+import { bandOf, isClick, hitsIn, expandGroups, mergeSelection } from '../lib/selection.js'
+import { copyRecords, pasteRecords } from '../lib/clipboard.js'
 import { placeShape, normalLibrary, nextLibId } from '../lib/designlibrary.js'
 import { encode } from '../lib/qrcodegen.js'
 import { sheetHTML, pageFit } from '../lib/ticketsheet.js'
@@ -84,6 +86,7 @@ import Inspector from './ticketdesign/Inspector.vue'
 import DecorationInspector from './ticketdesign/DecorationInspector.vue'
 import LibraryPanel from './ticketdesign/LibraryPanel.vue'
 import DigitalTab from './ticketdesign/DigitalTab.vue'
+import SelectionInspector from './ticketdesign/SelectionInspector.vue'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
 import Icon from './ui/Icon.vue'
@@ -607,17 +610,26 @@ const chosenHalf = computed(() =>
  * Shift-clicking the primary promotes the next one rather than leaving the
  * inspector pointed at something no longer selected.
  */
-function pick(id, add = false) {
+/*
+ * `solo` is ⌘-click: this one thing, and not the group it belongs to. It is
+ * how somebody works on one part of a placed library shape without ungrouping
+ * it — the convention drawing tools have settled on. Without it a click on any
+ * member of a group takes the whole group, which is what a group is for.
+ */
+function pick(id, add = false, solo = false) {
   if (!add) {
+    const whole = solo ? [id] : expandGroups([id], decorations.value)
     sel.value = id
-    also.value = []
+    also.value = whole.filter((x) => x !== id)
   } else if (id === sel.value) {
     sel.value = also.value[0] || ''
     also.value = also.value.slice(1)
   } else if (also.value.includes(id)) {
     also.value = also.value.filter((x) => x !== id)
   } else if (sel.value) {
-    also.value = [...also.value, sel.value]
+    const whole = solo ? [id] : expandGroups([id], decorations.value)
+    also.value = [...new Set([...also.value, sel.value, ...whole.filter((x) => x !== id)])]
+      .filter((x) => x !== id)
     sel.value = id
   } else {
     sel.value = id
@@ -714,6 +726,121 @@ function deletePicked() {
 }
 
 /*
+ * ---------- copy, cut and paste ----------
+ *
+ * The clip is held in memory, not on the system clipboard: it carries records
+ * this studio understands, it survives switching template (which is the point
+ * of it over Duplicate), and a browser asks permission before a page may read
+ * the system clipboard — a prompt on every paste is not a paste.
+ */
+const clip = ref(null)
+let pastes = 0
+
+function copyPicked() {
+  if (!picked.value.length) return
+  clip.value = copyRecords(elements.value, decorations.value, picked.value)
+  pastes = 0
+  toast(`Copied ${picked.value.length}`, 'ok')
+}
+
+function cutPicked() {
+  if (!picked.value.length) return
+  clip.value = copyRecords(elements.value, decorations.value, picked.value)
+  pastes = 0
+  deletePicked()
+}
+
+function pastePicked() {
+  if (!clip.value || !design.value) return
+  mark()
+  pastes += 1
+  const got = pasteRecords(clip.value, {
+    nextId, nextDecoId, nextGroupId, times: pastes,
+    room: MAX_DECORATIONS - decorations.value.length,
+  })
+  const els = got.elements.map(normalElement)
+  const decos = got.decorations.map(normalDecoration)
+  if (els.length) design.value.elements = [...elements.value, ...els]
+  if (decos.length) design.value.decorations = [...decorations.value, ...decos]
+  const made = [...els, ...decos]
+  sel.value = made[0]?.id || ''
+  also.value = made.slice(1).map((x) => x.id)
+  if (got.refused) {
+    toast(`${got.refused} drawn ${got.refused === 1 ? 'shape was' : 'shapes were'} left out — a ticket holds ${MAX_DECORATIONS}`, 'bad')
+  }
+}
+
+/*
+ * ---------- groups and mirrors ----------
+ *
+ * Only drawn shapes group and only drawn shapes mirror. A field prints a value
+ * the raffle fills in, placed where that value belongs; mirroring a ticket
+ * number would print it backwards, and grouping one with a tint would make a
+ * click on the tint drag the number off its measured line.
+ */
+function groupPicked() {
+  if (whyNotGroup.value) return
+  mark()
+  const g = nextGroupId()
+  for (const d of pickedDecos.value) d.group = g
+}
+
+function ungroupPicked() {
+  if (whyNotUngroup.value) return
+  mark()
+  for (const d of pickedDecos.value) d.group = ''
+}
+
+/* Mirrored as a SELECTION: every shape flips, and their places mirror within
+   the box they share, so a group turns over as one thing rather than each
+   part flipping where it stands. */
+function flipPicked(axis) {
+  const list = pickedDecos.value.filter((d) => !d.locked)
+  if (!list.length) return
+  mark()
+  const b = boundsOf(list.map((d) => d.box))
+  for (const d of list) {
+    if (axis === 'across') {
+      d.box.left = Math.round((b.left + b.left + b.width - d.box.left - d.box.width) * 1e7) / 1e7
+      d.flipX = !d.flipX
+    } else {
+      d.box.top = Math.round((b.top + b.top + b.height - d.box.top - d.box.height) * 1e7) / 1e7
+      d.flipY = !d.flipY
+    }
+  }
+}
+
+const whyNotGroup = computed(() => {
+  if (!picked.value.length) return 'Nothing is selected'
+  if (pickedEls.value.length) return 'Only drawn shapes group — a field is placed on its own'
+  if (pickedDecos.value.length < 2) return 'Grouping needs two or more drawn shapes'
+  const gs = new Set(pickedDecos.value.map((d) => d.group))
+  if (gs.size === 1 && !gs.has('')) return 'These are already one group'
+  return ''
+})
+const whyNotUngroup = computed(() => {
+  if (!picked.value.length) return 'Nothing is selected'
+  return pickedDecos.value.some((d) => d.group) ? '' : 'Nothing selected is in a group'
+})
+const whyNotFlip = computed(() => {
+  if (!picked.value.length) return 'Nothing is selected'
+  if (!pickedDecos.value.length) return 'Only drawn shapes flip — a field prints a value'
+  return pickedDecos.value.some((d) => !d.locked) ? '' : 'Everything selected is pinned'
+})
+
+/* What the multi-selection panel lists. */
+const pickedSummary = computed(() => pickedThings.value.map((t) => (isDeco(t.id)
+  ? { id: t.id, drawn: true, name: decoName(t), word: decoWord(t.kind),
+      icon: t.kind === 'text' ? 'type' : t.kind === 'icon' ? 'design' : 'shape' }
+  : { id: t.id, drawn: false, name: nameOf(t), word: KIND_WORD[t.kind], icon: KIND_ICON[t.kind] })))
+const pickedBounds = computed(() => (pickedThings.value.length
+  ? boundsOf(pickedThings.value.map((t) => t.box)) : null))
+const pickedOneGroup = computed(() => {
+  const gs = new Set(pickedDecos.value.map((d) => d.group))
+  return pickedDecos.value.length > 1 && gs.size === 1 && !gs.has('')
+})
+
+/*
  * WHY EACH TOOL CANNOT BE PRESSED, or '' when it can. Handed straight to
  * ToolButton, which disables on the presence of a reason — so there is no way
  * to draw one of these enabled without an answer to "why not".
@@ -752,6 +879,11 @@ function placeFromLibrary(shape) {
   if (!design.value) return
   mark()
   const made = placeShape(shape, { left: 0.4, top: 0.35, width: 0.2, height: 0.3 }, nextDecoId)
+  /* ONE NEW GROUP PER PLACEMENT. A saved shape's parts may carry the group they
+     had when they were saved, and two placements of it sharing that id would
+     select each other. A single part is in no group. */
+  const g = made.length > 1 ? nextGroupId() : ''
+  for (const d of made) d.group = g
   design.value.decorations = [...decorations.value, ...made]
   sel.value = made[0].id
   also.value = made.slice(1).map((d) => d.id)
@@ -1143,15 +1275,17 @@ function startMove(el, ev) {
    * begins on the same press moves it a few pixels every time — which is a
    * design quietly nudged out of alignment by the act of selecting it.
    */
-  if (ev.shiftKey || ev.metaKey) { pick(el.id, true); return }
+  if (ev.shiftKey) { pick(el.id, true); return }
 
   mark()
+  /* ⌘ drags the one part under the pointer out of its group's selection. */
+  if (ev.metaKey || ev.ctrlKey) pick(el.id, false, true)
   /*
    * PRESSING SOMETHING ALREADY SELECTED KEEPS THE SELECTION, and drags all of
    * it. Anything else makes a multi-selection impossible to move: you pick
    * three, press one to drag them, and the press throws the other two away.
    */
-  if (!picked.value.includes(el.id)) pick(el.id)
+  else if (!picked.value.includes(el.id)) pick(el.id)
 
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
   drag.value = {
@@ -1171,20 +1305,33 @@ function startMove(el, ev) {
 
 function startResize(el, corner, ev) {
   ev.stopPropagation()
+  if (el.locked) return
   mark()
   sel.value = el.id
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
   drag.value = { mode: 'resize', corner, id: el.id, px: ev.clientX, py: ev.clientY, box: { ...el.box } }
 }
 
-/* Drawing a brand new box, from the corner the pointer went down on. */
-function startDraw(ev) {
-  if (!pending.value || !frame.value) return
+/*
+ * A PRESS ON THE ARTBOARD ITSELF, not on a box.
+ *
+ * With a tool waiting it draws the new box, from the corner the pointer went
+ * down on. With none it is a MARQUEE: drag across the ticket and everything
+ * the band touches is selected — shift adds to what is already selected. A
+ * press that does not move is a click on empty artboard, which clears the
+ * selection; before this it did nothing, and there was no way to deselect
+ * with the pointer at all.
+ */
+function onFrameDown(ev) {
+  if (!frame.value) return
   const r = frame.value.getBoundingClientRect()
   const left = (ev.clientX - r.left) / r.width
   const top = (ev.clientY - r.top) / r.height
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
-  drag.value = { mode: 'draw', px: ev.clientX, py: ev.clientY, origin: { left, top }, box: { left, top, width: 0, height: 0 } }
+  drag.value = {
+    mode: pending.value ? 'draw' : 'band', add: ev.shiftKey,
+    px: ev.clientX, py: ev.clientY, origin: { left, top }, box: { left, top, width: 0, height: 0 },
+  }
 }
 
 const drawn = ref(null)
@@ -1203,16 +1350,11 @@ function onPointerMove(ev) {
     ? lockAxis((ev.clientX - st.px) / span.x, (ev.clientY - st.py) / span.y)
     : [(ev.clientX - st.px) / span.x, (ev.clientY - st.py) / span.y]
 
-  if (st.mode === 'draw') {
+  if (st.mode === 'draw' || st.mode === 'band') {
     const r = frame.value.getBoundingClientRect()
-    const x = (ev.clientX - r.left) / r.width
-    const y = (ev.clientY - r.top) / r.height
-    drawn.value = {
-      left: Math.min(st.origin.left, x),
-      top: Math.min(st.origin.top, y),
-      width: Math.abs(x - st.origin.left),
-      height: Math.abs(y - st.origin.top),
-    }
+    drawn.value = bandOf(st.origin, {
+      left: (ev.clientX - r.left) / r.width, top: (ev.clientY - r.top) / r.height,
+    })
     return
   }
 
@@ -1289,6 +1431,17 @@ function onPointerMove(ev) {
 
 function endPointer() {
   const st = drag.value
+  if (st?.mode === 'band') {
+    const band = drawn.value
+    if (isClick(band)) {
+      if (!st.add) { sel.value = ''; also.value = [] }
+    } else {
+      const hits = expandGroups(hitsIn([...elements.value, ...decorations.value], band), decorations.value)
+      const next = mergeSelection({ sel: sel.value, also: also.value }, hits, st.add)
+      sel.value = next.sel
+      also.value = next.also
+    }
+  }
   if (st?.mode === 'draw' && drawn.value) {
     const b = drawn.value
     /* A click rather than a drag means no box was drawn. Rather than making a
@@ -1573,6 +1726,14 @@ function onFocusKey(e) {
   const cmd = e.metaKey || e.ctrlKey
 
   if (cmd && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicatePicked(); return }
+  if (cmd && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); copyPicked(); return }
+  if (cmd && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); cutPicked(); return }
+  if (cmd && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); pastePicked(); return }
+  if (cmd && (e.key === 'g' || e.key === 'G')) {
+    e.preventDefault()
+    if (e.shiftKey) ungroupPicked(); else groupPicked()
+    return
+  }
   if (cmd && (e.key === 'a' || e.key === 'A')) {
     e.preventDefault()
     /* Everything that is on the ticket. A hidden element selected by ⌘A is one
@@ -1589,6 +1750,12 @@ function onFocusKey(e) {
        Windows spelling and is not bound: this screen is a Mac-first organiser's
        tool and a second binding nobody presses is a second thing to keep. */
     if (e.shiftKey) redo(); else undo()
+    return
+  }
+  /* Escape puts a waiting tool down first, then lets go of the selection. */
+  if (e.key === 'Escape' && pending.value) {
+    e.preventDefault()
+    pending.value = ''
     return
   }
   if (e.key === 'Escape' && picked.value.length) {
@@ -2546,9 +2713,17 @@ const printedSize = computed(() => {
                     <Icon :name="KIND_ICON[el.kind]" :size="15" class="kind"
                           :class="el.kind" :title="KIND_WORD[el.kind]" />
                     <button type="button" class="elname"
-                            @click="pick(el.id, $event.shiftKey || $event.metaKey)">{{ nameOf(el) }}</button>
+                            @click="pick(el.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)">{{ nameOf(el) }}</button>
                     <span v-if="trouble(el)" class="warnmark"
                           :title="`${nameOf(el)} ${trouble(el)}`">!</span>
+                    <!-- The same pin the drawn shapes carry, and the same
+                         meaning: a drag and the arrow keys leave it put. -->
+                    <ToolButton :icon="el.locked ? 'lock' : 'position'"
+                                :label="el.locked ? `Unpin ${nameOf(el)}` : `Pin ${nameOf(el)}`"
+                                :active="!!el.locked" :size="15"
+                                :hint="el.locked ? 'Pinned — a drag will not move it. Click to release.'
+                                                 : 'Pin it, so working around it does not keep catching it'"
+                                @click="mark(); el.locked = !el.locked" />
                     <!--
                       AN EYE, NOT A TICK BOX, and on the right where 9b draws it.
                       A tick box says "include this in a set"; an eye says "show
@@ -2588,7 +2763,7 @@ const printedSize = computed(() => {
                     <Icon :name="d.kind === 'text' ? 'type' : d.kind === 'icon' ? 'design' : 'shape'"
                           :size="15" class="kind" :title="decoWord(d.kind)" />
                     <button type="button" class="elname"
-                            @click="pick(d.id, $event.shiftKey || $event.metaKey)">{{ decoName(d) }}</button>
+                            @click="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)">{{ decoName(d) }}</button>
                     <!--
                       PINNED, NOT LOCKED-OUT. A drawn background is the thing
                       somebody keeps catching while working on what sits over
@@ -2764,7 +2939,7 @@ const printedSize = computed(() => {
               rail is never a row of live buttons that silently do nothing.
             -->
             <div class="withrail">
-            <ToolBar label="Arrange" vertical>
+            <ToolBar label="Arrange" vertical class="railtools">
               <!--
                 SIX EDGES IN TWO ROWS OF THREE, each its own drawing. arrange.js
                 has aligned to all six since it was written; the rail offered
@@ -2772,12 +2947,10 @@ const printedSize = computed(() => {
                 "put these on one baseline" — the commonest thing done to type
                 on a ticket — had no button.
               -->
-              <span class="tgroup">
+              <span class="tgroup bycol">
                 <ToolButton v-for="a in ALIGN_ACROSS" :key="a.edge" :icon="a.icon" :label="a.label"
                             :why="whyNoSelection" :hint="many ? a.many : a.one"
                             @click="alignPicked(a.edge)" />
-              </span>
-              <span class="tgroup">
                 <ToolButton v-for="a in ALIGN_DOWN" :key="a.edge" :icon="a.icon" :label="a.label"
                             :why="whyNoSelection" :hint="many ? a.many : a.one"
                             @click="alignPicked(a.edge)" />
@@ -2805,6 +2978,20 @@ const printedSize = computed(() => {
                             @click="orderPicked('back')" />
               </span>
               <span class="tgroup">
+                <ToolButton icon="flipH" label="Flip across" :why="whyNotFlip"
+                            hint="Mirror left for right — the selection turns over as one"
+                            @click="flipPicked('across')" />
+                <ToolButton icon="flipV" label="Flip down" :why="whyNotFlip"
+                            hint="Mirror top for bottom"
+                            @click="flipPicked('down')" />
+                <ToolButton icon="group" label="Group" :why="whyNotGroup"
+                            hint="Make these one thing: a click on any part takes them all. ⌘-click still reaches one part"
+                            @click="groupPicked" />
+                <ToolButton icon="ungroup" label="Ungroup" :why="whyNotUngroup"
+                            hint="Let the parts be selected one at a time again"
+                            @click="ungroupPicked" />
+              </span>
+              <span class="tgroup">
                 <ToolButton icon="duplicate" label="Duplicate" :why="whyNoSelection"
                             hint="A copy, nudged down and right so it is visibly a copy"
                             @click="duplicatePicked" />
@@ -2828,7 +3015,7 @@ const printedSize = computed(() => {
               <div
                 ref="frame" class="frame" :class="{ drawing: !!pending }"
                 :style="{ width: frameWidth + 'px' }"
-                @pointerdown="startDraw" @pointermove="onPointerMove"
+                @pointerdown="onFrameDown" @pointermove="onPointerMove"
                 @pointerup="endPointer" @pointercancel="endPointer">
                 <img :src="active.url" alt="" draggable="false">
                 <div class="overlay" v-html="preview"></div>
@@ -2859,7 +3046,7 @@ const printedSize = computed(() => {
                     type="button" class="grab" :aria-label="decoName(d)"
                     :disabled="d.enabled === false || d.locked"
                     :title="d.locked ? `${decoName(d)} is pinned` : `${decoName(d)} — drag to move, or use the arrow keys`"
-                    @keydown="onKey" @click.stop="pick(d.id, $event.shiftKey || $event.metaKey)"></button>
+                    @keydown="onKey" @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"></button>
                   <template v-if="sel === d.id && !many && !d.locked && d.enabled !== false">
                     <span
                       v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
@@ -2882,13 +3069,15 @@ const printedSize = computed(() => {
                   <button
                     type="button" class="grab" :aria-label="nameOf(el)"
                     :disabled="el.enabled === false"
-                    :title="el.enabled === false ? `${nameOf(el)} is switched off in the list` : `${nameOf(el)} — drag to move, or use the arrow keys`"
-                    @keydown="onKey" @click.stop="pick(el.id, $event.shiftKey || $event.metaKey)"></button>
+                    :title="el.enabled === false ? `${nameOf(el)} is switched off in the list`
+                      : el.locked ? `${nameOf(el)} is pinned — unpin it in the list to move it`
+                      : `${nameOf(el)} — drag to move, or use the arrow keys`"
+                    @keydown="onKey" @click.stop="pick(el.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"></button>
                   <!-- Handles on the PRIMARY only. Eight of them on each of
                        five selected boxes is forty grips over one artboard, and
                        a drag from any of them resizes one thing while four
                        others look equally grabbable. -->
-                  <template v-if="sel === el.id && !many && el.enabled !== false">
+                  <template v-if="sel === el.id && !many && el.enabled !== false && !el.locked">
                     <span
                       v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
                       class="hdl" :class="c"
@@ -2897,7 +3086,7 @@ const printedSize = computed(() => {
                 </div>
 
                 <!-- The box being drawn right now. -->
-                <div v-if="drawn" class="ebox drawnbox"
+                <div v-if="drawn" class="ebox drawnbox" :class="{ band: drag?.mode === 'band' }"
                      :style="{ left: pc(drawn.left), top: pc(drawn.top), width: pc(drawn.width), height: pc(drawn.height) }"></div>
 
                 <!-- The perforation. Draggable, because it is a measurement you
@@ -2944,8 +3133,13 @@ const printedSize = computed(() => {
             every control in it and half of them hidden would be a panel whose
             shape changes under the reader. Two components, one slot.
           -->
+          <SelectionInspector
+            v-if="many" :things="pickedSummary" :bounds="pickedBounds"
+            :size="{ width: active.width, height: active.height }"
+            :mixed="mixedPick" :grouped="pickedOneGroup"
+            @pick="(id) => pick(id, false, true)" />
           <DecorationInspector
-            v-if="chosenDeco"
+            v-else-if="chosenDeco"
             :deco="chosenDeco" :size="{ width: active.width, height: active.height }"
             :swatches="swatches" :brand="brandInk" :can-drop="canDrop"
             :warnings="risksFor(chosenDeco)"
@@ -3450,6 +3644,19 @@ const printedSize = computed(() => {
   outline: 2px solid #ffb300; box-shadow: 0 0 0 1px rgba(0, 0, 0, .55);
   background: rgba(255, 179, 0, .18); pointer-events: none;
 }
+/* The marquee: the selection's own cyan, dashed, so it reads as "choosing" and
+   not as a box about to be made. Literal for the reason every colour on the
+   artboard is — it sits on somebody's artwork, which can be any colour. */
+/*
+ * THE ARRANGE RAIL IS TWO TOOLS WIDE. Eighteen tools in one column made the
+ * canvas taller than a laptop's window and pushed Save, Undo and Redo off the
+ * bottom of the screen. Two wide, the six alignments read as a matrix — the
+ * edges across down the first column, the edges down the second — and every
+ * other group is rows of two.
+ */
+.withrail .railtools .tgroup { display: grid; grid-template-columns: repeat(2, 32px); gap: var(--sp-1) }
+.withrail .railtools .tgroup.bycol { grid-auto-flow: column; grid-template-rows: repeat(3, 32px) }
+.ebox.drawnbox.band { outline: 1px dashed #12b5e5; background: rgba(18, 181, 229, .08) }
 /* The keyboard route in. It fills the box so a click anywhere selects, and it
  * is a real button so arrow keys reach it and a screen reader names it. */
 .grab { position: absolute; inset: 0; border: 0; background: none; padding: 0; cursor: inherit }

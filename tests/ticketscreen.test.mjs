@@ -19,9 +19,11 @@ import { renderScreen, visibleText, setupOf } from './screen.mjs'
 import { normalDecoration } from '../src/lib/designelements.js'
 import { designFor } from '../src/lib/ticketdesign.js'
 import { designText, draftKey } from '../src/lib/studiodraft.js'
+import { BUILT_IN } from '../src/lib/designlibrary.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
+const eq = (g, w, what) => { String(g) === String(w) ? pass++ : (fail++, console.log(`  FAIL ${what}: got ${g}, want ${w}`)) }
 
 /**
  * A stubbed store whose `list_templates` answers with whatever is wanted.
@@ -782,6 +784,121 @@ console.log('work that was never saved is offered back, and only when it differs
   const none = await withDraft(null)
   ok(!/Restore them/.test(none), 'and with nothing kept there is no offer')
   ok(/Place|Ticket Studio/.test(none), 'which is the studio rendering, not a blank page reading as "no offer"')
+}
+
+console.log('a band selects what it touches, a group comes whole, and a paste stands alone')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 2, driven through the shell's own handlers. The
+   * arithmetic is pinned in selection/clipboard; what can only be seen here is
+   * that the studio calls it on the right gesture and with the right lists:
+   * a marquee that forgot the drawn shapes, a placement that did not group its
+   * parts, or a paste that ignored the sixty-shape cap would each pass those
+   * suites and still be wrong on the screen.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ctx.tab.value = 'place'
+  const ids = () => ctx.picked.value
+
+  // The marquee, across the stub's buyer lines.
+  ctx.drag.value = { mode: 'band', add: false }
+  ctx.drawn.value = { left: 0.78, top: 0.35, width: 0.2, height: 0.62 }
+  ctx.endPointer()
+  ok(['buyer-name', 'buyer-phone', 'buyer-address', 'buyer-seller'].every((id) => ids().includes(id)),
+    'a band dragged down the stub takes every buyer line it touches')
+  ok(!ids().includes('qrStub'), 'but not the stub\'s code, which is switched off and so not on the ticket')
+  ok(!ids().includes('number-main'), 'nor anything outside the band')
+
+  ctx.drag.value = { mode: 'band', add: false }
+  ctx.drawn.value = { left: 0.5, top: 0.5, width: 0.001, height: 0.001 }
+  ctx.endPointer()
+  eq(ids().length, 0, 'a click on empty artboard lets go of the selection')
+
+  // A library placement is one group; a click takes it all, ⌘-click one part.
+  const seal = BUILT_IN.find((b) => (b.parts || []).length > 1) || BUILT_IN[1]
+  ctx.placeFromLibrary(seal)
+  const placed = ctx.design.value.decorations.slice(-seal.parts.length)
+  ok(placed.length > 1 && placed.every((d) => d.group && d.group === placed[0].group),
+    `a placed ${seal.name} is ${placed.length} parts under one group`)
+  ctx.pick(placed[0].id)
+  eq(ids().length, placed.length, 'a click on one part selects the whole placement')
+  ctx.pick(placed[0].id, false, true)
+  eq(ids().length, 1, 'a ⌘-click selects the one part')
+
+  const again = ctx.placeFromLibrary(seal) ?? ctx.design.value.decorations.slice(-seal.parts.length)
+  ok(again[0].group !== placed[0].group, 'and a second placement is a second group, not the first one again')
+
+  // The rail's group tools and their reasons.
+  ctx.pick('buyer-name')
+  ok(/field/.test(ctx.whyNotGroup.value), 'grouping a field is refused with the reason')
+  ok(/field/.test(ctx.whyNotFlip.value), 'and so is mirroring one')
+
+  // Copy and paste.
+  const before = { e: ctx.design.value.elements.length, d: ctx.design.value.decorations.length }
+  ctx.sel.value = 'book-main'
+  ctx.also.value = [placed[0].id]
+  ctx.copyPicked()
+  ctx.pastePicked()
+  eq(ctx.design.value.elements.length, before.e + 1, 'paste adds the copied field')
+  eq(ctx.design.value.decorations.length, before.d + 1, 'and the copied shape')
+  const pastedEl = ctx.design.value.elements[ctx.design.value.elements.length - 1]
+  ok(pastedEl.id !== 'book-main' && pastedEl.after === '', 'the pasted field is new and flows after nothing')
+  ok(ids().includes(pastedEl.id), 'and what was pasted is what is selected afterwards')
+
+  // The cap, and the refusal counted rather than silent.
+  const filler = Array.from({ length: 59 - ctx.design.value.decorations.length },
+    (_, i) => normalDecoration({ id: `d-fill-${i}`, kind: 'rect' }))
+  ctx.design.value.decorations = [...ctx.design.value.decorations, ...filler]
+  ctx.clip.value = { elements: [], decorations: placed.map((d) => ({ ...d })) }
+  ctx.pastePicked()
+  eq(ctx.design.value.decorations.length, 60, 'a paste stops at the sixty a ticket holds')
+
+  // Mirroring a selection turns it over as one.
+  const m1 = normalDecoration({ id: 'd-m1', kind: 'rect', box: { left: 0.1, top: 0.1, width: 0.1, height: 0.1 } })
+  const m2 = normalDecoration({ id: 'd-m2', kind: 'rect', box: { left: 0.3, top: 0.1, width: 0.1, height: 0.1 } })
+  ctx.design.value.decorations = [m1, m2]
+  ctx.sel.value = 'd-m1'
+  ctx.also.value = ['d-m2']
+  ctx.flipPicked('across')
+  const [f1, f2] = ctx.design.value.decorations
+  ok(f1.flipX && f2.flipX, 'both shapes are mirrored')
+  ok(Math.abs(f1.box.left - 0.3) < 1e-9 && Math.abs(f2.box.left - 0.1) < 1e-9,
+    'and they swap places within the box they share, rather than each flipping where it stands')
+
+  // A pinned field stays put.
+  const pinned = ctx.design.value.elements.find((e) => e.id === 'number-main')
+  pinned.locked = true
+  const at = pinned.box.left
+  ctx.sel.value = 'number-main'
+  ctx.also.value = []
+  ctx.onKey({ key: 'ArrowRight', shiftKey: true, preventDefault() {} })
+  eq(pinned.box.left, at, 'an arrow key does not move a pinned field')
+  ctx.startMove(pinned, { stopPropagation() {}, shiftKey: false, metaKey: false, currentTarget: {}, pointerId: 1, clientX: 0, clientY: 0 })
+  ok(!ctx.drag.value, 'and a drag does not start on one')
+
+  await cleanup()
+}
+
+console.log('several things selected get a panel of their own, and the rail its new tools')
+{
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => {
+      await b.load(); b.tab.value = 'place'
+      b.sel.value = 'buyer-name'
+      b.also.value = ['buyer-phone', 'buyer-address']
+    },
+    renderReal: ['SelectionInspector.vue', 'ToolBar.vue', 'ToolButton.vue'],
+  })
+  const text = visibleText(html)
+  ok(/3 selected/.test(text), 'the panel says how many are selected')
+  ok(/Buyer's name/.test(text) && /Phone/.test(text) && /Address/.test(text), 'and names every one of them')
+  for (const t of ['Flip across', 'Flip down', 'Group', 'Ungroup']) {
+    const m = html.match(new RegExp(`<button[^>]*aria-label="${t}"[^>]*>`))
+    ok(m, `the rail has "${t}"`)
+    ok(m && /disabled/.test(m[0]) && /title="[^"]+"/.test(m[0]),
+      `"${t}" is disabled with a reason when only fields are selected`)
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

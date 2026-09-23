@@ -43,6 +43,7 @@ export {
   BLENDS,
   MAX_DECORATIONS,
   nextDecoId,
+  nextGroupId,
   normalDecoration,
   normalDecorations,
   faultsIn,
