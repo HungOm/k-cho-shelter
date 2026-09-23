@@ -1527,5 +1527,72 @@ console.log('a refused card save keeps the work, and the card refuses before the
   await card.cleanup()
 }
 
+/*
+ * SHIFT IN THE LAYER LIST SELECTS A RANGE.
+ *
+ * REPORTED TWICE, the second time as "multi-select still not working". Both
+ * things the user named existed — a band drag over the artboard returns
+ * everything inside it, and shift on the CANVAS toggles one shape — and I
+ * proved both by driving the handlers before changing anything. What did not
+ * exist is the one people reach for with sixty rows in the rail: click a row,
+ * shift-click another, take everything between. The rail passed shiftKey into
+ * `pick`'s `add`, which toggles a single row, so selecting rows 5 to 40 was
+ * thirty-six clicks and read as multi-select being broken.
+ *
+ * WHY THIS AND NOT A RENDER TEST. The order a range runs in is the order the
+ * rail DRAWS — back to front — and the arithmetic has to survive a click that
+ * runs up the list as well as down. Driving pickRow reaches both directions;
+ * a rendered click reaches one.
+ */
+console.log('shift-clicking two rows selects everything between them')
+{
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  /* A design straight in, rather than driven through a load: this block is
+     about the arithmetic of a range, and what put the rows there does not
+     change what a shift-click between two of them should select. */
+  ctx.design.value = {
+    elements: [],
+    decorations: Array.from({ length: 8 }, (_, i) => ({
+      id: 'r' + i, kind: 'rect', box: { left: 0.05 * i, top: 0.1, width: 0.04, height: 0.1 },
+    })),
+  }
+  await Promise.resolve()
+
+  /* Asserted before it is read, so a build without range selection FAILS
+     rather than throwing: an uncaught TypeError kills the suite before its
+     summary, and run.sh reads a missing summary as no line rather than a
+     failure. */
+  ok(!!ctx.drawnOrder && !!ctx.pickRow, 'the rail knows the order its rows are drawn in')
+  const order = ctx.drawnOrder?.value ?? []
+  const row = (id, e) => ctx.pickRow?.(id, e, order)
+  eq(order.length, 8, 'the rail lists all eight drawings')
+  const ev = (o = {}) => ({ shiftKey: false, metaKey: false, ctrlKey: false, ...o })
+
+  row('r2', ev())
+  eq(ctx.picked.value.length, 1, 'a plain click selects one row')
+
+  row('r5', ev({ shiftKey: true }))
+  eq(ctx.picked.value.length, 4, 'shift-click takes the run between the two rows')
+  for (const id of ['r2', 'r3', 'r4', 'r5']) {
+    ok(ctx.picked.value.includes(id), `and ${id} is in it`)
+  }
+
+  /* UP THE LIST TOO. A range that only works downward is the version somebody
+     writes first, and it passes any test that clicks in one direction. */
+  row('r6', ev())
+  row('r3', ev({ shiftKey: true }))
+  eq(ctx.picked.value.length, 4, 'a range running the other way is the same range')
+
+  /*
+   * AND THE ANCHOR IS THE LAST PLAIN CLICK, not the last selection of any
+   * kind — otherwise a second shift-click walks the range along instead of
+   * growing it from where the user started.
+   */
+  row('r1', ev({ shiftKey: true }))
+  eq(ctx.picked.value.length, 6, 'a second shift-click re-reaches from the same anchor')
+
+  cleanup()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

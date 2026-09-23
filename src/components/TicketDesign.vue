@@ -690,6 +690,51 @@ function pick(id, add = false, solo = false) {
 }
 
 /*
+ * SHIFT IN A LIST IS A RANGE, WHICH IS WHAT EVERY LIST ON EARTH DOES.
+ *
+ * Reported twice: "no group selection … can we add it?" and then "multi-select
+ * still not working". Both mechanisms it names were already there and I proved
+ * it by driving them — a band drag over two shapes returns both, and shift on
+ * the canvas toggles. What was missing is the one people reach for with sixty
+ * rows in front of them: click a row, shift-click another, get everything
+ * between. The rail passed `$event.shiftKey` straight into `pick`'s `add`,
+ * which toggles ONE row. Selecting rows 5 to 40 was thirty-six clicks.
+ *
+ * THE ANCHOR IS THE LAST ROW CLICKED WITHOUT SHIFT, which is the rule Finder,
+ * Explorer, Figma and Photoshop all use, so nobody has to learn it.
+ *
+ * WITHIN ONE LIST ONLY. The fields and the drawings are two rails with two
+ * orders; a range that crossed them would select by an adjacency that exists
+ * nowhere on screen. An anchor in the other list falls back to the old toggle
+ * rather than doing something surprising.
+ *
+ * ⌘-CLICK IS UNTOUCHED. It reaches one part inside a group and is documented
+ * in the shortcut sheet, so it is not free to become "toggle". Toggling a
+ * single thing out of a selection is still shift-click ON THE CANVAS, which is
+ * what `addToSelection` in studiokeys.js has always described.
+ */
+const rangeAnchor = ref('')
+
+function pickRow(id, ev, order, solo = false) {
+  const add = !!ev.shiftKey
+  if (add && rangeAnchor.value && rangeAnchor.value !== id) {
+    const a = order.indexOf(rangeAnchor.value)
+    const b = order.indexOf(id)
+    if (a >= 0 && b >= 0) {
+      const run = order.slice(Math.min(a, b), Math.max(a, b) + 1)
+      sel.value = id
+      also.value = run.filter((x) => x !== id)
+      nextTick(scrollSelectionIntoView)
+      return
+    }
+  }
+  /* A plain click moves the anchor; a shift-click with nowhere to reach from
+     leaves it, so the next shift-click still has somewhere to start. */
+  if (!add) rangeAnchor.value = id
+  pick(id, add, solo)
+}
+
+/*
  * ---------- arranging what is already there ----------
  *
  * The arithmetic is in src/lib/arrange.js and is shared with the card tab; what
@@ -1100,6 +1145,16 @@ const decoName = drawingName
  */
 const openGroups = ref(new Set())
 const drawnRows = computed(() => layerRows(decorations.value, { open: openGroups.value, picked: picked.value }))
+
+/* The rails' visible order, which is the order a range runs in — see pickRow.
+   Declared BELOW `drawnRows` rather than beside pickRow, because a computed
+   reading a ref declared four hundred lines later survives only on laziness,
+   and a060dfb fixed a watcher in Admin.vue that had the same shape and did not.
+   Elements are drawn per half; the drawings list is whatever layerRows decided,
+   including collapsed group rows, so a range over a collapsed group takes the
+   group and not its hidden members. */
+const fieldOrder = computed(() => HALVES.flatMap((g) => (byHalf.value[g.k] || []).map((el) => el.id)))
+const drawnOrder = computed(() => drawnRows.value.map((r) => r.id))
 function toggleOpen(g) {
   const next = new Set(openGroups.value)
   if (next.has(g)) next.delete(g); else next.add(g)
@@ -3384,7 +3439,7 @@ const printedSize = computed(() => {
                     <Icon :name="KIND_ICON[el.kind]" :size="15" class="kind"
                           :class="el.kind" :title="KIND_WORD[el.kind]" />
                     <button type="button" class="elname"
-                            @click="pick(el.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)">{{ nameOf(el) }}</button>
+                            @click="pickRow(el.id, $event, fieldOrder, $event.metaKey || $event.ctrlKey)">{{ nameOf(el) }}</button>
                     <span v-if="trouble(el)" class="warnmark"
                           :title="`${nameOf(el)} ${trouble(el)}`">!</span>
                     <!-- The same pin the drawn shapes carry, and the same
@@ -3441,7 +3496,7 @@ const printedSize = computed(() => {
                       <Icon name="group" :size="15" class="kind" title="Group" />
                       <button type="button" class="elname"
                               :title="`Select all ${r.members.length} — double-click one on the ticket to work on it alone`"
-                              @click="pick(r.members[0].id, $event.shiftKey)">{{ r.label }}</button>
+                              @click="pickRow(r.members[0].id, $event, drawnOrder)">{{ r.label }}</button>
                       <ToolButton :icon="r.pinned ? 'lock' : 'position'"
                                   :label="r.pinned ? `Unpin ${r.label}` : `Pin ${r.label}`"
                                   :active="r.pinned" :size="15"
@@ -3458,7 +3513,7 @@ const printedSize = computed(() => {
                            @keydown.escape.stop="renaming = ''"
                            @blur="commitRename(r.deco, $event.target.value)">
                     <button v-else type="button" class="elname" title="Double-click to rename"
-                            @click="pick(r.id, $event.shiftKey, r.depth === 1 || $event.metaKey || $event.ctrlKey)"
+                            @click="pickRow(r.id, $event, drawnOrder, r.depth === 1 || $event.metaKey || $event.ctrlKey)"
                             @dblclick="renaming = r.id">{{ decoName(r.deco) }}</button>
                     <!--
                       PINNED, NOT LOCKED-OUT. A drawn background is the thing
