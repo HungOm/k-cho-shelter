@@ -3161,7 +3161,6 @@ const printedSize = computed(() => {
 .readout b { color: var(--text) }
 
 /* ---- the panel ---- */
-.panelhead h3 { margin: 2px 0 0; font-size: .95rem }
 /* Paper is chosen by its shape, so the shapes are the control. */
 /*
  * Orientation uses the segmented control this screen already has — .seg with
@@ -3184,15 +3183,19 @@ const printedSize = computed(() => {
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--border)) }
 .wide { width: 100% }
 
-/* The one answer the panel exists to give, so it is the one block with a fill. */
+/*
+ * The one answer the panel exists to give, so it is the one block with a fill.
+ *
+ * `.report p` was here too and could never have matched: Vue scopes only the
+ * LAST compound selector, so it compiled to `p[data-v-TicketDesign]` and the
+ * <p> is in Inspector.vue carrying Inspector's id. An ancestor may come from
+ * anywhere above in the DOM; the last element may not. Inspector has its own
+ * copy, which is the one that has been doing the work.
+ */
 .report { border-radius: 8px; padding: 8px 10px; font-size: .76rem }
-.report p { margin: 3px 0 0 }
 .report.ok { background: var(--ok-soft); color: var(--ok) }
 .report.warn { background: var(--warn-soft); color: var(--warn) }
 .report.info { background: var(--info-soft); color: var(--info) }
-
-/* ---- templates list ---- */
-.tlist p { margin: 0 }
 
 /* ---- the artwork verdict ---- */
 /* The magnitude before the precision: the figure is what the eye lands on and
@@ -3206,12 +3209,6 @@ const printedSize = computed(() => {
  * fields, and get what a column of numbers needs: one alignment and figures
  * that line up.
  */
-.sgrid input {
-  min-height: 30px; padding: 3px 6px; text-align: right; font-size: 12px;
-  font-family: var(--font-data); font-variant-numeric: tabular-nums;
-}
-.sgrid .wrap input[type=number] { padding-right: 30px }
-.sgrid .unit { font-size: .66rem }
 
 /* The arithmetic is how you check the answer, so it sits under it and quiet. */
 

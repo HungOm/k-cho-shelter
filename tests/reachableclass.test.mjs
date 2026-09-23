@@ -88,12 +88,6 @@ const KNOWN_DEAD = new Set([
   'components/Money.vue .recon b',
   'components/Money.vue .recon b.owed',
   'components/Money.vue .recon .op',
-  'components/TicketDesign.vue .panelhead h3',
-  'components/TicketDesign.vue .report p',
-  'components/TicketDesign.vue .tlist p',
-  'components/TicketDesign.vue .sgrid input',
-  'components/TicketDesign.vue .sgrid .wrap input[type=number]',
-  'components/TicketDesign.vue .sgrid .unit',
 ])
 
 function vues(dir, out = []) {
