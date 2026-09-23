@@ -16,6 +16,7 @@
  * before any artwork exists and after.
  */
 import { renderScreen, visibleText, setupOf } from './screen.mjs'
+import { normalDecoration } from '../src/lib/designelements.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -630,6 +631,107 @@ console.log('the grid snaps in millimetres, which is not the same share on both 
   near(ctx.snapX(g + 0.0005, [g + 0.0035]), g, 'and it is the grid when the grid is nearer')
 
   await cleanup()
+}
+
+console.log('a selection is one thing, whichever lists its members came from')
+{
+  /*
+   * FOUR PLACES THE SHELL ONLY EVER LOOKED AT FIELDS, all found by placing a
+   * four-part library shape and working with it (STUDIO-ESSENTIALS D1–D4):
+   *
+   *   a drag moved the fields in a selection and left the drawn shapes behind,
+   *     so a placed library shape came apart on its first drag;
+   *   ⌘A selected every field and no drawn shape;
+   *   the arrow keys moved the primary and not the rest of the selection;
+   *   "Save · N" counted fields and never shapes, so a design with only new
+   *     shapes in it showed a clean button beside a status saying "edited".
+   *
+   * Driven through the handlers themselves, because each of these is a
+   * decision about WHICH boxes, and the only way to see it is to press the key.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ctx.tab.value = 'place'
+
+  const d1 = normalDecoration({ id: 'd-test-1', kind: 'rect', box: { left: 0.1, top: 0.1, width: 0.1, height: 0.1 } })
+  const d2 = normalDecoration({ id: 'd-test-2', kind: 'rect', box: { left: 0.3, top: 0.3, width: 0.1, height: 0.1 } })
+  ctx.design.value.decorations = [d1, d2]
+  const deco = (id) => ctx.design.value.decorations.find((d) => d.id === id)
+  const el = ctx.design.value.elements.find((e) => e.id === 'buyer-name')
+  ok(el && deco('d-test-1'), 'the fixture has a field and two drawn shapes to select')
+
+  // The save count sees drawn shapes.
+  ok(ctx.changeCount.value >= 2, `two new shapes count as two changes (got ${ctx.changeCount.value})`)
+
+  // ⌘A takes both lists.
+  const key = (k, mods = {}) => ({ key: k, metaKey: false, ctrlKey: false, shiftKey: false,
+    target: null, preventDefault() {}, ...mods })
+  ctx.onFocusKey(key('a', { metaKey: true }))
+  ok(ctx.picked.value.includes('d-test-1') && ctx.picked.value.includes('d-test-2'),
+    '⌘A selects the drawn shapes as well as the fields')
+  ok(ctx.picked.value.includes('buyer-name'), 'and still the fields')
+
+  // A drag carries every member.
+  ctx.sel.value = 'buyer-name'
+  ctx.also.value = ['d-test-1']
+  const ev = { stopPropagation() {}, shiftKey: false, metaKey: false,
+    currentTarget: {}, pointerId: 1, clientX: 0, clientY: 0 }
+  ctx.startMove(el, ev)
+  const carried = (ctx.drag.value?.group || []).map((g) => g.id)
+  ok(carried.includes('d-test-1'), 'a drag started on a field carries the drawn shape selected with it')
+  ctx.drag.value = null
+
+  // A pinned member stays where it was pinned.
+  deco('d-test-1').locked = true
+  ctx.startMove(el, ev)
+  ok(!(ctx.drag.value?.group || []).some((g) => g.id === 'd-test-1'),
+    'but not a pinned one, which stays put the same as when it is dragged alone')
+  ctx.drag.value = null
+  deco('d-test-1').locked = false
+
+  // Snap candidates come from both lists, and never from anything moving.
+  const { xs } = ctx.edgesExcept(new Set(['buyer-name', 'd-test-1']))
+  ok(xs.includes(0.3), 'a moving box can snap to the edge of a drawn shape')
+  ok(!xs.includes(0.1), 'and not to the edge of a shape travelling with it')
+
+  // The arrow keys move the selection as one, and clamp it as one.
+  const before = [el.box.left, deco('d-test-1').box.left]
+  ctx.onKey(key('ArrowRight'))
+  const moved = [el.box.left - before[0], deco('d-test-1').box.left - before[1]]
+  ok(Math.abs(moved[0] - 0.001) < 1e-9 && Math.abs(moved[1] - 0.001) < 1e-9,
+    `an arrow moves the field and the shape by the same step (moved ${moved.map((m) => m.toFixed(4))})`)
+
+  el.box.left = 1 - el.box.width - 0.0004
+  const at = [el.box.left, deco('d-test-1').box.left]
+  ctx.onKey(key('ArrowRight'))
+  const step = [el.box.left - at[0], deco('d-test-1').box.left - at[1]]
+  ok(Math.abs(step[0] - step[1]) < 1e-9 && step[0] > 0 && step[0] < 0.001,
+    `at the edge the whole selection stops short together rather than shearing (${step.map((m) => m.toFixed(5))})`)
+
+  await cleanup()
+}
+
+console.log('the arrange rail offers all six edges and all four stacking moves')
+{
+  /*
+   * arrange.js has aligned to six edges and stacked four ways since it was
+   * written; the rail offered three and three, so lining type up on one
+   * baseline — the commonest thing done to a ticket — had no button. Each tool
+   * must be present AND, with nothing selected, disabled with its reason: a
+   * rail of live buttons that do nothing is the thing permissionui forbids.
+   */
+  const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
+    drive: async (b) => { await b.load(); b.tab.value = 'place' },
+    renderReal: ['ToolBar.vue', 'ToolButton.vue'],
+  })
+  const tools = ['Align left', 'Centre across', 'Align right', 'Align top', 'Centre down',
+    'Align bottom', 'Bring forward', 'Send backward', 'Bring to front', 'Send to back']
+  for (const t of tools) {
+    const m = html.match(new RegExp(`<button[^>]*aria-label="${t}"[^>]*>`))
+    ok(m, `the rail has "${t}"`)
+    ok(m && /disabled/.test(m[0]) && /title="Nothing is selected"/.test(m[0]),
+      `"${t}" is disabled with its reason while nothing is selected`)
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

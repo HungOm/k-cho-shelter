@@ -332,6 +332,29 @@ Run §1 first, then the clause for what the unit is.
 - Distinct from its neighbours (R4/P2).
 - Never emoji.
 
+### Tool, inspector control, canvas overlay — the Ticket Studio
+
+A desk tool used at a desk, so `--tap` does not apply (§5.4); 32 px is the
+floor for a pointer. Each line below is asserted by both books; rules only one
+book states live in `STUDIO-ESSENTIALS.md` §3 as studio practice, not here.
+
+- **State is never colour alone.** A pressed tool changes shape as well as hue
+  (`ToolButton` fills when it has no word), and a show/hide control changes its
+  drawing with its state. *(Refactoring UI p166; Designing UI p286–287.)*
+- **A few visual choices are shown, not hidden in a dropdown.** Five options or
+  fewer are a segment or a row of tools, each drawn as what it chooses — a
+  typeface in its own face. *(Designing UI p246; Refactoring UI p242–245; with R4.)*
+- **One command, one control, on every panel that offers it.** Lettering,
+  alignment and bold are `Lettering.vue` on all three inspectors, with the
+  face NAMES passed in, because the printed and digital names differ on purpose
+  (R9). *(Refactoring UI p28–32 "limit your choices"; Designing UI p360 internal consistency.)*
+- **Depth by elevation, not by borders.** The rail sits back (`--bg`), the
+  inspector forward (`--elev-2`), the artboard at full strength; a lifted thing
+  takes a higher `--elev-*`, never a new shadow. *(Refactoring UI p180–183; Designing UI p89–91; with
+  R2.)*
+- **Text on any tool surface is 4.5:1.** `--muted-2` is for glyphs and rules,
+  never a caption. *(Refactoring UI p162; Designing UI p98.)*
+
 ---
 
 ## 3. Numbers are the product

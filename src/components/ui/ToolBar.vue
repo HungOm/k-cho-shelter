@@ -49,7 +49,7 @@ defineProps({
 
 <style scoped>
 .toolbar {
-  display: flex; align-items: center; gap: 2px;
+  display: flex; align-items: center; gap: var(--sp-1);
   flex-wrap: wrap; min-width: 0;
 }
 .toolbar.down { flex-direction: column; flex-wrap: nowrap; }
@@ -62,14 +62,14 @@ defineProps({
  * one place a scoped stylesheet legitimately reaches past itself.
  */
 .toolbar :deep(.tgroup) {
-  display: flex; align-items: center; gap: 2px; min-width: 0;
+  display: flex; align-items: center; gap: var(--sp-1); min-width: 0;
 }
 .toolbar :deep(.tgroup + .tgroup) {
-  margin-left: 7px; padding-left: 7px; border-left: 1px solid var(--border);
+  margin-left: var(--sp-3); padding-left: var(--sp-3); border-left: var(--rule) solid var(--border);
 }
 .toolbar.down :deep(.tgroup) { flex-direction: column; }
 .toolbar.down :deep(.tgroup + .tgroup) {
-  margin: 7px 0 0; padding: 7px 0 0;
-  border-left: 0; border-top: 1px solid var(--border);
+  margin: var(--sp-3) 0 0; padding: var(--sp-3) 0 0;
+  border-left: 0; border-top: var(--rule) solid var(--border);
 }
 </style>

@@ -99,13 +99,13 @@ const tip = () => props.why || props.hint || props.label
  * a rail of icons that are each a different width is not a rail.
  */
 .tool {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-3);
   width: 32px; height: 32px; padding: 0;
-  border: 0; border-radius: 8px; background: none;
-  color: var(--muted); font-size: .74rem; font-weight: 600;
+  border: 0; border-radius: var(--r-md); background: none;
+  color: var(--muted); font-size: var(--fs-2xs); font-weight: var(--fw-medium);
   cursor: pointer;
 }
-.tool.wide { width: auto; padding: 0 9px; }
+.tool.wide { width: auto; padding: 0 var(--sp-4); }
 .tool:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 /*
  * ON IS AN INK — AND A FILL AS WELL, BUT ONLY WHEN THERE IS NO WORD.

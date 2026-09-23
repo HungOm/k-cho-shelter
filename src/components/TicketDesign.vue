@@ -59,6 +59,7 @@ import { resolveParts, standardParts, layoutFrom, CARD_TREATMENTS } from '../lib
  */
 import {
   FAMILIES, lockAxis, keepRatio, nameOf, normalElement, nextId, legacyFromElements,
+  validateElements,
 } from '../lib/ticketelements.js'
 import {
   EDGES, boundsOf, alignBoxes, distributeBoxes, orderMoved, offsetBox,
@@ -816,6 +817,30 @@ function decoName(d) {
   return decoWord(d?.kind)
 }
 
+/*
+ * THE SIX ALIGNMENTS, as data so the two rows cannot drift apart in wording.
+ * `one` is what a single box does (it goes to the edge of the TICKET); `many`
+ * is what a selection does (its members go to the edge of their own bounds) —
+ * the distinction arrange.js's boundsOf draws, said in the hint.
+ */
+const ALIGN_ACROSS = [
+  { edge: 'left', icon: 'alignLeft', label: 'Align left',
+    one: 'Put this box against the left edge of the ticket', many: 'Line the selected boxes up on their left edges' },
+  { edge: 'centre', icon: 'alignCentre', label: 'Centre across',
+    one: 'Centre this box across the ticket', many: 'Centre the selected boxes on each other, across' },
+  { edge: 'right', icon: 'alignRight', label: 'Align right',
+    one: 'Put this box against the right edge of the ticket', many: 'Line the selected boxes up on their right edges' },
+]
+const ALIGN_DOWN = [
+  { edge: 'top', icon: 'alignTop', label: 'Align top',
+    one: 'Put this box against the top edge of the ticket', many: 'Line the selected boxes up on their top edges' },
+  { edge: 'middle', icon: 'alignMiddle', label: 'Centre down',
+    one: 'Centre this box down the ticket', many: 'Centre the selected boxes on each other, down' },
+  { edge: 'bottom', icon: 'alignBottom', label: 'Align bottom',
+    one: 'Put this box on the bottom edge of the ticket',
+    many: 'Put the selected boxes on one line — their bottom edges, which is where the lettering sits' },
+]
+
 const whyNotOrder = computed(() => whyNoSelection.value || (mixedPick.value
   ? 'Fields and drawn shapes are two layers — everything drawn prints under every field, '
     + 'so there is no order between them to change'
@@ -1048,11 +1073,25 @@ const gridY = computed(() => {
 const snapX = (v, xs) => snapTo(v, xs, gridX.value)
 const snapY = (v, ys) => snapTo(v, ys, gridY.value)
 
-function edgesExcept(id) {
+/*
+ * WHAT A MOVING BOX MAY SNAP TO: every edge of every OTHER thing on the ticket.
+ *
+ * Two corrections to the version this replaced, both found by dragging a
+ * placed library shape. It read `elements` only, so a field could not be lined
+ * up with a drawn rule and a drawn rule could not be lined up with anything.
+ * And it excluded only the box under the pointer, so in a group drag the
+ * primary snapped to the edges of the other boxes travelling WITH it — edges
+ * that move as it moves, which is snapping to yourself.
+ *
+ * Hidden things are not candidates: an edge you cannot see is a pull you
+ * cannot explain.
+ */
+function edgesExcept(moving) {
+  const skip = moving instanceof Set ? moving : new Set([moving])
   const xs = []
   const ys = []
-  for (const e of elements.value) {
-    if (e.id === id) continue
+  for (const e of [...elements.value, ...decorations.value]) {
+    if (skip.has(e.id) || e.enabled === false) continue
     xs.push(e.box.left, e.box.left + e.box.width)
     ys.push(e.box.top, e.box.top + e.box.height)
   }
@@ -1087,7 +1126,13 @@ function startMove(el, ev) {
     /* Every box's starting position, so the delta is applied to where each one
        WAS rather than accumulating per frame. The primary is excluded — it is
        handled by the snapping path below and would otherwise move twice. */
-    group: pickedEls.value.filter((e) => e.id !== el.id).map((e) => ({ id: e.id, box: { ...e.box } })),
+    /* Of EITHER kind. This read `pickedEls`, so a selection holding drawn
+       shapes left them behind — and a library shape is several drawn shapes
+       placed as one selection, so it came apart on its first drag. A pinned
+       or hidden member stays put, the same as when it is dragged alone. */
+    group: pickedThings.value
+      .filter((t) => t.id !== el.id && !t.locked && t.enabled !== false)
+      .map((t) => ({ id: t.id, box: { ...t.box } })),
   }
 }
 
@@ -1148,7 +1193,7 @@ function onPointerMove(ev) {
   /* Either list — a drag does not care which, and `thingById` reads the id. */
   const el = thingById(st.id)
   if (!el) return
-  const { xs, ys } = edgesExcept(st.id)
+  const { xs, ys } = edgesExcept(new Set([st.id, ...(st.group || []).map((g) => g.id)]))
 
   if (st.mode === 'move') {
     const left = snapX(st.box.left + dx, xs)
@@ -1244,8 +1289,19 @@ function onKey(ev) {
   /* Either list — an arrow key nudges whatever is selected, and a decoration is
      as selectable as a field. `chosen` alone would have made the arrows work on
      fields and silently do nothing on shapes. */
-  const el = thingById(sel.value)
-  if (!el || el.locked) return
+  /*
+   * THE SELECTION MOVES, NOT ONLY ITS PRIMARY. A drag already moved all of it
+   * and the arrow keys moved one box, so nudging three aligned fields by a
+   * millimetre took them out of alignment — the one thing a nudge is for.
+   *
+   * The step is clamped ONCE, for the whole selection, to what the most
+   * constrained member allows; clamping each box on its own would let the
+   * others carry on past the one that stopped at the edge, and the group
+   * would shear. Fields stay on the artwork; drawn shapes may hang off it,
+   * within the limits the model gives them.
+   */
+  const movers = pickedThings.value.filter((t) => !t.locked && t.enabled !== false)
+  if (!movers.length) return
   const step = ev.shiftKey ? 0.01 : 0.001
   const map = {
     ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
@@ -1253,8 +1309,16 @@ function onKey(ev) {
   const d = map[ev.key]
   if (!d) return
   ev.preventDefault()
-  el.box.left = Math.max(0, Math.min(1 - el.box.width, el.box.left + d[0]))
-  el.box.top = Math.max(0, Math.min(1 - el.box.height, el.box.top + d[1]))
+  let [dx, dy] = d
+  for (const t of movers) {
+    const [lo, hi] = isDeco(t.id) ? [-1, 2] : [0, 1]
+    dx = Math.max(lo - t.box.left, Math.min(hi - t.box.width - t.box.left, dx))
+    dy = Math.max(lo - t.box.top, Math.min(hi - t.box.height - t.box.top, dy))
+  }
+  for (const t of movers) {
+    t.box.left = Math.round((t.box.left + dx) * 1e7) / 1e7
+    t.box.top = Math.round((t.box.top + dy) * 1e7) / 1e7
+  }
 }
 
 /* ---------- readouts ---------- */
@@ -1472,7 +1536,8 @@ function onFocusKey(e) {
     e.preventDefault()
     /* Everything that is on the ticket. A hidden element selected by ⌘A is one
        that arrange tools would move where nobody can see it happen. */
-    const live = elements.value.filter((el) => el.enabled !== false).map((el) => el.id)
+    const live = [...elements.value, ...decorations.value]
+      .filter((t) => t.enabled !== false).map((t) => t.id)
     sel.value = live[0] || ''
     also.value = live.slice(1)
     return
@@ -1544,6 +1609,13 @@ const changeCount = computed(() => {
   let n = 0
   for (const [id, k] of mine) if (theirs.get(id) !== k) n += 1
   for (const id of theirs.keys()) if (!mine.has(id)) n += 1
+  /* Drawn shapes count the same way. Without this pass a design with ten new
+     shapes and nothing else read "Save the design" — a clean button over a
+     dirty design, beside a status that said "edited". */
+  const dMine = new Map((now.decorations ?? []).map((d) => [d.id, key(d)]))
+  const dTheirs = new Map((was.decorations ?? []).map((d) => [d.id, key(d)]))
+  for (const [id, k] of dMine) if (dTheirs.get(id) !== k) n += 1
+  for (const id of dTheirs.keys()) if (!dMine.has(id)) n += 1
   if (now.stubAt !== was.stubAt) n += 1
   if (JSON.stringify(now.sheet) !== JSON.stringify(was.sheet)) n += 1
   return n
@@ -1816,6 +1888,25 @@ const swatches = computed(() => {
   if (!p) return []
   return [...new Set([p.accent, p.ink, p.paper].filter(usable))]
 })
+
+/*
+ * THE RAFFLE'S OWN COLOUR, OFFERED WHERE INK IS CHOSEN. It is set once in
+ * Setup and was nowhere in this studio, so matching a printed heading to the
+ * colour the app, the check page and the digital ticket already wear meant
+ * reading a hex off another screen and typing it. Offered, not applied — the
+ * ticket's ink stays the organiser's choice.
+ */
+const brandInk = computed(() => {
+  const c = state.cfg?.brandColor
+  return usable(c) ? String(c).toUpperCase() : ''
+})
+
+/* What the selected field itself gets wrong, beside it rather than at the foot
+   of the canvas. Validated alone — `after` dropped, because whether its anchor
+   still exists is a fact about the list, which the canvas foot still reports. */
+const chosenFaults = computed(() => (chosen.value && design.value
+  ? validateElements([{ ...chosen.value, after: '' }], stubShare(design.value))
+  : []))
 
 const canDrop = typeof window !== 'undefined' && 'EyeDropper' in window
 
@@ -2333,8 +2424,18 @@ const printedSize = computed(() => {
             -->
             <div class="block">
               <h3 class="rubric">Artboard</h3>
-              <label class="choice tiny"><input v-model="showAllBoxes" type="checkbox"> Every box</label>
-              <label class="choice tiny"><input v-model="realQr" type="checkbox"> Real QR</label>
+              <!-- TOOLS THAT ACT AT ONCE, so pressed buttons rather than tick
+                   boxes: a tick box says "this is applied when you submit",
+                   and nothing here is submitted. -->
+              <ToolBar label="What the artboard shows">
+                <ToolButton :icon="showAllBoxes ? 'preview' : 'previewOff'" label="Every box"
+                            wide :size="15" :active="showAllBoxes"
+                            hint="Outline every box on the ticket, not only the selected one"
+                            @click="showAllBoxes = !showAllBoxes" />
+                <ToolButton icon="code" label="Real QR" wide :size="15" :active="realQr"
+                            hint="Draw a real, scannable code in each code box rather than a placeholder"
+                            @click="realQr = !realQr" />
+              </ToolBar>
             </div>
 
             <div class="block">
@@ -2353,12 +2454,21 @@ const printedSize = computed(() => {
           <!-- ---------- the canvas ---------- -->
           <div class="stagewrap">
             <div class="stagebar">
-              <div class="zoom">
-                <button type="button" class="zbtn" title="Zoom out" @click="stepZoom(-1)">−</button>
+              <!-- THE SET'S OWN DRAWINGS, not a minus sign, a plus sign and a
+                   word — the only three controls on this bar that were typed
+                   characters beside a row of icons. -->
+              <ToolBar label="Zoom">
+                <ToolButton icon="zoomOut" label="Zoom out" :size="15"
+                            :why="zoom <= ZOOMS[0] ? 'This is as far out as it goes' : ''"
+                            @click="stepZoom(-1)" />
                 <span class="zval">{{ Math.round(zoom * 100) }}%</span>
-                <button type="button" class="zbtn" title="Zoom in" @click="stepZoom(1)">+</button>
-                <button type="button" class="btn sm ghost" @click="fitToWidth">Fit</button>
-              </div>
+                <ToolButton icon="zoomIn" label="Zoom in" :size="15"
+                            :why="zoom >= ZOOMS[ZOOMS.length - 1] ? 'This is as far in as it goes' : ''"
+                            @click="stepZoom(1)" />
+                <ToolButton icon="fit" label="Fit" wide :size="15"
+                            hint="Fit the whole ticket to the width of the canvas"
+                            @click="fitToWidth" />
+              </ToolBar>
               <span class="grow"></span>
               <!--
                 THE ARTBOARD'S OWN NUMBERS: "190.0 × 61.5 mm · 2244 × 726 px ·
@@ -2450,38 +2560,44 @@ const printedSize = computed(() => {
             -->
             <div class="withrail">
             <ToolBar label="Arrange" vertical>
+              <!--
+                SIX EDGES IN TWO ROWS OF THREE, each its own drawing. arrange.js
+                has aligned to all six since it was written; the rail offered
+                three, under three drawings borrowed from unrelated tools, so
+                "put these on one baseline" — the commonest thing done to type
+                on a ticket — had no button.
+              -->
               <span class="tgroup">
-                <ToolButton icon="align" label="Align left" :why="whyNoSelection"
-                            :hint="many ? 'Line the selected boxes up on their left edges'
-                                        : 'Put this box against the left edge of the ticket'"
-                            @click="alignPicked('left')" />
-                <ToolButton icon="position" label="Centre across" :why="whyNoSelection"
-                            :hint="many ? 'Centre the selected boxes on each other, across'
-                                        : 'Centre this box across the ticket'"
-                            @click="alignPicked('centre')" />
-                <ToolButton icon="size" label="Centre down" :why="whyNoSelection"
-                            :hint="many ? 'Centre the selected boxes on each other, down'
-                                        : 'Centre this box down the ticket'"
-                            @click="alignPicked('middle')" />
+                <ToolButton v-for="a in ALIGN_ACROSS" :key="a.edge" :icon="a.icon" :label="a.label"
+                            :why="whyNoSelection" :hint="many ? a.many : a.one"
+                            @click="alignPicked(a.edge)" />
+              </span>
+              <span class="tgroup">
+                <ToolButton v-for="a in ALIGN_DOWN" :key="a.edge" :icon="a.icon" :label="a.label"
+                            :why="whyNoSelection" :hint="many ? a.many : a.one"
+                            @click="alignPicked(a.edge)" />
               </span>
               <span class="tgroup">
                 <ToolButton icon="distribute" label="Space across" :why="whyNotDistribute"
                             hint="Even gaps between the selected boxes, left to right. The outermost two stay where they are."
                             @click="distributePicked('across')" />
-                <ToolButton icon="margins" label="Space down" :why="whyNotDistribute"
+                <ToolButton icon="distributeV" label="Space down" :why="whyNotDistribute"
                             hint="Even gaps between the selected boxes, top to bottom"
                             @click="distributePicked('down')" />
               </span>
               <span class="tgroup">
-                <ToolButton icon="arrowUp" label="Bring forward" :why="whyNoSelection"
+                <ToolButton icon="arrowUp" label="Bring forward" :why="whyNotOrder"
                             hint="One place nearer the front, so it prints over what it overlaps"
                             @click="orderPicked('forward')" />
-                <ToolButton icon="arrowDown" label="Send backward" :why="whyNoSelection"
+                <ToolButton icon="arrowDown" label="Send backward" :why="whyNotOrder"
                             hint="One place further back"
                             @click="orderPicked('backward')" />
-                <ToolButton icon="layers" label="Bring to front" :why="whyNoSelection"
+                <ToolButton icon="layers" label="Bring to front" :why="whyNotOrder"
                             hint="All the way to the front of the stack"
                             @click="orderPicked('front')" />
+                <ToolButton icon="toBack" label="Send to back" :why="whyNotOrder"
+                            hint="All the way to the back, so everything it overlaps prints over it"
+                            @click="orderPicked('back')" />
               </span>
               <span class="tgroup">
                 <ToolButton icon="duplicate" label="Duplicate" :why="whyNoSelection"
@@ -2626,7 +2742,7 @@ const printedSize = computed(() => {
           <DecorationInspector
             v-if="chosenDeco"
             :deco="chosenDeco" :size="{ width: active.width, height: active.height }"
-            :swatches="swatches" :can-drop="canDrop"
+            :swatches="swatches" :brand="brandInk" :can-drop="canDrop"
             :warnings="risksFor(chosenDeco)"
             @mark="mark" @pick-colour="dropper" />
           <Inspector v-else :element="chosen" :report="fitReport"
@@ -2634,7 +2750,8 @@ const printedSize = computed(() => {
                      :qr-density="qrDensity"
                      :half="chosenHalf"
                      :in-pixels="inPixels" :mm-per="mmPer"
-                     :swatches="swatches" :can-drop="canDrop"
+                     :swatches="swatches" :brand="brandInk" :can-drop="canDrop"
+                     :faults="chosenFaults"
                      @pick-colour="dropper" @remove="removeElement" />
         </template>
 
@@ -2660,7 +2777,9 @@ const printedSize = computed(() => {
           <template v-if="active && design">
             <div class="stagebar">
               <b class="mono tiny">{{ active.name }}</b>
-              <label class="choice tiny"><input v-model="showGuides" type="checkbox"> Measuring guides</label>
+              <ToolButton icon="ruler" label="Measuring guides" wide :size="15" :active="showGuides"
+                          hint="Draw each field's measured box and baseline over the artwork"
+                          @click="showGuides = !showGuides" />
               <span class="grow"></span>
               <span class="tiny muted mono">
                 measured {{ Number(design.sheet.widthMM).toFixed(1) }} ×
@@ -2900,11 +3019,12 @@ const printedSize = computed(() => {
  */
 .tabbtn {
   border: 0; background: none; color: var(--muted); cursor: pointer;
-  padding: 6px 12px; border-radius: 8px; font-size: .84rem; font-weight: 500;
+  padding: var(--sp-3) var(--sp-5); border-radius: var(--r-md);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium);
   white-space: nowrap;
 }
 .tabbtn.on { background: var(--brand); color: var(--brand-ink) }
-.tabbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
+.tabbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: var(--rule) }
 /*
  * IT SHRINKS BEFORE THE BUTTONS DO. The bar wraps, and this sentence is the
  * longest thing in it — "Edited 12:04 · not yet saved" pushed Save onto a
@@ -2996,14 +3116,8 @@ const printedSize = computed(() => {
 
 /* ---- the stage ---- */
 .stagebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap }
-.zoom { display: flex; align-items: center; gap: 4px }
-.zbtn {
-  width: 26px; height: 26px; border: 1px solid var(--border); background: var(--surface);
-  border-radius: 6px; cursor: pointer; color: var(--text); line-height: 1;
-}
-.zbtn:hover { border-color: var(--brand) }
 .zval {
-  min-width: 42px; text-align: center; font-size: .76rem;
+  min-width: 42px; text-align: center; font-size: var(--fs-2xs);
   font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
 /*

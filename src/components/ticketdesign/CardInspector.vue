@@ -25,6 +25,7 @@ import ToolBar from '../ui/ToolBar.vue'
 import ToolButton from '../ui/ToolButton.vue'
 import { FAMILIES } from '../../lib/ticketelements.js'
 import Ink from '../ui/Ink.vue'
+import Lettering from './Lettering.vue'
 
 const props = defineProps({
   /** The selected part, edited in place. Null when nothing is selected. */
@@ -54,7 +55,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:motto', 'pick-colour'])
 
-const ALIGN = [{ id: 'left', name: 'Left' }, { id: 'centre', name: 'Centre' }, { id: 'right', name: 'Right' }]
 /*
  * TWO FACES, NOT THE PRINTED SIDE'S TWO. `ticketelements.js` names them Times
  * and Padauk after the fonts, because a print shop asks which font. Nobody
@@ -192,11 +192,6 @@ const over = () => (props.motto || '').length > props.mottoMax
     </div>
 
     <div v-show="tab === 'style'" v-if="part.textual" class="pgroup">
-      <div class="seg">
-        <button v-for="a in ALIGN" :key="a.id" type="button" class="segbtn"
-                :class="{ on: part.align === a.id }"
-                @click="part.align = a.id">{{ a.name }}</button>
-      </div>
       <!--
         BLANK MEANS THE COLOUR THE CARD ALREADY PRINTS THIS IN, which is worked
         out from the raffle's colour so that the lettering is readable on it —
@@ -213,25 +208,13 @@ const over = () => (props.motto || '').length > props.mottoMax
                 @click="part.ink = ''">Back to the card's own colour</button>
         <template v-else>From the raffle's colour.</template>
       </p>
-      <div class="sitrow">
-        <label class="formrow"><span class="cap">Lettering</span>
-          <span class="wrap">
-            <!-- Each option in its own face: this is the control whose whole
-                 subject is appearance, and it named two typefaces in words. -->
-            <select v-model="part.family" class="faces">
-              <option v-for="f in FACES" :key="f.id" :value="f.id"
-                      :style="{ fontFamily: f.stack }">{{ f.name }}</option>
-            </select>
-          </span>
-        </label>
-        <label class="choice bold">
-          <input v-model="part.weight" type="checkbox" true-value="bold" false-value="regular">
-          Bold
-        </label>
-      </div>
-      <!-- The second sentence went: it said a caption keeps its own lettering,
-           which is a fact about a part nobody has selected. -->
-      <p class="say">{{ FACES.find((f) => f.id === part.family)?.why }}</p>
+      <!-- The lettering control the two printed panels use, with this panel's
+           own names for the faces — Everyday and Figures, the deliberate split
+           described above. Its `why` line comes with it. -->
+      <Lettering :faces="FACES" :family="part.family" :weight="part.weight" :align="part.align"
+                 @update:family="(v) => { part.family = v }"
+                 @update:weight="(v) => { part.weight = v }"
+                 @update:align="(v) => { part.align = v }" />
     </div>
 
     <!--
@@ -361,8 +344,6 @@ const over = () => (props.motto || '').length > props.mottoMax
 .hide:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
 
 .spread { display: flex; align-items: baseline; justify-content: space-between; gap: 8px }
-.sitrow { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: end }
-.choice.bold { padding-bottom: 6px }
 .saving { color: var(--muted) }
 
 /* The character count as a length. --brand until it is over, --bad after, which

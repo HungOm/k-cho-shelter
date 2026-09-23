@@ -154,6 +154,9 @@ const PATHS = {
   duplicate: 'M9 3.5h10A1.5 1.5 0 0 1 20.5 5v10M5 7.5h9A1.5 1.5 0 0 1 15.5 9v9a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V9A1.5 1.5 0 0 1 5 7.5Z',
   lock:      'M6.5 10.5h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1ZM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3',
   distribute:'M3.5 4.5v15M20.5 4.5v15M9 8.5h6v7H9z',
+  /* The same, turned: even gaps DOWN rather than across. It borrowed `margins`,
+     which is the print sheet's drawing for a page margin. */
+  distributeV:'M4.5 3.5h15M4.5 20.5h15M8.5 9h7v6h-7z',
 
   // --- the studio: putting it on paper ---------------------------------
   print:     'M7.5 9.5v-5h9v5M7.5 17.5H6A1.6 1.6 0 0 1 4.4 16v-4.4A1.6 1.6 0 0 1 6 10h12a1.6 1.6 0 0 1 1.6 1.6V16a1.6 1.6 0 0 1-1.6 1.5h-1.5M7.5 14.5h9v5h-9z',
@@ -226,6 +229,40 @@ const PATHS = {
    * heights, so the two read as one family.
    */
   alert:     'M12 4.2 2.6 20.3h18.8L12 4.2ZM12 10v4M12 17.5h.01',
+
+  /*
+   * LINING THINGS UP — six drawings for six commands, because they were three
+   * commands under three unrelated drawings (`align`, `position`, `size`) and
+   * the other three were not offered at all. Each is the edge being lined up
+   * to, drawn as the one long stroke, with two boxes of different lengths
+   * touching it — so the drawing IS the result: a reader can see which edge
+   * the boxes end up sharing without reading the word.
+   */
+  alignLeft:  'M4.5 4v16M8 7h11v3.5H8zM8 13.5h7V17H8z',
+  alignCentre:'M12 4v16M6.5 7h11v3.5h-11zM8.5 13.5h7V17h-7z',
+  alignRight: 'M19.5 4v16M5 7h11v3.5H5zM9 13.5h7V17H9z',
+  alignTop:   'M4 4.5h16M7 8h3.5v11H7zM13.5 8H17v7h-3.5z',
+  alignMiddle:'M4 12h16M7 6.5h3.5v11H7zM13.5 8.5H17v7h-3.5z',
+  alignBottom:'M4 19.5h16M7 5h3.5v11H7zM13.5 9H17v7h-3.5z',
+  /*
+   * WHERE THE WORDS SIT INSIDE THEIR BOX — a different command from the six
+   * above, so a different drawing: lines of type, not boxes against an edge.
+   * The two inspectors said this one in words in one panel and in a single
+   * repeated glyph in the other.
+   */
+  textLeft:   'M4.5 6.5h15M4.5 10.5h10M4.5 14.5h15M4.5 18.5h8',
+  textCentre: 'M4.5 6.5h15M7 10.5h10M4.5 14.5h15M8 18.5h8',
+  textRight:  'M4.5 6.5h15M9.5 10.5h10M4.5 14.5h15M11.5 18.5h8',
+  /*
+   * `layers` upside down: the closed sheet is the one that moved, and it is at
+   * the bottom of the stack. `layers` itself stays "bring to front".
+   */
+  toBack:     'M4.2 4.4 12 8.7l7.8-4.3M12 11.8 3.6 16.4 12 21l8.4-4.6L12 11.8Z',
+  /*
+   * Moved here from Ink.vue, where it was the one drawing in the app written
+   * inline in a component — outside this table and outside the rules above.
+   */
+  dropper:    'M15.5 3.5a2.1 2.1 0 0 1 3 3l-2 2 1 1-1.5 1.5-1-1L7 17.5 4 18l.5-3 8.5-8.5-1-1L13.5 4l1 1 1-1.5Z',
 
   /*
    * NOT A DRAWING — what is shown when a name does not exist.

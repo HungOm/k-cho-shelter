@@ -15,12 +15,12 @@
  * event, because that changes which elements exist and the parent owns the
  * list.
  *
- * THE VOCABULARY IS IMPORTED, NOT PASSED. SOURCES, FAMILIES, ALIGN and
+ * THE VOCABULARY IS IMPORTED, NOT PASSED. SOURCES, FAMILIES and
  * OVERFLOW are facts about what an element can be, not state — a parent
  * handing them down would be a parent claiming to own them.
  */
 import { ref } from 'vue'
-import { SOURCES, SOURCE, FAMILIES, ALIGN, OVERFLOW, nameOf } from '../../lib/ticketelements.js'
+import { SOURCES, SOURCE, FAMILIES, OVERFLOW, nameOf } from '../../lib/ticketelements.js'
 import ToolBar from '../ui/ToolBar.vue'
 import ToolButton from '../ui/ToolButton.vue'
 /*
@@ -38,6 +38,7 @@ import ToolButton from '../ui/ToolButton.vue'
  * <Logo> in the same file and skips <Ink> by name.
  */
 import Ink from '../ui/Ink.vue'
+import Lettering from './Lettering.vue'
 
 defineProps({
   /** The selected element, edited in place. Null when nothing is selected. */
@@ -64,6 +65,15 @@ defineProps({
   canDrop: { type: Boolean, default: false },
   /** Which half of the ticket the box sits on, in the words the list uses. */
   half: { type: String, default: '' },
+  /** The raffle's own colour from Setup, offered first under the picker. */
+  brand: { type: String, default: '' },
+  /**
+   * What is wrong with THIS element, from the validator. Shown here, above the
+   * tabs, because the canvas foot where the whole list is reported is the far
+   * side of the screen from the field somebody would fix (Designing User
+   * Interfaces p233: the error sits with its field).
+   */
+  faults: { type: Array, default: () => [] },
 })
 /*
  * `pick-colour` carries the callback rather than a colour, because the parent
@@ -128,6 +138,8 @@ const tab = ref('box')
                   :hint="`Take ${nameOf(element)} off the ticket. Tickets already printed keep it.`"
                   @click="emit('remove', element.id)" />
     </div>
+
+    <p v-for="(f, i) in faults" :key="i" class="tiny bad">{{ f }}</p>
 
     <!-- THREE QUESTIONS, IN THE ORDER SOMEBODY ASKS THEM. -->
     <ToolBar label="What to change" class="itabs">
@@ -202,37 +214,20 @@ const tab = ref('box')
     </div>
 
     <div v-show="tab === 'style'" v-if="element.kind !== 'code'" class="pgroup">
-      <div class="seg">
-        <button v-for="a in ALIGN" :key="a.id" type="button" class="segbtn"
-                :class="{ on: element.align === a.id }"
-                @click="element.align = a.id">{{ a.name }}</button>
-      </div>
       <!-- A colour needs the swatch, the hex and the dropper side by side;
            squeezed into half a 300px column the hex was truncated. -->
-      <Ink v-model="element.ink" label="Colour" :swatches="swatches"
+      <Ink v-model="element.ink" label="Colour" :swatches="swatches" :brand="brand"
            :can-drop="canDrop" @pick="emit('pick-colour', (c) => { element.ink = c })" />
-      <div class="sitrow">
-        <label class="formrow"><span class="cap">Lettering</span>
-          <span class="wrap">
-            <!--
-              EACH OPTION IN ITS OWN FACE. This is the one tool on the screen
-              whose whole subject is how something looks, and it asked which
-              typeface with two words. The picture answers "which one is this";
-              the clause below answers "when do I use it". Both, because a name
-              is what lets somebody correctly give up when neither fits.
-            -->
-            <select v-model="element.family" class="faces">
-              <option v-for="f in FAMILIES" :key="f.id" :value="f.id"
-                      :style="{ fontFamily: f.stack }">{{ f.name }}</option>
-            </select>
-          </span>
-        </label>
-        <label class="choice bold">
-          <input v-model="element.weight" type="checkbox" true-value="bold" false-value="regular">
-          Bold
-        </label>
-      </div>
-      <p class="say">{{ FAMILIES.find((f) => f.id === element.family)?.why }}</p>
+      <!--
+        EACH FACE IN ITS OWN FACE, the alignment as drawings, Bold as a pressed
+        tool — the one lettering control all three panels share, so a field, a
+        drawn word and a card part are lettered in one vocabulary.
+      -->
+      <Lettering :faces="FAMILIES" :family="element.family" :weight="element.weight"
+                 :align="element.align"
+                 @update:family="(v) => { element.family = v }"
+                 @update:weight="(v) => { element.weight = v }"
+                 @update:align="(v) => { element.align = v }" />
     </div>
 
     <div v-show="tab === 'style'" v-if="element.kind !== 'code'" class="pgroup">
@@ -282,10 +277,6 @@ const tab = ref('box')
 /* The tab strip is the panel's own control, so it sits above the first group
    rather than inside one — the same placement DecorationInspector uses. */
 .itabs { margin-bottom: var(--sp-2) }
-/* Each option draws in the face it selects. A select's own button text takes
-   the CHOSEN option's family in every engine that honours it, so the closed
-   control previews too, not just the open list. */
-.faces option { font-size: var(--fs-sm) }
 /*
  * THESE CAME BACK FROM TicketDesign.vue, stranded when this file took the
  * markup. A child's markup does not inherit a parent's scoped styles -- only
@@ -299,10 +290,6 @@ const tab = ref('box')
  * are inert, so this is the only copy that does anything.
  */
 .panelhead h3 { margin: var(--sp-1) 0 0; font-size: var(--fs-sm) }
-/* Lettering and Bold are ONE row: the checkbox belongs beside the select it
-   qualifies, not under it. Unstyled, they stacked and the panel grew 33px. */
-.sitrow { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3) var(--sp-5); align-items: end }
-.choice.bold { padding-bottom: var(--sp-3) }
 
 /* What happens to this text at its longest -- the whole point of the overflow
    group. Unstyled it was a bare sentence with no tone and no box at all. */

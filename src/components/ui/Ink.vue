@@ -13,11 +13,20 @@
  * the design, what a second artwork gets matched against, and what somebody
  * reads out when a print shop asks.
  */
+import Icon from './Icon.vue'
+
 defineProps({
   label: { type: String, default: '' },
   modelValue: { type: String, default: '#000000' },
   /* Colours read off this artwork, offered rather than described. */
   swatches: { type: Array, default: () => [] },
+  /*
+   * The raffle's own colour, from Setup — offered FIRST and apart from the
+   * artwork's, because it is a different kind of answer: not "a colour this
+   * picture happens to contain" but "the colour this raffle wears everywhere
+   * else". Empty when Setup has none, and then nothing is drawn for it.
+   */
+  brand: { type: String, default: '' },
   canDrop: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue', 'pick'])
@@ -38,45 +47,56 @@ const set = (v) => emit('update:modelValue', String(v).toUpperCase())
       <button
         v-if="canDrop" type="button" class="drop" title="Pick a colour off the ticket"
         :aria-label="`Pick ${label} off the ticket`" @click="emit('pick')">
-        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-          <path d="M15.5 3.5a2.1 2.1 0 0 1 3 3l-2 2 1 1-1.5 1.5-1-1L7 17.5 4 18l.5-3 8.5-8.5-1-1L13.5 4l1 1 1-1.5Z"
-                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-        </svg>
+        <!-- From the icon set, where every other drawing in the app lives and
+             where the icons gate can see it; this was the one written inline. -->
+        <Icon name="dropper" :size="15" />
       </button>
     </div>
 
     <!-- Read off this picture. Shown as the colours themselves, because a list
          of hex values is not a thing anybody can choose between. -->
-    <div v-if="swatches.length" class="from">
+    <div v-if="brand || swatches.length" class="from">
+      <button
+        v-if="brand" type="button" class="swatch"
+        :class="{ on: String(modelValue).toUpperCase() === brand }"
+        :style="{ background: brand }" :title="`The raffle's colour · ${brand}`"
+        :aria-label="`Use the raffle's colour, ${brand}`" @click="set(brand)"></button>
+      <span v-if="brand && !swatches.length" class="whence">the raffle's colour</span>
+      <span v-if="brand && swatches.length" class="gap"></span>
       <button
         v-for="c in swatches" :key="c" type="button" class="swatch"
         :class="{ on: String(modelValue).toUpperCase() === c }"
         :style="{ background: c }" :title="c"
         :aria-label="`Use ${c}, from the artwork`" @click="set(c)"></button>
-      <span class="note">off the artwork</span>
+      <span v-if="swatches.length" class="whence">off the artwork</span>
     </div>
   </div>
 </template>
 
 <style scoped>
 .ink { display: block }
-.cap { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px }
-.row { display: flex; align-items: center; gap: 6px }
+.cap { display: block; font-size: var(--fs-xs); color: var(--muted); margin-bottom: var(--sp-2) }
+.row { display: flex; align-items: center; gap: var(--sp-3) }
 
-.sw { width: 34px; min-width: 34px; height: 28px; min-height: 0; padding: 2px; border-radius: 3px }
+.sw { width: 34px; min-width: 34px; height: 28px; min-height: 0; padding: var(--sp-1); border-radius: var(--r-xs) }
+/* The data face, because a hex is read character by character — to a print
+   shop over the phone, among other places. */
 .hex {
-  flex: 1; min-width: 0; min-height: 28px; padding: 3px 7px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: .8rem; text-transform: uppercase; border-radius: 3px;
+  flex: 1; min-width: 0; min-height: 28px; padding: var(--sp-1) var(--sp-3);
+  font-family: var(--font-data);
+  font-size: var(--fs-xs); text-transform: uppercase; border-radius: var(--r-xs);
 }
 .drop {
   width: 28px; height: 28px; min-height: 0; padding: 0; flex: none;
   display: grid; place-items: center; cursor: pointer; color: var(--muted);
-  background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface); border: var(--rule) solid var(--border); border-radius: var(--r-xs);
 }
 .drop:hover { color: var(--brand); border-color: var(--brand) }
 
-.from { display: flex; align-items: center; gap: 4px; margin-top: 5px; flex-wrap: wrap }
+.from { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); flex-wrap: wrap }
+/* The raffle's colour and the artwork's are two answers, so a little more space
+   between them than within either (R3). */
+.gap { width: var(--sp-3) }
 /*
  * `.swatch`, NOT `.chip`, and the component's own prop is already called
  * `swatches`.
@@ -99,8 +119,16 @@ const set = (v) => emit('update:modelValue', String(v).toUpperCase())
  */
 .swatch {
   width: 20px; height: 20px; padding: 0; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 3px;
+  border: var(--rule) solid var(--border); border-radius: var(--r-xs);
 }
 .swatch.on { box-shadow: 0 0 0 2px var(--brand); border-color: var(--brand) }
-.note { font-size: .7rem; color: var(--muted) }
+/*
+ * `.whence`, NOT `.note`. `.note` is a GLOBAL rule in style.css — the app's
+ * aside, with a 12px left pad and a 2px left rule — and a scoped rule of the
+ * same name only ADDS to it. So "off the artwork" had been drawn with a stray
+ * vertical bar in front of it, a margin under it, and a padding that pushed it
+ * away from the swatches it names. Named for what it says: where these came
+ * from.
+ */
+.whence { font-size: var(--fs-3xs); color: var(--muted) }
 </style>

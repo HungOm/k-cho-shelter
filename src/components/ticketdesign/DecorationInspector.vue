@@ -27,6 +27,8 @@ import Icon from '../ui/Icon.vue'
 import Ink from '../ui/Ink.vue'
 import ToolBar from '../ui/ToolBar.vue'
 import ToolButton from '../ui/ToolButton.vue'
+import Toggle from '../ui/Toggle.vue'
+import Lettering from './Lettering.vue'
 import { PATHS } from '../../lib/iconpaths.js'
 import { BLENDS, DASHES } from '../../lib/designelements.js'
 /*
@@ -60,6 +62,8 @@ const props = defineProps({
   /** The artboard in pixels, so shares can be shown as something checkable. */
   size: { type: Object, default: () => ({ width: 1000, height: 400 }) },
   swatches: { type: Array, default: () => [] },
+  /** The raffle's own colour from Setup, offered first under every picker. */
+  brand: { type: String, default: '' },
   canDrop: { type: Boolean, default: false },
   /** What a press will not hold, for THIS shape. Printed tab only. */
   warnings: { type: Array, default: () => [] },
@@ -84,6 +88,21 @@ const FILL_ICONS = [
   { id: 'gradient', icon: 'image', name: 'Gradient' },
 ]
 const DASH_ICONS = { solid: 'minus', dashed: 'more', dotted: 'grid' }
+
+/*
+ * THE FOUR BLENDS, AS WORDS. They were four buttons all drawing `layers`, so
+ * the only way to tell them apart was to hover each one — four identical
+ * pictures is the case the icon rule forbids (UI-STANDARD R4). No drawing can
+ * carry "multiply", and four is few enough for a segment (Designing User
+ * Interfaces p246).
+ */
+const BLEND_WORD = { normal: 'Normal', multiply: 'Multiply', screen: 'Screen', overlay: 'Overlay' }
+const BLEND_WHY = {
+  normal: 'No mixing at all',
+  multiply: 'Ink on paper — the one that behaves on a press the way it does on screen',
+  screen: 'Worked out in light. Right on the card, not on paper.',
+  overlay: 'Worked out in light. Right on the card, not on paper.',
+}
 
 /*
  * THE MARKS SOMEBODY CAN PLACE ARE THE APP'S OWN SET, and that is the whole
@@ -166,11 +185,11 @@ function setShadow(on) {
                       @click="before(); deco.fill.type = f.id" />
         </ToolBar>
         <template v-if="deco.fill.type !== 'none'">
-          <Ink :model-value="deco.fill.colour" label="Colour" :swatches="swatches" :can-drop="canDrop"
+          <Ink :model-value="deco.fill.colour" label="Colour" :swatches="swatches" :brand="brand" :can-drop="canDrop"
                @update:model-value="(v) => { before(); deco.fill.colour = v }"
                @pick="emit('pick-colour', (c) => { before(); deco.fill.colour = c })" />
           <template v-if="deco.fill.type === 'gradient'">
-            <Ink :model-value="deco.fill.to" label="To" :swatches="swatches" :can-drop="canDrop"
+            <Ink :model-value="deco.fill.to" label="To" :swatches="swatches" :brand="brand" :can-drop="canDrop"
                  @update:model-value="(v) => { before(); deco.fill.to = v }"
                  @pick="emit('pick-colour', (c) => { before(); deco.fill.to = c })" />
             <label class="formrow">
@@ -194,7 +213,7 @@ function setShadow(on) {
                       :active="deco.icon.name === m"
                       @click="before(); deco.icon.name = m" />
         </div>
-        <Ink :model-value="deco.fill.colour" label="Colour" :swatches="swatches" :can-drop="canDrop"
+        <Ink :model-value="deco.fill.colour" label="Colour" :swatches="swatches" :brand="brand" :can-drop="canDrop"
              @update:model-value="(v) => { before(); deco.fill.colour = v }"
              @pick="emit('pick-colour', (c) => { before(); deco.fill.colour = c })" />
       </template>
@@ -215,7 +234,7 @@ function setShadow(on) {
                         :size="16" :active="deco.stroke.dash === d"
                         @click="before(); deco.stroke.dash = d" />
           </ToolBar>
-          <Ink :model-value="deco.stroke.colour" label="Line colour" :swatches="swatches" :can-drop="canDrop"
+          <Ink :model-value="deco.stroke.colour" label="Line colour" :swatches="swatches" :brand="brand" :can-drop="canDrop"
                @update:model-value="(v) => { before(); deco.stroke.colour = v }"
                @pick="emit('pick-colour', (c) => { before(); deco.stroke.colour = c })" />
         </template>
@@ -225,27 +244,16 @@ function setShadow(on) {
         <h4 class="rubric">Words</h4>
         <input :value="deco.text.value" maxlength="120" placeholder="What it says"
                @focus="before()" @input="deco.text.value = $event.target.value">
-        <div class="sitrow">
-          <label class="formrow"><span class="cap">Lettering</span>
-            <span class="wrap">
-              <select :value="deco.text.family"
-                      @change="before(); deco.text.family = $event.target.value">
-                <option v-for="f in FAMILIES" :key="f.id" :value="f.id">{{ f.name }}</option>
-              </select>
-            </span>
-          </label>
-          <label class="choice bold">
-            <input type="checkbox" :checked="deco.text.weight === 'bold'"
-                   @change="before(); deco.text.weight = $event.target.checked ? 'bold' : 'regular'">
-            Bold
-          </label>
-        </div>
-        <p class="say">{{ FAMILIES.find((f) => f.id === deco.text.family)?.why }}</p>
-        <ToolBar label="How the words sit">
-          <ToolButton v-for="a in ['left', 'centre', 'right']" :key="a"
-                      icon="align" :label="a" wide :size="15" :active="deco.text.align === a"
-                      @click="before(); deco.text.align = a" />
-        </ToolBar>
+        <!-- The lettering control the field inspector uses, so "Own words" and
+             "Words" — one click apart on the rail — are lettered alike. This
+             one also carries letter spacing, which the model and the renderer
+             have held since drawn words were written and nothing could set. -->
+        <Lettering :faces="FAMILIES" :family="deco.text.family" :weight="deco.text.weight"
+                   :align="deco.text.align" :tracking="deco.text.tracking"
+                   @update:family="(v) => { before(); deco.text.family = v }"
+                   @update:weight="(v) => { before(); deco.text.weight = v }"
+                   @update:align="(v) => { before(); deco.text.align = v }"
+                   @update:tracking="(v) => { before(); deco.text.tracking = v }" />
       </template>
 
       <template v-if="hasArea && !isText && !isIcon">
@@ -274,11 +282,13 @@ function setShadow(on) {
         </span>
       </label>
 
-      <label class="choice">
-        <input type="checkbox" :checked="!!deco.shadow"
-               @change="setShadow($event.target.checked)">
-        <span>Shadow</span>
-      </label>
+      <!-- A SWITCH, because it takes effect as it is pressed: a tick box says
+           "applied when you save", and the shadow is on the ticket at once. -->
+      <div class="switchrow">
+        <span class="cap">Shadow</span>
+        <Toggle :model-value="!!deco.shadow" label="the shadow" :size="15"
+                @update:model-value="setShadow" />
+      </div>
       <template v-if="deco.shadow">
         <div class="quad">
           <label class="formrow"><span class="cap">Down</span>
@@ -299,14 +309,11 @@ function setShadow(on) {
       </template>
 
       <h4 class="rubric">How it mixes</h4>
-      <ToolBar label="How it mixes">
-        <ToolButton v-for="b in BLENDS" :key="b" icon="layers" :label="b" wide :size="15"
-                    :active="deco.blend === b"
-                    :hint="b === 'multiply' ? 'Ink on paper — the one that behaves on a press the way it does on screen'
-                          : b === 'normal' ? 'No mixing at all'
-                          : 'Worked out in light. Right on the card, not on paper.'"
-                    @click="before(); deco.blend = b" />
-      </ToolBar>
+      <div class="seg" role="group" aria-label="How it mixes">
+        <button v-for="b in BLENDS" :key="b" type="button" class="segbtn"
+                :class="{ on: deco.blend === b }" :aria-pressed="deco.blend === b"
+                :title="BLEND_WHY[b]" @click="before(); deco.blend = b">{{ BLEND_WORD[b] }}</button>
+      </div>
 
       <!--
         WHAT A PRESS WILL NOT HOLD — reported, never refused, and only on the
@@ -334,17 +341,20 @@ function setShadow(on) {
 <style scoped>
 /* The tab strip is the panel's own control, so it sits above the first group
    rather than inside one. */
-.dtabs { margin-bottom: 4px }
+.dtabs { margin-bottom: var(--sp-2) }
 /*
  * FIFTY-THREE MARKS IN A 300px PANEL. A grid rather than a wrapping row so the
  * columns line up down the panel — a ragged right edge on a picker this dense
  * reads as a mistake, and the eye scans a grid by column.
  */
 .marks {
-  display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px;
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--sp-1);
   max-height: 170px; overflow: auto;
-  padding: 4px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: var(--sp-2); border: var(--rule) solid var(--border); border-radius: var(--r-sm);
 }
-.sitrow { display: flex; align-items: end; gap: 10px }
-.sitrow > .formrow { flex: 1; min-width: 0 }
+/* A label and the switch it names on one line, the switch to the right of it
+   (Designing User Interfaces p250). */
+.switchrow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4) }
+.switchrow > .cap { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--muted) }
+.seg .segbtn { flex: 1 }
 </style>

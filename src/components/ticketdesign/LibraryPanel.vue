@@ -271,12 +271,12 @@ function confirmSave() {
  * which a rule and a double rule are still telling apart — two across wastes
  * the height a library needs, and four makes a seal a smudge.
  */
-.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2) }
 .tile { position: relative }
 .place {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  width: 100%; padding: 5px 3px 4px;
-  border: 1px solid var(--border); border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-1);
+  width: 100%; padding: var(--sp-2) var(--sp-1);
+  border: var(--rule) solid var(--border); border-radius: var(--r-md);
   background: var(--surface); cursor: pointer; color: var(--muted);
 }
 .place:hover { border-color: var(--brand); color: var(--text) }
@@ -291,7 +291,7 @@ function confirmSave() {
    a grid of tiles ragged. */
 .tname {
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: .68rem;
+  font-size: var(--fs-3xs);
 }
 /* The remove control only appears on the tile being pointed at: twelve visible
    delete buttons in a 240px rail is a panel that looks dangerous to use. */
@@ -300,12 +300,12 @@ function confirmSave() {
 
 /* The heading and its one control on a line, because a section that can be
    added to should say so where the section is named. */
-.colhead { display: flex; align-items: center; justify-content: space-between; gap: 6px }
+.colhead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3) }
 .colhead .rubric { margin: 0 }
 
 /* The gap clears the remove badge, which overhangs its swatch by 6px — at the
    4px this started at, a badge sat on the NEIGHBOURING colour. */
-.cols { display: flex; flex-wrap: wrap; gap: 8px }
+.cols { display: flex; flex-wrap: wrap; gap: var(--sp-4) }
 .colwrap { position: relative }
 /*
  * THE REMOVE BADGE CARRIES ITS OWN GROUND, which a swatch is the one place in
@@ -323,8 +323,8 @@ function confirmSave() {
      nearly as wide as the swatch. */
   width: 19px; height: 19px; padding: 0;
   display: grid; place-items: center;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 50%;
+  background: var(--surface); border: var(--rule) solid var(--border);
+  border-radius: var(--r-pill);
 }
 .colwrap:hover .cx, .cx:focus-visible { opacity: 1 }
 /* 44px, which is not a comfort choice: the remove badge sits on the corner, and
@@ -333,7 +333,7 @@ function confirmSave() {
    240px rail. */
 .col {
   width: 44px; height: 44px; padding: 0;
-  border: 1px solid var(--border-strong); border-radius: 6px; cursor: pointer;
+  border: var(--rule) solid var(--border-strong); border-radius: var(--r-md); cursor: pointer;
 }
 .col:hover { border-color: var(--brand) }
 .col:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }

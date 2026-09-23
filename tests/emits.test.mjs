@@ -97,12 +97,18 @@ function openingTags(code, tagName) {
  * precisely what Vue compiles it to. Without this the check reports a dead
  * control on the one pattern where the binding and the handler are written as a
  * single attribute — which is a test telling somebody to break working code.
+ *
+ * `@update:family="…"` COUNTS TOO, for the same reason. It is the long form of
+ * `v-model:family`, and the form a parent has to write when it must do
+ * something BEFORE the value moves — DecorationInspector records an undo step
+ * first. The name pattern stopped at the colon, so the long form read as no
+ * listener at all and the check asked for the undo step to be dropped.
  */
 function listenersFor(tagName) {
   const found = new Set()
   for (const code of Object.values(source)) {
     for (const attrs of openingTags(code, tagName)) {
-      for (const a of attrs.matchAll(/@([a-zA-Z][\w-]*)\s*=/g)) found.add(a[1])
+      for (const a of attrs.matchAll(/@([a-zA-Z][\w-]*(?::[a-zA-Z][\w-]*)?)\s*=/g)) found.add(a[1])
       for (const m of attrs.matchAll(/v-model:([a-zA-Z][\w-]*)\s*=/g)) found.add('update:' + m[1])
       if (/\bv-model\s*=/.test(attrs)) found.add('update:modelValue')
     }

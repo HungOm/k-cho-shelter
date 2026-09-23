@@ -254,11 +254,16 @@ console.log('and the population of raw literals is falling')
        their literals while those files were open — 9 font sizes, 3 weights,
        6 radii, 45 spacing values and 11 border widths. Counted with this
        file's own regexes, not estimated. */
-    'font-size': 178,
-    'font-weight': 79,
-    'border-radius': 76,
-    'spacing (px)': 665,
-    'border-width': 111,
+    /* Lowered again 2026-09-23 by STUDIO-ESSENTIALS Phase 0 (kcho-shelter-0c):
+       the studio shell's tabs and zoom, the three inspectors, Ink, ToolButton,
+       ToolBar and LibraryPanel, migrated while open, plus the rules that went
+       with the controls they styled — 15 sizes, 3 weights, 12 radii, 51
+       spacing values, 10 border widths. Counted with the regexes below. */
+    'font-size': 163,
+    'font-weight': 76,
+    'border-radius': 64,
+    'spacing (px)': 614,
+    'border-width': 101,
     'box-shadow': 16,
   }
   const comps = sources.filter(([f]) => f.includes('/components/'))
