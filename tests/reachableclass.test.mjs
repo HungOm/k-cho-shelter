@@ -38,6 +38,25 @@
  * exemptions below are NAMES rather than a category — a rule phrased as
  * "anything that looks dynamic" would wave the real cases through, which is the
  * mistake tokens.test.mjs's exemption list was deliberately shaped to avoid.
+ *
+ * IT READS THE WORKING TREE, WHICH IN THIS REPO IS SHARED. Several sessions
+ * edit this tree at once, so a run here reports another session's in-flight
+ * edit as a failure in a file you never opened — and the shrink-check makes
+ * that worse rather than better, because somebody else REMOVING a dead rule is
+ * exactly what turns your exemption stale. The only honest run is from a
+ * frozen sha: `git archive <sha> | tar -x -C <scratch>` and run it there. A red
+ * run in this tree is a question about who else is mid-edit, not an answer.
+ *
+ * AND A DEAD RULE IS NOT A MISSING STYLE. This file says a rule cannot match.
+ * It does not say the property is unset — a global in style.css, a child's own
+ * scoped block, or a browser default may be painting it. On the day this was
+ * written I reported that Money.vue's dead `.statement td.num` meant a money
+ * column had lost its lining figures. It had not: style.css:942 sets
+ * `td.num, th.num` globally with tabular-nums and right alignment, and the
+ * template carries class="num" on fourteen cells. The rule was redundant, not
+ * load-bearing, and nothing had ever rendered differently. Find what is
+ * actually painting before reporting a regression. This gate tells you a rule
+ * is dead, and that is the whole of what it tells you.
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -70,25 +89,44 @@ const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
  * to catch a silent failure, caught only by running it against the bug.
  *
  *   Money.vue        `.statement` and `.recon` markup lives in SellerMoney.vue.
- *                    Eleven rules, including the tabular-figure rule for a
- *                    money column — so those numerals are NOT tabular, which is
- *                    UI-STANDARD.md §3's one hard rule about money.
+ *                    Eleven rules left behind when the statement moved into
+ *                    that sheet. REDUNDANT, NOT LOAD-BEARING — corrected here
+ *                    because the first version of this header said the
+ *                    opposite and a wrong explanation outlives a wrong change.
+ *                    It claimed the dead tabular-figure rule meant those
+ *                    numerals were not tabular. They always were: style.css
+ *                    defines `td.num, th.num` globally with right alignment
+ *                    and tabular figures, Money.vue's template carries
+ *                    class="num" on those cells, and SellerMoney rewrote every
+ *                    other rule in its own scoped block. Nothing rendered
+ *                    differently. The claim was an inference from "the rule is
+ *                    dead" to "the thing it does is not happening", made
+ *                    without opening style.css — which is the move
+ *                    UI-STANDARD.md §8 exists to stop, made in the header of
+ *                    the gate that enforces it.
  *   TicketDesign.vue `.panelhead`, `.report`, `.tlist`, `.sgrid` markup moved
  *                    into ticketdesign/ child components during the Studio
  *                    refactor and the rules stayed behind.
  */
-const KNOWN_DEAD = new Set([
-  'components/Money.vue .statement td.num',
-  'components/Money.vue .statement th.num',
-  'components/Money.vue .statement td.bal',
-  'components/Money.vue .statement tfoot td',
-  'components/Money.vue .statement tr.writeoff td',
-  'components/Money.vue .recon span',
-  'components/Money.vue .recon i',
-  'components/Money.vue .recon b',
-  'components/Money.vue .recon b.owed',
-  'components/Money.vue .recon .op',
-])
+/*
+ * EMPTIED 2026-09-23, and the emptying is the point of the list.
+ *
+ * All ten Money.vue entries were one stale block, not ten defects: the
+ * statement moved out of Money.vue into the SellerMoney sheet and its styles
+ * stayed behind. SellerMoney rewrote every one of them in its own scoped
+ * block, and Money's own money columns get tabular figures and right alignment
+ * from `td.num, th.num` in style.css, which is global — so nothing rendered
+ * differently, then or now. The block is deleted rather than exempted, because
+ * a stale rule that reads as load-bearing is a trap for the next reader, and it
+ * had already caught one: the dead tabular-figures rule was reported as the
+ * reason this screen's money was not aligned. It was not the reason. It was
+ * not anything.
+ *
+ * The list stays, with its shrink-check below, because the next refactor that
+ * moves markup between components will leave the same debris and somebody will
+ * want a green run before they can clean it.
+ */
+const KNOWN_DEAD = new Set([])
 
 function vues(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {

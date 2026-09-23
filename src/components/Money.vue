@@ -554,51 +554,40 @@ function waLink(a) {
 
 <style scoped>
 /*
- * A STATEMENT IS READ DOWN THE RIGHT-HAND EDGE, so the money columns are
- * tabular-figured and right-aligned and the balance is the one in ink. Without
- * tabular figures the digits change width between rows and a column of money
- * stops lining up, which is the difference between a table you can scan and one
- * you have to read.
+ * THE STATEMENT'S STYLES LEFT WITH THE STATEMENT, and eleven rules stayed
+ * behind. Eight lines up this file explains the move: the statement "used to
+ * be a row that grew … it is a sheet now". The MARKUP went to
+ * SellerMoney.vue; these rules did not, and every one of them led with
+ * `.statement` or `.recon`, neither of which this file has ever rendered.
+ *
+ * WHAT THAT DID AND DID NOT COST, because the two are easy to confuse and one
+ * of them was reported as a money bug:
+ *
+ *   NOTHING VISUAL. SellerMoney rewrote all of them in its own scoped block —
+ *   .recon, .num, .bal, tr.writeoff — and this screen's OWN money columns are
+ *   tabular and right-aligned from `td.num, th.num` in style.css, which is
+ *   global. The figures were never un-aligned. Checked, not assumed.
+ *
+ *   A READER, THOUGH. A stale block that reads as load-bearing is a trap for
+ *   whoever opens the file next, and it caught somebody: the dead
+ *   tabular-figures rule was read as the reason this screen's money was not
+ *   tabular. It was not the reason; it was not anything.
+ *
+ * So the block goes rather than being annotated. `.linkish` was the one rule
+ * here with no live twin, and it is a primitive in style.css now — the action
+ * ladder's third rung, under .btn.primary and .btn. See references/controls.md
+ * R2 for why it belongs there rather than in a screen.
  */
-.statement td.num, .statement th.num, .recon b { font-variant-numeric: tabular-nums; }
-.statement td.bal { font-weight: 600; }
-.statement tfoot td { border-top: 2px solid var(--border); }
 
 /*
- * `.linkish` IS A PRIMITIVE NOW, in style.css beside .btn — the third rung of
- * the action ladder, under .btn.primary and .btn.
- *
- * WHAT WAS HERE NEVER RENDERED. The rule was written `.statement .linkish`,
- * and `class="statement"` does not appear anywhere in this file — it is on a
- * table inside SellerMoney.vue. So this screen's two tertiary buttons have
- * been drawing as default browser buttons: bordered grey chips in a money
- * column, which is exactly what the comment that used to sit here said it was
- * preventing. The markup was right and the selector could not reach it.
- *
- * The intent is kept, in a place where it applies, and where the next screen
- * that needs a quiet action finds it instead of inventing a third copy —
- * references/controls.md R2.
+ * ONE INTENTION WAS LOST WITH THE BLOCK AND IS RECORDED RATHER THAN RESTORED:
+ * the write-off row here was `color: var(--muted); font-style: italic`, and
+ * SellerMoney's live rule is `color: var(--muted)` alone. Muted already does
+ * the work the comment asked for — "legible and quiet rather than sitting in
+ * the same weight as money that arrived" — so the italic is not reinstated on
+ * the strength of a rule that never rendered. If a treasurer wants it, it is
+ * one line in the file that owns that table.
  */
-
-/* A write-off reduces the debt and is not cash, so it is legible and quiet
-   rather than sitting in the same weight as money that arrived. */
-.statement tr.writeoff td { color: var(--muted); font-style: italic; }
-
-/*
- * The identity the screen is accountable for, laid out as the sum it is:
- * charged, less received, less forgiven, is what is left. It wraps on a phone
- * rather than scrolling sideways — a treasurer checks this standing up.
- */
-.recon {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
-  margin: 2px 0 12px; padding: 10px 12px;
-  background: var(--surface-2); border-radius: 10px;
-}
-.recon span { display: flex; flex-direction: column; line-height: 1.25; }
-.recon i { font-style: normal; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.recon b { font-size: 1.02rem; }
-.recon b.owed { color: var(--warn); }
-.recon .op { font-size: 1.1rem; color: var(--muted); align-self: center; }
 
 /* Not a person, so not a row that invites a press. */
 .deskrow { cursor: default; }
