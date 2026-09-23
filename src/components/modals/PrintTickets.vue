@@ -841,8 +841,10 @@ async function printThem() {
 .whoonly { display: flex; align-items: center; gap: 8px; margin: 0 0 12px }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
 .grow { flex: 1; min-width: 0 }
+/* As studio.css, on the scale. .68 was the pre-token value the studio already
+   migrated off; --fw-medium IS 600, so that half is a rename. */
 .rubric {
-  margin: 0; font-size: .68rem; font-weight: 600; letter-spacing: .07em;
+  margin: 0; font-size: var(--fs-3xs); font-weight: var(--fw-medium); letter-spacing: .07em;
   text-transform: uppercase; color: var(--muted);
 }
 /* A step is a number in the order it happens, not a decorative badge. */

@@ -1221,7 +1221,11 @@ onMounted(async () => {
 .pager { display: flex; align-items: center; justify-content: center; gap: 10px;
          margin-bottom: 12px }
 
-.rubric { font-size: .68rem; font-weight: 600; letter-spacing: .07em;
+/* The same treatment the studio's `.rubric` carries. --fs-3xs is .66 where
+   this said .68: the nearest step on the scale, and the 2% studio.css already
+   decided no eye resolves. Margin stays absent on purpose — two of the three
+   users here are <p>, and zeroing it would move them. */
+.rubric { font-size: var(--fs-3xs); font-weight: var(--fw-medium); letter-spacing: .07em;
           text-transform: uppercase; color: var(--muted) }
 .facts { margin: 0 }
 .fact { display: flex; align-items: baseline; gap: 12px;
