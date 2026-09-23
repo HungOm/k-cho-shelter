@@ -1,6 +1,21 @@
 # The interface, measured
 
-**Status: diagnosis and proposal. No code changed. 2026-09-22.**
+**Status: Phases 0–5 shipped. Phase 2's F3 held, Phase 6 ongoing. Updated
+2026-09-23.**
+
+| | | |
+|---|---|---|
+| **0** · the scales | `6253531` | 30 tokens, every value already in the tree |
+| **1** · one font vocabulary per surface | `1343354` | *ticket-studio-redesign* |
+| **2** · F2 typeface previews | reassigned | *ticket-studio-redesign*, same spec |
+| **2** · F3 header thumbnail | **held** | until `TicketDesign.vue` is free |
+| **3** · Setup grouped | `6913f1e` | four groups, one card moved |
+| **4** · absence names its cause | `9d29899` | five of six sites were already right |
+| **5** · one word per command | `9d29899` | F4 was mis-filed; see below |
+| **6** · migrate literals | ongoing | ratcheted by `scales.test.mjs` |
+
+New gates since: `scales`, `reachableclass` (*kcho-shelter-25*, to this
+document's spec).
 
 Five sources were handed to this repo — three HCI papers and two books on
 interface design — with the instruction to use them to improve the Ticket Studio
@@ -499,7 +514,24 @@ the *digital* words and uses them on the *printed* tab.
   constraint passed to them is that the `<select>` at `:1990` survives their
   restructure in some form, because F3 adds to it rather than replacing it.
 
-### Phase 3 — Setup, grouped (F5)
+### Phase 3 — Setup, grouped (F5) **DONE**
+
+*Landed `6913f1e`, 2026-09-23. Four groups, one card moved, nothing inside a card
+touched. The destructive pair needed no restyling — both already carry a coloured
+left edge and gate their red behind a preview, which is where a destructive
+action's emphasis belongs. What was missing was only a heading saying they differ
+in kind.*
+
+**The first draft was wrong in a way only rendering found.** `.section` had a
+`:first-of-type` case at 16px, reasoning that the `h1` above had already done the
+separating. Adjacent margins collapse, so 16 against the heading row's 16 stayed
+16 rather than summing to 32 — the first label got *half* the gap of the other
+three and landed exactly where a subtitle goes, reading as a description of
+"Setup". The markup, the tokens and 136 suites were all green with it in. This is
+the case for §10's rule that a design change is not finished until somebody has
+looked at it.
+
+### Phase 3 — the original plan, for the record
 
 Twelve cards become **four named groups**, grouped by P2's association objective
 (eq. 21) and separated by Refactoring UI's spacing rule — more space around a
