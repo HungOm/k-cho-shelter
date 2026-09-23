@@ -16,6 +16,8 @@
  * pieces of it too, and one derivation feeding two views is the point of
  * keeping it where both can see it.
  */
+import Icon from '../ui/Icon.vue'
+
 defineProps({
   /** An artworkReport: ratio, exact, size, px, minPx, placed, overflowing, ready. */
   report: { type: Object, required: true },
@@ -24,8 +26,14 @@ defineProps({
 
 <template>
 <div class="verdict" :class="report.ready ? 'ok' : 'warn'">
+  <!--
+    A MARK, NOT A COLOURED DOT. The whole verdict rested on telling a green
+    square from an amber one — the distinction a red-green eye does not make,
+    and the one that survives no grayscale print or screenshot. The shape says
+    it now and the colour agrees with the shape.
+  -->
   <p class="vhead">
-    <span class="dot"></span>
+    <Icon :name="report.ready ? 'check' : 'alert'" :size="17" class="vmark" />
     <b v-if="report.ready">This artwork is ready to print</b>
     <b v-else>This artwork is not ready yet</b>
   </p>
@@ -71,10 +79,13 @@ defineProps({
 <style scoped src="./studio.css"></style>
 
 <style scoped>
-.verdict { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px; background: var(--surface) }
-.verdict.ok { border-left: 3px solid var(--ok) }
-.verdict.warn { border-left: 3px solid var(--warn) }
-.vhead { display: flex; align-items: center; gap: 7px; margin: 0 0 10px }
+.verdict {
+  border: var(--rule) solid var(--border); border-radius: var(--r-sm);
+  padding: var(--sp-5); background: var(--surface);
+}
+.verdict.ok { border-left: var(--sp-1) solid var(--ok) }
+.verdict.warn { border-left: var(--sp-1) solid var(--warn) }
+.vhead { display: flex; align-items: center; gap: var(--sp-3); margin: 0 0 var(--sp-5) }
 /*
  * THESE THREE CAME BACK FROM THE PARENT, where they were stranded by a7fe5c9.
  *
@@ -91,10 +102,10 @@ defineProps({
  * source review or in any assertion: the markup is right, the rules are right,
  * and they are in different scopes. Only a picture shows it.
  */
-.vhead .dot { width: 9px; height: 9px; border-radius: 2px; background: var(--warn) }
-.verdict.ok .vhead .dot { background: var(--ok) }
+.vhead .vmark { color: var(--warn); flex: 0 0 auto }
+.verdict.ok .vhead .vmark { color: var(--ok) }
 .vgrid p { margin: 0 }
-.vgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px }
+.vgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-5) }
 .okt { color: var(--ok) }
 .badt { color: var(--bad) }
 </style>

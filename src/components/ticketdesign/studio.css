@@ -22,7 +22,9 @@
  */
 .studio {
   display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px;
-  gap: 14px; align-items: stretch;
+  /* --sp-6, not the 14px this was: the scale has no 14, and 16 is the step
+     that reads as "these three columns are separate regions". */
+  gap: var(--sp-6); align-items: stretch;
   min-height: calc(100vh - 150px);
 }
 /*
@@ -57,14 +59,46 @@
  * for.
  */
 
+/*
+ * THE TWO SIDES ARE NOT THE SAME KIND OF THING, AND USED TO TAKE ONE RULE.
+ *
+ * Both were `border + radius + padding + --surface`, so the screen read as
+ * three boxes of equal weight with a picture in the middle one. They hold
+ * different things and are used at different moments:
+ *
+ *   .rail   a CATALOGUE — templates, tools, the library. Things you go and
+ *           fetch. You look at it between actions.
+ *   .panel  an INSPECTOR — what is true of the thing you are touching right
+ *           now. Its contents change under your hands.
+ *
+ * So the rail sits BACK and the panel sits FORWARD, and the artboard between
+ * them is the only thing at full strength.
+ *
+ * DEPTH IS EXPRESSED WITH --bg AND AN ELEVATION, NOT WITH --surface-2.
+ * That is not a style preference. --surface-2 is DARKER than --surface in
+ * light mode (#eef1f0 against #ffffff) and LIGHTER in dark (#1e2523 against
+ * #161b1a) — it carries no consistent direction, so a rail recessed with it in
+ * light mode would be raised in dark. --bg is furthest back in both themes,
+ * which is the only depth statement the palette actually makes.
+ */
 .rail, .panel {
-  display: flex; flex-direction: column; gap: 12px;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  padding: 12px; background: var(--surface); min-width: 0;
+  display: flex; flex-direction: column; gap: var(--sp-5);
+  border: var(--rule) solid var(--border); border-radius: var(--r-sm);
+  padding: var(--sp-5); min-width: 0;
 }
-.rail { max-height: calc(100vh - 170px); overflow: auto }
+/* Recessed: the page showing through, so a drawer of things to fetch reads as
+   part of the page rather than as a card competing with the artboard. */
+.rail {
+  max-height: calc(100vh - 170px); overflow: auto;
+  background: var(--bg);
+}
+/* Raised: this is about the selection, and it is where the hands are. */
+.panel {
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+}
 
-.stagewrap { display: flex; flex-direction: column; gap: 8px; min-width: 0 }
+.stagewrap { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0 }
 /* The stage takes what the bar above it does not, and centres the artboard in
    it — vertically as well as horizontally, which is what makes a canvas read
    as a thing on a table rather than as content stuck to the top of a box. */
@@ -81,23 +115,28 @@
  * canvas is a column somebody has to go and find. It stays at the top, where
  * the eye enters the canvas.
  */
-.stagewrap > .withrail { flex: 1; display: flex; align-items: start; gap: 10px; min-width: 0 }
+.stagewrap > .withrail { flex: 1; display: flex; align-items: start; gap: var(--sp-5); min-width: 0 }
 .withrail > .stage { flex: 1; display: grid; place-content: center start; min-width: 0 }
 /* The rail is a panel in its own right, not a floating strip: it sits on the
    same surface as the two rails either side of the canvas so the screen reads
    as three columns with a tool strip, rather than four columns. */
 .withrail > .toolbar {
-  flex: 0 0 auto; padding: 6px;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
+  flex: 0 0 auto; padding: var(--sp-3);
+  border: var(--rule) solid var(--border); border-radius: var(--r-sm);
   background: var(--surface);
 }
-.pgroup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border) }
+.pgroup {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding-top: var(--sp-5); border-top: var(--rule) solid var(--border);
+}
 .pgroup:first-of-type { border-top: 0; padding-top: 0 }
 .rubric {
-  margin: 0; font-size: .68rem; font-weight: 600; letter-spacing: .07em;
+  /* .66 rather than the .68 this was: the nearest step on the scale, and a
+     2% difference no eye resolves. */
+  margin: 0; font-size: var(--fs-3xs); font-weight: var(--fw-medium); letter-spacing: .07em;
   text-transform: uppercase; color: var(--muted);
 }
-.quad { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px }
+.quad { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3) var(--sp-5) }
 .quad.one { grid-template-columns: 1fr }
 /* .seg / .segbtn live in src/style.css — a switch outside the studio used them
    and a studio-scoped definition left it unstyled. */
@@ -135,7 +174,7 @@
  */
 .say {
   margin: 0;
-  font-size: .74rem;
+  font-size: var(--fs-2xs);
   line-height: 1.45;
   color: var(--muted);
 }
@@ -143,6 +182,6 @@
    as the words on the controls. The rule gives it a left edge to belong to
    rather than floating as a second column of text. */
 .say.under {
-  padding-left: 8px;
-  border-left: 2px solid var(--border);
+  padding-left: var(--sp-4);
+  border-left: var(--rule-strong) solid var(--border);
 }

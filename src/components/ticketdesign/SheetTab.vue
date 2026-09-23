@@ -55,11 +55,21 @@ const dpi = computed(() => props.dpi)
               </button>
             </div>
             <p class="tiny muted mono">{{ fit ? `${fit.paper.widthMM} × ${fit.paper.heightMM} mm` : '' }}</p>
+            <!--
+              WHICH WAY ROUND, SHOWN THE WAY THE PAPER ABOVE IS SHOWN. The
+              picker directly above answers "which paper" with a rectangle of
+              the right shape; this answered "which way round" with two words,
+              in the one control where the answer IS a shape.
+            -->
             <div class="seg orient">
               <button type="button" class="segbtn" :class="{ on: !design.sheet.landscape }"
-                      @click="design.sheet.landscape = false">Portrait</button>
+                      @click="design.sheet.landscape = false">
+                <span class="oshape tall" aria-hidden="true"></span>Portrait
+              </button>
               <button type="button" class="segbtn" :class="{ on: !!design.sheet.landscape }"
-                      @click="design.sheet.landscape = true">Landscape</button>
+                      @click="design.sheet.landscape = true">
+                <span class="oshape wide" aria-hidden="true"></span>Landscape
+              </button>
             </div>
           </div>
 
@@ -129,11 +139,14 @@ const dpi = computed(() => props.dpi)
               2 × {{ fit.marginMM.toFixed(1) }} =
               {{ fit.used.toFixed(1) }} of {{ fit.pageHeightMM.toFixed(1) }} mm
             </p>
-            <p class="tiny muted">
-              At {{ design.sheet.widthMM }} mm the ticket is
-              {{ fit.heightMM.toFixed(1) }} mm tall, which is the artwork's own shape.
-              Print at 100% scale with background graphics turned on.
-            </p>
+            <!--
+              THE FIRST SENTENCE RESTATED THE SUM DIRECTLY ABOVE IT — the same
+              two numbers, in words. The second is the only thing on this panel
+              that no control reveals and that costs a whole press run when it
+              is not known, so it is what survives, and it survives at full
+              weight rather than as a caption.
+            -->
+            <p class="say">Print at 100% scale, with background graphics turned on.</p>
             <p v-if="dpi" class="tiny" :class="dpi.soft ? 'bad' : (dpi.ok ? 'muted' : 'warn')">
               <b>{{ dpi.v }} dots per inch</b> at this size —
               <template v-if="dpi.ok">sharp enough for a print shop.</template>
@@ -155,26 +168,34 @@ const dpi = computed(() => props.dpi)
 <style scoped src="./studio.css"></style>
 
 <style scoped>
-.papers { display: flex; gap: 6px; flex-wrap: wrap }
+.papers { display: flex; gap: var(--sp-3); flex-wrap: wrap }
 .paper {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 6px 8px; min-width: 52px; cursor: pointer; color: var(--text);
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4); min-width: 52px; cursor: pointer; color: var(--text);
+  background: var(--surface); border: var(--rule) solid var(--border); border-radius: var(--r-sm);
 }
 .paper.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-ink) }
-.paper .pshape { display: block; width: 18px; background: currentColor; opacity: .38; border-radius: 1px }
+.paper .pshape { display: block; width: 18px; background: currentColor; opacity: .38; border-radius: var(--r-xs) }
 .paper.on .pshape { opacity: .7 }
-.paper b { font-size: .76rem; font-weight: 600 }
-.orient { margin-top: 6px }
-.fitline { display: flex; align-items: baseline; gap: 8px; margin: 0 }
-.fitline span { font-size: .84rem; color: var(--muted) }
-.usedline { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0 }
+.paper b { font-size: var(--fs-2xs); font-weight: var(--fw-medium) }
+.orient { margin-top: var(--sp-3) }
+/* The same rectangle the paper picker uses, at the two orientations, so one
+   convention answers "which paper" and "which way round". */
+.oshape {
+  display: inline-block; width: 9px; height: 12px; margin-right: var(--sp-2);
+  vertical-align: -1px; background: currentColor; opacity: .5; border-radius: var(--r-xs);
+}
+.oshape.wide { width: 12px; height: 9px }
+.segbtn.on .oshape { opacity: .85 }
+.fitline { display: flex; align-items: baseline; gap: var(--sp-4); margin: 0 }
+.fitline span { font-size: var(--fs-xs); color: var(--muted) }
+.usedline { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0 0 }
 .usedline.over .usedbar > span { background: var(--bad) }
 .usedline b { font-variant-numeric: tabular-nums }
 .usedbar {
-  display: block; height: 6px; border-radius: 999px;
+  display: block; height: var(--sp-3); border-radius: var(--r-pill);
   background: var(--surface-2); overflow: hidden;
 }
-.usedbar > span { display: block; height: 100%; background: var(--brand); border-radius: 999px }
-.working { margin: 2px 0 0; opacity: .75 }
+.usedbar > span { display: block; height: 100%; background: var(--brand); border-radius: var(--r-pill) }
+.working { margin: var(--sp-1) 0 0; opacity: .75 }
 </style>

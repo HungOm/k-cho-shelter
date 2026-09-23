@@ -249,11 +249,16 @@ console.log('and the population of raw literals is falling')
    * person inherits a gate that fails for reasons that are not theirs.
    */
   const BASELINE = {
-    'font-size': 187,
-    'font-weight': 82,
-    'border-radius': 82,
-    'spacing (px)': 710,
-    'border-width': 122,
+    /* Lowered 2026-09-23 by the Ticket Studio Phase 5 work, which migrated
+       studio.css, TemplateRail, ShapesPanel, ArtworkVerdict and SheetTab off
+       their literals while those files were open — 9 font sizes, 3 weights,
+       6 radii, 45 spacing values and 11 border widths. Counted with this
+       file's own regexes, not estimated. */
+    'font-size': 178,
+    'font-weight': 79,
+    'border-radius': 76,
+    'spacing (px)': 665,
+    'border-width': 111,
     'box-shadow': 16,
   }
   const comps = sources.filter(([f]) => f.includes('/components/'))

@@ -173,6 +173,10 @@ const PATHS = {
    * two read as one convention rather than two. */
   previewOff:'M3 3l18 18M10.6 6.1A7.6 7.6 0 0 1 12 5.8c5.6 0 9.2 6.2 9.2 6.2a17 17 0 0 1-2.8 3.4M6.5 8.1A17 17 0 0 0 2.8 12S6.4 18.2 12 18.2a8 8 0 0 0 3.2-.7M9.9 9.9a2.6 2.6 0 0 0 3.7 3.7',
   download:  'M12 4v10.5M8 11l4 4 4-4M4.5 17v1.5A1.5 1.5 0 0 0 6 20h12a1.5 1.5 0 0 0 1.5-1.5V17',
+  /* download's own drawing with the arrow reversed, deliberately: the tray is
+     the same tray, so "into the app" and "out of the app" read as one pair
+     rather than as two unrelated marks. */
+  upload:    'M12 15V4.5M8 8.5l4-4 4 4M4.5 17v1.5A1.5 1.5 0 0 0 6 20h12a1.5 1.5 0 0 0 1.5-1.5V17',
 
   // --- the studio: looking at it before it prints ----------------------
   /*
@@ -211,6 +215,17 @@ const PATHS = {
   ruler:     'M3.5 8.5h17v7h-17zM7 8.5v3M10.5 8.5v2M14 8.5v3M17.5 8.5v2',
   reset:     'M4.6 9.3A7.6 7.6 0 1 1 4.5 13M3.6 4v5.3h5.3',
   help:      'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.6 9.4A2.5 2.5 0 0 1 14.5 10c0 1.7-2.5 2.2-2.5 3.7M12 17h.01',
+  /*
+   * A VERDICT THAT IS NOT READY. The artwork verdict said ready or not-ready
+   * with a coloured dot and nothing else, so the whole judgement rested on
+   * telling green from amber — which is the one distinction a red-green eye
+   * does not make, and which survives no grayscale screenshot. The shape
+   * carries it now and the colour agrees with the shape.
+   *
+   * The stem and its point are the same two marks `help` uses, at the same
+   * heights, so the two read as one family.
+   */
+  alert:     'M12 4.2 2.6 20.3h18.8L12 4.2ZM12 10v4M12 17.5h.01',
 
   /*
    * NOT A DRAWING — what is shown when a name does not exist.

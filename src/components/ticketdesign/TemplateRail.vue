@@ -18,6 +18,8 @@
  * decides nothing, which is why it takes no design and no store.
  */
 import { ref } from 'vue'
+import Icon from '../ui/Icon.vue'
+import ToolButton from '../ui/ToolButton.vue'
 
 const props = defineProps({
   templates: { type: Array, default: () => [] },
@@ -73,10 +75,21 @@ function onPick(e) {
           <span v-if="t.id === activeId" class="pill ok">printing</span>
         </div>
         <b class="tname">{{ t.name }}</b>
+        <!--
+          THE WORDS SHRANK BECAUSE THE PICTURE ABOVE ALREADY SAID WHICH ONE.
+          "Print from this one" names the template it sits under, which the
+          thumbnail has already answered; the verb is the only part that was
+          doing work. Remove has no word at all — it is the same icon-only
+          control the layer list and the library use.
+        -->
         <div class="trow">
           <button v-if="t.id !== activeId" class="btn sm" :disabled="busy"
-                  @click="emit('choose', t.id)">Print from this one</button>
-          <button class="btn sm ghost" :disabled="busy" @click="emit('remove', t.id)">Remove</button>
+                  :title="`Print tickets from ${t.name}`" @click="emit('choose', t.id)">
+            <Icon name="print" :size="15" />Print from this
+          </button>
+          <ToolButton icon="trash" :label="`Remove ${t.name}`" :size="14" :disabled="busy"
+                      hint="Takes the artwork out of the raffle. Tickets already printed are unaffected."
+                      @click="emit('remove', t.id)" />
         </div>
       </li>
     </ul>
@@ -87,7 +100,7 @@ function onPick(e) {
 
   <div class="block">
     <button class="btn sm primary wide" :disabled="busy" @click="fileInput?.click()">
-      {{ busy ? 'Working…' : 'Upload new artwork' }}
+      <Icon name="upload" :size="15" />{{ busy ? 'Working…' : 'Upload new artwork' }}
     </button>
     <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp"
            :disabled="busy" @change="onPick" hidden>
@@ -132,25 +145,28 @@ function onPick(e) {
 <style scoped>
 /* The second route sits under the first and reads as an alternative to it, not
    as a row of settings: one quiet sentence, then the sizes as things to press. */
-.blankstart { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
-.blankstart p { width: 100%; margin: 0 0 2px; }
-.tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px }
+.blankstart { margin-top: var(--sp-5); display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.blankstart p { width: 100%; margin: 0 0 var(--sp-1); }
+.tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-5) }
 /* Stranded in TicketDesign.vue when this file took the markup: a child's
  * markup does not inherit a parent's scoped styles, so these have been inert
  * since the extraction. Same cause as the verdict's status dot (3a70895). The
  * dead copies remain in the parent for whoever holds it next. */
 .tlist p { margin: 0 }
-.tlist li { border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 3px }
+.tlist li {
+  border: var(--rule) solid var(--border); border-radius: var(--r-md);
+  padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-1);
+}
 .tlist li.on { border-color: var(--brand); background: var(--brand-soft) }
 .tthumb {
   position: relative; display: block; width: 100%; aspect-ratio: 1600 / 517;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
+  border: var(--rule) solid var(--border); border-radius: var(--r-sm);
   overflow: hidden; background: var(--surface-2);
 }
 .tthumb img { display: block; width: 100%; height: 100%; object-fit: cover }
 .tthumb .pill { position: absolute; left: 6px; top: 6px }
-.tname { display: block; margin: 6px 0 4px; font-size: .9rem; line-height: 1.25 }
-.trow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
-.block { display: flex; flex-direction: column; gap: 8px }
+.tname { display: block; margin: var(--sp-3) 0 var(--sp-2); font-size: var(--fs-sm); line-height: 1.25 }
+.trow { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap }
+.block { display: flex; flex-direction: column; gap: var(--sp-4) }
 .count { float: right; font-variant-numeric: tabular-nums; letter-spacing: 0 }
 </style>

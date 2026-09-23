@@ -19,6 +19,9 @@
  * asymmetry is worth keeping visible rather than smoothing over with a
  * v-model on the whole list — the parent owns which shapes exist.
  */
+import Icon from '../ui/Icon.vue'
+import ToolButton from '../ui/ToolButton.vue'
+
 defineProps({
   sizes: { type: Array, default: () => [] },
   /** The shape the uploaded artwork matched, so the row can say so. */
@@ -32,10 +35,7 @@ const emit = defineEmits(['add', 'save', 'remove'])
 <template>
 <aside class="panel">
   <div class="pgroup">
-    <h4 class="rubric"
-        title="A known shape is checked against its tolerance. An unfamiliar one is refused rather than stretched — a picture of the wrong shape is squashed or cropped on every ticket, and neither can be put right afterwards.">
-      Shapes we know
-    </h4>
+    <h4 class="rubric">Shapes we know</h4>
     <!--
       ONE BLOCK PER SHAPE, NOT A FIVE-COLUMN TABLE.
       A table of five numeric columns in a 300px panel truncates every
@@ -50,8 +50,12 @@ const emit = defineEmits(['add', 'save', 'remove'])
         <div class="shead">
           <input v-model="s.label" class="sname" aria-label="Shape name">
           <span v-if="matched === s" class="pill ok">matched</span>
-          <button class="btn sm ghost" :title="`Remove ${s.label}`"
-                  @click="emit('remove', i)">×</button>
+          <!-- Was a literal "×" in a text button: a character doing an
+               icon's job, at a text button's weight, on a row where the name
+               is the thing being read. -->
+          <ToolButton icon="trash" :label="`Remove ${s.label}`" :size="14"
+                      hint="Artwork already uploaded in this shape keeps printing. Removing every shape restores the standard list."
+                      @click="emit('remove', i)" />
         </div>
         <div class="sgrid">
           <label class="formrow"><span class="cap">Width</span>
@@ -86,13 +90,20 @@ const emit = defineEmits(['add', 'save', 'remove'])
     </ul>
     <p v-if="error" class="note bad tiny">{{ error }}</p>
     <div class="prow">
-      <button class="btn sm" @click="emit('add')">Add a shape</button>
-      <button class="btn sm primary" :disabled="busy" @click="emit('save')">Save shapes</button>
+      <button class="btn sm" @click="emit('add')"><Icon name="plus" :size="15" />Add a shape</button>
+      <button class="btn sm primary" :disabled="busy" @click="emit('save')">
+        <Icon name="check" :size="15" />Save
+      </button>
     </div>
-    <p class="say"
-       title="Tolerance is on the aspect ratio, as a fraction: 0.02 accepts two per cent out of shape. Removing every shape restores the standard list. Only artwork too coarse to print is turned away — an unfamiliar shape is measured and offered, never thrown away.">
-      Tolerance is a fraction of the shape
-    </p>
+    <!--
+      ONE SENTENCE, AND IT IS THE ONE THAT IS NOT GUESSABLE. The heading above
+      carried a four-clause paragraph in its title and this restated its first
+      clause underneath; between them they explained what a shape is, which the
+      four labelled number fields already say. What no control here reveals is
+      the UNIT on tolerance — 0.02 could be millimetres, per cent or pixels,
+      and it is a fraction of the aspect ratio.
+    -->
+    <p class="say">Tolerance is a fraction of the shape: 0.02 allows two per cent out.</p>
   </div>
 
 </aside>
@@ -101,21 +112,24 @@ const emit = defineEmits(['add', 'save', 'remove'])
 <style scoped src="./studio.css"></style>
 
 <style scoped>
-.shapes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px }
-.shapes li { border: 1px solid var(--border); border-radius: 8px; padding: 8px }
+.shapes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-4) }
+.shapes li { border: var(--rule) solid var(--border); border-radius: var(--r-md); padding: var(--sp-4) }
 .shapes li.on { border-color: var(--brand); background: var(--brand-soft) }
-.shead { display: flex; align-items: center; gap: 6px; margin-bottom: 6px }
-.sname { flex: 1; min-width: 0; min-height: 30px; padding: 3px 6px; font-size: .84rem; font-weight: 500 }
-.sgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px }
-.unit { font-size: .74rem; color: var(--muted) }
+.shead { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3) }
+.sname {
+  flex: 1; min-width: 0; min-height: 30px; padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium);
+}
+.sgrid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3) var(--sp-4) }
+.unit { font-size: var(--fs-2xs); color: var(--muted) }
 /* Stranded in TicketDesign.vue when this file took the markup: a child's
  * markup does not inherit a parent's scoped styles, so these have been inert
  * since the extraction. Same cause as the verdict's status dot (3a70895). The
  * dead copies remain in the parent for whoever holds it next. */
-.prow { display: flex; gap: 6px; flex-wrap: wrap }
+.prow { display: flex; gap: var(--sp-3); flex-wrap: wrap }
 .sgrid input {
-  min-height: 30px; padding: 3px 6px; text-align: right; font-size: 12px;
+  min-height: 30px; padding: var(--sp-2) var(--sp-3); text-align: right; font-size: var(--fs-2xs);
   font-family: var(--font-data); font-variant-numeric: tabular-nums;
 }
-.sgrid .unit { font-size: .66rem }
+.sgrid .unit { font-size: var(--fs-3xs) }
 </style>
