@@ -356,6 +356,7 @@ export const MY_ERRORS = {
   // The ticket artwork. Same reasoning as the logo above: an organiser at a
   // desk reads these, the English underneath carries what to do about it.
   TEMPLATE_TOO_BIG: 'လက်မှတ်ပုံ အရွယ်အစား ကြီးလွန်းသည်',
+  TOO_MANY_TEMPLATES: 'လက်မှတ်ပုံ အရေအတွက် ပြည့်နေပြီ — တစ်ခု ဖယ်ရှားပါ',
   BAD_SIZE: 'လက်မှတ်ပုံ၏ အချိုးအစား မကိုက်ညီပါ',
   BAD_SIZES: 'ခွင့်ပြုသည့် အရွယ်အစားစာရင်း မမှန်ပါ',
   BAD_DESIGN: 'ဒီဇိုင်း အတိုင်းအတာ မမှန်ပါ',

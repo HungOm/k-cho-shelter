@@ -17,6 +17,7 @@
  * stored — and the refusal has to SAY what was uploaded and what was wanted,
  * because the person holding the file is usually not the person who made it.
  */
+import { readFileSync } from 'node:fs'
 import { setEnv, loadModule, cleanup } from './loadts.mjs'
 import { fakeDb, baseConfig, users, codeOf, errOf } from './fakedb.mjs'
 
@@ -348,6 +349,52 @@ console.log('the shape rule itself')
   ok(!templates.matchSize(1600, 800, sizes), 'a different shape does not')
   ok(!templates.matchSize(100, 32, sizes), 'nor the right shape far too small')
   ok(!templates.matchSize(0, 0, sizes), 'nor nothing at all')
+}
+
+/* ---------- how many a raffle may keep ---------- */
+
+/*
+ * STORAGE IS THE REASON, AND IT IS NOT VISIBLE FROM THIS SCREEN. Each artwork
+ * is up to MAX_BYTES kept for the life of the raffle, on a free tier shared
+ * with every ticket image and the logo. Nothing in the studio shows what has
+ * been used, so an organiser who uploads a draft a week finds out from a
+ * failure somewhere else entirely, months later.
+ *
+ * THE REFUSAL COMES BEFORE THE WRITE, which is the half worth a test of its
+ * own. Refusing after the object is in the bucket leaves a file no row points
+ * at — invisible to the rail, invisible to the delete path, and counted by the
+ * quota. `stored` is the bucket, so asserting it did not grow is asserting
+ * exactly that.
+ */
+console.log('a raffle may hold four artworks, and the fifth says what to do')
+{
+  const w = world()
+  for (let i = 0; i < templates.MAX_TEMPLATES; i++) {
+    await upload(w, { data: TICKET, contentType: 'image/png', name: `Draft ${i + 1}` })
+  }
+  eq(w.stored.length, templates.MAX_TEMPLATES, 'the first four are kept')
+
+  const err = await errOf(() => upload(w, {
+    data: TICKET, contentType: 'image/png', name: 'One too many',
+  }))
+  ok(err, 'the fifth throws')
+  eq(err?.code, 'TOO_MANY_TEMPLATES', 'with its own code')
+  ok(/limit/i.test(err?.message ?? ''), 'the refusal names the limit')
+  ok(/remove/i.test(err?.message ?? ''), 'and says to remove one — R8: a refusal is an instruction')
+  eq(w.stored.length, templates.MAX_TEMPLATES, 'and nothing reached the bucket for it')
+}
+
+/*
+ * THE RAIL CARRIES A COPY OF THE CEILING so that it can read "3 of 4" and
+ * disable the upload with its reason, rather than taking a 4 MB file and
+ * refusing it after the wait. A copy is only safe while something compares it.
+ */
+console.log("the rail's copy of the ceiling is the server's number")
+{
+  const rail = readFileSync(new URL('../src/components/ticketdesign/TemplateRail.vue', import.meta.url), 'utf8')
+  const m = rail.match(/const MAX = (\d+)/)
+  ok(m, 'TemplateRail declares a MAX')
+  eq(m?.[1], String(templates.MAX_TEMPLATES), 'and it is what the server enforces')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

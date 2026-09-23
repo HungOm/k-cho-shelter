@@ -17,9 +17,10 @@
  * server and change which artwork the raffle prints from. This component
  * decides nothing, which is why it takes no design and no store.
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import Icon from '../ui/Icon.vue'
 import ToolButton from '../ui/ToolButton.vue'
+import Section from './Section.vue'
 
 const props = defineProps({
   templates: { type: Array, default: () => [] },
@@ -36,6 +37,27 @@ const props = defineProps({
   sizes: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['choose', 'remove', 'file', 'blank'])
+
+/*
+ * THE CEILING, SHOWN BEFORE IT IS HIT AND NOT ONLY WHEN IT REFUSES.
+ *
+ * `templates.ts` holds the real one — this number is a copy, so that the count
+ * can read "3 of 4" while there is still room and the upload can be disabled
+ * WITH ITS REASON rather than accepting a 4 MB file and refusing it after the
+ * wait (R8, and permissionui's rule: disabled with the reason, never hidden,
+ * never enabled-then-refused). templates.test.mjs pins the two together, which
+ * is the only thing that keeps a duplicated constant honest.
+ */
+const MAX = 4
+const full = computed(() => props.templates.length >= MAX)
+const whyNoUpload = computed(() => {
+  if (props.busy) return 'Working on the last one.'
+  if (!full.value) return ''
+  /* Short, because the count beside the heading has already said "4 of 4" and
+     the server's own refusal carries the long form. Three lines of amber under
+     a disabled button is the text bulk this screen is being cleared of. */
+  return `${MAX} is the limit. Remove one to make room.`
+})
 
 /* The hidden input the button opens. It moved here with the markup that uses
  * it — a ref to a node the parent no longer renders is a handle to somebody
@@ -57,7 +79,10 @@ function onPick(e) {
 <template>
 <aside class="rail">
   <div class="block grow">
-    <h3 class="rubric">Templates <span class="count">{{ templates.length }}</span></h3>
+    <!-- "2 of 4" rather than "2": a bare number answers how many there are,
+         which nobody is asking. The question an artwork rail gets asked is
+         whether another one will fit. -->
+    <Section label="Templates" :count="`${templates.length} of ${MAX}`" />
     <ul class="tlist">
       <li v-for="t in templates" :key="t.id" :class="{ on: t.id === activeId }">
         <!--
@@ -99,9 +124,16 @@ function onPick(e) {
   </div>
 
   <div class="block">
-    <button class="btn sm primary wide" :disabled="busy" @click="fileInput?.click()">
+    <button class="btn sm primary wide" :disabled="!!whyNoUpload"
+            :title="whyNoUpload || 'Add another ticket picture to this raffle'"
+            @click="fileInput?.click()">
       <Icon name="upload" :size="15" />{{ busy ? 'Working…' : 'Upload new artwork' }}
     </button>
+    <!-- The reason is on the button for a pointer and repeated here for a
+         keyboard or a phone, which never see a `title`. It only appears when
+         the control is actually dead, so it costs a line at the ceiling and
+         nothing the rest of the time. -->
+    <p v-if="full" class="tiny warn">{{ whyNoUpload }}</p>
     <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp"
            :disabled="busy" @change="onPick" hidden>
     <!--

@@ -58,6 +58,22 @@ export const BUCKET = 'ticket-artwork'
 export const MAX_BYTES = 4 * 1024 * 1024
 
 /*
+ * HOW MANY ARTWORKS ONE RAFFLE MAY HOLD.
+ *
+ * Every one of these is up to MAX_BYTES in Storage, kept for the life of the
+ * raffle, on a free tier shared with the ticket images and the logo. Four is
+ * the number because the reasons to hold more than one are countable: the
+ * ticket, a second size, last year's for reference, and the one being replaced
+ * — and a fifth is almost always a draft nobody went back and removed.
+ *
+ * A CEILING IS NOT A CLEANUP. This refuses the fifth; it never deletes the
+ * first, because deleting somebody's artwork to make room for an upload they
+ * have not finished describing is not a trade this screen may make on their
+ * behalf. The organiser chooses which one goes.
+ */
+export const MAX_TEMPLATES = 4
+
+/*
  * WHAT SHAPE OF TICKET THIS RAFFLE PRINTS.
  *
  * Ships with one: the ticket CEAM already has. A new raffle is not asked to
@@ -275,6 +291,20 @@ export async function listTemplates(_p: Record<string, unknown>, _user: AppUser,
  * ticket design — which is nearly all of them — never has to find the switch.
  */
 export async function uploadTemplate(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
+  /*
+   * THE CEILING IS CHECKED FIRST, before a base64 payload of up to 4 MB is
+   * decoded and long before anything reaches Storage. Refusing after the write
+   * is how a bucket collects files no row points at: the insert fails, the
+   * object stays, and nothing afterwards knows it is there.
+   */
+  const held = await allTemplates(ctx)
+  if (held.length >= MAX_TEMPLATES) {
+    throw new ApiError('TOO_MANY_TEMPLATES',
+      `This raffle already holds ${held.length} artworks, which is the limit. ` +
+      'Remove one you no longer print from, then upload this again.',
+      { limit: MAX_TEMPLATES, held: held.map((t) => ({ id: t.id, name: t.name })) })
+  }
+
   const declared = String(p.contentType ?? '')
   const bytes = decode(String(p.data ?? ''))
 
