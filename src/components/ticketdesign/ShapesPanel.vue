@@ -21,6 +21,7 @@
  */
 import Icon from '../ui/Icon.vue'
 import ToolButton from '../ui/ToolButton.vue'
+import Section from './Section.vue'
 
 defineProps({
   sizes: { type: Array, default: () => [] },
@@ -58,7 +59,7 @@ const pct = (v) => {
 <template>
 <aside class="panel">
   <div class="pgroup">
-    <h4 class="rubric">Shapes we know</h4>
+    <Section label="Shapes we know" />
     <!--
       ONE BLOCK PER SHAPE, NOT A FIVE-COLUMN TABLE.
       A table of five numeric columns in a 300px panel truncates every

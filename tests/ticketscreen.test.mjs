@@ -103,7 +103,7 @@ console.log('with no artwork yet, an organiser is told so and can upload')
    * lives has moved.
    */
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, EMPTY), {
-    drive: settle, renderReal: ['ShapesPanel.vue', 'TemplateRail.vue'],
+    drive: settle, renderReal: ['Section.vue', 'ShapesPanel.vue', 'TemplateRail.vue'],
   })
   const text = visibleText(html)
   /*
@@ -121,7 +121,7 @@ console.log('with no artwork yet, an organiser is told so and can upload')
 console.log('with artwork, the designer renders')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle, renderReal: ['Inspector.vue'],
+    drive: settle, renderReal: ['Section.vue', 'Inspector.vue'],
   })
   const text = visibleText(html)
 
@@ -164,9 +164,16 @@ console.log('everything on the ticket is listed by a name somebody chose')
    * it is now <Toggle>, and a child left out of renderReal is stubbed to its
    * slots -- so the assertion below would be reading an absence this harness
    * creates rather than anything about the screen.
+   *
+   * SECTION.VUE IS IN EVERY LIST FOR THE SAME REASON, AND IT IS SHARPER. It
+   * draws its heading from a PROP, not a slot, so a stub renders the slots and
+   * drops the words entirely -- every section heading in the studio vanishes
+   * from visibleText at once. It read exactly like the headings having been
+   * deleted by the change that introduced it, which is what it looked like
+   * when 'Shapes we know' and 'When the text is too long' both went red.
    */
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle, renderReal: ['Inspector.vue', 'Toggle.vue'],
+    drive: settle, renderReal: ['Section.vue', 'Inspector.vue', 'Toggle.vue'],
   })
   const text = visibleText(html)
   for (const name of ['Ticket number', 'Book number', "Buyer's name", 'Phone', 'Address', 'Sold by']) {
@@ -202,7 +209,7 @@ console.log('everything on the ticket is listed by a name somebody chose')
 console.log('every element is a box on the picture')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle, renderReal: ['Inspector.vue'],
+    drive: settle, renderReal: ['Section.vue', 'Inspector.vue'],
   })
 
   const boxes = html.match(/class="[^"]*\bebox\b[^"]*"/g) ?? []
@@ -248,7 +255,7 @@ console.log('picking one opens what it prints and where it sits')
        built from them: stubbed, the control that reveals the box group renders
        as nothing and the assertion below cannot see it. */
     drive: async (b) => { await b.load(); b.sel.value = 'buyer-name' },
-    renderReal: ['Inspector.vue', 'ToolBar.vue', 'ToolButton.vue'],
+    renderReal: ['Section.vue', 'Inspector.vue', 'ToolBar.vue', 'ToolButton.vue'],
   })
   const text = visibleText(html)
   /*
@@ -299,7 +306,7 @@ console.log('picking one opens what it prints and where it sits')
 console.log('the screen says what it is storing')
 {
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
-    drive: settle, renderReal: ['Inspector.vue'],
+    drive: settle, renderReal: ['Section.vue', 'Inspector.vue'],
   })
   const text = visibleText(html)
   /*
@@ -357,7 +364,7 @@ console.log('the screen says what it is storing')
        */
       b.design.value.elements[0].box.left = 0.42
     },
-    renderReal: ['Inspector.vue'],
+    renderReal: ['Section.vue', 'Inspector.vue'],
   })
   const chosenText = visibleText(picked)
   /*
@@ -731,7 +738,7 @@ console.log('the arrange rail offers all six edges and all four stacking moves')
    */
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
     drive: async (b) => { await b.load(); b.tab.value = 'place' },
-    renderReal: ['ToolBar.vue', 'ToolButton.vue'],
+    renderReal: ['Section.vue', 'ToolBar.vue', 'ToolButton.vue'],
   })
   const tools = ['Align left', 'Centre across', 'Align right', 'Align top', 'Centre down',
     'Align bottom', 'Bring forward', 'Send backward', 'Bring to front', 'Send to back']
@@ -893,7 +900,7 @@ console.log('several things selected get a panel of their own, and the rail its 
       b.sel.value = 'buyer-name'
       b.also.value = ['buyer-phone', 'buyer-address']
     },
-    renderReal: ['SelectionInspector.vue', 'ToolBar.vue', 'ToolButton.vue'],
+    renderReal: ['Section.vue', 'SelectionInspector.vue', 'ToolBar.vue', 'ToolButton.vue'],
   })
   const text = visibleText(html)
   ok(/3 selected/.test(text), 'the panel says how many are selected')
@@ -917,7 +924,7 @@ console.log('the canvas measures the paper, draws its grid, and zooms from the k
    */
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
     drive: async (b) => { await b.load(); b.tab.value = 'place'; b.zoom.value = 0.5 },
-    renderReal: ['Rulers.vue'],
+    renderReal: ['Section.vue', 'Rulers.vue'],
   })
   ok(/class="rulers"/.test(html), 'the artboard sits inside its rulers')
   const labels = [...html.matchAll(/<text[^>]*>(\d+)<\/text>/g)].map((m) => Number(m[1]))
@@ -994,7 +1001,7 @@ console.log('the ticket can be seen in grey, handed over as a file, and lettered
    */
   const html = await renderScreen('src/components/TicketDesign.vue', store(ADMIN, ONE), {
     drive: async (b) => { await b.load(); b.tab.value = 'place'; b.inGrey.value = true },
-    renderReal: ['ToolBar.vue', 'ToolButton.vue'],
+    renderReal: ['Section.vue', 'ToolBar.vue', 'ToolButton.vue'],
   })
   ok(/class="frame[^"]*\bgrey\b/.test(html), 'the grey view marks the artboard')
   for (const t of ['PNG', 'SVG']) {
@@ -1154,7 +1161,7 @@ console.log('the digital card can be drawn on, and a drawing is part of the card
   const html = await renderScreen('src/components/ticketdesign/DigitalTab.vue', store(ADMIN, ONE), {
     props,
     drive: async (b) => { b.sel.value = 'masthead' },
-    renderReal: ['ToolBar.vue', 'ToolButton.vue'],
+    renderReal: ['Section.vue', 'ToolBar.vue', 'ToolButton.vue'],
   })
   const text = visibleText(html)
   ok(/Drawn/.test(text) && /Rule/.test(text), 'the layer list shows what was drawn, above the card')

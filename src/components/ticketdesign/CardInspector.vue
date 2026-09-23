@@ -24,6 +24,7 @@ import Icon from '../ui/Icon.vue'
 import ToolBar from '../ui/ToolBar.vue'
 import ToolButton from '../ui/ToolButton.vue'
 import Ink from '../ui/Ink.vue'
+import Section from './Section.vue'
 import { CARD_FACES } from '../../lib/cardfaces.js'
 import Lettering from './Lettering.vue'
 
@@ -220,12 +221,13 @@ const over = () => (props.motto || '').length > props.mottoMax
       one panel, and the sentence under the field says which is which.
     -->
     <div v-show="tab === 'style'" v-if="part.id === 'motto'" class="pgroup">
-      <div class="spread">
-        <h4 class="rubric" style="margin:0">Text</h4>
-        <span class="tiny data" :class="over() ? 'bad' : 'muted'">
-          {{ (motto || '').length }} / {{ mottoMax }}
-        </span>
-      </div>
+      <Section label="Text">
+        <template #meta>
+          <span class="tiny data" :class="over() ? 'bad' : 'muted'">
+            {{ (motto || '').length }} / {{ mottoMax }}
+          </span>
+        </template>
+      </Section>
       <input :value="motto" autocomplete="off" placeholder="e.g. Love is patient, love is kind"
              @input="emit('update:motto', $event.target.value)">
       <!-- The bar is the count again, as a length rather than a number: a
@@ -244,7 +246,7 @@ const over = () => (props.motto || '').length > props.mottoMax
     </div>
 
     <div v-show="tab === 'style'" v-if="part.id === 'code'" class="pgroup">
-      <h4 class="rubric">The code</h4>
+      <Section label="The code" />
       <p class="say"
          title="No placeholder underneath it to fight with, unlike the printed ticket — this card is drawn, not photographed.">
         Opens the public check page.
@@ -261,7 +263,7 @@ const over = () => (props.motto || '').length > props.mottoMax
     </div>
 
     <div v-if="part.locked" class="pgroup">
-      <h4 class="rubric">The card itself</h4>
+      <Section label="The card itself" />
       <p class="say">The card itself — it cannot be moved or hidden.</p>
     </div>
   </template>
@@ -279,7 +281,7 @@ const over = () => (props.motto || '').length > props.mottoMax
     a second control for it here would be two doors to one value.
   -->
   <div class="pgroup cardwide">
-    <h4 class="rubric">The card's colour</h4>
+    <Section label="The card's colour" />
     <div class="brandrow">
       <span class="chipcol" :style="{ background: brand || 'var(--brand)' }"></span>
       <b class="data">{{ brand || 'the standard colour' }}</b>
@@ -291,10 +293,11 @@ const over = () => (props.motto || '').length > props.mottoMax
   </div>
 
   <div v-if="watermark" class="pgroup">
-    <div class="spread">
-      <h4 class="rubric" style="margin:0">Watermark</h4>
-      <span class="tiny data muted">{{ Math.round(watermark.opacity * 100) }}%</span>
-    </div>
+    <Section label="Watermark">
+      <template #meta>
+        <span class="tiny data muted">{{ Math.round(watermark.opacity * 100) }}%</span>
+      </template>
+    </Section>
     <label class="formrow">
       <span class="cap">Strength</span>
       <input type="range" min="0" max="20" step="1"
@@ -338,7 +341,6 @@ const over = () => (props.motto || '').length > props.mottoMax
 .hide.off { color: var(--warn) }
 .hide:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px }
 
-.spread { display: flex; align-items: baseline; justify-content: space-between; gap: 8px }
 .saving { color: var(--muted) }
 
 /* The character count as a length. --brand until it is over, --bad after, which

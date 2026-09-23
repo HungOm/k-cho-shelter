@@ -17,6 +17,7 @@ import { computed } from 'vue'
 import { pageFit, PAPERS } from '../../lib/ticketsheet.js'
 import Dim from '../ui/Dim.vue'
 import SheetPreview from '../ui/SheetPreview.vue'
+import Section from './Section.vue'
 
 const props = defineProps({
   design: { type: Object, default: null },
@@ -43,7 +44,7 @@ const dpi = computed(() => props.dpi)
             inferred from a number inside a sum.
           -->
           <div class="pgroup">
-            <h4 class="rubric">Paper</h4>
+            <Section label="Paper" />
             <div class="papers">
               <button v-for="pp in PAPERS" :key="pp.id" type="button" class="paper"
                       :class="{ on: (design.sheet.paper || 'a4') === pp.id }"
@@ -74,7 +75,7 @@ const dpi = computed(() => props.dpi)
           </div>
 
           <div class="pgroup">
-            <h4 class="rubric">How they sit on the page</h4>
+            <Section label="On the page" />
             <div class="quad one">
               <Dim v-model="design.sheet.widthMM" label="Ticket width" :min="40" :max="210" unit="mm" />
               <Dim v-model="design.sheet.gapMM" label="Gap between" :min="0" :max="30" unit="mm" />
@@ -106,7 +107,7 @@ const dpi = computed(() => props.dpi)
             in which the answer can be checked against a sheet of A4.
           -->
           <div v-if="fit" class="pgroup">
-            <h4 class="rubric">What that comes to</h4>
+            <Section label="What that comes to" />
             <p class="fitline">
               <b class="big">{{ fit.per }}</b>
               <span>ticket{{ fit.per === 1 ? '' : 's' }} to a sheet of {{ fit.paper.label }}</span>

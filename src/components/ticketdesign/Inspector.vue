@@ -38,6 +38,7 @@ import ToolButton from '../ui/ToolButton.vue'
  * <Logo> in the same file and skips <Ink> by name.
  */
 import Ink from '../ui/Ink.vue'
+import Section from './Section.vue'
 import Lettering from './Lettering.vue'
 
 defineProps({
@@ -231,7 +232,7 @@ const tab = ref('box')
     </div>
 
     <div v-show="tab === 'style'" v-if="element.kind !== 'code'" class="pgroup">
-      <h4 class="rubric">When the text is too long</h4>
+      <Section label="When the text is too long" />
       <div class="seg">
         <button v-for="o in OVERFLOW" :key="o.id" type="button" class="segbtn"
                 :class="{ on: element.overflow === o.id }"
@@ -244,7 +245,7 @@ const tab = ref('box')
     </div>
 
     <div v-show="tab === 'what'" v-else class="pgroup">
-      <h4 class="rubric">The code</h4>
+      <Section label="The code" />
       <label class="choice">
         <input v-model="element.backing" type="checkbox">
         <span>White behind it

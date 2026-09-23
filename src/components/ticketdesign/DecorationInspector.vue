@@ -28,6 +28,7 @@ import Ink from '../ui/Ink.vue'
 import ToolBar from '../ui/ToolBar.vue'
 import ToolButton from '../ui/ToolButton.vue'
 import Toggle from '../ui/Toggle.vue'
+import Section from './Section.vue'
 import Lettering from './Lettering.vue'
 import { PATHS } from '../../lib/iconpaths.js'
 import { BLENDS, DASHES } from '../../lib/designelements.js'
@@ -217,13 +218,13 @@ function setShadow(on) {
           <span class="picthumb"><img :src="deco.image.src" alt=""></span>
           <button class="btn sm" type="button" @click="emit('pick-image')">Change picture</button>
         </div>
-        <h4 class="rubric">Fit</h4>
+        <Section label="Fit" />
         <div class="seg" role="group" aria-label="How the picture sits in its box">
           <button v-for="f in FITS" :key="f.id" type="button" class="segbtn"
                   :class="{ on: deco.image.fit === f.id }" :aria-pressed="deco.image.fit === f.id"
                   @click="before(); deco.image.fit = f.id">{{ f.name }}</button>
         </div>
-        <h4 class="rubric">Clip</h4>
+        <Section label="Clip" />
         <div class="seg" role="group" aria-label="What shape the box cuts the picture to">
           <button v-for="c in CLIPS" :key="c.id" type="button" class="segbtn"
                   :class="{ on: deco.image.clip === c.id }" :aria-pressed="deco.image.clip === c.id"
@@ -231,7 +232,7 @@ function setShadow(on) {
         </div>
       </template>
       <template v-if="!isIcon && !isImage">
-        <h4 class="rubric">Fill</h4>
+        <Section label="Fill" />
         <ToolBar label="Fill">
           <ToolButton v-for="f in FILL_ICONS" :key="f.id" :icon="f.icon" :label="f.name"
                       :size="16" :active="deco.fill.type === f.id"
@@ -257,7 +258,7 @@ function setShadow(on) {
         </template>
       </template>
 
-      <h4 v-if="!isImage" class="rubric">{{ isIcon ? 'Mark' : 'Line' }}</h4>
+      <Section v-if="!isImage" :label="isIcon ? 'Mark' : 'Line'" />
       <template v-if="isIcon">
         <!-- A GRID OF THE APP'S OWN DRAWINGS. Named for a screen reader by
              ToolButton, so 53 unlabelled squares are 53 named controls. -->
@@ -294,7 +295,7 @@ function setShadow(on) {
       </template>
 
       <template v-if="isText">
-        <h4 class="rubric">Words</h4>
+        <Section label="Words" />
         <input :value="deco.text.value" maxlength="120" placeholder="What it says"
                @focus="before()" @input="deco.text.value = $event.target.value">
         <!-- The lettering control the field inspector uses, so "Own words" and
@@ -361,7 +362,7 @@ function setShadow(on) {
         </div>
       </template>
 
-      <h4 class="rubric">How it mixes</h4>
+      <Section label="How it mixes" />
       <div class="seg" role="group" aria-label="How it mixes">
         <button v-for="b in BLENDS" :key="b" type="button" class="segbtn"
                 :class="{ on: deco.blend === b }" :aria-pressed="deco.blend === b"

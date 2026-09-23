@@ -43,6 +43,20 @@ defineProps({
          label read as part of the heading and would have been a third style
          for one idea, which is the thing this component exists to stop. -->
     <span v-if="count !== null" class="scount">{{ count }}</span>
+    <!--
+      A READOUT, for the headers whose right-hand side is a live figure that
+      carries its own tone — "18 / 60" that turns red at the limit, "40%" as a
+      watermark strengthens. `count` renders a plain number and cannot express
+      that, and these are not `action`s: nothing happens when you press them.
+
+      This is the `.spread` pattern, which is a GLOBAL class (style.css:588)
+      that CardInspector had quietly redefined in its own scoped block with a
+      different gap and a different baseline — so two components using the same
+      class name drew differently. Its callers also each carried an inline
+      `style="margin:0"` to cancel the heading's margin, which is the header
+      component's job and not a caller's.
+    -->
+    <slot name="meta" />
     <slot name="action" />
   </div>
 </template>
