@@ -300,6 +300,11 @@
    */
   --rule: 1px;
   --rule-strong: 1.5px;
+  /*
+   * A TERTIARY ACTION IS A PRIMITIVE, NOT A LOCAL CLASS — see `.linkish` below.
+   * The token is here so the rule down there can be read as part of the system
+   * rather than as one screen's opinion.
+   */
 
   /*
    * ELEVATION — five heights, so that choosing a shadow means choosing how
@@ -630,6 +635,54 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn.block   { width: 100%; }
 .btn.lg      { min-height: 62px; font-size: 1.12rem; border-radius: var(--r); }
 .btn.sm      { min-height: 44px; padding: 6px 14px; font-size: .9rem; border-radius: 9px; }
+
+/*
+ * THE THIRD RUNG OF THE ACTION LADDER. Refactoring UI puts every action on a
+ * page somewhere in a pyramid: a primary that is obvious and filled, a
+ * secondary that is clear but outlined, and a tertiary that is discoverable
+ * and unobtrusive — "styling these actions like links is usually the best
+ * approach". `.btn.primary` and `.btn` were the first two. This is the third,
+ * and it had no name, so two screens invented it separately.
+ *
+ * AND ONE OF THE TWO WAS DEAD. Money.vue wrote it as `.statement .linkish` in
+ * its own scoped block, and `class="statement"` appears nowhere in Money.vue —
+ * it is on a table inside SellerMoney.vue. So Money's two tertiary controls
+ * have been rendering as DEFAULT BROWSER BUTTONS: bordered grey chips sitting
+ * in a money column, which is the precise thing the comment above that rule
+ * said it existed to prevent ("a bordered chip in a money column reads as an
+ * input somebody is meant to type in").
+ *
+ * A class that styles nothing is indistinguishable from a class that styles
+ * correctly — the markup reads as handled. Same shape as Admin.vue's note
+ * about `.mono`, and as the `var(--line, …)` fallback that tokens.test.mjs
+ * exists for. This is also exactly what references/controls.md R2 predicts:
+ * a screen invents a class in its own <style>, and the next screen invents it
+ * again slightly differently.
+ *
+ * NO UNDERLINE, because this is the live definition's behaviour and four
+ * controls in SellerMoney already render that way; resurrecting Money's dead
+ * underlined variant as the global would have changed screens that were
+ * working. Colour plus the surrounding quiet is the signal.
+ */
+/*
+ * THE TAP TARGET, AND THE LINE THIS RUNG DOES NOT CROSS. `--tap: 52px` is a
+ * correctness constraint for anything a seller presses in the field, and an
+ * inline action inside a sentence cannot be 52px without breaking the
+ * sentence. So the boundary is the rule, not a compromise on it: `.linkish`
+ * is for an action inside a line of prose that UNDOES A NARROWING THE READER
+ * CHOSE — show the rest, clear the search. Anything somebody presses standing
+ * up with cash in one hand is a `.btn` and keeps its target.
+ *
+ * The vertical padding is free: on a non-replaced inline element it grows the
+ * hit box without touching the line height, so the target is about 28px
+ * instead of about 17px for nothing.
+ */
+.linkish {
+  border: 0; background: none; padding: 6px 0; font: inherit;
+  color: var(--brand); cursor: pointer;
+}
+.linkish:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 2px; }
+.linkish:disabled { color: var(--muted); cursor: not-allowed; }
 
 /* ---------- forms ---------- */
 .field { margin-bottom: 16px; }

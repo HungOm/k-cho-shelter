@@ -337,6 +337,33 @@ const settledShown = computed(() => decidedFilter.value === 'all'
   ? settled.value
   : settled.value.filter((r) => groupOfRow(r) === decidedFilter.value))
 
+/*
+ * THE CHIP SAID SIXTY-THREE AND THE LIST GAVE TWENTY-FIVE.
+ *
+ * This list was `settledShown.slice(0, 25)` with nothing anywhere saying so,
+ * while the chips directly above it carry `decidedCounts` — the FULL count per
+ * group. So on any raffle with more than twenty-five decided requests the
+ * screen stated a number in one control and delivered a different one in the
+ * control beside it, silently, and the only way to find out was to count.
+ *
+ * Search.vue has already paid for this exact shape and its comment records the
+ * fix: "This drew every hit in one list and said '(showing first 300)'
+ * underneath — a wall to scroll on a phone AND a list somebody had to notice
+ * was cut." A row that is not on screen cannot be read, and a cap nobody
+ * declares is the absent-target case with a number printed next to it.
+ *
+ * The cap stays, because twenty-five decided rows is the right amount to put
+ * in front of somebody by default. What changes is that it is now SAID, and
+ * undoing it is the same act, with the same words, that Money offers over a
+ * capped list of tickets.
+ */
+const SETTLED_PAGE = 25
+const showAllSettled = ref(false)
+const settledCap = computed(() => showAllSettled.value ? Infinity : SETTLED_PAGE)
+/* Reset when the chip changes: having pressed "show every one" under Rejected
+   should not silently expand All to nine hundred rows on the way back. */
+watch(decidedFilter, () => { showAllSettled.value = false })
+
 async function decide(r, approve) {
   busy.value = r.requestId
   try {
@@ -705,7 +732,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
       <Filters v-model="decidedFilter" :items="DECIDED" :counts="decidedCounts" />
       <div class="card flush">
         <ul class="list">
-          <li v-for="r in settledShown.slice(0, 25)" :key="r.requestId">
+          <li v-for="r in settledShown.slice(0, settledCap)" :key="r.requestId">
             <div class="item" style="cursor:default">
               <span class="grow">
                 <!-- Its own line. Run together, the summary's full stop met the
@@ -746,12 +773,27 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
             </div>
           </li>
         </ul>
+        <!--
+          THE CAP, SAID. The chips above carry the full count per group; this
+          list showed twenty-five of them and nothing declared the difference.
+          Same sentence and same words as Money uses over a capped list, so
+          the two screens read as one product rather than two solutions.
+        -->
+        <p v-if="settledShown.length > SETTLED_PAGE && !showAllSettled"
+           class="tiny muted capline">
+          Showing {{ SETTLED_PAGE }} of {{ settledShown.length }}.
+          <button class="linkish" @click="showAllSettled = true">Show every request</button>
+        </p>
       </div>
     </template>
   </div>
 </template>
 
 <style scoped>
+/* Inside the list's own card, under the last row, so it reads as the foot of
+   that list rather than as a new thing on the page. */
+.capline { margin: 0; padding: var(--sp-5) var(--sp-6); border-top: var(--rule) solid var(--border); }
+
 /* THE REFUSAL REASON. Tinted and set apart, because it is the one thing on a
    refused row anybody can act on — and as a grey clause on the meta line it was
    read as part of the timestamp. */

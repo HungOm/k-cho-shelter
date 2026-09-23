@@ -420,7 +420,7 @@ function waLink(a) {
 
         <p v-if="mine.length > mineShown.length" class="tiny muted" style="margin-top:8px">
           Showing {{ mineShown.length }} of {{ mine.length }}.
-          <button class="linkish" @click="showAllMine = true">Show them all</button>
+          <button class="linkish" @click="showAllMine = true">Show every ticket</button>
         </p>
       </template>
 
@@ -446,7 +446,7 @@ function waLink(a) {
 
         <p v-if="q && !matching.length" class="note info" style="margin-top:12px">
           Nobody matches “{{ q }}”.
-          <button class="linkish" @click="q = ''">Show everybody</button>
+          <button class="linkish" @click="q = ''">Show every seller</button>
         </p>
 
         <div v-else class="tablewrap" style="margin-top:8px">
@@ -565,15 +565,20 @@ function waLink(a) {
 .statement tfoot td { border-top: 2px solid var(--border); }
 
 /*
- * The reference is the way into the book, so it has to look like a way in and
- * not like a form control. A bordered chip in a money column reads as an input
- * somebody is meant to type in.
+ * `.linkish` IS A PRIMITIVE NOW, in style.css beside .btn — the third rung of
+ * the action ladder, under .btn.primary and .btn.
+ *
+ * WHAT WAS HERE NEVER RENDERED. The rule was written `.statement .linkish`,
+ * and `class="statement"` does not appear anywhere in this file — it is on a
+ * table inside SellerMoney.vue. So this screen's two tertiary buttons have
+ * been drawing as default browser buttons: bordered grey chips in a money
+ * column, which is exactly what the comment that used to sit here said it was
+ * preventing. The markup was right and the selector could not reach it.
+ *
+ * The intent is kept, in a place where it applies, and where the next screen
+ * that needs a quiet action finds it instead of inventing a third copy —
+ * references/controls.md R2.
  */
-.statement .linkish {
-  border: 0; background: none; padding: 0; font: inherit; color: var(--brand);
-  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
-}
-.statement .linkish:hover { text-decoration-thickness: 2px; }
 
 /* A write-off reduces the debt and is not cash, so it is legible and quiet
    rather than sitting in the same weight as money that arrived. */

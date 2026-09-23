@@ -575,7 +575,10 @@ tr.writeoff td { color: var(--muted); }
 .receipt .amount.bad { color: var(--bad); }
 .receipt .f { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: .9rem; }
 .receipt .f span { color: var(--muted); }
-.linkish { background: none; border: 0; padding: 0; color: var(--brand); cursor: pointer; font: inherit; }
+/* The base `.linkish` moved to style.css, where it is the action ladder's
+   third rung rather than this modal's private idea — Money.vue had written a
+   second copy of it that could not reach its own markup. What stays here is
+   the part that is genuinely local: */
 /* A reference is an identity somebody will read out, type in, or match against
    a paper stub — Book-004, #13. Same face as the figures it sits beside. */
 td .linkish { font-family: var(--font-data); }

@@ -260,7 +260,11 @@ async function toggle(a, r) {
     -->
     <p v-if="data && data.actions.length && onlyChanged && !groups.length" class="muted">
       Nothing differs from the normal setting.
-      <button class="btn sm ghost" @click="onlyChanged = false">Show all</button>
+      <!-- `.linkish`, not `.btn sm ghost`: this undoes a narrowing the reader
+           chose, which is the action ladder's third rung, and it is the same
+           act Money offers after a search that matches nobody. A bordered
+           control inside a muted sentence reads as the sentence's point. -->
+      <button class="linkish" @click="onlyChanged = false">Show every setting</button>
     </p>
   </div>
 </template>

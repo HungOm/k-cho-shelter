@@ -292,7 +292,32 @@ async function exportEntries() {
              ? 'Every sold ticket has a name and a phone number'
              : "Tickets with nobody's name" }}
         </h3>
-        <button class="btn sm" @click="loadMissing">Show them</button>
+        <!--
+          "Show", NOT "Show them", AND DISABLED WHEN THERE IS NO THEM.
+
+          Two things were wrong with one control. It said "Show them" beside a
+          heading that flips to "Every sold ticket has a name and a phone
+          number" — offering to fetch a list the stat directly above has
+          already reported as zero. Pressing it spent a request to be told
+          nothing, which is the absent-target case: the most expensive state an
+          interface has, and here the screen already knew the answer.
+
+          It is DISABLED WITH THE REASON rather than hidden, which is the rule
+          permissionui pins for controls generally and is right for the same
+          reason: a screen that changes shape between a healthy raffle and a
+          faulty one teaches the reader that the control does not exist.
+
+          And it is "Show" because the heading beside it names the thing. A set
+          that has not been fetched cannot be named in the button — "Show every
+          ticket" would promise a count this screen does not have yet, which is
+          why Money's controls name their set and this one does not.
+        -->
+        <button class="btn sm" :disabled="contactState !== 'some'"
+                :title="contactState === 'none'
+                  ? 'Every sold ticket already has a name and a phone number'
+                  : contactState === 'unknown' ? 'Still counting the raffle up'
+                  : 'List the sold tickets with nobody to contact'"
+                @click="loadMissing">Show</button>
       </div>
       <!--
         WHY IT MATTERS ALWAYS; WHAT TO DO ONLY WHEN THERE IS SOMETHING TO DO.
