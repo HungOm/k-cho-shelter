@@ -67,10 +67,10 @@ import {
 import {
   KINDS as DECO_KINDS, MAX_DECORATIONS, normalDecoration, nextDecoId, nextGroupId, printWarnings,
 } from '../lib/designelements.js'
-import { bandOf, isClick, hitsIn, expandGroups, mergeSelection } from '../lib/selection.js'
-import { copyRecords, pasteRecords } from '../lib/clipboard.js'
+import { isClick, hitsIn, expandGroups, mergeSelection, drawBox, aboutCentre } from '../lib/selection.js'
+import { copyRecords, pasteRecords, repeatStep } from '../lib/clipboard.js'
 import { snapEdges, snapNear, snapSpan } from '../lib/studiocanvas.js'
-import { KEYS, keyLabel, findBinding } from '../lib/studiokeys.js'
+import { KEYS, keyLabel, findBinding, fieldOwns } from '../lib/studiokeys.js'
 import {
   exportSize, ticketSVG, layerDocument, inlineImages, fetchAsDataURI, rasterise, downloadBlob,
 } from '../lib/ticketexport.js'
@@ -727,22 +727,41 @@ const mixedPick = computed(() => pickedEls.value.length > 0 && pickedDecos.value
  * than copied: it names another element to flow from, and two elements flowing
  * from one anchor print on top of each other. The copy starts standing on its
  * own, which is the only version of it that is always correct.
+ *
+ * A copied GROUP is a new group. It used to keep the original's group id, so
+ * a click on the copy selected the original as well and dragging one dragged
+ * both. Duplicate now goes through the same records as paste, which already
+ * gave each source group a fresh one.
+ *
+ * DUPLICATE AGAIN REPEATS THE LAST MOVE: duplicate, drag the copy along, and
+ * every further ⌘D steps the same distance again (src/lib/clipboard.js,
+ * repeatStep). `lastCopies` is what the step is measured from.
  */
-function duplicatePicked() {
-  if (!pickedThings.value.length) return
-  mark()
-  const copy = (x) => JSON.parse(JSON.stringify(x))
-  const els = pickedEls.value.map((e) => normalElement({
-    ...copy(e), id: nextId(), after: '', box: offsetBox(e.box),
-  }))
-  const decos = pickedDecos.value.map((d) => normalDecoration({
-    ...copy(d), id: nextDecoId(), box: offsetBox(d.box),
-  }))
+const lastCopies = ref(null)
+
+function makeCopies(opts = {}) {
+  const got = pasteRecords(copyRecords(elements.value, decorations.value, picked.value), {
+    nextId, nextDecoId, nextGroupId, room: MAX_DECORATIONS - decorations.value.length, ...opts,
+  })
+  const els = got.elements.map(normalElement)
+  const decos = got.decorations.map(normalDecoration)
   if (els.length) design.value.elements = [...elements.value, ...els]
   if (decos.length) design.value.decorations = [...decorations.value, ...decos]
   const made = [...els, ...decos]
-  sel.value = made[0].id
+  sel.value = made[0]?.id || ''
   also.value = made.slice(1).map((x) => x.id)
+  lastCopies.value = got.pairs.filter((p) => made.some((m) => m.id === p.copy))
+  if (got.refused) {
+    toast(`${got.refused} drawn ${got.refused === 1 ? 'shape was' : 'shapes were'} left out — a ticket holds ${MAX_DECORATIONS}`, 'bad')
+  }
+  return got.pairs
+}
+
+function duplicatePicked() {
+  if (!pickedThings.value.length) return
+  mark()
+  const step = repeatStep(lastCopies.value, picked.value, (id) => thingById(id)?.box)
+  makeCopies(step ? { step } : {})
 }
 
 function deletePicked() {
@@ -782,12 +801,14 @@ function cutPicked() {
   deletePicked()
 }
 
-function pastePicked() {
+/* ⇧⌘V lands the paste exactly where the copied things were — on another
+   template, the same place on that ticket. */
+function pastePicked(inPlace = false) {
   if (!clip.value || !design.value) return
   mark()
-  pastes += 1
+  if (!inPlace) pastes += 1
   const got = pasteRecords(clip.value, {
-    nextId, nextDecoId, nextGroupId, times: pastes,
+    nextId, nextDecoId, nextGroupId, times: pastes, inPlace,
     room: MAX_DECORATIONS - decorations.value.length,
   })
   const els = got.elements.map(normalElement)
@@ -1335,8 +1356,35 @@ const frameWidth = computed(() => Math.round((design.value?.artwork?.width ?? 16
    which a hairline on screen is a hairline on the file. */
 function zoomActual() { zoom.value = 1 }
 
-/* The hand: Space held turns a press on the artboard into a pan. */
+/* The hand: Space held turns a press on the artboard into a pan, and H picks
+   it up to keep — until V, Escape or another tool puts it down. */
 const spaceHeld = ref(false)
+const handTool = ref(false)
+const handUp = computed(() => spaceHeld.value || handTool.value)
+
+/*
+ * ⌘-SCROLL AND A PINCH ZOOM ABOUT THE POINTER. A trackpad pinch arrives as a
+ * wheel event with Ctrl held, so one handler serves both. The point under the
+ * pointer stays under it — a zoom that recentres somewhere else loses the
+ * thing somebody was zooming in to look at.
+ */
+function zoomAt(ev, getZoom, setZoom, scroller) {
+  if (!(ev.ctrlKey || ev.metaKey)) return
+  ev.preventDefault()
+  const el = scroller
+  const before = getZoom()
+  const next = Math.max(0.05, Math.min(4, before * Math.exp(-ev.deltaY * 0.01)))
+  if (!el) { setZoom(next); return }
+  const r = el.getBoundingClientRect()
+  const px = ev.clientX - r.left + el.scrollLeft
+  const py = ev.clientY - r.top + el.scrollTop
+  setZoom(next)
+  nextTick(() => {
+    el.scrollLeft = px * (next / before) - (ev.clientX - r.left)
+    el.scrollTop = py * (next / before) - (ev.clientY - r.top)
+  })
+}
+const onStageWheel = (ev) => zoomAt(ev, () => zoom.value, (z) => { zoom.value = z }, stage.value)
 
 function stepZoom(dir) {
   const i = ZOOMS.findIndex((z) => z >= zoom.value - 1e-6)
@@ -1478,7 +1526,7 @@ function edgesExcept(moving) {
 }
 
 function startMove(el, ev) {
-  if (spaceHeld.value) { ev.stopPropagation(); onFrameDown(ev); return }
+  if (handUp.value) { ev.stopPropagation(); onFrameDown(ev); return }
   if (el.enabled === false || el.locked) return
   ev.stopPropagation()
 
@@ -1499,6 +1547,19 @@ function startMove(el, ev) {
    * three, press one to drag them, and the press throws the other two away.
    */
   else if (!picked.value.includes(el.id)) pick(el.id)
+
+  /*
+   * ⌥-DRAG LEAVES THE ORIGINAL AND DRAGS A COPY — the copies are made exactly
+   * on top, and it is they that move. One undo step takes the whole gesture
+   * back, because mark() was called above and the copy does not call it again.
+   */
+  if (ev.altKey && !penEditing.value) {
+    const index = picked.value.indexOf(el.id)
+    const pairs = makeCopies({ inPlace: true })
+    const mine = pairs.find((p) => p.from === el.id) || pairs[index]
+    const copy = mine && thingById(mine.copy)
+    if (copy) el = copy
+  }
 
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
   drag.value = {
@@ -1549,9 +1610,9 @@ function onFrameDown(ev) {
     if (ev.altKey && pen.addNodeAt(pointOf(ev))) return
     pen.leave()
   }
-  /* Space held: the hand. The artboard scrolls under the pointer instead of
-     anything being drawn or selected. */
-  if (spaceHeld.value) {
+  /* Space held, or the hand picked up with H: the artboard scrolls under the
+     pointer instead of anything being drawn or selected. */
+  if (handUp.value) {
     ev.currentTarget.setPointerCapture?.(ev.pointerId)
     drag.value = { mode: 'pan', px: ev.clientX, py: ev.clientY,
       sl: stage.value?.scrollLeft || 0, st: stage.value?.scrollTop || 0 }
@@ -1563,6 +1624,7 @@ function onFrameDown(ev) {
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
   drag.value = {
     mode: pending.value ? 'draw' : 'band', add: ev.shiftKey,
+    aspect: r.width / (r.height || 1),
     px: ev.clientX, py: ev.clientY, origin: { left, top }, box: { left, top, width: 0, height: 0 },
   }
 }
@@ -1597,9 +1659,11 @@ function onPointerMove(ev) {
 
   if (st.mode === 'draw' || st.mode === 'band') {
     const r = frame.value.getBoundingClientRect()
-    drawn.value = bandOf(st.origin, {
+    /* Shift and ⌥ shape what is being DRAWN; a marquee is only a band. */
+    const drawing = st.mode === 'draw'
+    drawn.value = drawBox(st.origin, {
       left: (ev.clientX - r.left) / r.width, top: (ev.clientY - r.top) / r.height,
-    })
+    }, { square: drawing && ev.shiftKey, centre: drawing && ev.altKey, aspect: st.aspect, line: pendingDeco.value === 'line' })
     return
   }
 
@@ -1658,6 +1722,7 @@ function onPointerMove(ev) {
       if (c.includes('n')) el.box.top = st.box.top + st.box.height - kept.height
       el.box.width = kept.width
       el.box.height = kept.height
+      if (ev.altKey) Object.assign(el.box, aboutCentre(st.box, el.box))
       return
     }
     if (c.includes('e')) el.box.width = Math.max(0.002, snapX(st.box.left + st.box.width + dx, xs) - st.box.left)
@@ -1674,6 +1739,8 @@ function onPointerMove(ev) {
       el.box.top = Math.min(top, bottom - 0.002)
       el.box.height = bottom - el.box.top
     }
+    /* ⌥: the opposite edge mirrors the dragged one, about the middle. */
+    if (ev.altKey) Object.assign(el.box, aboutCentre(st.box, el.box))
     snapLines.value = { x: caughtX, y: caughtY }
   }
 }
@@ -1721,12 +1788,14 @@ function startStubDrag(ev) {
   drag.value = { mode: 'stub', px: ev.clientX, py: ev.clientY }
 }
 
-/* Arrow keys nudge by a tenth of a per cent, Shift by one. Both are in shares,
- * so a nudge is the same distance on the ticket whatever the zoom. */
-function onKey(ev) {
-  /* Either list — an arrow key nudges whatever is selected, and a decoration is
-     as selectable as a field. `chosen` alone would have made the arrows work on
-     fields and silently do nothing on shapes. */
+/*
+ * THE ARROWS NUDGE ONE PIXEL, SHIFT TEN — pixels of the artwork, so a nudge is
+ * the same distance on the file at any zoom, and it is the step every drawing
+ * program uses. They answer from the window, not from the focused box: after a
+ * marquee, a click in the layer list or a paste, nothing on the artboard has
+ * the keyboard focus, and the arrows used to scroll the page instead.
+ */
+function nudge(ev) {
   /*
    * THE SELECTION MOVES, NOT ONLY ITS PRIMARY. A drag already moved all of it
    * and the arrow keys moved one box, so nudging three aligned fields by a
@@ -1739,14 +1808,18 @@ function onKey(ev) {
    * within the limits the model gives them.
    */
   const movers = pickedThings.value.filter((t) => !t.locked && t.enabled !== false)
-  if (!movers.length) return
-  const step = ev.shiftKey ? 0.01 : 0.001
+  const n = ev.shiftKey ? 10 : 1
+  const w = design.value?.artwork?.width || active.value?.width || 1000
+  const h = design.value?.artwork?.height || active.value?.height || 1000
   const map = {
-    ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
+    ArrowLeft: [-n / w, 0], ArrowRight: [n / w, 0], ArrowUp: [0, -n / h], ArrowDown: [0, n / h],
   }
   const d = map[ev.key]
-  if (!d) return
-  ev.preventDefault()
+  if (!d) return false
+  /* With a path's nodes up, the chosen node moves instead of the path. */
+  if (penEditing.value && chosenNode.value >= 0) return pen.nudgeNode(d[0], d[1])
+  if (!movers.length) return false
+  mark()
   let [dx, dy] = d
   for (const t of movers) {
     const [lo, hi] = isDeco(t.id) ? [-1, 2] : [0, 1]
@@ -1757,6 +1830,44 @@ function onKey(ev) {
     t.box.left = Math.round((t.box.left + dx) * 1e7) / 1e7
     t.box.top = Math.round((t.box.top + dy) * 1e7) / 1e7
   }
+  return true
+}
+
+/* ⇧⌘L: pin or unpin. If anything selected is loose, everything is pinned;
+   only a selection that is all pinned is let go. */
+function lockPicked() {
+  const list = pickedThings.value
+  if (!list.length) return false
+  mark()
+  const pin = list.some((t) => !t.locked)
+  for (const t of list) t.locked = pin
+  toast(pin ? `Pinned ${list.length}` : `Unpinned ${list.length}`, 'ok')
+  return true
+}
+
+/* ⌘B: bold lettering on, or off when all of it is bold already. */
+function boldPicked() {
+  const list = pickedThings.value.filter(lettered)
+  if (!list.length) return false
+  mark()
+  const weightOf = (t) => (isDeco(t.id) ? t.text.weight : t.weight)
+  const next = list.every((t) => weightOf(t) === 'bold') ? 'regular' : 'bold'
+  for (const t of list) { if (isDeco(t.id)) t.text.weight = next; else t.weight = next }
+  return true
+}
+
+/* I: the eyedropper colours the selection from anywhere on the screen. */
+function eyedropPicked() {
+  if (!canDrop || !pickedThings.value.length) return false
+  dropper(useLibraryColour)
+  return true
+}
+
+/* A double-click on a grouped shape goes into the group and takes that one
+   part; on a path it puts the nodes up. Escape comes back out. */
+function enterThing(d) {
+  if (d.kind === 'path') { pick(d.id, false, true); pen.enter(d.id); return }
+  if (d.group) pick(d.id, false, true)
 }
 
 /* ---------- readouts ---------- */
@@ -1953,23 +2064,17 @@ onUnmounted(() => {
 })
 
 /*
- * Named apart from onKey above, which nudges the selected box with the arrow
- * keys and is bound per element. This one is a WINDOW listener for the whole
- * screen's chrome, and two handlers on one name is how a listener ends up
- * removed by the wrong remove.
+ * onFocusKey is the one WINDOW listener for every key the studio answers —
+ * including the arrows, which used to be bound on each box and so did nothing
+ * unless that box happened to hold the keyboard focus.
  */
 /*
- * TYPING IS NOT A SHORTCUT. Every one of these has to refuse while somebody is
- * in a field, or Delete eats a character out of a motto and ⌘A selects every
- * box on the ticket instead of the text in the box under the cursor. The
- * studio is full of inputs, which is why the existing ⌘\ was already careful
- * to use a modifier rather than a bare key.
+ * TYPING IS NOT A SHORTCUT. Every key has to leave a text field alone, or
+ * Delete eats a character out of a motto and ⌘A selects every box on the
+ * ticket instead of the words in the box under the cursor. Which keys belong
+ * to which kind of field is src/lib/studiokeys.js, fieldOwns — a checkbox or a
+ * dropdown is not a text field, and treating it as one silenced every key.
  */
-function inAField(t) {
-  return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
-    || t.tagName === 'SELECT' || t.isContentEditable)
-}
-
 /* Letting go of Space puts the hand down. So does leaving the window, or the
    hand would stay up for somebody who tabbed away mid-pan and came back. */
 function onFocusKeyUp(e) { if (e.key === ' ') spaceHeld.value = false }
@@ -1984,7 +2089,8 @@ function dropHand() { spaceHeld.value = false }
  */
 const choose1 = (kind) => () => { if (pending.value !== kind) beginAdd(kind) }
 const ACTIONS = {
-  toolSelect: () => { pending.value = '' },
+  toolSelect: () => { pending.value = ''; handTool.value = false },
+  toolHand: () => { pending.value = ''; handTool.value = !handTool.value },
   toolRect: choose1('d:rect'),
   toolEllipse: choose1('d:ellipse'),
   toolLine: choose1('d:line'),
@@ -1992,6 +2098,7 @@ const ACTIONS = {
   toolMark: choose1('d:icon'),
   toolPicture: () => openPictures(),
   toolPen: choose1('d:path'),
+  eyedropper: () => eyedropPicked(),
   editNodes: () => (chosenDeco.value?.kind === 'path' ? editChosenNodes() : false),
   /* Enter finishes a path being drawn and otherwise is not the studio's key —
      returning false leaves it to whatever button has the focus. */
@@ -2004,24 +2111,35 @@ const ACTIONS = {
     sel.value = live[0] || ''
     also.value = live.slice(1)
   },
-  /* Escape puts a waiting tool down first, then lets go of the selection. */
+  deselect: () => { sel.value = ''; also.value = [] },
+  /*
+   * Escape undoes one level of what is going on: a path being drawn is
+   * finished (most drawing tools end an open path this way), node editing is
+   * left, a waiting tool or the hand is put down, one part picked out of a
+   * group goes back to being the group — and only then is the selection let go.
+   */
   escape: () => {
-    /* A path being drawn is finished, not thrown away: Escape is how most
-       drawing tools end an open path. Node editing is left next. */
     if (penDrawing.value) { if (!pen.finish(false)) pen.cancel(); return }
     if (penEditing.value) { pen.leave(); return }
-    if (pending.value) { pending.value = ''; return }
+    if (pending.value || handTool.value) { pending.value = ''; handTool.value = false; return }
+    const d = chosenDeco.value
+    const whole = d?.group ? expandGroups([d.id], decorations.value) : []
+    if (whole.length > picked.value.length) { pick(d.id); return }
     sel.value = ''
     also.value = []
   },
   copy: () => copyPicked(),
   cut: () => cutPicked(),
   paste: () => pastePicked(),
+  pasteInPlace: () => pastePicked(true),
   duplicate: () => duplicatePicked(),
   /* With a path's nodes up, Delete removes the chosen NODE, not the path. */
   remove: () => (penEditing.value && chosenNode.value >= 0 ? pen.removeChosen() : deletePicked()),
   group: () => groupPicked(),
   ungroup: () => ungroupPicked(),
+  lock: () => lockPicked(),
+  bold: () => boldPicked(),
+  nudge: (e) => nudge(e),
   forward: () => orderPicked('forward'),
   backward: () => orderPicked('backward'),
   front: () => orderPicked('front'),
@@ -2036,27 +2154,81 @@ const ACTIONS = {
   fit: () => fitToWidth(),
   actual: () => zoomActual(),
   hand: () => { spaceHeld.value = true },
+  /*
+   * ⌘S SAVES WHAT IS ON THE TAB, and is always the studio's — the browser's
+   * "save this page as HTML" is never what somebody in an editor means. The
+   * same conditions as the Save button, and its reason said when it cannot.
+   */
+  save: () => {
+    if (tab.value === 'digital') {
+      if (cardSaving.value) return
+      if (!cardDirty.value) { toast('Nothing has changed since the last save', 'ok'); return }
+      saveCard()
+      return
+    }
+    if (savingDesign.value || !design.value) return
+    if (problems.value.length) { toast(problems.value[0], 'bad'); return }
+    saveDesign()
+  },
+  exportPng: () => { if (whyNoExport.value) { toast(whyNoExport.value, 'warn'); return } downloadSample('png') },
+  palette: () => { showKeys.value = 'palette' },
   focus: () => setFocus(!state.focus),
-  help: () => { showKeys.value = true },
+  help: () => { showKeys.value = 'keys' },
+  alignLeft: () => alignPicked('left'),
+  alignCentre: () => alignPicked('centre'),
+  alignRight: () => alignPicked('right'),
+  alignTop: () => alignPicked('top'),
+  alignMiddle: () => alignPicked('middle'),
+  alignBottom: () => alignPicked('bottom'),
+  spaceAcross: () => distributePicked('across'),
+  spaceDown: () => distributePicked('down'),
+  flipAcross: () => flipPicked('across'),
+  flipDown: () => flipPicked('down'),
+  toggleSnap: () => { snapping.value = !snapping.value },
+  toggleGrid: () => { gridding.value = !gridding.value },
+  greyPreview: () => { inGrey.value = !inGrey.value },
+  exportSvg: () => { if (whyNoExport.value) { toast(whyNoExport.value, 'warn'); return } downloadSample('svg') },
 }
 
-/* The keys' written form, for a tooltip: keyOf('duplicate') is "⌘D". */
+/* The keys' written form, for a tooltip: keyOf('duplicate') is "⌘D", or
+   "Ctrl+D" off a Mac. */
 const keyOf = (id) => keyLabel(KEYS.find((k) => k.id === id))
 
-/* The shortcuts sheet, opened by ? or the key drawing in the bar. */
-const showKeys = ref(false)
+/* The sheet: '' closed, 'keys' for ?, 'palette' for ⌘K — one list, two ways in. */
+const showKeys = ref('')
+
+/*
+ * ONE PATH FROM A ROW TO WHAT IT DOES, for a key and for the palette alike.
+ * On the Digital ticket tab a canvas row is the card's to answer, against the
+ * card's own selection; the card says `undefined` for the few it leaves to
+ * the studio (the hand, which the studio holds for both surfaces).
+ */
+function runRow(row, e = {}) {
+  if (row.group === 'Tools' && row.action !== 'toolHand') handTool.value = false
+  if (tab.value === 'digital' && row.when === 'canvas') {
+    const r = digital.value?.act?.(row.action, e)
+    if (r !== undefined) return r
+  }
+  return ACTIONS[row.action]?.(e)
+}
+
+function runFromSheet(id) {
+  const row = KEYS.find((k) => k.id === id)
+  showKeys.value = ''
+  if (row) nextTick(() => runRow(row))
+}
 
 function onFocusKey(e) {
   /* A dialog is up: its own keys (Escape closes it) are the only ones that
      mean anything, and a Delete behind it would remove a selection nobody can
      see. */
   if (showKeys.value || pendingSwitch.value || showPictures.value) return
-  const row = findBinding(e, tab.value === 'place' ? 'place' : 'any')
+  const row = findBinding(e, tab.value)
   if (!row) return
-  if (!row.inFields && inAField(e.target)) return
+  if (fieldOwns(e.target, e, row)) return
   /* An action that answers false did not apply — Enter with no path being
-     drawn — and the key is left to the page. */
-  if (ACTIONS[row.action]?.() !== false) e.preventDefault()
+     drawn, an arrow with nothing selected — and the key is left to the page. */
+  if (runRow(row, e) !== false) e.preventDefault()
 }
 
 /* Out of the studio entirely, as distinct from bringing the nav back. */
@@ -2789,7 +2961,7 @@ const printedSize = computed(() => {
       <!-- Every key the studio answers, listed from the table it answers them
            from. Beside the title because it is about the whole studio. -->
       <ToolButton icon="help" label="Shortcuts" :size="16" :keys="keyOf('help')"
-                  hint="Every key this studio answers" @click="showKeys = true" />
+                  hint="Every key this studio answers" @click="showKeys = 'keys'" />
 
       <label v-if="templates.length" class="picker">
         <span class="sr">Template being designed</span>
@@ -2937,7 +3109,7 @@ const printedSize = computed(() => {
               @click="tab === 'digital' ? discardCardDraft() : discardDraft()">Discard them</button>
     </div>
 
-    <ShortcutsSheet v-if="showKeys" @close="showKeys = false" />
+    <ShortcutsSheet v-if="showKeys" :mode="showKeys" :where="tab" @run="runFromSheet" @close="showKeys = ''" />
     <PicturePicker v-if="showPictures" :pictures="pictures"
                    @pick="pickPicture" @close="showPictures = false; changingPicture = ''" />
 
@@ -3414,13 +3586,13 @@ const printedSize = computed(() => {
               </span>
             </ToolBar>
 
-            <div ref="stage" class="stage">
+            <div ref="stage" class="stage" @wheel="onStageWheel">
               <!-- Millimetres along the top and down the side, as the ticket
                    prints; the share is in the inspector, beside the pixels. -->
               <Rulers :width-m-m="Number(design.sheet.widthMM)" :height-m-m="printedHeightMM"
                       :width-px="frameWidth" :height-px="frameWidth * (active.height / active.width)">
               <div
-                ref="frame" class="frame" :class="{ drawing: !!pending, panning: spaceHeld, grey: inGrey }"
+                ref="frame" class="frame" :class="{ drawing: !!pending, panning: handUp, grey: inGrey }"
                 :style="{ width: frameWidth + 'px' }"
                 @pointerdown="onFrameDown" @pointermove="onPointerMove"
                 @pointerup="endPointer" @pointercancel="endPointer">
@@ -3457,8 +3629,8 @@ const printedSize = computed(() => {
                     type="button" class="grab" :aria-label="decoName(d)"
                     :disabled="d.enabled === false || d.locked"
                     :title="d.locked ? `${decoName(d)} is pinned` : `${decoName(d)} — drag to move, or use the arrow keys`"
-                    @keydown="onKey" @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
-                    @dblclick.stop="d.kind === 'path' && (pick(d.id, false, true), pen.enter(d.id))"></button>
+                    @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
+                    @dblclick.stop="enterThing(d)"></button>
                   <template v-if="sel === d.id && !many && !d.locked && d.enabled !== false && penEditing !== d.id">
                     <span
                       v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
@@ -3484,7 +3656,7 @@ const printedSize = computed(() => {
                     :title="el.enabled === false ? `${nameOf(el)} is switched off in the list`
                       : el.locked ? `${nameOf(el)} is pinned — unpin it in the list to move it`
                       : `${nameOf(el)} — drag to move, or use the arrow keys`"
-                    @keydown="onKey" @click.stop="pick(el.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"></button>
+                    @click.stop="pick(el.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"></button>
                   <!-- Handles on the PRIMARY only. Eight of them on each of
                        five selected boxes is forty grips over one artboard, and
                        a drag from any of them resizes one thing while four
@@ -3701,7 +3873,7 @@ const printedSize = computed(() => {
         v-else ref="digital" :card="card" :parts="cardParts" :cfg="state.cfg"
         :sent-width="cardSentWidth" :motto-max="MOTTO_MAX"
         :swatches="swatches" :can-drop="canDrop"
-        :decorations="cardDrawn" :library="library" :lib-busy="libBusy" :pictures="pictures"
+        :decorations="cardDrawn" :library="library" :lib-busy="libBusy" :pictures="pictures" :hand="handUp"
         @mark="markCard" @drag="(v) => { cardDragging = v }"
         @pick-colour="dropper" @set-decorations="setCardDrawn"
         @save-shape="saveToLibrary" @remove-shape="removeFromLibrary"

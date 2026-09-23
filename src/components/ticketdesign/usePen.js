@@ -182,6 +182,17 @@ export function usePen({ aspect, mark, place, target, reach = () => 0.008 }) {
     return true
   }
 
+  /** The arrow keys, with nodes up: the chosen node moves, handles and all. */
+  function nudgeNode(dx, dy) {
+    const d = target()
+    if (!d || d.locked || chosenNode.value < 0) return false
+    mark()
+    const nodes = fromUnit(d.path.nodes, d.box)
+    nodes[chosenNode.value] = moveNode(nodes[chosenNode.value], dx, dy)
+    commit(d, nodes)
+    return true
+  }
+
   function removeChosen() {
     const d = target()
     if (!d || chosenNode.value < 0) return false
@@ -195,6 +206,6 @@ export function usePen({ aspect, mark, place, target, reach = () => 0.008 }) {
   return {
     drawing, draftNodes, down, move, up, finish, cancel,
     editing, chosenNode, handles, enter, leave, gripDown, gripMove, gripUp, gripping,
-    toggleNode, addNodeAt, removeChosen,
+    toggleNode, addNodeAt, removeChosen, nudgeNode,
   }
 }

@@ -491,6 +491,41 @@ differs from the text below:
   `KEYS` and contains no `⌘` literal; every `keyOf('x')` in the shell names an
   id; enumeration guard > 20 bindings.
 
+**Addendum 2026-09-23: the editing conventions, on both surfaces.** The user
+reported that typical editing shortcuts did not work. There were three causes:
+- **The Digital ticket tab answered only undo, redo and `?`.** A `canvas` row
+  is now answered by whichever surface is showing. The card's
+  `CARD_ACTIONS` is held to the table by the same identity test as the
+  studio's.
+- **The arrows were bound on each box.** After a marquee, a list click or a
+  paste they scrolled the page. They are window keys now, and they step one
+  pixel, or ten with Shift.
+- **Every `<input>` counted as a text field**, so one click on a switch
+  silenced every key. `fieldOwns` now tells a text box from a checkbox, a
+  slider and a dropdown.
+
+Added from the conventions list the user supplied:
+- **Keys:** ⇧⌘V paste in place, ⇧⌘A deselect, ⇧⌘]/[ to front and back
+  (⌥⌘ kept), O ellipse (E kept), H hand, I eyedropper, ⇧⌘L pin, ⌘B bold,
+  ⌘+/⌘− zoom, ⌘S save, ⌘E sample PNG, and ⌘K, a command palette that also
+  finds commands with no key.
+- **Pointer gestures:** ⌘-scroll and pinch zoom, ⌥-drag to copy, ⌥ on a handle
+  to resize about the centre, and Shift/⌥ while drawing for a square, a circle,
+  a 45° line, or drawing out from the centre.
+- **Selection:** ⌘D after a move repeats the move, double-click enters a
+  group, and Escape leaves it.
+- **Labels:** keys are written Ctrl+Shift+G off a Mac.
+- **A fix:** Duplicate gave copies the original's group id, so a copy and its
+  original selected together. It now goes through the paste records.
+
+Not bound, on purpose:
+- ⌘N, ⌘O and ⌘W, which the browser keeps.
+- ⌘1 and ⌘2 on a Mac, for the same reason. The bare 1 works.
+- Crop, brush and eraser. No such tools exist.
+- Italic, underline and text-size keys. The model has no italic, and size
+  comes from the box.
+- Rotation handles. Rotation is typed, per §3.
+
 ### Phase 5 — Layers: rename, one component (M)
 
 **Status 2026-09-23: rename built, gated, rendered** (kcho-shelter-0c).

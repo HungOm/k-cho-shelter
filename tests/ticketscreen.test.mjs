@@ -700,18 +700,21 @@ console.log('a selection is one thing, whichever lists its members came from')
   ok(xs.includes(0.3), 'a moving box can snap to the edge of a drawn shape')
   ok(!xs.includes(0.1), 'and not to the edge of a shape travelling with it')
 
-  // The arrow keys move the selection as one, and clamp it as one.
+  // The arrow keys move the selection as one, and clamp it as one — by one
+  // pixel of the artwork, the step every drawing program uses.
+  const px = 1 / ctx.design.value.artwork.width
+  ok(px > 0 && px < 0.01, `one pixel of the artwork is a small share (${px.toFixed(6)})`)
   const before = [el.box.left, deco('d-test-1').box.left]
-  ctx.onKey(key('ArrowRight'))
+  ctx.nudge(key('ArrowRight'))
   const moved = [el.box.left - before[0], deco('d-test-1').box.left - before[1]]
-  ok(Math.abs(moved[0] - 0.001) < 1e-9 && Math.abs(moved[1] - 0.001) < 1e-9,
-    `an arrow moves the field and the shape by the same step (moved ${moved.map((m) => m.toFixed(4))})`)
+  ok(Math.abs(moved[0] - px) < 1e-6 && Math.abs(moved[1] - px) < 1e-6,
+    `an arrow moves the field and the shape by the same one-pixel step (moved ${moved.map((m) => m.toFixed(6))})`)
 
-  el.box.left = 1 - el.box.width - 0.0004
+  el.box.left = 1 - el.box.width - px / 2
   const at = [el.box.left, deco('d-test-1').box.left]
-  ctx.onKey(key('ArrowRight'))
+  ctx.nudge(key('ArrowRight'))
   const step = [el.box.left - at[0], deco('d-test-1').box.left - at[1]]
-  ok(Math.abs(step[0] - step[1]) < 1e-9 && step[0] > 0 && step[0] < 0.001,
+  ok(Math.abs(step[0] - step[1]) < 1e-9 && step[0] > 0 && step[0] < px,
     `at the edge the whole selection stops short together rather than shearing (${step.map((m) => m.toFixed(5))})`)
 
   await cleanup()
@@ -874,7 +877,7 @@ console.log('a band selects what it touches, a group comes whole, and a paste st
   const at = pinned.box.left
   ctx.sel.value = 'number-main'
   ctx.also.value = []
-  ctx.onKey({ key: 'ArrowRight', shiftKey: true, preventDefault() {} })
+  ctx.nudge({ key: 'ArrowRight', shiftKey: true, preventDefault() {} })
   eq(pinned.box.left, at, 'an arrow key does not move a pinned field')
   ctx.startMove(pinned, { stopPropagation() {}, shiftKey: false, metaKey: false, currentTarget: {}, pointerId: 1, clientX: 0, clientY: 0 })
   ok(!ctx.drag.value, 'and a drag does not start on one')
@@ -1162,6 +1165,114 @@ console.log('the digital card can be drawn on, and a drawing is part of the card
   ok(remove && /disabled/.test(remove[0]) && /hidden with their eye/.test(remove[0]),
     'and with a card part selected, Remove is disabled and says parts are hidden, not removed')
   ok(/class="ebox deco/.test(html), 'the drawing has a box on the card to grab')
+}
+
+console.log('the editing keys work through the studio\'s own handler, on both surfaces')
+{
+  /*
+   * The user's report was "typical editing shortcuts are not working". Three
+   * causes, each pressed here through the real handler rather than asserted
+   * from the table:
+   *   the Digital ticket tab answered undo, redo and ? and nothing else, so
+   *     copy, paste, Delete, the arrows and the tool keys did nothing on it;
+   *   the arrows were bound on each box, so after a marquee, a click in the
+   *     list or a paste they scrolled the page instead of moving anything;
+   *   every <input> counted as a text field, so one click on a switch silenced
+   *     every shortcut until somebody clicked the artboard.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ctx.tab.value = 'place'
+  let prevented = 0
+  const key = (k, mods = {}) => ({ key: k, code: '', metaKey: false, ctrlKey: false, shiftKey: false, altKey: false,
+    target: null, preventDefault() { prevented += 1 }, ...mods })
+  const box = { left: 0.1, top: 0.1, width: 0.1, height: 0.1 }
+  ctx.design.value.decorations = [normalDecoration({ id: 'd-k1', kind: 'rect', box })]
+  const decos = () => ctx.design.value.decorations
+  ctx.sel.value = 'd-k1'
+  ctx.also.value = []
+
+  // Duplicate, move the copy, duplicate again: the move repeats.
+  ctx.onFocusKey(key('d', { metaKey: true }))
+  eq(decos().length, 2, '⌘D makes a copy')
+  const first = decos()[1]
+  first.box.left = 0.3
+  ctx.onFocusKey(key('d', { metaKey: true }))
+  eq(decos().length, 3, 'and again')
+  ok(Math.abs(decos()[2].box.left - 0.5) < 1e-6,
+    `the second copy steps as far as the first was moved (at ${decos()[2].box.left})`)
+
+  // Copy, then paste in place: exactly over the original.
+  ctx.sel.value = 'd-k1'
+  ctx.also.value = []
+  ctx.onFocusKey(key('c', { metaKey: true }))
+  ctx.onFocusKey(key('v', { metaKey: true, shiftKey: true }))
+  const pasted = decos()[decos().length - 1]
+  eq(`${pasted.box.left},${pasted.box.top}`, '0.1,0.1', '⇧⌘V lands the paste on the original')
+
+  // After a click on a switch, Delete still removes; in a text field it types.
+  const n = decos().length
+  ctx.onFocusKey(key('Delete', { target: { tagName: 'INPUT', type: 'text' } }))
+  eq(decos().length, n, 'Delete in a text field is left to the field')
+  ctx.onFocusKey(key('Delete', { target: { tagName: 'INPUT', type: 'checkbox' } }))
+  eq(decos().length, n - 1, 'Delete with a switch focused removes the selection')
+
+  // The arrows answer from the window, with nothing on the artboard focused.
+  ctx.sel.value = 'd-k1'
+  const was = decos()[0].box.left
+  ctx.onFocusKey(key('ArrowRight', { target: { tagName: 'BODY' } }))
+  ok(decos()[0].box.left > was, 'an arrow moves the selection with no box focused')
+  ctx.sel.value = ''
+  ctx.also.value = []
+  prevented = 0
+  ctx.onFocusKey(key('ArrowDown'))
+  eq(prevented, 0, 'and with nothing selected it is left to scroll the page')
+
+  // Escape out of one part of a group goes back to the group.
+  ctx.design.value.decorations = [
+    normalDecoration({ id: 'd-g1', kind: 'rect', group: 'gk', box }),
+    normalDecoration({ id: 'd-g2', kind: 'rect', group: 'gk', box: { ...box, left: 0.4 } }),
+  ]
+  ctx.enterThing(decos()[0])
+  eq(ctx.picked.value.join(), 'd-g1', 'a double-click takes one part of a group')
+  ctx.onFocusKey(key('Escape'))
+  eq([...ctx.picked.value].sort().join(), 'd-g1,d-g2', 'Escape goes back out to the whole group')
+  ctx.onFocusKey(key('Escape'))
+  eq(ctx.picked.value.length, 0, 'and again lets go')
+  await cleanup()
+
+  // The card answers the same keys, against its own drawings.
+  const { reactive } = await import('vue')
+  const { resolveParts } = await import('../src/lib/cardelements.js')
+  const props = reactive({
+    card: { design: 'grand', motto: '' }, parts: resolveParts('grand', {}), cfg: {}, sentWidth: 1200,
+    decorations: [normalDecoration({ id: 'd-c1', kind: 'rect', box })],
+    pictures: [], library: { shapes: [], colours: [], styles: [] }, hand: false,
+  })
+  const said = []
+  const card = await setupOf('src/components/ticketdesign/DigitalTab.vue', store(ADMIN, ONE), props, {
+    emit: (name, value) => { said.push(name); if (name === 'set-decorations') props.decorations = value },
+  })
+  const c = card.ctx
+  ok(typeof c.act === 'function', 'the card exposes the answers the studio hands keys to')
+  c.sel.value = 'd-c1'
+  c.act('copy')
+  c.act('paste')
+  eq(props.decorations.length, 2, '⌘C then ⌘V on the card pastes a drawing')
+  c.sel.value = 'd-c1'
+  c.also.value = []
+  const before = props.decorations[0].box.left
+  c.act('nudge', { key: 'ArrowRight', shiftKey: true })
+  ok(Math.abs(props.decorations[0].box.left - before - 10 / 1200) < 1e-6, '⇧→ nudges ten pixels of the card')
+  c.act('remove')
+  eq(props.decorations.length, 1, 'Delete removes the drawing')
+  c.sel.value = 'masthead'
+  eq(c.act('remove'), false, 'and leaves a card part alone — parts are hidden, not removed')
+  eq(c.act('hand'), undefined, 'the hand is left to the studio, which holds it for both tabs')
+  c.act('toolRect')
+  eq(c.pending.value, 'rect', 'R picks up the rectangle on the card')
+  ok(said.includes('mark'), 'and every change marked an undo step')
+  await card.cleanup()
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -17,7 +17,7 @@
  * these on the right gesture is tests/ticketscreen.test.mjs's half.
  */
 import * as sel from '../src/lib/selection.js'
-import { bandOf, isClick, hitsIn, expandGroups, mergeSelection } from '../src/lib/selection.js'
+import { bandOf, isClick, hitsIn, expandGroups, mergeSelection, drawBox, aboutCentre } from '../src/lib/selection.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -83,6 +83,35 @@ console.log('a new band replaces the selection; with shift it joins it')
     'with shift, the primary stays where it was and nothing is listed twice')
   const none = mergeSelection(current, [], false)
   eq(`${none.sel}|${none.also.length}`, '|0', 'a band that hits nothing clears the selection')
+}
+
+console.log('shift draws regular shapes and alt draws from the centre')
+{
+  const near = (a, b) => Math.abs(a - b) < 1e-9
+  /* A 3 : 1 artboard: a square on screen is three times taller in shares. */
+  const sq = drawBox({ left: 0.5, top: 0.5 }, { left: 0.6, top: 0.52 }, { square: true, aspect: 3 })
+  ok(near(sq.width * 3, sq.height), `shift makes the box square on screen (${sq.width.toFixed(3)} × ${sq.height.toFixed(3)} in shares)`)
+  const up = drawBox({ left: 0.5, top: 0.5 }, { left: 0.4, top: 0.3 }, { square: true, aspect: 3 })
+  ok(near(up.left + up.width, 0.5) && near(up.top + up.height, 0.5), 'and it grows toward the pointer, up and left too')
+  const c = drawBox({ left: 0.5, top: 0.5 }, { left: 0.6, top: 0.6 }, { centre: true })
+  ok(near(c.left, 0.4) && near(c.width, 0.2) && near(c.top, 0.4), 'alt puts the press in the middle of the box')
+  const level = drawBox({ left: 0.1, top: 0.5 }, { left: 0.5, top: 0.51 }, { square: true, line: true, aspect: 3 })
+  eq(level.height, 0, 'a nearly level line drawn with shift is level')
+  const upright = drawBox({ left: 0.1, top: 0.1 }, { left: 0.101, top: 0.6 }, { square: true, line: true, aspect: 3 })
+  eq(upright.width, 0, 'and a nearly upright one upright')
+  const plain = drawBox({ left: 0.1, top: 0.1 }, { left: 0.3, top: 0.2 })
+  ok(near(plain.width, 0.2) && near(plain.height, 0.1), 'with neither key it is the band between press and pointer')
+}
+
+console.log('alt resizes about the centre')
+{
+  const near = (a, b) => Math.abs(a - b) < 1e-9
+  const start = { left: 0.2, top: 0.2, width: 0.2, height: 0.1 }
+  const b = aboutCentre(start, { ...start, width: 0.3 })
+  ok(near(b.width, 0.4) && near(b.left + b.width / 2, 0.3), 'dragging the right edge out by 0.1 grows both sides by 0.1')
+  ok(near(b.top, 0.2) && near(b.height, 0.1), 'and leaves the other axis alone')
+  const shrunk = aboutCentre(start, { ...start, width: 0.01 })
+  ok(shrunk.width >= 0.002, 'and never shrinks a box to nothing')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

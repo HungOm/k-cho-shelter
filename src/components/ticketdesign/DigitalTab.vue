@@ -34,7 +34,7 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { cardSVG, cardPalette, CARD_DESIGNS, ticketVerifyUrl } from '../../lib/ticketart.js'
 import { CARD_SIZES, layoutFrom } from '../../lib/cardelements.js'
-import { boundsOf, alignBoxes, distributeBoxes } from '../../lib/arrange.js'
+import { boundsOf, alignBoxes, distributeBoxes, orderMoved } from '../../lib/arrange.js'
 import { encode } from '../../lib/qrcodegen.js'
 import { inkFor } from '../../lib/brand.js'
 import Icon from '../ui/Icon.vue'
@@ -49,7 +49,9 @@ import { usePen } from './usePen.js'
 import { normalDecoration, nextDecoId, nextGroupId } from '../../lib/designelements.js'
 import { placeShape } from '../../lib/designlibrary.js'
 import { pathData } from '../../lib/pathgeometry.js'
-import { expandGroups, bandOf } from '../../lib/selection.js'
+import { expandGroups, drawBox, aboutCentre } from '../../lib/selection.js'
+import { copyRecords, pasteRecords, repeatStep } from '../../lib/clipboard.js'
+import { KEYS, keyLabel } from '../../lib/studiokeys.js'
 import { CARD_FACES } from '../../lib/cardfaces.js'
 import { inlineImages, fetchAsDataURI } from '../../lib/ticketexport.js'
 
@@ -76,6 +78,9 @@ const props = defineProps({
   libBusy: { type: Boolean, default: false },
   /** The pictures this raffle has uploaded, for the Picture tool. */
   pictures: { type: Array, default: () => [] },
+  /** The hand is up — Space held, or H — and a press pans instead. The
+      studio holds it, because the key is the studio's on both tabs. */
+  hand: { type: Boolean, default: false },
 })
 /*
  * `mark` AND `drag` ARE THE UNDO STACK'S TWO SIGNALS, and they are separate on
@@ -365,6 +370,7 @@ function perShare() {
 }
 
 function startMove(part, ev) {
+  if (props.hand) { ev.stopPropagation(); onFrameDown(ev); return }
   if (part.locked || part.enabled === false || asSent.value) return
   ev.stopPropagation()
 
@@ -375,10 +381,29 @@ function startMove(part, ev) {
   emit('drag', true)
   if (ev.metaKey || ev.ctrlKey) pick(part.id, false, true)
   else if (!picked.value.includes(part.id)) pick(part.id)
+  /* ⌥-drag: a copy is dragged away and the original stays. Only drawings
+     copy — a card part is one of a fixed set — so with parts in the
+     selection the drag is an ordinary move. */
+  /* The copies reach this component's props on the next render, not now —
+     the parent owns the list — so the drag is built from the copy records,
+     whose boxes are the originals' (they were made in place). Parts in the
+     selection come along uncopied. */
+  let group = pickedParts.value.filter((p) => p.id !== part.id && !p.locked).map((p) => ({ id: p.id, box: { ...p.box } }))
+  let id = part.id
+  if (ev.altKey && isDeco(part.id) && !penEditing.value) {
+    const pairs = copyDrawings({ inPlace: true }, false)
+    const mine = pairs.find((p) => p.from === part.id)
+    if (mine) {
+      id = mine.copy
+      group = [
+        ...pairs.filter((p) => p !== mine).map((p) => ({ id: p.copy, box: { ...p.box } })),
+        ...group.filter((g) => !isDeco(g.id)),
+      ]
+    }
+  }
   ev.currentTarget.setPointerCapture?.(ev.pointerId)
   drag.value = {
-    mode: 'move', id: part.id, px: ev.clientX, py: ev.clientY, box: { ...part.box },
-    group: pickedParts.value.filter((p) => p.id !== part.id && !p.locked).map((p) => ({ id: p.id, box: { ...p.box } })),
+    mode: 'move', id, px: ev.clientX, py: ev.clientY, box: { ...part.box }, group,
   }
 }
 
@@ -398,7 +423,21 @@ function onPointerMove(ev) {
   if (!st) return
   if (st.mode === 'pen') { pen.move(pointOf(ev), ev); return }
   if (st.mode === 'grip') { pen.gripMove(pointOf(ev), ev); return }
-  if (st.mode === 'draw') { drawn.value = bandOf(st.origin, { left: pointOf(ev)[0], top: pointOf(ev)[1] }); return }
+  if (st.mode === 'pan') {
+    if (stage.value) {
+      stage.value.scrollLeft = st.sl - (ev.clientX - st.px)
+      stage.value.scrollTop = st.st - (ev.clientY - st.py)
+    }
+    return
+  }
+  if (st.mode === 'draw') {
+    const [left, top] = pointOf(ev)
+    drawn.value = drawBox(st.origin, { left, top }, {
+      square: ev.shiftKey, centre: ev.altKey, line: pending.value === 'line',
+      aspect: size.value.width / size.value.height,
+    })
+    return
+  }
   const span = perShare()
   const dx = (ev.clientX - st.px) / span.x
   const dy = (ev.clientY - st.py) / span.y
@@ -438,6 +477,13 @@ function onPointerMove(ev) {
    * furthest. A stretched code is not a smaller code, it is one that no longer
    * scans, so this is not a preference that belongs to the person dragging.
    */
+  /* ⌥: the opposite edge mirrors the dragged one, about the middle. */
+  const centred = () => {
+    if (!ev.altKey) return
+    const b = aboutCentre(st.box, part.box, 0.005)
+    part.box.left = share(b.left); part.box.top = share(b.top)
+    part.box.width = share(b.width); part.box.height = share(b.height)
+  }
   if (part.square) {
     const w = Math.max(0.01, c.includes('w') ? st.box.width - dx : st.box.width + dx)
     const h = share(w * (size.value.width / size.value.height))
@@ -445,6 +491,7 @@ function onPointerMove(ev) {
     if (c.includes('n')) part.box.top = share(st.box.top + st.box.height - h)
     part.box.width = share(w)
     part.box.height = h
+    centred()
     return
   }
   if (c.includes('e')) part.box.width = share(Math.max(0.005, sx(st.box.left + st.box.width + dx) - st.box.left))
@@ -461,6 +508,7 @@ function onPointerMove(ev) {
     part.box.top = share(Math.min(top, bottom - 0.005))
     part.box.height = share(bottom - part.box.top)
   }
+  centred()
 }
 
 function endPointer() {
@@ -478,24 +526,26 @@ function endPointer() {
   emit('drag', false)
 }
 
-/* Arrow keys nudge by one grid step, Shift by ten. In shares, so the nudge is
-   the same distance on the card at any zoom. */
-function onKey(ev) {
-  const part = chosenThing.value
-  if (!part || part.locked) return
+/* Arrow keys nudge one pixel of the card, Shift ten — the step every drawing
+   program uses, and in shares so it is the same distance at any zoom. The
+   whole selection moves, as a drag moves it; a pinned thing stays. */
+function nudge(ev) {
   const n = ev.shiftKey ? 10 : 1
   const map = {
-    ArrowLeft: [-n * GRID_PX / size.value.width, 0],
-    ArrowRight: [n * GRID_PX / size.value.width, 0],
-    ArrowUp: [0, -n * GRID_PX / size.value.height],
-    ArrowDown: [0, n * GRID_PX / size.value.height],
+    ArrowLeft: [-n / size.value.width, 0], ArrowRight: [n / size.value.width, 0],
+    ArrowUp: [0, -n / size.value.height], ArrowDown: [0, n / size.value.height],
   }
   const d = map[ev.key]
-  if (!d) return
-  ev.preventDefault()
+  if (!d) return false
+  if (penEditing.value && chosenNode.value >= 0) return pen.nudgeNode(d[0], d[1])
+  const movers = pickedParts.value.filter((t) => !t.locked && t.enabled !== false)
+  if (!movers.length) return false
   emit('mark')
-  part.box.left = share(part.box.left + d[0])
-  part.box.top = share(part.box.top + d[1])
+  for (const t of movers) {
+    t.box.left = share(t.box.left + d[0])
+    t.box.top = share(t.box.top + d[1])
+  }
+  return true
 }
 
 const pc = (v) => `${(Number(v) * 100).toFixed(1)}%`
@@ -518,6 +568,13 @@ const TOOLS = [
   { kind: 'icon', icon: 'design', label: 'Mark', hint: "One of the app's own drawings" },
   { kind: 'path', icon: 'pen', label: 'Pen', hint: 'Click for corners, drag for curves, click the first point to close' },
 ]
+/* The key a tooltip names, from the one table — "Rectangle · R". */
+const keyOf = (id) => keyLabel(KEYS.find((k) => k.id === id))
+/* As pairs, not an object literal: the icons gate reads every `icon: '…'` in
+   the source as a glyph being asked for, and the Mark tool's kind is `icon`. */
+const TOOL_KEY = Object.fromEntries([['rect', 'toolRect'], ['ellipse', 'toolEllipse'], ['line', 'toolLine'],
+  ['text', 'toolWords'], ['icon', 'toolMark'], ['path', 'toolPen']])
+
 const pending = ref('')
 const drawn = ref(null)
 const pendingPicture = ref('')
@@ -572,6 +629,12 @@ watch(sel, (id) => { if (penEditing.value && id !== penEditing.value) pen.leave(
 watch(pending, (p) => { if (p !== 'path' && penDrawing.value) pen.cancel() })
 
 function onFrameDown(ev) {
+  if (props.hand) {
+    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+    drag.value = { mode: 'pan', px: ev.clientX, py: ev.clientY,
+      sl: stage.value?.scrollLeft || 0, st: stage.value?.scrollTop || 0 }
+    return
+  }
   if (asSent.value) return
   if (pending.value === 'path') {
     ev.currentTarget.setPointerCapture?.(ev.pointerId)
@@ -773,7 +836,177 @@ async function sendTest() {
   }
 }
 
-defineExpose({ sendTest, testing })
+/*
+ * ---------- the keys, on the card ----------
+ *
+ * The studio owns the keyboard (src/lib/studiokeys.js) and hands every
+ * 'canvas' key to whichever surface is showing. These are the card's answers,
+ * against the card's own selection and history. What differs from the printed
+ * tab is only what the card allows: its PARTS are a fixed set, so copy, cut,
+ * paste, duplicate, remove, group and stacking act on the drawings in the
+ * selection and leave the parts where they are. A key that has nothing to act
+ * on answers false and is left to the page.
+ */
+const clip = ref(null)
+let pastes = 0
+const lastCopies = ref(null)
+
+/** Copies of the selected drawings, or of a clip, added to the card. */
+function copyDrawings(opts = {}, withMark = true, source = null) {
+  const from = source || copyRecords([], props.decorations, pickedDecos.value.map((d) => d.id))
+  if (!from.decorations.length) return []
+  if (withMark) emit('mark')
+  const got = pasteRecords(from, { nextId: () => '', nextDecoId, nextGroupId, ...opts })
+  const made = got.decorations.map(normalDecoration)
+  emit('set-decorations', [...props.decorations, ...made])
+  sel.value = made[0]?.id || ''
+  also.value = made.slice(1).map((d) => d.id)
+  lastCopies.value = got.pairs
+  return got.pairs
+}
+
+const chooseTool = (kind) => () => { if (pending.value !== kind) beginDraw(kind) }
+const drawingsOnly = (f) => () => (pickedDecos.value.length ? f() : false)
+
+function orderDrawings(move) {
+  const ids = pickedDecos.value.map((d) => d.id)
+  if (!ids.length) return false
+  emit('mark')
+  const by = Object.fromEntries(props.decorations.map((d) => [d.id, d]))
+  emit('set-decorations', orderMoved(props.decorations.map((d) => d.id), ids, move).map((id) => by[id]))
+  return true
+}
+
+/* A double-click on a grouped drawing takes that one part; on a path it puts
+   the nodes up. Escape comes back out. */
+function enterThing(d) {
+  if (d.kind === 'path') { pick(d.id, false, true); pen.enter(d.id); return }
+  if (d.group) pick(d.id, false, true)
+}
+
+const CARD_ACTIONS = {
+  toolSelect: () => { pending.value = '' },
+  toolRect: chooseTool('rect'),
+  toolEllipse: chooseTool('ellipse'),
+  toolLine: chooseTool('line'),
+  toolWords: chooseTool('text'),
+  toolMark: chooseTool('icon'),
+  toolPen: chooseTool('path'),
+  toolPicture: () => (props.pictures.length ? openPictures() : false),
+  eyedropper: () => {
+    if (!props.canDrop || !pickedParts.value.length) return false
+    new window.EyeDropper().open().then((r) => useColour(String(r.sRGBHex).toUpperCase())).catch(() => {})
+  },
+  editNodes: () => (chosenDeco.value?.kind === 'path' ? (pen.enter(chosenDeco.value.id), true) : false),
+  penFinish: () => (penDrawing.value ? pen.finish(false) || true : false),
+  selectAll: () => {
+    const live = things.value.filter((t) => t.enabled !== false && !t.locked).map((t) => t.id)
+    sel.value = live[0] || ''
+    also.value = live.slice(1)
+  },
+  deselect: () => { sel.value = ''; also.value = [] },
+  escape: () => {
+    if (penDrawing.value) { if (!pen.finish(false)) pen.cancel(); return }
+    if (penEditing.value) { pen.leave(); return }
+    if (pending.value) { pending.value = ''; return }
+    const d = chosenDeco.value
+    const whole = d?.group ? expandGroups([d.id], props.decorations) : []
+    if (whole.length > picked.value.length) { pick(d.id); return }
+    sel.value = ''
+    also.value = []
+  },
+  copy: drawingsOnly(() => {
+    clip.value = copyRecords([], props.decorations, pickedDecos.value.map((d) => d.id))
+    pastes = 0
+  }),
+  cut: drawingsOnly(() => {
+    clip.value = copyRecords([], props.decorations, pickedDecos.value.map((d) => d.id))
+    pastes = 0
+    removeDecos()
+  }),
+  paste: () => { if (!clip.value) return false; pastes += 1; copyDrawings({ times: pastes }, true, clip.value) },
+  pasteInPlace: () => { if (!clip.value) return false; copyDrawings({ inPlace: true }, true, clip.value) },
+  duplicate: drawingsOnly(() => {
+    const step = repeatStep(lastCopies.value, picked.value, (id) => thingById(id)?.box)
+    copyDrawings(step ? { step } : {})
+  }),
+  remove: () => {
+    if (penEditing.value && chosenNode.value >= 0) return pen.removeChosen()
+    return pickedDecos.value.length ? removeDecos() : false
+  },
+  group: () => {
+    if (pickedDecos.value.length < 2) return false
+    emit('mark')
+    const g = nextGroupId()
+    for (const d of pickedDecos.value) d.group = g
+  },
+  ungroup: () => {
+    if (!pickedDecos.value.some((d) => d.group)) return false
+    emit('mark')
+    for (const d of pickedDecos.value) d.group = ''
+  },
+  /* Only drawings pin: a card part that cannot move is the background, and
+     that is the card's decision, not a toggle. */
+  lock: drawingsOnly(() => {
+    emit('mark')
+    const pin = pickedDecos.value.some((d) => !d.locked)
+    for (const d of pickedDecos.value) d.locked = pin
+  }),
+  bold: () => {
+    const list = pickedParts.value.filter((t) => (isDeco(t.id) ? t.kind === 'text' : t.textual))
+    if (!list.length) return false
+    emit('mark')
+    const weightOf = (t) => (isDeco(t.id) ? t.text.weight : t.weight)
+    const next = list.every((t) => weightOf(t) === 'bold') ? 'regular' : 'bold'
+    for (const t of list) { if (isDeco(t.id)) t.text.weight = next; else t.weight = next }
+  },
+  nudge: (e) => nudge(e),
+  forward: () => orderDrawings('forward'),
+  backward: () => orderDrawings('backward'),
+  front: () => orderDrawings('front'),
+  back: () => orderDrawings('back'),
+  zoomIn: () => stepZoom(1),
+  zoomOut: () => stepZoom(-1),
+  fit: () => fitToStage(),
+  actual: () => { zoom.value = 1 },
+  alignLeft: () => alignPicked('left'),
+  alignCentre: () => alignPicked('centre'),
+  alignRight: () => alignPicked('right'),
+  alignTop: () => alignPicked('top'),
+  alignMiddle: () => alignPicked('middle'),
+  alignBottom: () => alignPicked('bottom'),
+  spaceAcross: () => distributePicked('across'),
+  spaceDown: () => distributePicked('down'),
+  toggleSnap: () => { snapping.value = !snapping.value },
+  toggleGrid: () => { gridding.value = !gridding.value },
+}
+
+/** What the studio calls with a key. `undefined` means "not the card's —
+    the studio answers it" (the hand); false means "nothing to act on". */
+function act(name, e = {}) {
+  const f = CARD_ACTIONS[name]
+  return f ? f(e) : undefined
+}
+
+/* ⌘-scroll and a pinch zoom about the pointer, as on the printed tab. */
+function onWheel(ev) {
+  if (!(ev.ctrlKey || ev.metaKey)) return
+  ev.preventDefault()
+  const el = stage.value
+  const before = zoom.value
+  const next = Math.max(0.05, Math.min(4, before * Math.exp(-ev.deltaY * 0.01)))
+  if (!el) { zoom.value = next; return }
+  const r = el.getBoundingClientRect()
+  const px = ev.clientX - r.left + el.scrollLeft
+  const py = ev.clientY - r.top + el.scrollTop
+  zoom.value = next
+  nextTick(() => {
+    el.scrollLeft = px * (next / before) - (ev.clientX - r.left)
+    el.scrollTop = py * (next / before) - (ev.clientY - r.top)
+  })
+}
+
+defineExpose({ sendTest, testing, act })
 </script>
 
 <template>
@@ -795,8 +1028,8 @@ defineExpose({ sendTest, testing })
       <h3 class="rubric">Draw</h3>
       <ToolBar label="Draw on the card">
         <ToolButton v-for="t in TOOLS" :key="t.kind" :icon="t.icon" :label="t.label" :size="17"
-                    :active="pending === t.kind" :hint="t.hint" @click="beginDraw(t.kind)" />
-        <ToolButton icon="image" label="Picture" :size="17" :active="pending === 'image'"
+                    :active="pending === t.kind" :hint="t.hint" :keys="keyOf(TOOL_KEY[t.kind])" @click="beginDraw(t.kind)" />
+        <ToolButton icon="image" label="Picture" :size="17" :active="pending === 'image'" :keys="keyOf('toolPicture')"
                     :why="pictures.length ? '' : 'There are no pictures yet — upload a logo in Setup, or artwork on the Artwork tab'"
                     hint="The raffle's logo or an uploaded artwork, placed on the card"
                     @click="openPictures" />
@@ -917,13 +1150,13 @@ defineExpose({ sendTest, testing })
                     @click="distributePicked('down')" />
       </span>
       <span class="tgroup">
-        <ToolButton icon="trash" label="Remove" :why="whyNoRemove"
+        <ToolButton icon="trash" label="Remove" :why="whyNoRemove" :keys="keyOf('remove')"
                     hint="Take the selected drawings off the card. The card's own parts stay"
                     @click="removeDecos" />
       </span>
     </ToolBar>
 
-    <div ref="stage" class="stage" :class="{ sent: asSent }">
+    <div ref="stage" class="stage" :class="{ sent: asSent }" @wheel="onWheel">
       <!--
         AS SENT: the card at the width a chat gives it, on something that is
         not the studio's own surface. No rulers, no boxes, nothing to drag —
@@ -953,7 +1186,7 @@ defineExpose({ sendTest, testing })
         </div>
 
         <div
-          ref="frame" class="frame" :class="{ drawing: !!pending }"
+          ref="frame" class="frame" :class="{ drawing: !!pending, panning: hand }"
           :style="{ width: frameWidth + 'px', height: Math.round(frameWidth * (size.height / size.width)) + 'px' }"
           @pointermove="onPointerMove" @pointerup="endPointer" @pointercancel="endPointer"
           @pointerdown="onFrameDown">
@@ -983,7 +1216,7 @@ defineExpose({ sendTest, testing })
               type="button" class="grab" :aria-label="p.name"
               :disabled="p.locked"
               :title="p.locked ? `${p.name} is the card itself` : `${p.name} — drag to move, or use the arrow keys`"
-              @keydown="onKey" @click.stop="pick(p.id, $event.shiftKey || $event.metaKey)"></button>
+              @click.stop="pick(p.id, $event.shiftKey || $event.metaKey)"></button>
             <!-- The name on the selected box, as card 8c draws it: at a zoom
                  that fits a 1920px card, a highlighted rectangle is not
                  self-evidently the thing named in the list. -->
@@ -1008,8 +1241,8 @@ defineExpose({ sendTest, testing })
             @pointerdown="startMove(d, $event)">
             <button
               type="button" class="grab" :aria-label="decoName(d)" :disabled="d.enabled === false || d.locked"
-              @keydown="onKey" @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
-              @dblclick.stop="d.kind === 'path' && (pick(d.id, false, true), pen.enter(d.id))"></button>
+              @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
+              @dblclick.stop="enterThing(d)"></button>
             <template v-if="sel === d.id && !many && !d.locked && penEditing !== d.id">
               <span v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
                     class="hdl" :class="c"
@@ -1053,10 +1286,10 @@ defineExpose({ sendTest, testing })
     <p class="readout">
       <!-- The set's own drawings, as on the Place tab (STUDIO-ESSENTIALS A6). -->
       <ToolBar label="Zoom">
-        <ToolButton icon="zoomOut" label="Zoom out" :size="15" @click="stepZoom(-1)" />
+        <ToolButton icon="zoomOut" label="Zoom out" :size="15" :keys="keyOf('zoomOut')" @click="stepZoom(-1)" />
         <span class="zval">{{ Math.round(zoom * 100) }}%</span>
-        <ToolButton icon="zoomIn" label="Zoom in" :size="15" @click="stepZoom(1)" />
-        <ToolButton icon="fit" label="Fit" wide :size="15" hint="Fit the whole card to the canvas" @click="fitToStage" />
+        <ToolButton icon="zoomIn" label="Zoom in" :size="15" :keys="keyOf('zoomIn')" @click="stepZoom(1)" />
+        <ToolButton icon="fit" label="Fit" wide :size="15" hint="Fit the whole card to the canvas" :keys="keyOf('fit')" @click="fitToStage" />
       </ToolBar>
       <template v-if="chosen">
         <b>x {{ pc(chosen.box.left) }}</b> · y {{ pc(chosen.box.top) }} ·
@@ -1245,6 +1478,7 @@ defineExpose({ sendTest, testing })
 .ebox.deco { outline-color: #12b5e5 }
 .ebox.deco.on { outline: 2px solid #12b5e5; background: rgba(18, 181, 229, .14) }
 .frame.drawing { cursor: crosshair }
+.frame.panning, .frame.panning .ebox { cursor: grab }
 .ebox.drawnbox { outline: 2px solid #ffb300; background: rgba(255, 179, 0, .18); pointer-events: none }
 .penlayer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 3 }
 .penlayer path { fill: none; vector-effect: non-scaling-stroke }

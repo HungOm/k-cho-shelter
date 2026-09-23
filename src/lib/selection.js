@@ -98,3 +98,49 @@ export function mergeSelection(current, hits, add = false) {
   for (const id of got) if (!all.includes(id)) all.push(id)
   return { sel: all[0] || '', also: all.slice(1) }
 }
+
+/*
+ * DRAWING A BOX WITH THE MODIFIERS EVERY DRAWING PROGRAM USES.
+ *
+ * Shift keeps the shape regular: a square, a circle, and for a line one of the
+ * eight directions — level, upright or at 45°. Alt (⌥) draws out from where
+ * the press was, so the press is the middle rather than a corner. Both at once
+ * is a regular shape centred on the press.
+ *
+ * "Square" is square on the SCREEN, not in shares: shares of a 3 : 1 ticket
+ * are three times longer across than down, so a box equal in shares is a
+ * rectangle. `aspect` is the artboard's width over its height, in pixels.
+ */
+export function drawBox(origin, point, { square = false, centre = false, aspect = 1, line = false } = {}) {
+  const ox = num(origin?.left), oy = num(origin?.top)
+  let dx = num(point?.left) - ox
+  let dy = num(point?.top) - oy
+  const a = aspect > 0 ? aspect : 1
+  if (square) {
+    const X = Math.abs(dx * a), Y = Math.abs(dy)
+    const sx = Math.sign(dx) || 1, sy = Math.sign(dy) || 1
+    const angle = Math.atan2(Y, X) * 180 / Math.PI
+    if (line && angle < 22.5) dy = 0
+    else if (line && angle > 67.5) dx = 0
+    else { const s = Math.max(X, Y); dx = sx * s / a; dy = sy * s }
+  }
+  if (centre) {
+    return { left: ox - Math.abs(dx), top: oy - Math.abs(dy), width: 2 * Math.abs(dx), height: 2 * Math.abs(dy) }
+  }
+  return bandOf(origin, { left: ox + dx, top: oy + dy })
+}
+
+/*
+ * RESIZING ABOUT THE CENTRE (⌥ on a handle). Whatever the dragged edge did,
+ * the opposite edge does the mirror of it, so the box grows or shrinks around
+ * its middle and stays where it was centred. `start` is the box when the drag
+ * began and `now` the box the ordinary resize produced; with Shift that box
+ * already kept its proportions, and growing both sides equally keeps them.
+ */
+export function aboutCentre(start, now, least = 0.002) {
+  const w = Math.max(least, start.width + 2 * (num(now.width) - start.width))
+  const h = Math.max(least, start.height + 2 * (num(now.height) - start.height))
+  const cx = start.left + start.width / 2
+  const cy = start.top + start.height / 2
+  return { left: cx - w / 2, top: cy - h / 2, width: w, height: h }
+}
