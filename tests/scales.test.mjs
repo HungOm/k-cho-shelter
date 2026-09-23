@@ -115,18 +115,69 @@ console.log('the scale exists')
   }
 }
 
-console.log('and it was DERIVED from this tree, not invented beside it')
+console.log('and it was DERIVED from what the app drew with, not invented beside it')
 {
   /*
-   * THE ASSERTION THAT MAKES THE SCALE HONEST. A scale picked out of the air
-   * is a second system competing with the first, and the migration then has to
-   * move every value twice. Each step below must be a number this app was
-   * already drawing with somewhere — so the scale is the existing system with
+   * THE ASSERTION THAT MAKES THE SCALE HONEST, AND ITS EVIDENCE IS FROZEN.
+   *
+   * A scale picked out of the air is a second system competing with the first,
+   * and the migration then has to move every value twice. So every step must
+   * be a number this app was ALREADY DRAWING WITH — the existing system with
    * its duplicates removed, which is a thing you can prove.
    *
-   * --elev-1/3/4 are exempt and named in the header: the app had a two-rung
-   * ladder, so the missing rungs cannot be found in it by definition.
+   * THE FIRST VERSION PROVED IT AGAINST THE LIVE TREE AND THAT WAS WRONG.
+   * It looked each step's value up as a literal somewhere in src/. kcho-shelter-25
+   * hit it on the first real migration: moving `.warnmark` onto var(--fs-3xs)
+   * removed the last raw `.66rem` in the app, so the step "stopped being
+   * derived" — not because it was invented, but because the migration WORKED.
+   *
+   * It was not a one-off. Every step is one finished file away from the same
+   * failure: --fs-md was in 2 files, --fs-lg in 3, --fs-2xs in 5. The check
+   * failed hardest exactly when the programme succeeded, and the last person
+   * to migrate a value would have inherited a red gate for the best possible
+   * reason.
+   *
+   * The claim was always historical — "this scale was derived from what the
+   * app was drawing with WHEN IT WAS DECLARED", a fact about 2026-09-23 and
+   * not about the current tree. A historical claim has to be checked against a
+   * frozen record. Phase 6 exists to delete the literals this was read from,
+   * so the proof must outlive them.
+   *
+   * WHY NOT "the literal exists OR the token is referenced", which is one
+   * clause instead of a list: adoption is not derivation. That version passes
+   * a step that was invented and then used, which is precisely the case this
+   * block is here to refuse.
    */
+
+  /*
+   * THE AUDIT'S OUTPUT, 2026-09-23. Every value below was found in
+   * src/style.css, src/components or src/verify on the day the scale was
+   * declared — see UI-EVIDENCE.md §4, which counted 62 font sizes, 9 weights,
+   * 29 spacing values, 16 radii and 6 border widths.
+   *
+   * THIS LIST IS A RECORD, NOT AN ALLOWLIST. It does not grow. Adding a value
+   * to it would falsify an audit rather than extend a permission — which is
+   * why a step the app never drew with goes in ADDED_SINCE instead, where it
+   * has to say who wanted it and what for.
+   */
+  const DREW_WITH = new Set([
+    '.66rem', '.74rem', '.82rem', '.9rem', '1rem', '1.15rem',
+    '1.4rem', '1.65rem', '2.2rem', '3.2rem',
+    '400', '600', '700',
+    '2px', '4px', '6px', '8px', '12px', '16px', '24px', '32px', '48px',
+    '3px', '8px', '999px', '1px', '1.5px',
+  ])
+
+  /*
+   * STEPS THE APP NEVER DREW WITH, each with a reason and a first consumer.
+   * Empty today. A scale may legitimately grow — `.stubgrip` nearly needed a
+   * step below --fs-3xs — but growing it is a decision somebody makes out
+   * loud, not a value that appears because a migration wanted one.
+   */
+  const ADDED_SINCE = new Map([
+    // ['.58rem', '--fs-4xs, for a vertical micro-label on a drag handle — kcho-shelter-N'],
+  ])
+
   const derived = [
     '--fs-3xs', '--fs-2xs', '--fs-xs', '--fs-sm', '--fs-md', '--fs-lg',
     '--fs-xl', '--fs-2xl', '--fs-3xl', '--fs-4xl',
@@ -136,29 +187,30 @@ console.log('and it was DERIVED from this tree, not invented beside it')
     '--r-xs', '--r-md', '--r-pill', '--rule', '--rule-strong',
   ]
 
+  /* The record's own integrity, asserted before it is trusted. A truncated or
+     half-edited list would silently stop constraining the steps it no longer
+     mentions. */
+  ok(DREW_WITH.size === 26, `the audit record is intact (${DREW_WITH.size} distinct values)`)
+
   let checked = 0
-  const orphans = []
+  const invented = []
   for (const name of derived) {
     const value = declared.get(name)
     if (!value) continue
-    /* Found in a DECLARATION somewhere, not merely as a substring: `4px`
-       must not be satisfied by `24px`, and `600` must not be satisfied by
-       a `600ms` transition or a z-index. */
-    const needle = new RegExp(`:\\s*[^;{}]*(^|[^0-9.a-z-])${value.replace('.', '\\.')}(?![0-9a-z%-])`, 'im')
-    const hit = sources.some(([f, src]) => f !== ROOT + 'src/style.css' && needle.test(src))
-      || (cssBare.match(new RegExp(`(^|[^0-9.a-z-])${value.replace('.', '\\.')}(?![0-9a-z%-])`, 'gm')) || []).length > 1
     checked++
-    if (!hit) orphans.push(`${name}: ${value} appears nowhere else in src/`)
+    if (DREW_WITH.has(value) || ADDED_SINCE.has(value)) continue
+    invented.push(`${name}: ${value} is not a value this app drew with on 2026-09-23, `
+      + `and is not in ADDED_SINCE. A new step is a decision — declare it there with `
+      + `a reason and who wanted it, or use an existing step.`)
   }
 
-  /* Asserted BEFORE the orphan check, per the header. A broken regex here
-     produces zero comparisons, and zero comparisons must not look like
-     twenty-seven clean ones. */
+  /* Asserted BEFORE the verdict. A broken lookup produces zero comparisons,
+     and zero comparisons must not read like twenty-seven clean ones. */
   ok(checked === derived.length,
-     `compared every derived step against the tree (${checked} of ${derived.length})`)
-  for (const o of orphans) console.log('  FAIL ' + o)
-  fail += orphans.length
-  ok(orphans.length === 0, `every derived step is a value this app already used (${orphans.length} are not)`)
+     `compared every derived step against the record (${checked} of ${derived.length})`)
+  for (const i of invented) console.log('  FAIL ' + i)
+  fail += invented.length
+  ok(invented.length === 0, `every step is a value the app drew with (${invented.length} are not)`)
 }
 
 console.log('and the aliases are bit-identical, so Phase 0 moved nothing')
