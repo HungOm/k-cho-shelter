@@ -40,6 +40,9 @@ export const KEYS = [
   { id: 'toolWords', group: 'Tools', label: 'Words', action: 'toolWords', when: 'place', combo: { key: 't' } },
   { id: 'toolMark', group: 'Tools', label: 'Mark', action: 'toolMark', when: 'place', combo: { key: 'm' } },
   { id: 'toolPicture', group: 'Tools', label: 'Picture', action: 'toolPicture', when: 'place', combo: { key: 'i' } },
+  { id: 'toolPen', group: 'Tools', label: 'Pen — click for corners, drag for curves', action: 'toolPen', when: 'place', combo: { key: 'p' } },
+  { id: 'editNodes', group: 'Tools', label: 'Edit the nodes of the selected path', action: 'editNodes', when: 'place', combo: { key: 'a' } },
+  { id: 'penFinish', group: 'Tools', label: 'Finish the path being drawn', action: 'penFinish', when: 'place', combo: { key: 'Enter' } },
 
   /* ---- the selection ---- */
   { id: 'selectAll', group: 'Selection', label: 'Select everything on the ticket', action: 'selectAll', when: 'place', combo: { key: 'a', cmd: true } },

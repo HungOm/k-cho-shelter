@@ -606,6 +606,25 @@ field that IS the drawn shape's inspector heading, showing its kind until named.
 
 ### Phase 8 — The pen tool: paths with nodes (L)
 
+**Status 2026-09-23: built, gated, rendered** (kcho-shelter-0c).
+- `path` is the seventh kind; nodes in the unit space of the box, so move,
+  resize, align, flip, group, library and undo work on a path unchanged. Caps:
+  48 nodes a path, 360 a ticket, two at least; refused on save, and over the QR
+  like everything else.
+- Geometry in `_shared/pathgeometry.js` (32 assertions: true curve bounds,
+  refit identity, exact split, cusp and smooth handles, 45° constraint).
+- The interaction is `ticketdesign/usePen.js`, a composable — the seam this plan
+  moved here from Phase 2, cut now because the card tab (Phase 9) draws too.
+  Angles and lengths are measured with x scaled by the artboard's aspect, so a
+  45° segment and a "third of the way" handle look right on a 3:1 ticket.
+- Keys: P pen, A edit nodes, Enter finishes; Escape finishes an open path
+  (most drawing tools do), then leaves node editing. Delete with nodes up
+  removes the chosen node, never the path. Enter with nothing being drawn is
+  left to the page — an action that does not apply now answers false.
+- Drawn in a browser: mid-draw (corners, a smooth node's arms, the rubber
+  band), finished (a stroke on the ticket, its box round the curve), and with
+  nodes up. Paths and pictures now wear their own glyphs in the list.
+
 **What it is.** A seventh kind of decoration, `path`, drawn with a pen and
 edited by its nodes, rendered on both surfaces by the same string renderer as
 every other decoration. Straight and curved segments, open or closed, with

@@ -1056,5 +1056,67 @@ console.log('a picture the raffle already has can be placed, fitted whole, and c
   await cleanup()
 }
 
+console.log('the pen draws a path, and a path is edited by its nodes')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 8, ruled in by the user: paths, drawn with a pen
+   * and shaped by their nodes. Driven through the studio's own pen (usePen.js,
+   * which the shell exposes) and its key table — the geometry is pinned in
+   * pathgeometry.test.mjs; what can only be seen here is that the studio turns
+   * presses into a stored path, and that editing refits the box around it.
+   */
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  await ctx.load()
+  ctx.tab.value = 'place'
+  const key = (k, mods = {}) => ({ key: k, code: '', metaKey: false, ctrlKey: false, shiftKey: false, altKey: false,
+    target: null, preventDefault() {}, ...mods })
+
+  ctx.onFocusKey(key('p'))
+  eq(ctx.pending.value, 'd:path', 'P picks up the pen')
+  const pen = ctx.pen
+  pen.down([0.10, 0.50]); pen.up()
+  pen.down([0.20, 0.30]); pen.move([0.26, 0.24]); pen.up()          // pressed and dragged up-right: a curve that rises past the node
+  pen.down([0.30, 0.50]); pen.up()
+  ok(ctx.penDrawing.value?.nodes.length === 3, 'three nodes put down')
+  ok(ctx.penDrawing.value.nodes[1].hx2 !== undefined, 'the dragged one is smooth, with handles')
+  ctx.onFocusKey(key('Enter'))
+  const path = ctx.design.value.decorations[ctx.design.value.decorations.length - 1]
+  eq(path?.kind, 'path', 'Enter finishes it as a path on the ticket')
+  eq(path.path.closed, false, 'an open one')
+  ok(path.box.top < 0.30, `and its box reaches the curve's bulge, above the top node (top ${path.box.top.toFixed(4)})`)
+  eq(ctx.sel.value, path.id, 'the finished path is selected')
+  eq(ctx.pending.value, '', 'and the pen is put down')
+
+  ctx.onFocusKey(key('p'))
+  pen.down([0.5, 0.5]); pen.up()
+  pen.down([0.6, 0.5]); pen.up()
+  pen.down([0.55, 0.6]); pen.up()
+  pen.down([0.5, 0.5]); pen.up()
+  const tri = ctx.design.value.decorations[ctx.design.value.decorations.length - 1]
+  ok(tri.kind === 'path' && tri.path.closed, 'clicking the first node closes the path')
+  eq(tri.path.nodes.length, 3, 'without adding a fourth node on top of the first')
+
+  ctx.onFocusKey(key('a'))
+  eq(ctx.penEditing.value, tri.id, 'A shows the selected path\'s nodes')
+  const before = { ...tri.box }
+  const undo = ctx.history.value.length
+  pen.gripDown(2, 'node', [0.55, 0.6])
+  pen.gripMove([0.55, 0.8])
+  pen.gripUp()
+  ok(tri.box.height > before.height + 0.15, 'dragging a node below the path grows its box to follow')
+  eq(ctx.history.value.length, undo + 1, 'as one undo step')
+  pen.toggleNode(0)
+  ok(tri.path.nodes[0].hx2 !== undefined, 'double-clicking a corner makes it smooth')
+  ctx.chosenNode.value = 1
+  ctx.onFocusKey(key('Delete'))
+  eq(tri.path.nodes.length, 2, 'Delete with nodes up removes the chosen node, not the path')
+  ok(ctx.design.value.decorations.includes(tri), 'the path itself stays')
+  ctx.onFocusKey(key('Escape'))
+  eq(ctx.penEditing.value, '', 'and Escape puts the nodes away')
+
+  ok(!ctx.onFocusKey(key('Enter')), 'Enter with no path being drawn is not taken from the page')
+  await cleanup()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

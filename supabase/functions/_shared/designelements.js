@@ -45,7 +45,22 @@
  * colour of their own — which is exactly what a placeable mark needs to be, and
  * costs nothing to reuse.
  */
-export const KINDS = ['rect', 'ellipse', 'line', 'text', 'image', 'icon']
+import { cleanNode, pathData } from './pathgeometry.js'
+
+/*
+ * `path` IS THE SEVENTH, and the only one drawn node by node — the pen tool.
+ * Its nodes live in the unit space of its own box, so every tool that acts on
+ * a box (move, resize, align, flip, the library) acts on a path unchanged.
+ */
+export const KINDS = ['rect', 'ellipse', 'line', 'text', 'image', 'icon', 'path']
+
+/*
+ * HOW MANY NODES, bounded by construction so the design's 65536-character
+ * limit stays a formality: a node is under a hundred characters at four
+ * decimals, so the whole design's worth of paths is well inside it.
+ */
+export const MAX_PATH_NODES = 48
+export const MAX_PATH_NODES_TOTAL = 360
 
 /** Which kinds carry words, and therefore get the lettering controls. */
 export const TEXTUAL = new Set(['text'])
@@ -111,7 +126,7 @@ const ink = (v) => (typeof v === 'string' && HEX.test(v.trim()) ? v.trim().toLow
  */
 const side = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d)
 
-const minSide = (kind) => (kind === 'line' ? 0 : 0.0005)
+const minSide = (kind) => (kind === 'line' || kind === 'path' ? 0 : 0.0005)
 
 const box = (b, kind) => ({
   left: tidy(clamp(num(b?.left), -1, 2)),
@@ -235,6 +250,12 @@ export function normalDecoration(raw) {
     },
 
     icon: { name: String(raw?.icon?.name ?? '').replace(/[^a-zA-Z]/g, '').slice(0, 40) },
+    /* The pen's path, in the unit space of the box. Two nodes at least to be a
+       path at all; past the cap the rest are dropped here and refused on save. */
+    path: {
+      nodes: (Array.isArray(raw?.path?.nodes) ? raw.path.nodes : []).slice(0, MAX_PATH_NODES).map(cleanNode),
+      closed: raw?.path?.closed === true,
+    },
     image: {
       src: String(raw?.image?.src ?? '').slice(0, 512),
       /*
@@ -292,6 +313,14 @@ export function faultsIn(list, opts = {}) {
     else if (seen.has(id)) bad.push(`${where} repeats the id ${id}.`)
     seen.add(id)
 
+    if (d.kind === 'path') {
+      const n = Array.isArray(d.path?.nodes) ? d.path.nodes.length : 0
+      if (n < 2) bad.push(`${where} is a path with ${n} node${n === 1 ? '' : 's'} — a path needs two.`)
+      if (n > MAX_PATH_NODES) bad.push(`${where} has ${n} nodes, and a path may have ${MAX_PATH_NODES}.`)
+      if (n && !d.path.nodes.every((p) => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))) {
+        bad.push(`${where} has a node that is not a point.`)
+      }
+    }
     if (d.image?.fit !== undefined && !FITS.includes(d.image.fit)) {
       bad.push(`${where} is fitted "${d.image.fit}", which is not one of ${FITS.join(', ')}.`)
     }
@@ -348,6 +377,11 @@ export function faultsIn(list, opts = {}) {
         + 'its address — a design holds coordinates, not pictures.')
     }
   })
+
+  const nodesTotal = list.reduce((t, d) => t + (d?.kind === 'path' && Array.isArray(d.path?.nodes) ? d.path.nodes.length : 0), 0)
+  if (nodesTotal > MAX_PATH_NODES_TOTAL) {
+    bad.push(`The paths have ${nodesTotal} nodes between them, and a ticket may have ${MAX_PATH_NODES_TOTAL}.`)
+  }
 
   /*
    * AND NOTHING MAY SIT ON THE CODE.
@@ -514,6 +548,17 @@ export function decorationSVG(d, w, h, ctx = {}) {
     body = `<g transform="translate(${ox.toFixed(2)} ${oy.toFixed(2)}) scale(${k.toFixed(4)})">`
       + `<path d="${path}" fill="none" stroke="${el.fill.colour}" stroke-width="1.8" `
       + 'stroke-linecap="round" stroke-linejoin="round"/></g>'
+  } else if (el.kind === 'path') {
+    /*
+     * Unit-of-box to pixels, point by point. The stroke is drawn at its share
+     * of the artboard's width like every other outline — the path is MAPPED,
+     * never scaled as a transform, so a stretched box does not stretch its line.
+     * Ends and joins are round: a pen stroke with square ends looks cut off.
+     */
+    const d = pathData(el.path.nodes, el.path.closed, ([u, v]) => [x + u * bw, y + v * bh])
+    if (!d) return ''
+    body = `<path d="${d}" fill="${fill}"${strokeAttrs || ` stroke="${el.fill.colour}" stroke-width="${Math.max(1, w * 0.002).toFixed(2)}"`} `
+      + 'stroke-linejoin="round" stroke-linecap="round"/>'
   } else if (el.kind === 'image') {
     if (!el.image.src) return ''
     let clip = ''

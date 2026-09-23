@@ -68,7 +68,7 @@ const props = defineProps({
   /** What a press will not hold, for THIS shape. Printed tab only. */
   warnings: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['pick-colour', 'mark', 'pick-image'])
+const emit = defineEmits(['pick-colour', 'mark', 'pick-image', 'edit-nodes'])
 
 const TABS = [
   { id: 'box', icon: 'position', name: 'Box' },
@@ -118,13 +118,14 @@ const MARKS = Object.keys(PATHS).filter((n) => n !== 'missing')
 const isText = computed(() => props.deco?.kind === 'text')
 const isIcon = computed(() => props.deco?.kind === 'icon')
 const isImage = computed(() => props.deco?.kind === 'image')
+const isPath = computed(() => props.deco?.kind === 'path')
 /* Words for the two picture choices: no drawing tells "whole" from "fill" at
    sixteen pixels, and three and two are few enough for a segment. */
 const FITS = [{ id: 'contain', name: 'Whole' }, { id: 'cover', name: 'Fill' }]
 const CLIPS = [{ id: 'none', name: 'None' }, { id: 'ellipse', name: 'Oval' }, { id: 'rounded', name: 'Rounded' }]
 const hasArea = computed(() => props.deco && props.deco.kind !== 'line')
 const kindWord = computed(() => (isText.value ? 'Words' : isIcon.value ? 'Mark'
-  : isImage.value ? 'Picture'
+  : isImage.value ? 'Picture' : isPath.value ? 'Path'
   : props.deco?.kind === 'line' ? 'Rule' : props.deco?.kind === 'ellipse' ? 'Ellipse' : 'Rectangle'))
 
 /* Every change is one undo step, and the parent owns the stack. Called before
@@ -142,7 +143,7 @@ function setShadow(on) {
 <aside class="panel">
   <template v-if="deco">
     <div class="phead">
-      <span class="pglyph"><Icon :name="isText ? 'type' : isIcon ? 'design' : 'shape'" :size="16" /></span>
+      <span class="pglyph"><Icon :name="isText ? 'type' : isIcon ? 'design' : isImage ? 'image' : isPath ? 'pen' : 'shape'" :size="16" /></span>
       <div class="pname">
         <!-- THE NAME IS THE HEADING, and the heading can be typed into. Empty,
              it shows the kind — what the list calls it — as a placeholder, so
@@ -176,6 +177,20 @@ function setShadow(on) {
       <!-- Shares are stored; pixels are what somebody checks against the
            picture that comes out. Both, the same as the other two panels. -->
       <p class="mono say">{{ px('left') }}, {{ px('top') }} · {{ px('width') }} &times; {{ px('height') }} px</p>
+
+      <!-- A PATH IS ITS NODES: how many, whether it closes, and the way in to
+           shape them. Edit nodes is also a double-click on the path, or A. -->
+      <template v-if="isPath">
+        <div class="switchrow">
+          <span class="cap">{{ deco.path.nodes.length }} nodes · closed</span>
+          <Toggle :model-value="deco.path.closed" label="the closing segment" :size="15"
+                  @update:model-value="(v) => { before(); deco.path.closed = v }" />
+        </div>
+        <button class="btn sm" type="button" @click="emit('edit-nodes')">
+          <Icon name="node" :size="15" />Edit nodes
+        </button>
+        <p class="say">Drag a node or a handle · double-click a node for a corner or a curve · ⌥-click the path to add one.</p>
+      </template>
 
       <label class="formrow">
         <span class="cap">Turn</span>
@@ -288,7 +303,7 @@ function setShadow(on) {
                    @update:tracking="(v) => { before(); deco.text.tracking = v }" />
       </template>
 
-      <template v-if="hasArea && !isText && !isIcon && (!isImage || deco.image.clip === 'rounded')">
+      <template v-if="hasArea && !isText && !isIcon && !isPath && (!isImage || deco.image.clip === 'rounded')">
         <label class="formrow">
           <span class="cap">Corners</span>
           <span class="wrap">

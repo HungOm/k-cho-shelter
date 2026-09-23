@@ -275,6 +275,10 @@ const PATHS = {
   flipV:      'M4 12h16M7 9.5 17 4v5.5zM7 14.5l10 5.5v-5.5z',
   /* A disc, half of it hatched: the ticket as a grey press will print it. */
   greyscale:  'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 3v18M12 7h4.5M12 11h6.5M12 15h6M12 19h3',
+  /* The pen: a nib, point down-left, with its slit — not the `design` brush. */
+  pen:        'M4 20l2-6 9.5-9.5a2.1 2.1 0 0 1 3 3L9 17l-5 3ZM13.5 6.5l3 3M4 20l4.5-4.5',
+  /* A node on a curve with its two handles: what "edit the points" works on. */
+  node:       'M3.5 17C7 17 8 7 12 7s5 10 8.5 10M10 5h4v4h-4zM5 7h5M14 7h5',
 
   /*
    * NOT A DRAWING — what is shown when a name does not exist.

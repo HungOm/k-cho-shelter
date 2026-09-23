@@ -44,6 +44,8 @@ export {
   FITS,
   CLIPS,
   MAX_DECORATIONS,
+  MAX_PATH_NODES,
+  MAX_PATH_NODES_TOTAL,
   nextDecoId,
   nextGroupId,
   normalDecoration,

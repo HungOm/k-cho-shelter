@@ -95,6 +95,8 @@ import SelectionInspector from './ticketdesign/SelectionInspector.vue'
 import Rulers from './ticketdesign/Rulers.vue'
 import ShortcutsSheet from './ticketdesign/ShortcutsSheet.vue'
 import PicturePicker from './ticketdesign/PicturePicker.vue'
+import { usePen } from './ticketdesign/usePen.js'
+import { pathData } from '../lib/pathgeometry.js'
 /* Ink went WITH the inspector: it was imported here and used only there,
  * which is the half of the extraction bug this side owned. */
 import Icon from './ui/Icon.vue'
@@ -841,7 +843,7 @@ const whyNotFlip = computed(() => {
 /* What the multi-selection panel lists. */
 const pickedSummary = computed(() => pickedThings.value.map((t) => (isDeco(t.id)
   ? { id: t.id, drawn: true, name: decoName(t), word: decoWord(t.kind),
-      icon: t.kind === 'text' ? 'type' : t.kind === 'icon' ? 'design' : 'shape' }
+      icon: decoIcon(t.kind) }
   : { id: t.id, drawn: false, name: nameOf(t), word: KIND_WORD[t.kind], icon: KIND_ICON[t.kind] })))
 const pickedBounds = computed(() => (pickedThings.value.length
   ? boundsOf(pickedThings.value.map((t) => t.box)) : null))
@@ -1004,7 +1006,7 @@ function useLibraryColour(value) {
  * thing IS.
  */
 const DECO_WORD = {
-  rect: 'Rectangle', ellipse: 'Ellipse', line: 'Rule', text: 'Words', image: 'Picture',
+  rect: 'Rectangle', ellipse: 'Ellipse', line: 'Rule', text: 'Words', image: 'Picture', path: 'Path',
 }
 /*
  * `icon` IS SPELLED OUT HERE RATHER THAN PUT IN THE TABLE ABOVE, and the
@@ -1018,6 +1020,12 @@ const DECO_WORD = {
  * unable to tell them apart, and the scanner is the thing that catches typos
  * in the other 54 cases.
  */
+/* The drawing a drawn thing is shown by — the same one its tool on the rail
+   wears, so the list and the rail name a kind the same way. */
+function decoIcon(kind) {
+  return { text: 'type', icon: 'design', image: 'image', path: 'pen' }[kind] || 'shape'
+}
+
 function decoWord(kind) {
   return kind === 'icon' ? 'Mark' : (DECO_WORD[kind] || 'Shape')
 }
@@ -1195,6 +1203,66 @@ function addDecorationAt(kind, box) {
   also.value = []
   pending.value = ''
 }
+
+/*
+ * ---------- the pen ----------
+ *
+ * Drawing and node editing live in usePen.js, shared with the card tab; what
+ * is here is where a finished path goes and how the pointer reaches the pen.
+ */
+const pen = usePen({
+  aspect: () => (active.value?.width && active.value?.height ? active.value.width / active.value.height : 3),
+  mark,
+  target: () => chosenDeco.value,
+  place: (p) => {
+    const side = p.box.left + p.box.width / 2 >= stubShare(design.value) ? 'stub' : 'half'
+    const colour = inkNear(side)
+    mark()
+    const made = normalDecoration({
+      id: nextDecoId(), kind: 'path', half: side === 'stub' ? 'stub' : 'main', box: p.box, path: p.path,
+      /* A pen stroke is a line to start with: no fill until one is asked for. */
+      fill: { type: 'none', colour }, stroke: { width: 0.002, colour },
+    })
+    design.value.decorations = [...decorations.value, made]
+    sel.value = made.id
+    also.value = []
+    pending.value = ''
+  },
+})
+const { drawing: penDrawing, draftNodes, editing: penEditing, handles: penHandles, chosenNode } = pen
+/* The pen draws in the artwork's own pixels: the overlay's viewBox is the
+   artwork, so a stroke that is a pixel wide on screen is a pixel wide here. */
+const artPx = ([x, y]) => [x * (active.value?.width || 1600), y * (active.value?.height || 517)]
+const penDraftD = computed(() => pathData(draftNodes.value, false, artPx))
+const penEditD = computed(() => (penHandles.value.length && chosenDeco.value
+  ? pathData(penHandles.value, chosenDeco.value.path.closed, artPx) : ''))
+/* The nodes being drawn or edited, and the handle lines, for the overlay. */
+const penPoints = computed(() => (penDrawing.value ? penDrawing.value.nodes : penHandles.value))
+const penArms = computed(() => {
+  const out = []
+  penPoints.value.forEach((n, i) => {
+    if (n.hx1 !== undefined) out.push({ key: `${i}a`, i, which: 'h1', x: n.hx1, y: n.hy1, from: n })
+    if (n.hx2 !== undefined) out.push({ key: `${i}b`, i, which: 'h2', x: n.hx2, y: n.hy2, from: n })
+  })
+  return out
+})
+function pointOf(ev) {
+  const r = frame.value?.getBoundingClientRect()
+  if (!r || !r.width) return [0, 0]
+  return [(ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height]
+}
+function gripPen(i, which, ev) {
+  if (penDrawing.value) return
+  ev.currentTarget.setPointerCapture?.(ev.pointerId)
+  pen.gripDown(i, which, pointOf(ev))
+  drag.value = { mode: 'grip' }
+}
+function editChosenNodes() {
+  if (chosenDeco.value?.kind === 'path') pen.enter(chosenDeco.value.id)
+}
+/* A different selection, or a different tool, ends node editing and drawing. */
+watch(sel, (id) => { if (penEditing.value && id !== penEditing.value) pen.leave() })
+watch(pending, (p) => { if (p !== 'd:path' && penDrawing.value) pen.cancel() })
 
 /* A sensible default for a new element: the ink of whatever is already on this
  * side of the perforation, so a raffle's second element matches its first
@@ -1449,6 +1517,18 @@ function startResize(el, corner, ev) {
  */
 function onFrameDown(ev) {
   if (!frame.value) return
+  /* The pen puts a node down; ⌥ with a path's nodes up adds one to it; any
+     other press on the artboard ends node editing and carries on as before. */
+  if (pending.value === 'd:path') {
+    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+    pen.down(pointOf(ev), ev)
+    drag.value = { mode: 'pen' }
+    return
+  }
+  if (penEditing.value) {
+    if (ev.altKey && pen.addNodeAt(pointOf(ev))) return
+    pen.leave()
+  }
   /* Space held: the hand. The artboard scrolls under the pointer instead of
      anything being drawn or selected. */
   if (spaceHeld.value) {
@@ -1471,7 +1551,11 @@ const drawn = ref(null)
 
 function onPointerMove(ev) {
   const st = drag.value
+  /* Between clicks the pen's rubber band follows the pointer. */
+  if (!st && penDrawing.value) { pen.move(pointOf(ev), ev); return }
   if (!st) return
+  if (st.mode === 'pen') { pen.move(pointOf(ev), ev); return }
+  if (st.mode === 'grip') { pen.gripMove(pointOf(ev), ev); return }
   const span = perShare()
   /*
    * SHIFT MEANS "I MEANT THIS EXACTLY". A box is nearly always meant level
@@ -1576,6 +1660,8 @@ function onPointerMove(ev) {
 
 function endPointer() {
   const st = drag.value
+  if (st?.mode === 'pen') pen.up()
+  if (st?.mode === 'grip') pen.gripUp()
   if (st?.mode === 'band') {
     const band = drawn.value
     if (isClick(band)) {
@@ -1885,6 +1971,11 @@ const ACTIONS = {
   toolWords: choose1('d:text'),
   toolMark: choose1('d:icon'),
   toolPicture: () => openPictures(),
+  toolPen: choose1('d:path'),
+  editNodes: () => (chosenDeco.value?.kind === 'path' ? editChosenNodes() : false),
+  /* Enter finishes a path being drawn and otherwise is not the studio's key —
+     returning false leaves it to whatever button has the focus. */
+  penFinish: () => (penDrawing.value ? pen.finish(false) || true : false),
   selectAll: () => {
     /* Everything that is on the ticket. A hidden element selected by ⌘A is one
        that arrange tools would move where nobody can see it happen. */
@@ -1895,6 +1986,10 @@ const ACTIONS = {
   },
   /* Escape puts a waiting tool down first, then lets go of the selection. */
   escape: () => {
+    /* A path being drawn is finished, not thrown away: Escape is how most
+       drawing tools end an open path. Node editing is left next. */
+    if (penDrawing.value) { if (!pen.finish(false)) pen.cancel(); return }
+    if (penEditing.value) { pen.leave(); return }
     if (pending.value) { pending.value = ''; return }
     sel.value = ''
     also.value = []
@@ -1903,7 +1998,8 @@ const ACTIONS = {
   cut: () => cutPicked(),
   paste: () => pastePicked(),
   duplicate: () => duplicatePicked(),
-  remove: () => deletePicked(),
+  /* With a path's nodes up, Delete removes the chosen NODE, not the path. */
+  remove: () => (penEditing.value && chosenNode.value >= 0 ? pen.removeChosen() : deletePicked()),
   group: () => groupPicked(),
   ungroup: () => ungroupPicked(),
   forward: () => orderPicked('forward'),
@@ -1938,8 +2034,9 @@ function onFocusKey(e) {
   const row = findBinding(e, tab.value === 'place' ? 'place' : 'any')
   if (!row) return
   if (!row.inFields && inAField(e.target)) return
-  e.preventDefault()
-  ACTIONS[row.action]?.()
+  /* An action that answers false did not apply — Enter with no path being
+     drawn — and the key is left to the page. */
+  if (ACTIONS[row.action]?.() !== false) e.preventDefault()
 }
 
 /* Out of the studio entirely, as distinct from bringing the nav back. */
@@ -2901,6 +2998,10 @@ const printedSize = computed(() => {
                             :active="pendingDeco === 'image'" :why="whyNoPicture"
                             hint="The raffle's logo or an uploaded artwork, placed on the ticket"
                             @click="openPictures" />
+                <ToolButton icon="pen" label="Pen" :size="17" :keys="keyOf('toolPen')"
+                            :active="pendingDeco === 'path'"
+                            hint="Click for corners, drag for curves, click the first point to close. Enter finishes an open path"
+                            @click="beginAdd('d:path')" />
                 <ToolButton icon="design" label="Mark" :size="17" :keys="keyOf('toolMark')"
                             :active="pendingDeco === 'icon'"
                             hint="One of the app's own drawings, placed on the ticket"
@@ -3016,8 +3117,7 @@ const printedSize = computed(() => {
                 <ul class="ellist">
                   <li v-for="d in [...decorations].reverse()" :key="d.id"
                       :class="{ on: sel === d.id, off: d.enabled === false }">
-                    <Icon :name="d.kind === 'text' ? 'type' : d.kind === 'icon' ? 'design' : 'shape'"
-                          :size="15" class="kind" :title="decoWord(d.kind)" />
+                    <Icon :name="decoIcon(d.kind)" :size="15" class="kind" :title="decoWord(d.kind)" />
                     <input v-if="renaming === d.id" class="elname rename" :value="d.name"
                            :placeholder="decoWord(d.kind)" maxlength="40" :aria-label="`Name for ${decoName(d)}`"
                            @vue:mounted="({ el }) => { el.focus(); el.select() }"
@@ -3323,8 +3423,9 @@ const printedSize = computed(() => {
                     type="button" class="grab" :aria-label="decoName(d)"
                     :disabled="d.enabled === false || d.locked"
                     :title="d.locked ? `${decoName(d)} is pinned` : `${decoName(d)} — drag to move, or use the arrow keys`"
-                    @keydown="onKey" @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"></button>
-                  <template v-if="sel === d.id && !many && !d.locked && d.enabled !== false">
+                    @keydown="onKey" @click.stop="pick(d.id, $event.shiftKey, $event.metaKey || $event.ctrlKey)"
+                    @dblclick.stop="d.kind === 'path' && (pick(d.id, false, true), pen.enter(d.id))"></button>
+                  <template v-if="sel === d.id && !many && !d.locked && d.enabled !== false && penEditing !== d.id">
                     <span
                       v-for="c in ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']" :key="c"
                       class="hdl" :class="c"
@@ -3374,6 +3475,31 @@ const printedSize = computed(() => {
                     {{ pc(design.stubAt) }}
                   </span>
                 </div>
+
+                <!--
+                  THE PEN'S OWN LAYER: the path being drawn, or the nodes and
+                  handles of the path being edited. Over everything, because it
+                  is what the pointer is working on; in the artwork's pixels, so
+                  it lines up with what the renderer drew underneath.
+                -->
+                <svg v-if="penDraftD || penEditD" class="penlayer" aria-hidden="true"
+                     :viewBox="`0 0 ${active.width} ${active.height}`" preserveAspectRatio="none">
+                  <path v-if="penDraftD" :d="penDraftD" class="pendraft" />
+                  <path v-if="penEditD" :d="penEditD" class="penedit" />
+                  <line v-for="a in penArms" :key="`l${a.key}`" class="penarm"
+                        :x1="artPx([a.from.x, a.from.y])[0]" :y1="artPx([a.from.x, a.from.y])[1]"
+                        :x2="artPx([a.x, a.y])[0]" :y2="artPx([a.x, a.y])[1]" />
+                </svg>
+                <span v-for="a in penArms" :key="`h${a.key}`" class="phandle"
+                      :style="{ left: pc(a.x), top: pc(a.y) }"
+                      :title="'Drag to shape the curve · ⌥ to move this side alone'"
+                      @pointerdown.stop="gripPen(a.i, a.which, $event)"></span>
+                <span v-for="(n, i) in penPoints" :key="`n${i}`" class="pnode"
+                      :class="{ smooth: n.hx1 !== undefined || n.hx2 !== undefined, on: chosenNode === i, first: penDrawing && i === 0 }"
+                      :style="{ left: pc(n.x), top: pc(n.y) }"
+                      :title="penDrawing ? (i === 0 ? 'Click to close the path' : '') : 'Drag to move · double-click for a corner or a curve'"
+                      @pointerdown.stop="penDrawing ? (i === 0 && pen.down([n.x, n.y], $event)) : gripPen(i, 'node', $event)"
+                      @dblclick.stop="pen.toggleNode(i)"></span>
 
                 <!-- What the moving box just caught, while it is caught. -->
                 <div v-if="snapLines.x !== null" class="guide v" :style="{ left: pc(snapLines.x) }"></div>
@@ -3425,7 +3551,7 @@ const printedSize = computed(() => {
             :deco="chosenDeco" :size="{ width: active.width, height: active.height }"
             :swatches="swatches" :brand="brandInk" :can-drop="canDrop"
             :warnings="risksFor(chosenDeco)"
-            @mark="mark" @pick-colour="dropper" @pick-image="changePicture" />
+            @mark="mark" @pick-colour="dropper" @pick-image="changePicture" @edit-nodes="editChosenNodes" />
           <Inspector v-else :element="chosen" :report="fitReport"
                      :sheet-width-m-m="design.sheet.widthMM"
                      :qr-density="qrDensity"
@@ -3858,6 +3984,23 @@ const printedSize = computed(() => {
 .guide.v { top: 0; bottom: 0; width: 1px; margin-left: -.5px }
 .guide.h { left: 0; right: 0; height: 1px; margin-top: -.5px }
 .frame.panning, .frame.panning .ebox { cursor: grab }
+/*
+ * THE PEN'S LAYER. The path in the selection's cyan, a node a small square
+ * (corner) or circle (smooth) with generous room to grab, a handle a dot at
+ * the end of a hairline. Literal colours, for the artboard's reason: they sit
+ * on somebody's artwork. Strokes do not scale with the zoom.
+ */
+.penlayer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 3 }
+.penlayer path, .penlayer line { fill: none; vector-effect: non-scaling-stroke }
+.pendraft { stroke: #12b5e5; stroke-width: 1.5 }
+.penedit { stroke: #12b5e5; stroke-width: 1 }
+.penarm { stroke: #12b5e5; stroke-width: 1 }
+.pnode, .phandle { position: absolute; z-index: 4; transform: translate(-50%, -50%); touch-action: none }
+.pnode { width: 9px; height: 9px; background: #fff; border: var(--rule-strong) solid #12b5e5; cursor: move }
+.pnode.smooth { border-radius: var(--r-pill) }
+.pnode.on { background: #12b5e5 }
+.pnode.first { cursor: pointer; width: 11px; height: 11px }
+.phandle { width: 7px; height: 7px; border-radius: var(--r-pill); background: #12b5e5; cursor: crosshair }
 /* In grey: the artwork and what is drawn on it, not the boxes and handles,
    which are the studio's and stay in colour so they can still be found. */
 .frame.grey > img, .frame.grey > .overlay { filter: grayscale(1) }

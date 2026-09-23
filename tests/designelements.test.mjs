@@ -31,7 +31,9 @@ const W = 1000, H = 400
 
 console.log('reading never throws, whatever it is handed')
 {
-  ok(KINDS.length === 6, `six kinds to check, not zero (${KINDS.join(', ')})`)
+  /* Seven since the pen tool (STUDIO-ESSENTIALS Phase 8) added `path`. The
+     count is here to prove the loops below ran over something, not zero. */
+  ok(KINDS.length === 7, `seven kinds to check, not zero (${KINDS.join(', ')})`)
   const rubbish = [
     undefined, null, 0, '', 'a string', [], { kind: 'banana' },
     { box: { left: 'x', top: NaN, width: -5, height: Infinity } },
@@ -100,6 +102,7 @@ console.log('every kind draws something, and draws nothing when it cannot')
       kind, box: at(0.1, 0.1, 0.3, 0.2),
       text: { value: 'Thank you' }, icon: { name: 'check' },
       image: { src: 'https://example.org/x.png' },
+      path: { nodes: [{ x: 0, y: 1 }, { x: 0.5, y: 0, hx1: 0.2, hy1: 0, hx2: 0.8, hy2: 0 }, { x: 1, y: 1 }] },
     }
     const svg = decorationSVG(raw, W, H, ctx)
     drawn[kind] = svg
@@ -111,6 +114,7 @@ console.log('every kind draws something, and draws nothing when it cannot')
   ok(/<text /.test(drawn.text) && /Thank you/.test(drawn.text), 'text carries its words')
   ok(/<image /.test(drawn.image), 'an image is an image')
   ok(/<path /.test(drawn.icon) && /M4 12l5 5L20 6/.test(drawn.icon), 'an icon draws the set\'s own path')
+  ok(/<path d="M/.test(drawn.path) && / C/.test(drawn.path), 'a pen path draws its own curve')
 
   /*
    * NOTHING, RATHER THAN AN EMPTY BOX. An icon whose name the set does not have
@@ -411,6 +415,30 @@ console.log('a picture fits or fills its box, can be clipped to a shape, and say
   ok(!sharp.some((w) => /dpi/.test(w)), 'while the same logo placed small is not')
   ok(!printWarnings([pic], { printed: true, widthMM: 190 }).some((w) => /dpi/.test(w)),
     'and a picture whose width is not known yet is not guessed at')
+}
+
+console.log('a pen path is refused where a path cannot be, and bounded where it can')
+{
+  /*
+   * STUDIO-ESSENTIALS Phase 8. A path of one node draws nothing and cannot be
+   * selected; one of hundreds is a design that approaches the size limit on
+   * paths alone. And a path is a decoration like any other where it matters
+   * most: nothing may be drawn over the check code.
+   */
+  const node = (x, y) => ({ x, y })
+  const two = { id: 'p1', kind: 'path', box: at(0.1, 0.1, 0.2, 0.1), path: { nodes: [node(0, 0), node(1, 1)] } }
+  ok(!faultsIn([two]).length, 'a two-node path is accepted')
+  ok(faultsIn([{ ...two, path: { nodes: [node(0, 0)] } }]).some((f) => /two/.test(f)), 'a one-node path is refused')
+  ok(faultsIn([{ ...two, path: { nodes: Array.from({ length: 49 }, (_, i) => node(i / 49, 0)) } }])
+    .some((f) => /49 nodes/.test(f)), 'forty-nine nodes on one path is refused')
+  const many = Array.from({ length: 9 }, (_, k) => ({ ...two, id: `p${k}`,
+    path: { nodes: Array.from({ length: 45 }, (_, i) => node(i / 45, 0)) } }))
+  ok(faultsIn(many).some((f) => /between them/.test(f)), 'and so is a ticket whose paths have more than 360 between them')
+  eq(normalDecoration({ kind: 'path', box: at(0, 0, 0.5, 0) }).box.height, 0,
+    'a level stroke keeps a zero-height box, like a rule')
+  const code = { left: 0.6, top: 0.6, width: 0.2, height: 0.2 }
+  ok(faultsIn([{ ...two, box: at(0.65, 0.65, 0.1, 0.1) }], { codeBoxes: [code] }).some((f) => /check code/.test(f)),
+    'and a path over the QR is refused like every other drawn thing')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
