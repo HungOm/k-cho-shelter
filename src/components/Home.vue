@@ -182,7 +182,7 @@ function doStep(action) {
 
     <!-- the whole raffle at a glance -->
     <div class="card">
-      <div class="spread" style="margin-bottom:14px">
+      <div class="spread" style="margin-bottom:var(--sp-5)">
         <h3><Bi text="All the books" /></h3>
         <button class="btn sm" @click="go('books')"><Bi text="See list" /></button>
       </div>

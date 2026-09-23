@@ -339,7 +339,7 @@ function phoneWarning(phone) {
     </div>
 
     <div class="card">
-      <div class="spread" style="margin-bottom:6px">
+      <div class="spread" style="margin-bottom:var(--sp-3)">
         <h3><Bi text="A pile of stubs" /></h3>
       </div>
       <!-- WORDED FOR WHOEVER IS READING IT. "For when a seller brings back their

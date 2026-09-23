@@ -97,7 +97,7 @@ function waLink(o) {
        style.css, so this is an ordinary 17px screen with 52px targets on a
        phone. --tap is never overridden. -->
   <div class="dense">
-    <div class="spread" style="margin-bottom:6px">
+    <div class="spread" style="margin-bottom:var(--sp-3)">
       <h1>Sellers</h1>
       <button v-if="isAdmin" class="btn primary" @click="emit('add-agent')">Add someone</button>
     </div>
@@ -107,7 +107,7 @@ function waLink(o) {
     </p>
 
     <div v-if="notReported.length" class="card report">
-      <div class="spread" style="margin-bottom:8px">
+      <div class="spread" style="margin-bottom:var(--sp-4)">
         <h3>Still to report</h3>
         <span :class="['pill', lateReporting ? 'bad' : 'warn']">{{ notReported.length }}</span>
       </div>
@@ -130,7 +130,7 @@ function waLink(o) {
     </div>
 
     <div v-if="state.overdue.length" class="card late">
-      <div class="spread" style="margin-bottom:8px">
+      <div class="spread" style="margin-bottom:var(--sp-4)">
         <h3 style="margin:0;color:var(--warn)">⏰ Books not brought back</h3>
         <span class="pill warn">{{ state.overdue.length }}</span>
       </div>

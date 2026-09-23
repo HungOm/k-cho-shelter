@@ -77,7 +77,7 @@ defineExpose({ hasStock: computed(() => myBooks.value.length > 0) })
 
 <template>
   <div v-if="isSeller && myBooks.length" class="card mine">
-    <div class="spread" style="margin-bottom:10px">
+    <div class="spread" style="margin-bottom:var(--sp-5)">
       <div>
         <h3><Bi :text="title" /></h3>
         <p class="muted small" style="margin:2px 0 0">

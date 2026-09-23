@@ -867,7 +867,7 @@ function details(d) {
          character — somebody types it into a bug report having compared it
          against a deploy log, and 48ed3f8 against 48e6f38 is exactly the
          comparison a proportional face makes hardest. -->
-    <div class="spread" style="margin-bottom:16px">
+    <div class="spread" style="margin-bottom:var(--sp-6)">
       <h1>Setup</h1>
       <p class="muted tiny" style="margin:0">
         {{ APP_NAME }} v{{ appVersion }} &middot; <span class="data">{{ appSha }}</span>

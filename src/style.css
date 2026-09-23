@@ -828,7 +828,7 @@ input[type=file] { padding: 10px }
  * in a caption that scrolls away from it.
  */
 .formrow { display: flex; flex-direction: column; gap: 5px; margin: 0 }
-.formrow > .cap { font-size: .82rem; font-weight: 500; color: var(--muted); margin: 0 }
+.formrow > .cap { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); margin: 0 }
 .formrow .wrap { position: relative; display: flex; align-items: center }
 .formrow .wrap input { width: 100% }
 .formrow .unit {
@@ -836,7 +836,21 @@ input[type=file] { padding: 10px }
   font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums;
 }
 .formrow .wrap input[type=number] { padding-right: 46px }
-.hint { font-size: .86rem; color: var(--muted); margin-top: 6px; }
+/*
+ * A HINT IS SMALLER THAN THE LABEL IT EXPLAINS, WHICH IT WAS NOT.
+ *
+ * This said .86rem while `.formrow > .cap` — a field's own label — is .82, so
+ * across 59 call sites the supporting sentence was drawn LARGER than the thing
+ * it supported. R6 asks for smaller AND lower-contrast; it had the contrast
+ * and the size was inverted.
+ *
+ * --fs-xs is .82 and would have made them equal, which R6 rules out in the
+ * same breath: "if it is the same size as the control's label, it competes".
+ * So --fs-2xs, one step below the label, which is also where the studio's own
+ * explanatory voice sits. Rendered against a real `.formrow` at all three
+ * sizes before choosing.
+ */
+.hint { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--sp-3); }
 .req { color: var(--bad); }
 
 /* ---------- pills / chips ---------- */

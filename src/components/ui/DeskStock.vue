@@ -80,7 +80,7 @@ watch(sellable, () => { if ((page.value - 1) * PAGE >= sellable.value.length) pa
 
 <template>
   <div v-if="isDesk && (sellable.length || free.total || withSellers)" class="card desk">
-    <div class="spread" style="margin-bottom:10px">
+    <div class="spread" style="margin-bottom:var(--sp-5)">
       <div>
         <h3><Bi text="To sell in the office" /></h3>
         <!--

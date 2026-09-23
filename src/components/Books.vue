@@ -44,7 +44,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
        style.css, so this is an ordinary 17px screen with 52px targets on a
        phone. --tap is never overridden. -->
   <div class="dense">
-    <div class="spread" style="margin-bottom:14px">
+    <div class="spread" style="margin-bottom:var(--sp-6)">
       <h1>Books</h1>
       <div class="row">
         <button class="btn primary" @click="emit('sell-book')">Sell a whole book</button>
@@ -62,7 +62,7 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
     </div>
 
     <div class="card">
-      <div class="spread" style="margin-bottom:14px">
+      <div class="spread" style="margin-bottom:var(--sp-5)">
         <h3>Where every book is</h3>
         <select v-model="agent" style="max-width:210px" aria-label="Filter by seller">
           <option value="">Everyone</option>

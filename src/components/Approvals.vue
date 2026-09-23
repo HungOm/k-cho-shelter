@@ -457,7 +457,7 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
 
     <template v-else-if="pending.length">
       <div v-for="r in pending" :key="r.requestId" class="card reqcard">
-        <div class="spread" style="margin-bottom:8px">
+        <div class="spread" style="margin-bottom:var(--sp-4)">
           <span class="pill warn">Waiting</span>
           <!--
             ONLY WHEN THERE IS A DATE. `relative()` answers "" for a missing
