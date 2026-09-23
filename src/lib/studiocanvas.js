@@ -122,3 +122,19 @@ export function ticksFor(lengthMM, pxPerMM) {
   }
   return out
 }
+
+/*
+ * THE NEXT STEP ON A ZOOM LADDER, FROM WHEREVER THE ZOOM IS.
+ *
+ * The zoom used to be only ever a rung of the ladder, so "the rung I am on,
+ * plus one" was enough. A pinch or ⌘-scroll now leaves it anywhere — 300%,
+ * above the top rung, or 41% between two — and "the rung I am on" did not
+ * exist: findIndex gave -1, and zoom out from 300% dropped straight to the
+ * bottom rung. The next rung is the nearest one strictly beyond the zoom in
+ * the direction asked; past either end, the end.
+ */
+export function nextZoom(ladder, zoom, dir, eps = 1e-6) {
+  const z = Number(zoom) || 0
+  if (dir > 0) return ladder.find((r) => r > z + eps) ?? ladder[ladder.length - 1]
+  return [...ladder].reverse().find((r) => r < z - eps) ?? ladder[0]
+}

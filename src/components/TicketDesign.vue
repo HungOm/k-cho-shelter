@@ -65,12 +65,12 @@ import {
   EDGES, boundsOf, alignBoxes, distributeBoxes, orderMoved, offsetBox,
 } from '../lib/arrange.js'
 import {
-  KINDS as DECO_KINDS, MAX_DECORATIONS, normalDecoration, nextDecoId, nextGroupId, printWarnings,
+  KINDS as DECO_KINDS, MAX_DECORATIONS, normalDecoration, nextDecoId, nextGroupId, printWarnings, faultsIn,
 } from '../lib/designelements.js'
 import { isClick, hitsIn, expandGroups, mergeSelection, drawBox, aboutCentre } from '../lib/selection.js'
 import { copyRecords, pasteRecords, repeatStep } from '../lib/clipboard.js'
 import { layerRows, nextPinned, nextShown, drawingName, drawingWord, drawingIcon } from '../lib/layergroups.js'
-import { snapEdges, snapNear, snapSpan } from '../lib/studiocanvas.js'
+import { snapEdges, snapNear, snapSpan, nextZoom } from '../lib/studiocanvas.js'
 import { KEYS, keyLabel, findBinding, fieldOwns, STUDIO_HOLDS } from '../lib/studiokeys.js'
 import {
   exportSize, ticketSVG, layerDocument, inlineImages, fetchAsDataURI, rasterise, downloadBlob,
@@ -179,6 +179,16 @@ const mottoOver = computed(() => mottoLeft.value < 0)
 /* This treatment's drawings, and a new list for it — the card tab edits
    drawings in place and sends a new list when one is added or removed. */
 const cardDrawn = computed(() => cardDecos.value[card.value.design] || [])
+/*
+ * WHAT THE SERVER WOULD REFUSE, KNOWN BEFORE ASKING IT: the same faultsIn,
+ * against this treatment's code part, that branding.ts runs. Without it a
+ * drawing over the QR previewed happily and was only refused on Save — the
+ * printed tab has always refused its own Save with the reason instead.
+ */
+const cardFaults = computed(() => {
+  const code = cardParts.value.find((p) => p.id === 'code')
+  return faultsIn(cardDrawn.value, { codeBoxes: code?.box ? [code.box] : [] })
+})
 function setCardDrawn(list) {
   cardDecos.value = { ...cardDecos.value, [card.value.design]: list }
 }
@@ -368,8 +378,14 @@ async function saveCard() {
     loadCard()
     toast('Digital ticket saved', 'ok')
   } catch (err) {
+    /*
+     * A REFUSED SAVE LEAVES THE WORK WHERE IT IS. This reloaded the card from
+     * the server, and the server has only the LAST save — so everything drawn
+     * since, the one thing that exists nowhere else, was wiped off the screen
+     * by the path meant to recover from the failure. The printed tab's save
+     * has always left its work alone on a refusal; now the card does too.
+     */
     toast(err.message, 'bad', err.code)
-    loadCard()
   } finally { cardSaving.value = false }
 }
 
@@ -1407,9 +1423,8 @@ function zoomAt(ev, getZoom, setZoom, scroller) {
 const onStageWheel = (ev) => zoomAt(ev, () => zoom.value, (z) => { zoom.value = z }, stage.value)
 
 function stepZoom(dir) {
-  const i = ZOOMS.findIndex((z) => z >= zoom.value - 1e-6)
-  const next = dir > 0 ? ZOOMS[Math.min(ZOOMS.length - 1, i + 1)] : ZOOMS[Math.max(0, i - 1)]
-  zoom.value = next
+  /* From wherever a pinch left it, not only from a rung (studiocanvas.js). */
+  zoom.value = nextZoom(ZOOMS, zoom.value, dir)
 }
 
 /*
@@ -3124,8 +3139,9 @@ const printedSize = computed(() => {
                 @click="digital?.sendTest()">
           {{ digitalBusy ? 'Making…' : 'Send a test' }}
         </button>
-        <button class="btn sm primary" :disabled="cardSaving || mottoOver || !cardDirty"
+        <button class="btn sm primary" :disabled="cardSaving || mottoOver || !cardDirty || cardFaults.length > 0"
                 :title="mottoOver ? 'The motto is over 48 characters'
+                  : cardFaults.length ? cardFaults[0]
                   : !cardDirty ? 'Nothing has changed since the last save'
                   : 'Write the card onto the raffle'"
                 @click="saveCard">
@@ -4012,6 +4028,7 @@ const printedSize = computed(() => {
         :decorations="cardDrawn" :library="library" :lib-busy="libBusy" :pictures="pictures" :hand="handUp"
         @mark="markCard" @drag="(v) => { cardDragging = v }"
         @pick-colour="dropper" @set-decorations="setCardDrawn"
+        @refused="(n) => toast(`${n} drawn ${n === 1 ? 'shape was' : 'shapes were'} left out — a card holds ${MAX_DECORATIONS}`, 'bad')"
         @save-shape="saveToLibrary" @remove-shape="removeFromLibrary"
         @save-colour="saveColourToLibrary" @remove-colour="removeColourFromLibrary"
         @save-style="saveStyleToLibrary" @remove-style="removeStyleFromLibrary" />

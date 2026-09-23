@@ -18,7 +18,7 @@
  * are drawn where the line is and cleared on release — is in ticketscreen.
  */
 import * as canvas from '../src/lib/studiocanvas.js'
-import { snapEdges, snapNear, snapSpan, ticksFor, SNAP, MIN_TICK_PX, MIN_LABEL_PX } from '../src/lib/studiocanvas.js'
+import { snapEdges, snapNear, snapSpan, ticksFor, SNAP, MIN_TICK_PX, MIN_LABEL_PX, nextZoom } from '../src/lib/studiocanvas.js'
 
 let pass = 0, fail = 0
 const ok = (c, w) => { c ? pass++ : (fail++, console.log('  FAIL ' + w)) }
@@ -90,6 +90,17 @@ console.log('the ruler reads millimetres at a spacing that suits the zoom')
   ok(labels(small).some((t) => t.mm === 180) || labels(small).some((t) => t.mm === 100), 'and labels the far end\'s neighbourhood')
   eq(ticksFor(0, 3).length, 0, 'no length, no ruler')
   eq(ticksFor(190, 0).length, 0, 'and no scale, no ruler')
+}
+
+console.log('zoom steps from wherever a pinch left it')
+{
+  const L = [0.25, 0.33, 0.5, 0.75, 1, 1.5, 2]
+  eq(nextZoom(L, 3, -1), 2, 'zoom out from 300%, above the top rung, goes to the top rung — not to 25%')
+  eq(nextZoom(L, 3, 1), 2, 'and zoom in from there stays at the top')
+  eq(nextZoom(L, 0.41, 1), 0.5, 'from between two rungs, in goes to the one above')
+  eq(nextZoom(L, 0.41, -1), 0.33, 'and out to the one below')
+  eq(nextZoom(L, 0.5, 1), 0.75, 'from a rung, one rung up')
+  eq(nextZoom(L, 0.1, -1), 0.25, 'and below the bottom, the bottom')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

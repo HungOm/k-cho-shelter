@@ -48,7 +48,8 @@ import LibraryPanel from './LibraryPanel.vue'
 import PicturePicker from './PicturePicker.vue'
 import Section from './Section.vue'
 import { usePen } from './usePen.js'
-import { normalDecoration, nextDecoId, nextGroupId } from '../../lib/designelements.js'
+import { normalDecoration, nextDecoId, nextGroupId, MAX_DECORATIONS } from '../../lib/designelements.js'
+import { nextZoom } from '../../lib/studiocanvas.js'
 import { placeShape } from '../../lib/designlibrary.js'
 import { pathData } from '../../lib/pathgeometry.js'
 import { expandGroups, drawBox, aboutCentre } from '../../lib/selection.js'
@@ -92,10 +93,14 @@ const props = defineProps({
  * stops a pointermove every few milliseconds from recording fifty entries the
  * owner of the stack would then have to press Undo fifty times to get past.
  */
-const emit = defineEmits(['pick-colour', 'mark', 'drag', 'set-decorations',
+const emit = defineEmits(['pick-colour', 'mark', 'drag', 'set-decorations', 'refused',
   'save-shape', 'remove-shape', 'save-colour', 'remove-colour', 'save-style', 'remove-style'])
 
 const size = computed(() => CARD_SIZES[props.card.design] || CARD_SIZES.grand)
+/* The raffle's colour as Ink compares it — upper case, as the printed tab
+   passes it. Stored lower case, it never matched, and the brand swatch never
+   lit as chosen on the card while the artwork swatches beside it did. */
+const brandUpper = computed(() => String(props.cfg?.brandColor || '').trim().toUpperCase())
 
 /* ---------- what the card actually says ---------- */
 
@@ -391,8 +396,8 @@ const ZOOMS = [0.15, 0.25, 0.33, 0.5, 0.75, 1, 1.5]
 const frameWidth = computed(() => Math.round(size.value.width * zoom.value))
 
 function stepZoom(dir) {
-  const i = ZOOMS.findIndex((z) => z >= zoom.value - 1e-6)
-  zoom.value = dir > 0 ? ZOOMS[Math.min(ZOOMS.length - 1, i + 1)] : ZOOMS[Math.max(0, i - 1)]
+  /* From wherever a pinch left it, not only from a rung (studiocanvas.js). */
+  zoom.value = nextZoom(ZOOMS, zoom.value, dir)
 }
 
 /*
@@ -994,8 +999,13 @@ function copyDrawings(opts = {}, withMark = true, source = null) {
   const from = source || copyRecords([], props.decorations, pickedDecos.value.map((d) => d.id))
   if (!from.decorations.length) return []
   if (withMark) emit('mark')
-  const got = pasteRecords(from, { nextId: () => '', nextDecoId, nextGroupId, ...opts })
+  /* No more than the card holds — the server refuses the whole card past it,
+     so a paste that overfills it is one that cannot be saved. */
+  const room = MAX_DECORATIONS - props.decorations.length
+  const got = pasteRecords(from, { nextId: () => '', nextDecoId, nextGroupId, room, ...opts })
   const made = got.decorations.map(normalDecoration)
+  if (got.refused) emit('refused', got.refused)
+  if (!made.length) return []
   emit('set-decorations', [...props.decorations, ...made])
   sel.value = made[0]?.id || ''
   also.value = made.slice(1).map((d) => d.id)
@@ -1488,14 +1498,14 @@ defineExpose({ sendTest, testing, act })
   <!-- A drawing gets the drawn-shape panel, in the card's own face names. -->
   <DecorationInspector
     v-if="chosenDeco" :deco="chosenDeco" :size="size" :faces="CARD_FACES"
-    :swatches="swatches" :brand="cfg?.brandColor || ''" :can-drop="canDrop"
+    :swatches="swatches" :brand="brandUpper" :can-drop="canDrop"
     @mark="emit('mark')" @pick-colour="(apply) => emit('pick-colour', apply)"
     @pick-image="changingPicture = chosenDeco.id; showPictures = true"
     @edit-nodes="pen.enter(chosenDeco.id)" />
   <CardInspector
     v-else
     v-model:motto="card.motto"
-    :part="chosen" :size="size" :brand="cfg?.brandColor || ''"
+    :part="chosen" :size="size" :brand="brandUpper"
     :default-ink="chosen ? palette[chosen.role] || palette.ink : ''"
     :motto-max="mottoMax"
     :watermark="watermark" :qr-density="qrDensity"

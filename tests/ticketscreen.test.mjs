@@ -1474,5 +1474,58 @@ console.log('a key pressed on the card never reaches the printed ticket')
   await cleanup()
 }
 
+console.log('a refused card save keeps the work, and the card refuses before the server does')
+{
+  /*
+   * THE LOSS THIS PINS. saveCard's catch reloaded the card from the server,
+   * which holds only the LAST save — so a refused save wiped every drawing made
+   * since, the one thing that existed nowhere else. And nothing on the card
+   * stopped a save the server would refuse: a tint over the QR previewed
+   * happily until Save. Found in review by another session.
+   */
+  const refusing = store(ADMIN, ONE).replace(
+    'export const api = async (action) => { asked.push(action); return',
+    "export const api = async (action) => { asked.push(action); if (action === 'set_card_design') throw Object.assign(new Error('refused'), { code: 'BAD_CARD_DECORATIONS' }); return")
+  ok(refusing.includes("action === 'set_card_design'"), 'the fixture refuses the card save')
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', refusing)
+  await ctx.load()
+  const rule = normalDecoration({ id: 'd-keep', kind: 'line', box: { left: 0.05, top: 0.9, width: 0.3, height: 0 } })
+  ctx.setCardDrawn([rule])
+  await ctx.saveCard()
+  eq(ctx.cardDrawn.value.map((d) => d.id).join(), 'd-keep', 'after a refused save the drawing is still on the card')
+  ok(ctx.cardDirty.value, 'and still counts as unsaved')
+
+  eq(ctx.cardFaults.value.length, 0, 'a rule clear of the code is not a fault')
+  const code = ctx.cardParts.value.find((p) => p.id === 'code')
+  ok(code?.box, 'the card has a code part to keep clear')
+  ctx.setCardDrawn([normalDecoration({ id: 'd-over', kind: 'rect', box: { ...code.box } })])
+  ok(ctx.cardFaults.value.length > 0, `a tint over the code is refused before Save (${ctx.cardFaults.value[0]})`)
+
+  ctx.zoom.value = 3
+  ctx.stepZoom(-1)
+  eq(ctx.zoom.value, 2, 'zoom out from a pinched 300% goes to the top rung, not to 25%')
+  await cleanup()
+
+  const { reactive } = await import('vue')
+  const { resolveParts } = await import('../src/lib/cardelements.js')
+  const full = Array.from({ length: 60 }, (_, i) => normalDecoration({ id: `d-f${i}`, kind: 'rect', box: { left: 0.01, top: 0.01, width: 0.02, height: 0.02 } }))
+  const props = reactive({
+    card: { design: 'grand', motto: '' }, parts: resolveParts('grand', {}), cfg: { brandColor: '#0d7a6f' }, sentWidth: 1200,
+    decorations: full, pictures: [], library: { shapes: [], colours: [], styles: [] }, hand: false,
+  })
+  const said = []
+  const card = await setupOf('src/components/ticketdesign/DigitalTab.vue', store(ADMIN, ONE), props, {
+    emit: (name, v) => { said.push([name, v]); if (name === 'set-decorations') props.decorations = v },
+  })
+  const c = card.ctx
+  c.sel.value = 'd-f0'
+  c.act('copy')
+  c.act('paste')
+  eq(props.decorations.length, 60, 'a paste onto a full card adds nothing past the sixty the server keeps')
+  ok(said.some(([n, v]) => n === 'refused' && v === 1), 'and says how many it left out')
+  eq(c.brandUpper.value, '#0D7A6F', 'the raffle colour reaches the card\'s colour picker in the case it compares in')
+  await card.cleanup()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

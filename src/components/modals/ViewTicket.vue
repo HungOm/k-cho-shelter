@@ -607,7 +607,13 @@ async function pictureOf(t, mime = 'image/jpeg') {
   /* A picture drawn on the card is an address, and this SVG is drawn through an
      <img>, which may not load anything from outside itself — so it would come
      out blank on the buyer's copy. Inlined first, the way the logo already is. */
-  const { svg: inlined } = await inlineImages(cardFor(t), fetchAsDataURI)
+  const { svg: inlined, failed } = await inlineImages(cardFor(t), fetchAsDataURI)
+  /* Reported, never quietly dropped (ticketexport.js's contract). The card
+     still goes: a missing decoration is not a reason to keep somebody's
+     ticket from them, but whoever is sending it should know before they do. */
+  if (failed.length) {
+    toast(`${failed.length === 1 ? 'A picture' : `${failed.length} pictures`} drawn on the card could not be fetched, so the card goes without ${failed.length === 1 ? 'it' : 'them'}`, 'warn')
+  }
   const svg = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(inlined)}`
   ctx.drawImage(await loadImage(svg, false), 0, 0, W, H)
 

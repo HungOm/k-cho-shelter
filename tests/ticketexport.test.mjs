@@ -68,5 +68,28 @@ console.log('pictures inside the layer are inlined, and what could not be is nam
   eq(plain.failed.length, 0, 'a picture already inline is not fetched again')
 }
 
+console.log('every caller reads what could not be fetched')
+{
+  /*
+   * inlineImages reports a picture it could not fetch; a caller that drops the
+   * report ships a hole with nothing said. ViewTicket did exactly that on the
+   * one path whose output reaches a BUYER, while the studio's test send beside
+   * it reported the same failure. So every call site must take `failed`.
+   */
+  const { readdirSync, readFileSync, statSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const root = new URL('../src/', import.meta.url).pathname
+  const files = []
+  const walk = (d) => { for (const n of readdirSync(d)) { const p = join(d, n); statSync(p).isDirectory() ? walk(p) : /\.(vue|js)$/.test(n) && files.push(p) } }
+  walk(root)
+  const calls = []
+  for (const f of files) {
+    if (f.endsWith('ticketexport.js')) continue
+    for (const m of readFileSync(f, 'utf8').matchAll(/const \{([^}]*)\} = await inlineImages\(|await inlineImages\(/g)) calls.push({ f, taken: m[1] || '' })
+  }
+  ok(calls.length >= 3, `${calls.length} places call inlineImages`)
+  for (const c of calls) ok(/\bfailed\b/.test(c.taken), `${c.f.slice(root.length)} reads the pictures that could not be fetched`)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
