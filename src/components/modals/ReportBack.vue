@@ -254,8 +254,8 @@ async function send() {
         Sending again is for when you have come back with more — the organiser sees both.
       </div>
       <div v-else class="note info">
-        Nothing here changes anything until an organiser accepts it. Check it, change
-        what is different, and send. A book you are
+        Nothing changes until an organiser accepts it. Check it, change what differs,
+          and send. A book you are
         <span class="helpword" :title="COUNTED_IN_HELP">counting in</span> is finished
         with: its money is reconciled and nothing more is sold from it.
         <template v-if="draft.dueBy"> Your books are due back by <b>{{ date(draft.dueBy) }}</b>.</template>
@@ -265,9 +265,8 @@ async function send() {
            can report the same book again and it is not an error, but they
            should know they are doing it. -->
       <div v-if="lines.some(b => b.inReport)" class="note warn">
-        Some of these are in a report you have already sent, waiting for an organiser.
-        Sending again is fine — nothing is counted twice — but the first one is still
-        there.
+        Some are in a report already waiting for an organiser. Sending again is fine,
+          nothing is counted twice, but the first one is still there.
       </div>
 
       <template v-if="lines.length">
@@ -320,8 +319,8 @@ async function send() {
         </div>
       </template>
       <div v-else class="note info">
-        You are not holding any books. If you have money to hand over you can still
-        send that.
+        You are holding no books. If you have money to hand over you can still send
+          that.
       </div>
 
       <div class="field">

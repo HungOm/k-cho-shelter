@@ -84,14 +84,13 @@ watch(() => props.ticket, focusFirst, { immediate: true })
          follows is true of them. -->
     <div v-if="!mine && blocked && place?.out && t.status === 'Available'" class="note bad">
       <b>This one is with {{ place.agentName || place.agentId }}.</b>
-      The ticket itself is not here, so it cannot be sold from this screen —
-      they may already have sold it in person. If the book is back, ask an
-      organiser to mark it returned first.
+      Not here, so it cannot be sold from this screen — they may have sold it in
+          person. If the book is back, ask an organiser to mark it returned first.
     </div>
     <div v-else-if="!mine && !done && place?.out && t.status === 'Available'" class="note warn">
       <b>This one is with {{ place.agentName || place.agentId }}.</b>
-      The ticket itself is not here, and they may already have sold it without
-      writing it down. Check with them before selling it to anybody else.
+      Not here, and they may have sold it without writing it down. Check with them
+          before selling it to anybody else.
       <!-- The sentence goes on the BOOK's record, not into a log nobody opens,
            so the seller meets it beside their own sales when it is counted in.
            Asked here rather than after the press, because a question that
@@ -118,9 +117,9 @@ watch(() => props.ticket, focusFirst, { immediate: true })
     <div v-else-if="!done && place?.status === 'Settled' && !isSold(t)" class="note bad">
       <b>{{ t.book }} has already been
         <span class="helpword" :title="COUNTED_IN_HELP">counted in</span>.</b>
-      Its money was settled when it came back, so nothing more can be sold from it —
-      including this ticket, which came back unsold. To sell it, an organiser puts
-      the book back on the shelf first: <b>Books → Back on the shelf</b>.
+      Its money was settled when it came back, so nothing more sells from it —
+          including this ticket, which came back unsold. An organiser puts the book
+          back on the shelf first: <b>Books → Back on the shelf</b>.
       The tickets already sold from it keep their buyers.
     </div>
     <div v-else-if="!done && place?.status === 'Void' && !isSold(t)" class="note bad">
@@ -267,8 +266,7 @@ watch(() => props.ticket, focusFirst, { immediate: true })
         <label for="qz"><Bi text="Church or area" /> <span class="opt">— not required</span></label>
         <input id="qz" v-model="zone" autocomplete="off">
       </div>
-      <p class="hint">Both the name and the phone number are needed — without them
-        you cannot tell this person if they win.</p>
+      <p class="hint">Both are needed — without them you cannot tell this person if they win.</p>
     </template>
 
     <template #actions>

@@ -415,15 +415,15 @@ async function settle() {
            still out these are a proposal the seller checks, not a record. -->
       <p v-if="asking" class="note">
         <b>{{ book.agentName || 'The seller' }} has to agree to this.</b>
-        They are holding the stubs, and they may have sold tickets this morning
-        that are not written down yet. These figures go to them to check.
+        They hold the stubs and may have sold tickets this morning that are not
+          written down yet. These figures go to them to check.
       </p>
 
     <div v-if="recounting" class="note warn">
       <b>This book has already been counted in.</b>
-      What you type here replaces the figures on it: the money recorded with the old
-      count is reversed on the ledger and this count is recorded in its place. Both
-      stay on the record, so the correction can be read afterwards.
+      What you type replaces the figures on it: the money from the old count is
+          reversed on the ledger and this one recorded in its place. Both stay on the
+          record, so the correction can be read afterwards.
     </div>
 
     <div class="note info">
@@ -468,8 +468,8 @@ async function settle() {
         <input id="sc" v-model="soldCount" class="xl" type="number" inputmode="numeric"
                min="0" :max="per">
         <p class="hint">
-          Only the book total is written down. No ticket is marked sold, because
-          guessing which numbers went would put the wrong names in the draw.
+          Only the book total is written down. No ticket is marked sold — guessing
+          which numbers went would put the wrong names in the draw.
         </p>
       </div>
     </template>
@@ -508,8 +508,8 @@ async function settle() {
     <div v-if="alreadySold.length" class="note bad">
       <b>Already recorded as sold:</b> {{ alreadySold.join(', ') }}
       <div class="small" style="margin-top:4px">
-        Counting the book in does not erase a buyer. If that sale was wrong, correct or
-        void it first so the record says why.
+        Counting the book in does not erase a buyer. If that sale was wrong, correct
+          or void it first, so the record says why.
       </div>
     </div>
 
@@ -560,12 +560,12 @@ async function settle() {
       book, and the {{ held }} tickets still in it freeze with it — nobody can sell
       them until an organiser puts the book back on the shelf.
       <template v-if="putBackInstead">
-        Bringing it back is the whole job here: the book returns to the desk free, and
-        its tickets can be sold from there or given to somebody else.
+        The book returns to the desk free, and its tickets can be sold from there or
+          given to somebody else.
       </template>
       <template v-else-if="handedBack">
-        It is already back at the desk and free to give out again, so there is nothing
-        here to count in.
+        Already back at the desk and free to give out, so there is nothing to count
+          in.
       </template>
     </div>
 
