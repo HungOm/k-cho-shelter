@@ -31,13 +31,19 @@ self-contained tasks, one owner each. Open questions go to
 
 ## Tasks
 
+**Why two cards are held.** Each peer session asked its own user before taking
+tenancy work, as rule 2 requires, and neither has an answer yet. The owner can
+release them by telling `kcho-shelter-25` and `kcho-shelter-51`, in those
+sessions, that they may work on this plan.
+
 | Id | Stage | Owner | Depends on | Status |
 |---|---|---|---|---|
 | MT-0 | 0 control plane | multi-tenancy-architecture-plan | none | done (2d62e15); migration pending, not applied |
-| MT-1 | 1 the column | offered to kcho-shelter-25 | MT-0 landed (T9 script can start now) | offered |
+| MT-1a | 1 the diff script (T9) | kcho-shelter-25 | none | accepted |
+| MT-1b | 1 the column (the migration half of MT-1) | held: kcho-shelter-25 declined pending its own user's word | MT-0 | waiting for the owner |
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
-| MT-2a | 2 the function resolves the project first | offered to kcho-shelter-51 | MT-K | offered |
+| MT-2a | 2 the function resolves the project first | held: kcho-shelter-51 declined pending its own user's word | MT-K | waiting for the owner |
 
 The rest of Stage 2 (handlers on the scoped client, SQL functions taking
 `p_project`, the coalesced predicates) waits for MT-1, because it needs the
@@ -121,6 +127,13 @@ The rest of Stage 2 (handlers on the scoped client, SQL functions taking
   there turns suites red because of the stub, make the stub build a client
   rather than weakening the refusal; if that is not possible, log a decision and
   keep today's behaviour.
+- **And do not inherit `if (stamped)`** (from kcho-shelter-51). Today a failed
+  build of the second admin client costs only the correlation id, because it
+  happens after identity is resolved, and the comment above it says so. Moved in
+  front of the user row, permissions and `approvalNeeded`, the same fallback
+  would run the three reads that decide who somebody is on a client with no
+  project header, silently. Once the header matters, a failed build is a hard
+  refusal, and that comment is rewritten, not left behind saying the opposite.
 - **Done when.** Gate green in a frozen archive (symlink `node_modules` into it);
   `router`, `everyaction`, `edgehandlers`, `gate` unchanged in count and result;
   the new suite proves all four header cases and that a refused project reads no
