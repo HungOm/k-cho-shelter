@@ -476,6 +476,9 @@ Pages ships the client on push).
 
 ## Rulings from the owner, 2026-09-24
 
+The organisations-management surface the owner asked for (system admin and
+organiser screens, with five cards) is written out in `MULTI-TENANCY-ORGS.md`.
+
 The twelve follow-up decisions (D-001 to D-012) were answered the same day and
 are recorded, with what each changes, in `MULTI-TENANCY-DECISIONS.md` under
 "Decided". The ones that change this plan are folded in above: D-001 and D-002
