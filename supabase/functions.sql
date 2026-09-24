@@ -16,18 +16,38 @@
 -- rows and their numbers; they are simply not sellable yet. Blank or zero means
 -- all of them, which is what an existing raffle has.
 
-create or replace function active_tickets() returns integer as $$
+-- TWO SIGNATURES, AND THE OLD ONE IS NOT DEPRECATED — it is how everything
+-- that does not know about projects keeps working, which through Stage 3 is
+-- everything: six policies, six views, and any hand-typed query.
+--
+-- A DEFAULT WOULD NOT DO. `active_tickets(p_project uuid default null)` beside
+-- the existing `active_tickets()` makes the bare call ambiguous — Postgres
+-- answers `function active_tickets() is not unique` — and every policy that
+-- calls it stops working at once. A sibling overload with NO default resolves
+-- cleanly in both directions: no argument picks the wrapper, one argument
+-- picks the scoped body. Checked in a scratch database, not assumed. D-021.
+--
+-- Stage 4 deletes the wrapper and the coalesce inside it together, which is
+-- where the plan puts strictness; until then a caller with no project is
+-- answered about the raffle that was already here.
+create or replace function active_tickets(p_project uuid) returns integer as $$
 declare
   generated integer;
   active integer;
 begin
-  select coalesce(nullif(value, '')::integer, 0) into generated from config where key = 'TOTAL_TICKETS';
-  select coalesce(nullif(value, '')::integer, 0) into active from config where key = 'ACTIVE_TICKETS';
+  select coalesce(nullif(value, '')::integer, 0) into generated
+    from config where key = 'TOTAL_TICKETS' and project_id = p_project;
+  select coalesce(nullif(value, '')::integer, 0) into active
+    from config where key = 'ACTIVE_TICKETS' and project_id = p_project;
   generated := coalesce(generated, 0);
   active := coalesce(active, 0);
   if active <= 0 or active > generated then return generated; end if;
   return active;
 end $$ language plpgsql stable security definer set search_path = public;
+
+create or replace function active_tickets() returns integer as $$
+  select active_tickets(coalesce(current_project(), seed_project()))
+$$ language sql stable security definer set search_path = public;
 
 -- ============ BULK SALE ENTRY ============
 -- For when a seller brings back a book and somebody types the stubs in.

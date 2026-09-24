@@ -114,15 +114,25 @@ alter table prize_types   enable row level security;
 drop policy if exists tickets_read on tickets;
 create policy tickets_read on tickets for select using (
   app_role() is not null
+  -- THE RAFFLE THIS REQUEST IS ABOUT, and the first thing checked rather than
+  -- the last. A member of one organisation sending another's header must read
+  -- nothing, and app_role() being scoped is not enough on its own: it answers
+  -- "may this person be here", not "is this row theirs". Coalesced through
+  -- Stage 3, so a request with no header reads the raffle that was already
+  -- here; Stage 4 makes it strict.
+  and project_id = coalesce(current_project(), seed_project())
   -- Held back: generated but not in play. Not merely hidden in the interface —
   -- not readable at all, so a held-back buyer cannot leak through a crafted
-  -- query either.
-  and idx <= active_tickets()
+  -- query either. Counted within this row's own project: a second raffle's
+  -- ACTIVE_TICKETS must not decide what is readable in this one.
+  and idx <= active_tickets(project_id)
   -- An agent sees only the books they are carrying. Everybody else on the
   -- allowlist sees the whole raffle, which is what recording sales requires.
   and (
     app_role() <> 'agent'
-    or book_idx in (select idx from books where held_by_agent = app_agent_id())
+    or book_idx in (select idx from books
+                     where held_by_agent = app_agent_id()
+                       and books.project_id = tickets.project_id)
     -- Held directly, or held at some point according to the ledger. Kept in
     -- step with tickets_readable so the two cannot drift.
     --
@@ -143,6 +153,7 @@ create policy tickets_read on tickets for select using (
     or exists (
       select 1 from ticket_movements m
        where m.ticket_idx = tickets.idx
+         and m.project_id = tickets.project_id
          and app_agent_id() in (m.from_holder, m.to_holder)
     )
   )
@@ -248,7 +259,11 @@ select
   case when mine then notes else '' end as notes,
   source, version,
   case when mine or app_role() <> 'agent' then recorded_by else '' end as recorded_by,
-  modified_at
+  modified_at,
+  -- WHICH RAFFLE, appended at the end because that is what `create or replace
+  -- view` accepts. The browser reads this view directly, and the scoped client
+  -- filters on the column, so it has to be here and not only in the where. D-028.
+  project_id
 from (
   select t.*,
          b.number as book_number,
@@ -271,7 +286,9 @@ from (
           */
          (case app_role()
             when 'agent' then
-              t.book_idx in (select idx from books where held_by_agent = app_agent_id())
+              t.book_idx in (select idx from books
+                              where held_by_agent = app_agent_id()
+                                and books.project_id = t.project_id)
             when 'recorder' then
               t.recorded_by = auth_email()
             else true
@@ -279,9 +296,13 @@ from (
   from tickets t
   -- Left, not inner: a ticket whose book row is missing must still be readable.
   -- Dropping it would hide a sold ticket from the draw over a bookkeeping fault.
-  left join books b on b.idx = t.book_idx
+  left join books b on b.idx = t.book_idx and b.project_id = t.project_id
   where app_role() is not null
-    and t.idx <= active_tickets()
+    -- The raffle this request is about. This view runs with owner rights, so
+    -- tickets_read never fires for it and this is the only thing standing
+    -- between one organisation's buyers and another's on the direct-read path.
+    and t.project_id = coalesce(current_project(), seed_project())
+    and t.idx <= active_tickets(t.project_id)
 ) v;
 
 grant select on tickets_readable to authenticated;
@@ -291,9 +312,15 @@ grant select on tickets_readable to authenticated;
 drop policy if exists books_read on books;
 create policy books_read on books for select using (
   app_role() is not null
+  -- The raffle this request is about, checked before anything derived from it.
+  and project_id = coalesce(current_project(), seed_project())
+  -- Both halves of this sum are per project: how many tickets are in play, and
+  -- how many go in a book. A second raffle with twenty to a book must not
+  -- decide how many of this one's books are readable.
   and idx <= ceil(
-    active_tickets()::numeric /
-    greatest((select coalesce(nullif(value,'')::integer, 10) from config where key = 'TICKETS_PER_BOOK'), 1))
+    active_tickets(project_id)::numeric /
+    greatest((select coalesce(nullif(value,'')::integer, 10) from config
+               where key = 'TICKETS_PER_BOOK' and config.project_id = books.project_id), 1))
   -- A seller sees the books in their hands, AND the books being offered to
   -- them. An offer they cannot read is an offer they cannot answer, and an
   -- Offered book has held_by_agent null by design — so under the first clause
@@ -343,9 +370,12 @@ select
   case when b.status = 'Out' and b.due_at is not null and b.due_at < current_date
        then (current_date - b.due_at)::int else 0 end as days_overdue,
   -- Past the hard deadline: not merely late for a checkpoint, late for the raffle.
-  (b.status = 'Out' and (select nullif(value,'') from config where key = 'FINAL_DEADLINE') is not null
+  (b.status = 'Out'
+   and (select nullif(value,'') from config
+         where key = 'FINAL_DEADLINE' and config.project_id = b.project_id) is not null
    and b.due_at is not null
-   and (select nullif(value,'')::date from config where key = 'FINAL_DEADLINE') < current_date)
+   and (select nullif(value,'')::date from config
+         where key = 'FINAL_DEADLINE' and config.project_id = b.project_id) < current_date)
     as past_final,
   -- WHO TOOK THE MONEY. settle_book has written settled_by since it existed and
   -- nothing read it back, so "Handed in RM100" named an amount and no
@@ -360,9 +390,15 @@ select
   --     column book_ledger_all.offered_to_agent does not exist
   -- A seller's whole books list failed to load on that, which is every screen
   -- they have. Appended at the END, which is what create or replace accepts.
-  b.offered_to_agent
+  b.offered_to_agent,
+  -- WHICH RAFFLE THIS ROW IS, appended at the END because that is what
+  -- `create or replace view` accepts. Exposed and not merely filtered on: the
+  -- handlers reach this view through the scoped client, which says
+  -- `.eq('project_id', …)` on every read and cannot say it about a column the
+  -- view does not have. D-028.
+  b.project_id
 from books b
-left join agents a on a.agent_id = b.held_by_agent
+left join agents a on a.agent_id = b.held_by_agent and a.project_id = b.project_id
 left join lateral (
   select
     count(*) filter (where t.status in ('Sold','Donated')) as recorded_sold,
@@ -370,11 +406,13 @@ left join lateral (
     count(*) filter (where t.status = 'Available') as available,
     count(*) filter (where t.status = 'Reserved') as reserved,
     count(*) filter (where t.status in ('Sold','Donated') and t.buyer_phone = '') as missing_contact
-  from tickets t where t.book_idx = b.idx
+  from tickets t where t.book_idx = b.idx and t.project_id = b.project_id
 ) r on true
 where app_role() is not null
-  and b.idx <= ceil(active_tickets()::numeric /
-        greatest((select coalesce(nullif(value,'')::integer,10) from config where key='TICKETS_PER_BOOK'),1))
+  and b.project_id = coalesce(current_project(), seed_project())
+  and b.idx <= ceil(active_tickets(b.project_id)::numeric /
+        greatest((select coalesce(nullif(value,'')::integer,10) from config
+                   where key='TICKETS_PER_BOOK' and config.project_id = b.project_id),1))
   -- The same three-way rule as books_read, written out because this view runs
   -- with owner rights and the policy never fires for it. Held by them, or
   -- offered to them — an offer a seller cannot see is one they cannot answer.
@@ -464,9 +502,12 @@ select
   case when b.status = 'Out' and b.due_at is not null and b.due_at < current_date
        then (current_date - b.due_at)::int else 0 end as days_overdue,
   -- Past the hard deadline: not merely late for a checkpoint, late for the raffle.
-  (b.status = 'Out' and (select nullif(value,'') from config where key = 'FINAL_DEADLINE') is not null
+  (b.status = 'Out'
+   and (select nullif(value,'') from config
+         where key = 'FINAL_DEADLINE' and config.project_id = b.project_id) is not null
    and b.due_at is not null
-   and (select nullif(value,'')::date from config where key = 'FINAL_DEADLINE') < current_date)
+   and (select nullif(value,'')::date from config
+         where key = 'FINAL_DEADLINE' and config.project_id = b.project_id) < current_date)
     as past_final,
   -- WHO TOOK THE MONEY. settle_book has written settled_by since it existed and
   -- nothing read it back, so "Handed in RM100" named an amount and no
@@ -481,9 +522,15 @@ select
   --     column book_ledger_all.offered_to_agent does not exist
   -- A seller's whole books list failed to load on that, which is every screen
   -- they have. Appended at the END, which is what create or replace accepts.
-  b.offered_to_agent
+  b.offered_to_agent,
+  -- WHICH RAFFLE THIS ROW IS, appended at the END because that is what
+  -- `create or replace view` accepts. Exposed and not merely filtered on: the
+  -- handlers reach this view through the scoped client, which says
+  -- `.eq('project_id', …)` on every read and cannot say it about a column the
+  -- view does not have. D-028.
+  b.project_id
 from books b
-left join agents a on a.agent_id = b.held_by_agent
+left join agents a on a.agent_id = b.held_by_agent and a.project_id = b.project_id
 left join lateral (
   select
     count(*) filter (where t.status in ('Sold','Donated')) as recorded_sold,
@@ -491,10 +538,12 @@ left join lateral (
     count(*) filter (where t.status = 'Available') as available,
     count(*) filter (where t.status = 'Reserved') as reserved,
     count(*) filter (where t.status in ('Sold','Donated') and t.buyer_phone = '') as missing_contact
-  from tickets t where t.book_idx = b.idx
+  from tickets t where t.book_idx = b.idx and t.project_id = b.project_id
 ) r on true
-where b.idx <= ceil(active_tickets()::numeric /
-        greatest((select coalesce(nullif(value,'')::integer,10) from config where key='TICKETS_PER_BOOK'),1));
+where b.project_id = coalesce(current_project(), seed_project())
+  and b.idx <= ceil(active_tickets(b.project_id)::numeric /
+        greatest((select coalesce(nullif(value,'')::integer,10) from config
+                   where key='TICKETS_PER_BOOK' and config.project_id = b.project_id),1));
 
 revoke all on book_ledger_all from anon, authenticated;
 
@@ -545,7 +594,12 @@ select
   coalesce(p.written_off, 0)        as written_off,
   coalesce(op.expected, 0) + coalesce(cl.expected, 0)
     - coalesce(cl.book_collected, 0) - coalesce(p.handed_in, 0)
-    - coalesce(p.written_off, 0)    as outstanding
+    - coalesce(p.written_off, 0)    as outstanding,
+  -- Appended at the end; see D-028. Every lateral above joins back to it, so
+  -- a seller's money is added up from their own raffle's books, tickets and
+  -- payments and from nobody else's — which is the one view in this file where
+  -- getting that wrong would be a figure somebody is asked to hand over.
+  a.project_id
 from agents a
 -- paper: where the books are, and which are late
 left join lateral (
@@ -553,6 +607,7 @@ left join lateral (
     count(*) filter (where bl.status = 'Out')   as books_out,
     count(*) filter (where bl.days_overdue > 0) as overdue_books
   from book_ledger_all bl where bl.held_by_agent = a.agent_id
+   and bl.project_id = a.project_id
 ) cust on true
 -- an OPEN book's truth is its ticket rows, and each one names its seller
 left join lateral (
@@ -560,8 +615,9 @@ left join lateral (
     count(*)::integer                                  as tickets_sold,
     coalesce(sum(t.amount), 0)::numeric(12,2)          as expected
   from tickets t
-  join books b on b.idx = t.book_idx
+  join books b on b.idx = t.book_idx and b.project_id = t.project_id
   where t.sold_by_agent = a.agent_id
+    and t.project_id = a.project_id
     and t.status in ('Sold','Donated')
     and t.idx <= active_tickets()
     and not (b.status in ('Settled','Lost') and b.declared_sold is not null)
@@ -575,6 +631,7 @@ left join lateral (
     coalesce(sum(b.amount_paid), 0)::numeric(12,2)     as book_collected
   from books b
   where b.settled_by_agent = a.agent_id
+    and b.project_id = a.project_id
     and b.status in ('Settled','Lost')
     and b.declared_sold is not null
 ) cl on true
@@ -583,7 +640,9 @@ left join lateral (
     coalesce(sum(amount) filter (where source = 'hand'), 0)::numeric(12,2)     as handed_in,
     coalesce(sum(amount) filter (where source = 'writeoff'), 0)::numeric(12,2) as written_off
   from payments where agent_id = a.agent_id
-) p on true;
+    and payments.project_id = a.project_id
+) p on true
+where a.project_id = coalesce(current_project(), seed_project());
 
 revoke all on agent_money from anon, authenticated;
 
@@ -591,7 +650,7 @@ revoke all on agent_money from anon, authenticated;
 -- ============ AGENTS ============
 
 drop policy if exists agents_read on agents;
-create policy agents_read on agents for select using (app_role() is not null);
+create policy agents_read on agents for select using (app_role() is not null and project_id = coalesce(current_project(), seed_project()));
 
 -- A seller's phone is how an overdue book gets chased, which is exactly why a
 -- view-only account does not get it.
@@ -599,9 +658,14 @@ drop view if exists agents_readable;
 create view agents_readable as
 select agent_id, name,
        case when app_role() = 'viewer' then '' else phone end as phone,
-       zone, active, notes
+       zone, active, notes,
+       -- Appended at the end; see D-028.
+       project_id
 from agents
-where app_role() is not null;
+-- NO security_invoker on this one, so agents_read never fires for it and this
+-- predicate is the whole of the wall. The policy beside it is not a substitute.
+where app_role() is not null
+  and project_id = coalesce(current_project(), seed_project());
 
 grant select on agents_readable to authenticated;
 
@@ -627,7 +691,7 @@ grant select on agents_readable to authenticated;
 -- cannot be taken back four lines later. Order is load-bearing in this file and
 -- the dead grants were the proof.
 drop policy if exists config_read on config;
-create policy config_read on config for select using (app_role() is not null);
+create policy config_read on config for select using (app_role() is not null and project_id = coalesce(current_project(), seed_project()));
 
 /*
  * AN INVOKER VIEW, unlike tickets_readable above, and the difference is the
@@ -646,6 +710,28 @@ create policy config_read on config for select using (app_role() is not null);
  * this view exists to leave out.
  */
 drop view if exists config_readable;
+-- THE ONE VIEW SCOPED BY ITS POLICY ALONE, and not by choice — measured.
+--
+-- Every other view here is a DEFINER view: the policy never fires for it, so
+-- the predicate in its body is the whole wall. This one is
+-- `security_invoker = true`, which means two things at once. The good one:
+-- config_read DOES fire, and config_read now carries
+-- `project_id = coalesce(current_project(), seed_project())`, so the rows are
+-- already scoped before this query sees them.
+--
+-- The other one: the browser's own privileges apply, and the grant below is
+-- column-level on purpose — `notes` is config's third column and a browser
+-- must not read it. A WHERE clause needs select on the column it names, not
+-- just the select list: as `authenticated`,
+-- `select count(*) from config where project_id is not null` answers
+-- `permission denied for table config`. So writing the predicate here as well
+-- would mean widening that grant, to belt-and-brace a wall the policy already
+-- is. Three cases in test-rls.sh said so before this comment did.
+--
+-- project_id is not exposed either, for the same grant, and nothing wants it:
+-- no handler reads config_readable — they read `config` directly, 32 times —
+-- so the scoped client never filters this view. D-028's rule is "expose it
+-- where something filters on it by column", and here nothing does.
 create view config_readable with (security_invoker = true) as
 select key, value from config where app_role() is not null;
 grant select on config_readable to authenticated;
@@ -666,10 +752,10 @@ grant select on config_readable to authenticated;
 -- been awarded is the owner's decision and not an organiser's.
 
 drop policy if exists prizes_read on prizes;
-create policy prizes_read on prizes for select using (app_role() is not null);
+create policy prizes_read on prizes for select using (app_role() is not null and project_id = coalesce(current_project(), seed_project()));
 
 drop policy if exists prize_types_read on prize_types;
-create policy prize_types_read on prize_types for select using (app_role() is not null);
+create policy prize_types_read on prize_types for select using (app_role() is not null and project_id = coalesce(current_project(), seed_project()));
 
 grant select on prizes, prize_types to authenticated;
 revoke all on prizes, prize_types from anon;

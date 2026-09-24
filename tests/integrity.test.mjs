@@ -526,13 +526,44 @@ console.log('a function the migrations install matches the one the repo calls ca
   }
   ok(newest.size > 0, `migrations parsed (${newest.size} functions defined across them)`)
 
+  /*
+   * AND THE WAITING ROOM, because a pending migration and the canonical file
+   * are one change set. functions.sql is edited in the same commit as the
+   * migration that will install the new body, and until the owner says "apply
+   * Stage N" the migration sits in migrations.pending/ — so for that window
+   * the newest APPLIED migration carries the old body and this check would
+   * report drift for a pair of files that agree with each other.
+   *
+   * It is not a loosening, and this is the part to read before deciding it is:
+   * the functions covered only by a pending migration are NAMED below, with
+   * the file that covers them. A function whose new body exists in neither
+   * directory is still drift, and `settle_book` below still proves the strict
+   * half has teeth. What this refuses to do is call a coherent change set
+   * broken because half of it is deliberately not applied yet.
+   */
+  const pendingDir = join(ROOT, 'supabase/migrations.pending')
+  const pending = new Map()
+  for (const f of readdirSync(pendingDir).filter((x) => x.endsWith('.sql')).sort()) {
+    for (const [name, body] of bodies(readFileSync(join(pendingDir, f), 'utf8'))) {
+      pending.set(name, { body, file: f })
+    }
+  }
+
   const drifted = []
+  const waiting = []
   for (const [name, { body, file }] of newest) {
     if (!canonical.has(name)) continue
-    if (canonical.get(name) !== body) drifted.push(`${name} (newest in ${file})`)
+    if (canonical.get(name) === body) continue
+    const p = pending.get(name)
+    if (p && p.body === canonical.get(name)) { waiting.push(`${name} (${p.file})`); continue }
+    drifted.push(`${name} (newest in ${file})`)
   }
   ok(drifted.length === 0,
      `every function a migration installs matches functions.sql${drifted.length ? ' — drifted: ' + drifted.join(', ') : ''}`)
+  /* Said out loud rather than passed over, so "what is waiting to be applied"
+     is answerable from a test run. */
+  console.log(`  (${waiting.length} function(s) match functions.sql only via a pending migration`
+    + `${waiting.length ? ': ' + waiting.join(', ') : ''})`)
 
   // The specific one that started this, named so a future reader can see the
   // case rather than only the rule.
