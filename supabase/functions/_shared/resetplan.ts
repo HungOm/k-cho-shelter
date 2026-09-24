@@ -167,6 +167,16 @@ export const FEATURES: Feature[] = [
       + 'terminal and re-seeds the System Admin in the same transaction.',
   },
   {
+    id: 'tenancy',
+    name: 'Organisations and projects',
+    why: 'Which organisation this raffle belongs to, its projects, who organises it, and what it may use.',
+    tables: ['platform_admins', 'organisations', 'org_features', 'org_defaults',
+             'projects', 'project_members'],
+    never: 'They say which raffle is which. Emptying them from inside a raffle leaves every row '
+      + 'belonging to a project that no longer exists, and nobody able to reach it. '
+      + 'supabase/reset.sql re-seeds them from a terminal.',
+  },
+  {
     id: 'audit',
     name: 'Audit log',
     why: 'Every recorded action, append-only.',
@@ -213,6 +223,12 @@ export const LINKS: Link[] = [
   ['round_snapshots', 'agents', 'restrict'],
   ['payments', 'agents', 'restrict'],
   ['payments', 'books', 'set null'],
+  // The control plane (MULTI-TENANCY-PLAN.md Stage 0). All restrict: an
+  // organisation cannot go while it still has projects, features or defaults.
+  ['org_features', 'organisations', 'restrict'],
+  ['org_defaults', 'organisations', 'restrict'],
+  ['projects', 'organisations', 'restrict'],
+  ['project_members', 'projects', 'restrict'],
 ]
 
 /*

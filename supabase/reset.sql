@@ -251,6 +251,32 @@ create or replace function pg_temp.pad(v bigint, w integer) returns text as $f$
               else lpad(v::text, w, '0') end;
 $f$ language sql immutable;
 
+-- ---- 3b. THE ORGANISATION AND ITS FIRST PROJECT ---------------------------
+-- MULTI-TENANCY-PLAN.md Stage 0. A whole-database reset is a reset of the one
+-- organisation, so it clears the control plane and re-seeds it with the super
+-- admin as organiser. And it REFUSES while more than one organisation exists:
+-- then this script would be emptying other people's raffles (decision D-006).
+--
+-- Guarded by to_regclass so this file still runs against a database the
+-- Stage 0 migration has not reached. plpgsql plans a statement only when it
+-- runs, so the deletes below are never looked at there.
+select set_config('reset.super', lower(:'super'), true);
+do $$
+begin
+  if to_regclass('public.organisations') is null then return; end if;
+  if (select count(*) from organisations) > 1 then
+    raise exception 'REFUSED: % organisations exist; a full reset would empty all of them',
+      (select count(*) from organisations);
+  end if;
+  delete from project_members;
+  delete from projects;
+  delete from org_defaults;
+  delete from org_features;
+  delete from organisations;
+  delete from platform_admins;
+  perform seed_tenancy(current_setting('reset.super'));
+end $$;
+
 -- ---- 4. A FRESH SET OF TICKETS AND BOOKS ----------------------------------
 -- Built from the settings above rather than from literals, so the numbering can
 -- be changed in one place and this still agrees with it.
@@ -335,6 +361,11 @@ begin
   if (select count(*) from payments) > 0 then bad := bad || ' payments not empty'; end if;
   if (select count(*) from agents) > 0 then bad := bad || ' agents not empty'; end if;
   if (select count(*) from winners) > 0 then bad := bad || ' winners not empty'; end if;
+  if to_regclass('public.organisations') is not null then
+    if (select count(*) from organisations) <> 1 then bad := bad || ' not exactly one organisation'; end if;
+    if (select count(*) from projects where project_id = seed_project()) <> 1 then bad := bad || ' the seed project is missing'; end if;
+    if (select count(*) from organisations where organiser_email = current_setting('reset.super')) <> 1 then bad := bad || ' the organiser is not the super admin'; end if;
+  end if;
   if (select count(*) from app_users) <> 1 then bad := bad || ' app_users is not exactly the super admin'; end if;
   if (select count(*) from app_users where role = 'superadmin' and status = 'active') <> 1 then bad := bad || ' the surviving account is not an active superadmin'; end if;
   if (select count(*) from tickets where number = 'KS-00001') <> 1 then bad := bad || ' first ticket is not KS-00001'; end if;

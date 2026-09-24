@@ -278,6 +278,11 @@ export const SEEDS: Seedable[] = [
       + 'a door left open.',
   },
   {
+    id: 'tenancy', writes: [], makes: '',
+    never: 'Organisations and projects say which raffle is which. The seed fills the raffle it is '
+      + 'run inside; it does not invent another organisation for that raffle to belong to.',
+  },
+  {
     id: 'audit', writes: [], makes: '',
     never: 'The log records what was done. Writing entries for things nobody did is the only '
       + 'change that could make an audit log worse than not having one.',
