@@ -51,7 +51,7 @@ sessions, that they may work on this plan.
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
 | MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | accepted |
-| MT-L | 7 organisation and project lifecycle (D-006) | unassigned | Stage 5; period from D-013 | not started |
+| MT-L | 7 organisation and project lifecycle (D-006) | unassigned | Stage 5 | not started |
 | MT-T | gate: type-check the functions (D-010) | unassigned | none | ready |
 
 The rest of Stage 2 (handlers on the scoped client, SQL functions taking
@@ -168,4 +168,6 @@ The rest of Stage 2 (handlers on the scoped client, SQL functions taking
   by its organiser; permanent delete of an organisation by the system admin; the
   weekly job that deletes for good once the retention period (D-013) ends; the
   sign-in screens for "deactivated" and "reactivate". Plan § "A project's life".
-- **Waits for** Stage 5 (projects can be created) and an answer to D-013.
+- **Retention (D-013 → A).** 90 days for both; a deleted project can be undone
+  by the organiser inside that window.
+- **Waits for** Stage 5 (projects can be created).

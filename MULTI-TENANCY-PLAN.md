@@ -404,7 +404,7 @@ organisation: active → deactivated (organiser, soft; data kept for the retenti
 - Deactivate and delete (owner's ruling D-006): an organiser deletes a project or
   deactivates the whole organisation; both are soft (`deleted_at`/`deactivated_at`
   columns), both are refused by the gate like an archive, and both come back if
-  undone inside the retention period (D-013). Sign-in to a deactivated
+  undone inside the 90-day retention period (D-013). Sign-in to a deactivated
   organisation shows "deactivated" to members and offers reactivation to the
   organiser. Deleting an organisation for good is the system admin's alone.
 

@@ -20,13 +20,7 @@ Your choice:
 
 ## Open
 
-### D-013 · How long deactivated data is kept, and whether deleting a project is soft too · raised by multi-tenancy-architecture-plan, 2026-09-24
-Blocks: MT-L (organisation and project lifecycle). Follows from your answer to D-006.
-Context: you asked for deactivating an organisation to keep its data for a period before it is deleted for good. The period is not set, and "delete a project" could be immediate or soft.
-- A ★ 90 days for both; deleting a project is soft as well and can be undone by the organiser inside those 90 days; the weekly workflow does the permanent delete and writes it to the audit log
-- B 30 days for both, same mechanism
-- C a period each organisation chooses, 30 to 365 days
-Your choice: 
+None right now.
 
 ## Decided
 
@@ -45,7 +39,18 @@ Your answers, committed verbatim in 689566b, and what each one does to the plan.
 - **D-011 → A.** The diff script compares the stored rows the reports read.
 - **D-012 → A.** Done in 84fb1b2 by kcho-shelter-25. The expected count is now derived from the seed block with a floor of 29. The suite had also not started under Docker since 2026-09-21, because of a missing `service_role`; it now runs, 322 passed, 0 failed.
 
+- **D-013 → A.** Deactivated organisations and deleted projects are kept 90 days; deleting a project is soft and the organiser can undo it inside those 90 days; the weekly workflow then deletes for good and writes it to the audit log. Card MT-L no longer waits on a question.
+
 ### The original entries
+
+### D-013 · How long deactivated data is kept, and whether deleting a project is soft too · raised by multi-tenancy-architecture-plan, 2026-09-24
+Blocks: MT-L (organisation and project lifecycle). Follows from your answer to D-006.
+Context: you asked for deactivating an organisation to keep its data for a period before it is deleted for good. The period is not set, and "delete a project" could be immediate or soft.
+- A ★ 90 days for both; deleting a project is soft as well and can be undone by the organiser inside those 90 days; the weekly workflow does the permanent delete and writes it to the audit log
+- B 30 days for both, same mechanism
+- C a period each organisation chooses, 30 to 365 days
+Your choice: A (the owner, 2026-09-25: "follow the recommendation")
+
 
 ### D-001 · Who becomes the organiser of the existing organisation · raised by multi-tenancy-architecture-plan, 2026-09-24
 Blocks: Stage 3. Stage 0 seeds the organisation with no organiser yet, which grants nobody anything.
