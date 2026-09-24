@@ -251,7 +251,7 @@ async function sell() {
         <input id="sbp" v-model="phone" class="xl" type="tel" inputmode="tel"
                autocomplete="off" placeholder="012-345 6789">
         <p class="hint">
-          This name and number go on every ticket in the book, so a winner can still be telephoned.
+          On every ticket in the book, so a winner can still be telephoned.
         </p>
       </div>
       <div class="field">
@@ -267,9 +267,8 @@ async function sell() {
            later. Stated, so nobody has to discover it on the ticket after. -->
       <div v-if="!iAmSeller" class="field">
         <p class="hint">
-          A book still out with a seller is credited to that seller. A book that
-          has been brought back is the office's, and this sale will be recorded
-          in your name.
+          A book still out is credited to that seller. One brought back is the
+          office's, and this sale goes in your name.
         </p>
       </div>
 

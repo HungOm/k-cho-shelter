@@ -178,8 +178,8 @@ function explain(err) {
         <b class="data">{{ ticket.number }}</b> — {{ ticket.name || 'no name written down' }}
         <template v-if="ticket.phone"> · {{ ticket.phone }}</template>
         <div v-if="!contactable" class="small" style="margin-top:4px">
-          This ticket has no name or phone against it. It can still be recorded,
-          but nobody will be able to tell them they have won.
+          No name or phone against this ticket. It can still be recorded, but nobody
+          will be able to tell them they won.
         </div>
       </div>
 
@@ -197,8 +197,8 @@ function explain(err) {
       <div v-if="!schedule" class="skel" style="height:56px;margin-bottom:14px"></div>
 
       <div v-else-if="allGone" class="note warn">
-        Every prize on the list has been given out. Add another prize before recording
-        more winners, so this one is recorded against something.
+        Every prize on the list is given out. Add another before recording more
+          winners, so this one has something to record against.
       </div>
 
       <div v-else-if="noSchedule" class="field">
@@ -206,9 +206,8 @@ function explain(err) {
         <input id="wp" v-model="prize" class="xl" placeholder="e.g. First prize"
                autocomplete="off">
         <p class="hint">
-          No prizes have been set up, so type what this one won. Setting up the prize
-          list first means the app can count what is left and stop the same prize
-          going out twice.
+          No prizes set up, so type what this one won. Setting up the list first lets
+          the app count what is left and stop a prize going out twice.
         </p>
       </div>
 
@@ -233,9 +232,9 @@ function explain(err) {
       <div v-if="problem" class="note bad">{{ problem }}</div>
 
       <div class="note plain">
-        The buyer's name and phone are copied from the ticket as it stands now,
-        so the record of who won still says what it said on the day even if the
-        ticket is corrected later.
+        Name and phone are copied from the ticket as it stands now, so the record of
+          who won still says what it said on the day, even if the ticket is corrected
+          later.
       </div>
     </template>
 

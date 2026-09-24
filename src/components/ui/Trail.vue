@@ -430,8 +430,7 @@ const movedAlready = computed(() => {
           <template v-if="sale.amount"> · {{ money(sale.amount, currency) }}</template>
         </div>
         <div v-if="sale.fromSettlement" class="note warn tiny">
-          Filled in when the book was counted, so nobody wrote down who bought it
-          at the time.
+          Filled in when the book was counted, so nobody wrote down who bought it.
         </div>
         <div v-if="sale.by" class="who">Written down by <Who :email="sale.by" /></div>
       </template>
@@ -522,8 +521,8 @@ const movedAlready = computed(() => {
        everything for every reader — buyers are shown to whoever may see them
        on the ticket itself, which is why a step can say a detail is withheld. -->
   <p v-if="(ticket || changes.length) && trail && !problem" class="tiny muted mt">
-    Nothing here can be edited or removed. A correction is added to the end of
-    the list, and what it corrected stays above it.
+    Nothing here can be edited or removed. A correction is added at the end, and
+        what it corrected stays above it.
   </p>
 </template>
 

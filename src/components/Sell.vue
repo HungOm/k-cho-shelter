@@ -348,14 +348,14 @@ function phoneWarning(phone) {
            it is how you write down an afternoon's sales in one go. -->
       <p class="muted small">
         <template v-if="amSeller">
-          For writing down several at once — an afternoon's sales, or the stubs
-          from a book you are about to hand back.
+          For several at once — an afternoon's sales, or the stubs from a book you are
+          about to hand back.
         </template>
         <template v-else>
           For when a seller brings back their book.
         </template>
-        Fill a line, press Tab, and the next line appears. Nothing is saved until
-        you press the button — and if one line has a problem, none of them are saved.
+        Fill a line and press Tab for the next. Nothing saves until you press the
+          button, and if one line has a problem none of them save.
       </p>
 
       <div class="rows">

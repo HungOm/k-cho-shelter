@@ -184,8 +184,8 @@ async function save() {
       <label for="un">Their name <span v-if="makingNew" class="req">*</span></label>
       <input id="un" v-model="name" autocomplete="off">
       <p v-if="makingNew" class="hint">
-        This goes on the sellers list and on every book they carry, so it is the name
-        the raffle will chase, print and read out. One name, not two.
+        Goes on the sellers list and every book they carry — the name the raffle will
+          chase, print and read out. One name, not two.
       </p>
     </div>
 
@@ -212,8 +212,8 @@ async function save() {
           Their sales and their books are credited to this person.
         </template>
         <template v-else>
-          Nobody is on the sellers list yet. Choose the last option and they will be
-          added with this account.
+          Nobody is on the sellers list yet. Choose the last option to add them with
+          this account.
         </template>
       </p>
     </div>

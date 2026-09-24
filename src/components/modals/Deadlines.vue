@@ -334,8 +334,8 @@ function explain(err) {
             </button>
           </div>
           <p class="hint">
-            Only this round moves. The ones after it keep the dates they have —
-            the plan is worked out from the check-in date, not from each round in turn.
+            Only this round moves; later ones keep their dates. The plan is worked out
+          from the check-in date, not from each round in turn.
           </p>
         </div>
         <p v-if="s.checkInDate && s.sellersHolding" class="muted small">
@@ -376,8 +376,8 @@ function explain(err) {
       <template v-if="isAdmin && !noFinal">
         <h4>Move the check-in on</h4>
         <p class="hint">
-          Do this once you have been through where everybody stands. Books still out
-          are given the new date.
+          Do this once you know where everybody stands. Books still out get the new
+          date.
         </p>
         <div class="row">
           <input v-model="newCheckIn" type="date" :min="s.today" :max="s.finalDeadline">
@@ -394,10 +394,9 @@ function explain(err) {
       <template v-if="isAdmin">
         <h4>When ticket sales close</h4>
         <p class="hint">
-          The last day a ticket may be sold. Not the day the books come back, and
-          not the draw — usually earlier than both. After it, recording a sale is
-          refused; an organiser can still force one that was genuinely sold in
-          time, and it goes in the log.
+          The last day a ticket may be sold — not the day books come back, and not the
+          draw; usually earlier than both. After it, a sale is refused. An organiser
+          can still force one genuinely sold in time, and it goes in the log.
         </p>
         <div class="row">
           <input v-model="newClose" type="date" :max="s.drawDate || undefined">
@@ -419,8 +418,8 @@ function explain(err) {
         failing, this one explains a date they can already see.
       -->
       <p v-if="isAdmin && !isSuper" class="hint">
-        The final deadline is set by the System Admin. You can move the check-in date
-        as far as that, and no further.
+        The System Admin sets the final deadline. You can move the check-in date as
+          far as that, no further.
       </p>
       <template v-if="isSuper">
         <h4>Final deadline</h4>

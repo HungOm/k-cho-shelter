@@ -206,8 +206,8 @@ async function undo() {
     </p>
 
     <p class="hint">
-      Write down what they said. Every box can be left empty — a seller saying
-      "nothing sold yet" has still reported, and that is what this records.
+      Write down what they said. Every box may be empty — a seller saying "nothing
+          sold yet" has still reported.
     </p>
 
     <div class="grid">
@@ -232,9 +232,9 @@ async function undo() {
       </div>
     </div>
     <p class="hint tuck">
-      The counterfoils of sold tickets, and the unsold tickets out of part-used
-      books. Counting them is what makes a missing ticket findable — nothing
-      else in here can see paper.
+      Counterfoils of sold tickets, and unsold tickets from part-used books.
+          Counting them is what makes a missing ticket findable — nothing else here
+          can see paper.
     </p>
 
     <!-- Shown as it is typed, because the envelope is still open. Never a
@@ -246,8 +246,8 @@ async function undo() {
       Worth a second look in the envelope before this is written down.
     </div>
     <div v-else-if="paper && paper.gap < 0" class="note">
-      More paper than the books handed back held, which is ordinary: stubs out of
-      a book they are keeping.
+      More paper than the books handed back held, which is ordinary: stubs from a
+          book they are keeping.
     </div>
 
     <div v-if="onRecord && onRecord.gap" class="note">
@@ -262,8 +262,8 @@ async function undo() {
       <label for="cm">Money handed in <span class="opt">— {{ currency }}</span></label>
       <input id="cm" v-model="amountPaid" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
       <p class="hint">
-        What they said they handed over. Settling a book is where the money is
-        counted and balanced — this is only the report.
+        What they said they handed over. Money is counted and balanced when a book is
+          settled; this is only the report.
         <template v-if="onRecord && onRecord.outstanding > 0">
           They are shown as owing {{ money(onRecord.outstanding, currency) }} today.
         </template>

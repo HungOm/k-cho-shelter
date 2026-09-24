@@ -293,9 +293,9 @@ const KINDS = {
          hand-over an organiser accepted; the way to add another is to send a
          report, not to type one here. -->
     <p v-if="isMine && !canRecord" class="note info tiny">
-      Cash you hand over is recorded by the organiser who receives it. Send it with
-      your report, and it appears here once they accept it — with their name on it,
-      which is what makes it a receipt.
+      The organiser who receives your cash records it. Send it with your report and
+          it appears here once accepted — with their name on it, which is what makes
+          it a receipt.
     </p>
 
     <div v-if="st.loading" class="skel" style="height:64px"></div>
@@ -460,8 +460,8 @@ const KINDS = {
         — {{ agent.booksSettled }} counted in</template>. Only the money is outstanding.
       </p>
       <p class="tiny muted" style="margin-top:6px">
-        Every line above opens the book it came from — who has had it, and which
-        tickets went out of it.
+        Every line opens the book it came from — who has had it, and which tickets
+          went out.
       </p>
     </template>
 
@@ -493,8 +493,8 @@ const KINDS = {
           <Who :email="undoneBy.receivedBy" />. Both rows stay on the record.
         </div>
         <p class="tiny muted">
-          Nobody can edit or delete this, including an organiser. A correction is a
-          new row that says what it undoes, which is why this one can be relied on.
+          Nobody can edit or delete this, an organiser included. A correction is a new
+          row saying what it undoes — which is why this one can be relied on.
         </p>
       </template>
     </div>
