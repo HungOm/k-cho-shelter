@@ -25,7 +25,7 @@ Blocks: nothing. MT-T ships under A.
 Context: your D-010 answer asked for a gate step that fails on type errors. The first run found 78 in code already in production: loose `any`s, handler signatures the registry type does not accept, and one `role === 'superadmin'` that is only a too-narrow type, not a bug. Failing on all 78 would stop every deploy.
 - A ★ ratchet: the 78 are listed in `tests/typecheck-baseline.txt`; the gate fails on any error not on the list, and on any listed error that has been fixed, so the list only shrinks. A missing or misspelt `feature` tag is proved to turn it red
 - B a wall: fix all 78 first, as their own card, before the step goes in
-Your choice: 
+Your choice: A
 
 ### D-015 · An empty `x-project-id` header · raised by kcho-shelter-51, 2026-09-25
 Blocks: nothing. Shipped under A; one line to change.
@@ -56,6 +56,69 @@ Context: i18n.test.mjs requires every server error code to have Burmese, with a 
 - A ★ all three exempt now, with a note in the test that `PROJECT_NOT_FOUND` needs Burmese at Stage 5: once a second raffle exists, an organiser following a stale link is a PERSON seeing it, about something they can act on
 - B translate all three now, accepting unreviewed Burmese for two sentences nobody can currently reach
 - C translate `PROJECT_NOT_FOUND` now and exempt the other two
+Your choice: 
+
+### D-019 · The deployed function is now BEHIND master, and master is ahead of the database · raised by kcho-shelter-25, 2026-09-25
+Blocks: any ordinary deploy, of anything. Read this one first.
+Context: four tenancy commits changed Edge Function code (feature tags, `scoped.ts`, the route's project resolution, the reset plan). None is deployed. The two migrations are not applied. So master's function expects a schema production has not got, and the plan's own order is migration → function → client. `supabase/DEPLOY-PENDING.md` still says the gap closed on 2026-09-19 and is stale again.
+- A ★ apply Stage 0 and Stage 1 now — both are inert, add no behaviour and are reversible — then the next ordinary function deploy is in order again
+- B change nothing and tell every session not to deploy the function until you say; the next person who deploys a bug fix ships the tenancy code with it
+- C revert the four function-side commits on master and re-land them after the migrations
+Your choice: 
+
+### D-020 · Is a second organisation actually coming, and roughly when · raised by kcho-shelter-25, 2026-09-25
+Blocks: nothing mechanically. It is the only question that changes how much of this is worth building.
+Context: stages 0–3 are inert — they add columns, tags and a wrapper and change no answer. The first real capability arrives at Stage 5. The plan's own figure for stages 0–7 is 48–65 engineering days, and about ten are done. Nobody has asked you this since the plan was approved.
+- A ★ yes, within months — carry on through Stage 4 and 5 in order, and answer D-022 with a date
+- B not yet, but keep the ground prepared — finish Stage 2 and 3 (they are still inert and make Stage 4 a smaller step), then stop and hold
+- C no — stop after Stage 2, leave the column and the wrapper in place, and spend the remaining forty days on the raffle itself
+Your choice: 
+
+### D-021 · Do the sixteen SQL functions take `p_project` with a default · raised by kcho-shelter-25, 2026-09-25
+Blocks: the rest of Stage 2.
+Context: every SQL function gains `p_project uuid`. With a default the old call signature keeps resolving, so `supabase/backfill-custody.sql`, `backfill-money.sql`, the reset runbook and anything typed into the SQL editor during an incident keep working. Without one, every caller is updated in the same commit and a missed one fails at the call rather than quietly acting on the seed project.
+- A ★ no default. A forgotten caller is an error, which is the whole point of Stage 4; the repo has two backfill scripts and one runbook to update, and they are updated in the same commit
+- B `p_project uuid default null`, coalescing to the seed. Nothing outside the functions breaks, and a forgotten caller silently writes into this raffle — the exact failure the partition key exists to prevent
+Your choice: 
+
+### D-022 · When Stage 4's quiet window is · raised by kcho-shelter-25, 2026-09-25
+Blocks: Stage 4, and therefore 5 onward.
+Context: Stage 4 swaps 23 primary keys and 18 foreign keys in one transaction on the live database, with the function deployed in the same window. It is the one step that needs a backup to fall back to, and the plan says announce it a week ahead. Everything before it is reversible without one.
+- A ★ name a date outside a selling push — after a draw is the natural place — and I work backwards from it
+- B the nearest low-traffic night once stages 2 and 3 are green
+- C leave stages 0–3 in place and do not schedule Stage 4 until a second organisation is actually wanted; they are inert and cost nothing to hold
+Your choice: 
+
+### D-023 · Where the Stage 4 rehearsal runs · raised by kcho-shelter-25, 2026-09-25
+Blocks: Stage 4. The plan says rehearse twice on a restored backup.
+Context: rehearsing needs somewhere to restore a real backup to, and it must be somewhere a mistake cannot reach the live raffle.
+- A ★ a throwaway Supabase project restored from `backup.sh` output and deleted afterwards — closest to production, costs a little, and proves the CSV restore path at the same time
+- B a local Postgres from the same CSVs: free, and not the same platform, so a platform-specific failure would not show
+- C Supabase branching, if the project's plan includes it
+Your choice: 
+
+### D-024 · Burmese for the organiser and system-admin screens · raised by kcho-shelter-25, 2026-09-25
+Blocks: Stage 6.
+Context: `i18n.test.mjs` requires a Burmese line for every `<Bi text>`, because a label missing from the map renders as English with no warning. Stage 6 adds two screens — projects and members, organisations — which is roughly forty to sixty new labels. No session here writes Burmese.
+- A ★ English-only by rule for these two screens, with a written exemption in `i18n.test.mjs` naming them: they are used by the one or two people who run the platform, not by sellers in the field
+- B I write the English and fill the Burmese map with the same English as a placeholder — which is exactly the silent-English failure that test exists to catch, so it would need its own visible marker
+- C you supply the Burmese screen by screen as they are built, which paces Stage 6 to your evenings
+Your choice: 
+
+### D-025 · What "two-person" means for archive and purge · raised by kcho-shelter-25, 2026-09-25
+Blocks: Stage 7 (and archive, which lands in Stage 4).
+Context: the plan marks `archive_project` and `purge_personal` two-person. Today the raffle has one system admin and one organiser, so a literal second person may not exist when it is needed.
+- A ★ only `purge_personal` is two-person, because it is the one that cannot be undone; `archive_project` takes the typed confirmation phrase `reset_apply` already uses, because it is reversible by the organiser
+- B both two-person: two different signed-in accounts confirming within fifteen minutes
+- C both by typed phrase, one person, and rely on the audit log
+Your choice: 
+
+### D-026 · Where the ninety-day retention job runs · raised by kcho-shelter-25, 2026-09-25
+Blocks: Stage 7.
+Context: D-013 sets ninety days. Something has to notice when a deactivated organisation or deleted project passes it, and purge or delete. A promise to members that data goes after ninety days is not kept by a button nobody presses.
+- A ★ a scheduled GitHub Actions workflow calling an authenticated endpoint — the repo already deploys from there and the secrets already live there, and a failed run is visible in a place somebody looks
+- B `pg_cron` inside Supabase: closer to the data, and its failures are quiet
+- C no job — the organiser is shown "2 projects are past retention" and presses a button, which is honest about who decides and breaks the promise the first busy month
 Your choice: 
 
 
