@@ -26,7 +26,7 @@ Context: a migration cannot read the `SUPER_ADMIN_EMAIL` secret, so it cannot fi
 - A ★ the api function sets it to the secret's address the first time the system admin signs in after Stage 3, and audits it
 - B a runbook step: `select seed_tenancy('<email>')` typed by hand in the SQL editor
 - C the one `app_users` row whose role is `superadmin`, refused if there is not exactly one
-Your choice: 
+Your choice: C 
 
 ### D-002 · What today's `superadmin` rows become · raised by multi-tenancy-architecture-plan, 2026-09-24
 Blocks: Stage 3.
@@ -34,7 +34,7 @@ Context: the plan maps them to `platform_admins`, which gives them power over ev
 - A ★ admins of the existing project; platform rights are granted by hand later if wanted
 - B platform admins, as the plan first said
 - C decided per person on a list the migration prints and refuses to guess
-Your choice: 
+Your choice: A. (system admin remain system admin because it's me and have privlege of system wide and ssystem relgated- final decisions of organizations ans system permission and superamind /organizers are admins of organizations and previliged only within organizatoin)
 
 ### D-003 · When pending migrations reach production · raised by multi-tenancy-architecture-plan, 2026-09-24
 Blocks: nothing until Stage 2 needs the database.
@@ -42,7 +42,7 @@ Context: Stages 0 and 1 are written to `migrations.pending/` and applied nowhere
 - A ★ each stage moves into `migrations/` in its own commit only after you say "apply Stage N", then one person runs `db push` on a restored backup and then live
 - B Stages 0 and 1 together, once both are green
 - C hold everything until Stage 3 is green, then apply 0–3 in one window
-Your choice: 
+Your choice:  A
 
 ### D-004 · The standard feature set for a new organisation · raised by multi-tenancy-architecture-plan, 2026-09-24
 Blocks: Stage 5 (creating organisations).
@@ -50,7 +50,7 @@ Context: the plan switches on tickets, books, money, check-ins, approvals, prize
 - A ★ as the plan says
 - B everything on; you switch things off per organisation
 - C only tickets and books; everything else is switched on by you
-Your choice: 
+Your choice:  A
 
 ### D-005 · Signed link lifetime for artwork and logos · raised by multi-tenancy-architecture-plan, 2026-09-24
 Blocks: Stage 5.
@@ -58,14 +58,14 @@ Context: private buckets need signed links. Longer links survive a long print ru
 - A ★ 12 hours
 - B 1 hour, re-signed on every screen load
 - C 7 days
-Your choice: 
+Your choice: A
 
 ### D-006 · What a full terminal reset does to organisations · raised by multi-tenancy-architecture-plan, 2026-09-24
 Blocks: nothing today; matters once a second organisation exists.
 Context: `reset.sql` empties the whole database. With one organisation that is the raffle; with several it is everybody's.
 - A ★ keep it whole-database, re-seed the original organisation, and make it refuse while more than one organisation exists
 - B scope it to one project with a `-v project=` argument
-Your choice: 
+Your choice: organizers should be able to create or delete projects, activate or deactivate their accounts (which case soft delete and keep data for a certain period of time before parmently deleting - but to users show it's been deactivated and find away to reactivate them when they next login and wish to activage their orgniaations.); System Admin shoudl be able to delete organixations; 
 
 ### D-007 · Where the twenty-six unnamed actions go · raised by kcho-shelter-51, 2026-09-24
 Blocks: nothing. Tagging is in; this only decides whether the tags stay as written.
@@ -73,14 +73,14 @@ Context: the plan's `core` row names ten actions, and its rule for anything unna
 - A ★ as written: the plan's own default, and none of these is a thing an organisation should lack
 - B a fourteenth feature, `settings`, for the sixteen setup and account actions, switchable but standard
 - C split further: `branding` for logo/colour/contact/about, `accounts` for users and permissions
-Your choice: 
+Your choice: A
 
 ### D-008 · `report_draft` and `report_back` are books, not reports · raised by kcho-shelter-51, 2026-09-24
 Blocks: nothing.
 Context: the plan's `reports` row reads "report_*", which by name captures these two. They are not report documents — they are the seller's book return-report flow, and grouping them under `reports` would mean switching off reporting also stops sellers returning books. ACTION_META agrees: both sit in the Books group.
 - A ★ tagged `books`; `reports` keeps only the six documents plus `export_entries`
 - B follow the "report_*" wording literally and tag them `reports`
-Your choice: 
+Your choice: A
 
 ### D-009 · `ACTION_META` covers 92 of 95 actions · raised by kcho-shelter-51, 2026-09-24
 Blocks: nothing in MT-F. Not fixed here, per rule 1.
@@ -88,7 +88,7 @@ Context: `ACTION_META` is optional, so `agent_statement`, `search` and `set_org_
 - A ★ its own card: add the three entries and a test that ACTION_META covers REGISTRY, both directions
 - B fold into whichever card next touches the Access screen
 - C leave it; three raw ids on an organiser-only screen is tolerable
-Your choice: 
+Your choice:  A
 
 
 ### D-010 · Nothing type-checks the Edge Function · raised by kcho-shelter-51, 2026-09-24
@@ -96,7 +96,7 @@ Blocks: nothing now; Stage 3 starts relying on required fields such as `feature`
 Context: `tests/run.sh` has no `deno check` or `tsc` step, so a required TypeScript field is enforced only by a test that reads the source text. Stages 2–5 add more such contracts (`ctx.project`, `p_project`).
 - A ★ add a `deno check supabase/functions/api/index.ts supabase/functions/verify/index.ts` step to the gate, failing if Deno is missing, as test-rls.sh does for Docker. Deno is not installed on this machine today, so A also means installing it here and in the Pages workflow
 - B keep source-text tests only, one per contract
-Your choice: 
+Your choice:  A
 
 ### D-011 · T9 dumps the SQL the reports are built from, not the handlers' answers · raised by kcho-shelter-25, 2026-09-24
 Blocks: nothing. T9 ships under A; read this before reviewing it against the card.
@@ -105,12 +105,12 @@ Context: the card names five "reports", but only `agent_money` is a database obj
 - B call the deployed function with a service key: the exact answers, and it needs production credentials, which rule 3 forbids
 - C reimplement each handler's projection in SQL: exact-looking, and a second copy of five queries that drifts the first time a handler changes — the defect this repo has paid for repeatedly
 Your choice: 
-
+ A
 ### D-012 · The real-Postgres test suite is already red on master · raised by kcho-shelter-25 and multi-tenancy-architecture-plan, 2026-09-24
 Blocks: MT-1b, which needs `supabase/test-functions.sh` to prove the column migration.
 Context: two checks expect 29 settings rows and find 42, on master before any tenancy work. A suite that is already red cannot show a new failure.
 - A ★ a small card before MT-1b: find which migrations added the 13 keys, then update the expected count with a line naming each key
 - B waive the two checks in writing for MT-1b only, and fix them later
-Your choice: 
+Your choice: A
 
 ## Decided
