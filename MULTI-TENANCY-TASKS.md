@@ -36,7 +36,7 @@ self-contained tasks, one owner each. Open questions go to
 | MT-0 | 0 control plane | multi-tenancy-architecture-plan | none | done, pending migration not applied |
 | MT-1 | 1 the column | offered to kcho-shelter-25 | MT-0 landed (T9 script can start now) | offered |
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 sha (for tests/run.sh) | accepted |
-| MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | next |
+| MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done |
 
 Stages 2 (wiring), 3 (membership), 4 onward are not yet cut into cards. They
 start after MT-0, MT-1, MT-F and MT-K land.

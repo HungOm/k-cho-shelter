@@ -282,10 +282,85 @@ function agentMoneyRows(db) {
   })
 }
 
+/*
+ * agent_money for every project, each computed from its own rows only. The seed
+ * project's rows come back without a project_id, as they always have.
+ */
+function agentMoneyAll(db) {
+  const projects = [...new Set((db.tables.agents ?? []).map(projectOf))]
+  if (projects.length <= 1 && (projects[0] ?? SEED_PROJECT) === SEED_PROJECT) {
+    return onlyProject(db, SEED_PROJECT, () => agentMoneyRows(db))
+  }
+  return projects.flatMap((p) => onlyProject(db, p, () => agentMoneyRows(db))
+    .map((r) => (p === SEED_PROJECT ? r : { ...r, project_id: p })))
+}
+
 /** Deep-ish clone, so a handler mutating a returned row cannot reach the store. */
 const copy = (v) => (v === null || typeof v !== 'object' ? v : JSON.parse(JSON.stringify(v)))
 
 const notNull = (v) => v !== null && v !== undefined
+
+/*
+ * WHICH PROJECT A ROW BELONGS TO (MULTI-TENANCY-PLAN.md, test double for Stage 2).
+ *
+ * ABSENT MEANS THE SEED PROJECT, the raffle that predates projects. That is the
+ * same rule the database's column default carries through Stage 3, and it is
+ * what keeps every fixture written before projects existed byte-identical: no
+ * row is stamped unless it names a project, so no deep-equal anywhere sees a new
+ * key. A row that does name one is filtered, upserted and computed as that
+ * project's and nobody else's.
+ */
+export const SEED_PROJECT = '00000000-0000-0000-0000-000000000001'
+const projectOf = (r) => r?.project_id ?? SEED_PROJECT
+const valueOf = (r, col) => (col === 'project_id' ? projectOf(r) : r[col])
+
+/*
+ * RUN fn AGAINST ONE PROJECT'S ROWS, then put what it wrote back.
+ *
+ * The rpc stubs and the agent_money view read `db.tables.*` directly, as the
+ * SQL reads its tables. Scoping each stub by hand would be a second copy of
+ * every one of them; instead the tables are swapped for that project's slice
+ * for the length of the call, and afterwards new rows are appended (stamped,
+ * unless the project is the seed) and deleted rows removed. Mutations to
+ * existing rows need nothing: the slice holds the same objects.
+ *
+ * SAFE ONLY BECAUSE NO STUB AWAITS. Each computes synchronously and hands back
+ * an already-resolved promise, so nothing else can run while the tables are
+ * swapped. A stub that starts awaiting breaks this, and tests/scoped says so.
+ *
+ * AND A NO-OP ON A ONE-PROJECT FAKE, which is every fixture today: the call
+ * runs against the real tables exactly as before.
+ */
+function onlyProject(db, project, fn) {
+  const full = db.tables
+  const single = project === SEED_PROJECT &&
+    Object.values(full).every((rows) => !Array.isArray(rows) || rows.every((r) => projectOf(r) === SEED_PROJECT))
+  if (single) return fn()
+
+  const slice = {}
+  const before = {}
+  for (const [t, rows] of Object.entries(full)) {
+    slice[t] = Array.isArray(rows) ? rows.filter((r) => projectOf(r) === project) : rows
+    before[t] = Array.isArray(rows) ? new Set(slice[t]) : null
+  }
+  db.tables = slice
+  try {
+    return fn()
+  } finally {
+    const after = db.tables
+    db.tables = full
+    for (const [t, rows] of Object.entries(after)) {
+      if (!Array.isArray(rows)) { full[t] = rows; continue }
+      const was = before[t] ?? new Set()
+      const now = new Set(rows)
+      const gone = [...was].filter((r) => !now.has(r))
+      const added = rows.filter((r) => !was.has(r))
+      for (const r of added) if (project !== SEED_PROJECT && r.project_id === undefined) r.project_id = project
+      const goneSet = new Set(gone)
+      full[t] = (full[t] ?? []).filter((r) => !goneSet.has(r)).concat(added)
+    }
+  }
+}
 
 const cmp = (a, b) => {
   if (a === b) return 0
@@ -321,8 +396,8 @@ class Query {
   limit(n) { this.max = n; return this }
 
   // ---- filters ----
-  eq(col, v) { this.filters.push((r) => r[col] === v); return this }
-  neq(col, v) { this.filters.push((r) => r[col] !== v); return this }
+  eq(col, v) { this.filters.push((r) => valueOf(r, col) === v); return this }
+  neq(col, v) { this.filters.push((r) => valueOf(r, col) !== v); return this }
   /*
    * NULL NEVER MATCHES A COMPARISON, as in SQL.
    *
@@ -338,7 +413,7 @@ class Query {
   gte(col, v) { this.filters.push((r) => notNull(r[col]) && cmp(r[col], v) >= 0); return this }
   lt(col, v) { this.filters.push((r) => notNull(r[col]) && cmp(r[col], v) < 0); return this }
   lte(col, v) { this.filters.push((r) => notNull(r[col]) && cmp(r[col], v) <= 0); return this }
-  in(col, vs) { const s = new Set(vs); this.filters.push((r) => s.has(r[col])); return this }
+  in(col, vs) { const s = new Set(vs); this.filters.push((r) => s.has(valueOf(r, col))); return this }
   is(col, v) {
     this.filters.push((r) => (v === null ? r[col] === null || r[col] === undefined : r[col] === v))
     return this
@@ -451,7 +526,7 @@ class Query {
 
   // ---- running ----
   rows() {
-    const all = this.table === 'agent_money' ? agentMoneyRows(this.db) : this.db.tables[this.table]
+    const all = this.table === 'agent_money' ? agentMoneyAll(this.db) : this.db.tables[this.table]
     if (!all) throw new Error(`fakedb: no table "${this.table}"`)
     return all.filter((r) => this.filters.every((f) => f(r)))
   }
@@ -490,7 +565,7 @@ class Query {
       const out = []
       for (const row of this.payload) {
         if (this.op === 'upsert') {
-          const at = t.findIndex((r) => this.onConflict.every((k) => r[k] === row[k]))
+          const at = t.findIndex((r) => this.onConflict.every((k) => valueOf(r, k) === valueOf(row, k)))
           if (at !== -1) {
             if (this.ignoreDuplicates) continue   // DO NOTHING: the row that is there stays
             Object.assign(t[at], copy(row)); out.push(t[at]); continue
@@ -629,7 +704,15 @@ export function fakeDb(seed = {}) {
   const client = {
     storage: { from: (b) => bucketApi(b) },
     from: (t) => new Query(db, t),
-    rpc: (fn, args) => {
+    /*
+     * Every stub runs inside the project the caller named — `p_project`, which
+     * the scoped wrapper injects — or the seed project when it named none.
+     */
+    rpc: (fn, args) => onlyProject(db, args?.p_project ?? SEED_PROJECT, () => rawRpc(fn, args)),
+  }
+
+  function rawRpc(fn, args) {
+    {
       if (fn === 'active_tickets') {
         const get = (k, d) => {
           const row = db.tables.config.find((c) => c.key === k)
@@ -1057,7 +1140,7 @@ export function fakeDb(seed = {}) {
       if (fn === 'active_books') return Promise.resolve({ data: 0, error: null })
 
       return Promise.resolve({ data: null, error: { message: `unknown function ${fn}` } })
-    },
+    }
   }
 
   return {
