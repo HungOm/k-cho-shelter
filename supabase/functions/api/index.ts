@@ -242,15 +242,15 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
 
 const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // --- reading ---
-  whoami: { roles: null, kind: 'read', fn: whoami },
-  read_version: { roles: null, kind: 'read', fn: readVersion },
-  read_snapshot: { roles: null, kind: 'read', fn: readSnapshot },
-  read_delta: { roles: null, kind: 'read', fn: readDelta },
-  search: { roles: null, kind: 'read', fn: search },
-  list_books: { roles: null, kind: 'read', fn: listBooks },
+  whoami: { roles: null, kind: 'read', fn: whoami, feature: 'core' },
+  read_version: { roles: null, kind: 'read', fn: readVersion, feature: 'core' },
+  read_snapshot: { roles: null, kind: 'read', fn: readSnapshot, feature: 'core' },
+  read_delta: { roles: null, kind: 'read', fn: readDelta, feature: 'core' },
+  search: { roles: null, kind: 'read', fn: search, feature: 'core' },
+  list_books: { roles: null, kind: 'read', fn: listBooks, feature: 'core' },
   // Not `sup` any more: an organiser may read the change log of their own
   // raffle. The handler takes the super admin's address out of it.
-  read_audit: { roles: ADMIN_ONLY, kind: 'read', fn: readAudit },
+  read_audit: { roles: ADMIN_ONLY, kind: 'read', fn: readAudit, feature: 'core' },
 
   // --- ticket writes ---
   // Roles copied from Api.gs exactly. gateparity.test.mjs is what keeps them
@@ -258,19 +258,19 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
   // mistyped here shows up as a disagreement rather than as a quiet
   // permission change nobody notices until somebody does something they
   // should not have been able to.
-  sell_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.sellTicket },
-  reserve_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.reserveTicket },
-  release_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.releaseTicket },
-  correct_ticket: { roles: ['recorder'], kind: 'write', fn: tickets.correctTicket },
-  void_ticket: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: tickets.voidTicket },
-  bulk_record_sales: { roles: ['recorder'], kind: 'bulk', fn: tickets.bulkRecordSales },
-  sell_book: { roles: ['recorder', 'agent'], kind: 'bulk', fn: tickets.sellBook },
+  sell_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.sellTicket, feature: 'tickets' },
+  reserve_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.reserveTicket, feature: 'tickets' },
+  release_ticket: { roles: ['recorder', 'agent'], kind: 'write', fn: tickets.releaseTicket, feature: 'tickets' },
+  correct_ticket: { roles: ['recorder'], kind: 'write', fn: tickets.correctTicket, feature: 'tickets' },
+  void_ticket: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: tickets.voidTicket, feature: 'tickets' },
+  bulk_record_sales: { roles: ['recorder'], kind: 'bulk', fn: tickets.bulkRecordSales, feature: 'tickets' },
+  sell_book: { roles: ['recorder', 'agent'], kind: 'bulk', fn: tickets.sellBook, feature: 'tickets' },
 
   // --- books ---
-  issue_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.issueBooks },
-  offer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.offerBooks },
-  request_count_in: { roles: ADMIN_ONLY, kind: 'write', fn: books.requestCountIn },
-  withdraw_offer: { roles: ADMIN_ONLY, kind: 'write', fn: books.withdrawOffer },
+  issue_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.issueBooks, feature: 'books' },
+  offer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.offerBooks, feature: 'books' },
+  request_count_in: { roles: ADMIN_ONLY, kind: 'write', fn: books.requestCountIn, feature: 'books' },
+  withdraw_offer: { roles: ADMIN_ONLY, kind: 'write', fn: books.withdrawOffer, feature: 'approvals' },
   /*
    * ADMIN_ONLY AND RUN BY A SELLER, WHICH IS NOT A CONTRADICTION.
    *
@@ -281,7 +281,7 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * were offered to, and decideWith then runs it AS them. Exactly how
    * issue_books is ADMIN_ONLY and yet runs when a petition is granted.
    */
-  accept_offer: { roles: ADMIN_ONLY, kind: 'write', fn: books.acceptOffer },
+  accept_offer: { roles: ADMIN_ONLY, kind: 'write', fn: books.acceptOffer, feature: 'approvals' },
   /*
    * ANY SIGNED-IN USER, narrowed to one person by the row rather than by role.
    * `roles: null` is as close as this registry can get; the real bar is in
@@ -289,11 +289,11 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * caller's own seller id. A role could only ever say "sellers", and the
    * question here is "this seller".
    */
-  decide_offer: { roles: null, kind: 'write', fn: decideOffer },
-  transfer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.transferBooks },
-  return_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.returnBooks },
-  move_tickets: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.moveTickets },
-  settle_book: { roles: ADMIN_ONLY, kind: 'write', fn: books.settleBook },
+  decide_offer: { roles: null, kind: 'write', fn: decideOffer, feature: 'approvals' },
+  transfer_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.transferBooks, feature: 'books' },
+  return_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.returnBooks, feature: 'books' },
+  move_tickets: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.moveTickets, feature: 'books' },
+  settle_book: { roles: ADMIN_ONLY, kind: 'write', fn: books.settleBook, feature: 'money' },
   // A helper takes cash at the table and must be able to write it down there
   // and then. What they cannot do is record it against somebody else, or close
   // a book — both of those change what another person is shown as owing.
@@ -312,44 +312,44 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * report they send, which changes nothing until an organiser accepts it and
    * records it in their own name.
    */
-  record_payment: { roles: ['recorder'], kind: 'write', fn: money.recordPayment },
+  record_payment: { roles: ['recorder'], kind: 'write', fn: money.recordPayment, feature: 'money' },
   // Undoing is an organiser's: it moves a figure somebody has already been told.
-  reverse_payment: { roles: ADMIN_ONLY, kind: 'write', fn: money.reversePayment },
+  reverse_payment: { roles: ADMIN_ONLY, kind: 'write', fn: money.reversePayment, feature: 'money' },
   // Organisers, like reverse_payment and for the same reason: it is a
   // decision about money that has to be made by somebody accountable, and
   // it is on the record with a reason attached either way.
-  write_off: { roles: ADMIN_ONLY, kind: 'write', fn: money.writeOff },
-  list_payments: { roles: ['viewer', 'recorder', 'agent'], kind: 'read', fn: money.listPayments },
-  set_book_status: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.setBookStatus },
-  restock_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.restockBooks },
+  write_off: { roles: ADMIN_ONLY, kind: 'write', fn: money.writeOff, feature: 'money' },
+  list_payments: { roles: ['viewer', 'recorder', 'agent'], kind: 'read', fn: money.listPayments, feature: 'money' },
+  set_book_status: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.setBookStatus, feature: 'books' },
+  restock_books: { roles: ADMIN_ONLY, kind: 'bulk', fn: books.restockBooks, feature: 'books' },
   // Readable by anyone who can see the books at all. A history that only an
   // admin can open answers nobody's question — the person who needs to know
   // where a book went is usually the one holding the clipboard.
-  book_history: { roles: null, kind: 'read', fn: books.bookHistory },
+  book_history: { roles: null, kind: 'read', fn: books.bookHistory, feature: 'core' },
 
   // --- agents & users ---
-  list_agents: { roles: null, kind: 'read', fn: people.listAgents },
-  upsert_agent: { roles: ADMIN_ONLY, kind: 'write', fn: people.upsertAgent },
-  list_users: { roles: ADMIN_ONLY, kind: 'read', fn: people.listUsers },
-  upsert_user: { roles: ADMIN_ONLY, kind: 'write', fn: people.upsertUser },
-  set_user_status: { roles: ADMIN_ONLY, kind: 'write', fn: people.setUserStatus },
+  list_agents: { roles: null, kind: 'read', fn: people.listAgents, feature: 'core' },
+  upsert_agent: { roles: ADMIN_ONLY, kind: 'write', fn: people.upsertAgent, feature: 'core' },
+  list_users: { roles: ADMIN_ONLY, kind: 'read', fn: people.listUsers, feature: 'core' },
+  upsert_user: { roles: ADMIN_ONLY, kind: 'write', fn: people.upsertUser, feature: 'core' },
+  set_user_status: { roles: ADMIN_ONLY, kind: 'write', fn: people.setUserStatus, feature: 'core' },
 
   // --- who may do what ---
-  list_permissions: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: listPermissions },
-  set_permission: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setPermission },
+  list_permissions: { roles: ADMIN_ONLY, sup: true, kind: 'read', fn: listPermissions, feature: 'core' },
+  set_permission: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setPermission, feature: 'core' },
 
   // --- how much of the raffle is live ---
-  set_active_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setActiveTickets },
-  handover_receipt: { roles: ADMIN_ONLY, kind: 'report', fn: people.handoverReceipt },
+  set_active_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setActiveTickets, feature: 'core' },
+  handover_receipt: { roles: ADMIN_ONLY, kind: 'report', fn: people.handoverReceipt, feature: 'money' },
   // Any signed-in person: a SELLER confirming their own books is the whole
   // point, and the handler decides what their word is worth from who they
   // are. Restricting it to organisers would leave only the organiser's own
   // word again, which is the gap it was written to close.
-  acknowledge_books: { roles: null, kind: 'write', fn: people.acknowledgeBooks },
-  acknowledged_books: { roles: null, kind: 'read', fn: people.acknowledgedBooks },
+  acknowledge_books: { roles: null, kind: 'write', fn: people.acknowledgeBooks, feature: 'books' },
+  acknowledged_books: { roles: null, kind: 'read', fn: people.acknowledgedBooks, feature: 'books' },
   // A seller may see their own line; the handler scopes it. An organiser
   // gets everybody, which is the list they work from at a check-in.
-  return_check: { roles: null, kind: 'read', fn: books.returnCheck },
+  return_check: { roles: null, kind: 'read', fn: books.returnCheck, feature: 'books' },
   /*
    * THE SELLER'S OWN REPORT, both halves.
    *
@@ -365,50 +365,50 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * one out directly, which is the case where the seller is standing at the
    * table and there is nobody to wait for.
    */
-  report_draft: { roles: null, kind: 'read', fn: books.reportDraft },
-  report_back: { roles: ['recorder'], kind: 'write', fn: books.reportBack },
-  expand_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.expandTickets },
-  set_ticket_ceiling: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setTicketCeiling },
-  set_numbering: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setNumbering },
-  set_card_design: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setCardDesign },
-  set_supporter_bands: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setSupporterBands },
-  set_design_library: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setDesignLibrary },
+  report_draft: { roles: null, kind: 'read', fn: books.reportDraft, feature: 'books' },
+  report_back: { roles: ['recorder'], kind: 'write', fn: books.reportBack, feature: 'books' },
+  expand_tickets: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.expandTickets, feature: 'core' },
+  set_ticket_ceiling: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setTicketCeiling, feature: 'core' },
+  set_numbering: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: people.setNumbering, feature: 'core' },
+  set_card_design: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setCardDesign, feature: 'cards' },
+  set_supporter_bands: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setSupporterBands, feature: 'cards' },
+  set_design_library: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setDesignLibrary, feature: 'studio' },
 
   // --- the two deadlines ---
-  deadline_status: { roles: null, kind: 'read', fn: deadlines.deadlineStatus },
-  roll_check_in: { roles: ADMIN_ONLY, kind: 'bulk', fn: deadlines.rollCheckIn },
+  deadline_status: { roles: null, kind: 'read', fn: deadlines.deadlineStatus, feature: 'core' },
+  roll_check_in: { roles: ADMIN_ONLY, kind: 'bulk', fn: deadlines.rollCheckIn, feature: 'checkins' },
   // A recorder too: this is the person standing at the table when the seller
   // walks up with a bag of counterfoils, and a report that has to wait for an
   // organiser to be free is a report that gets written on the back of an
   // envelope instead.
-  record_check_in: { roles: ['recorder'], kind: 'write', fn: deadlines.recordCheckIn },
+  record_check_in: { roles: ['recorder'], kind: 'write', fn: deadlines.recordCheckIn, feature: 'checkins' },
   // The same roles as agent_statement, which is the same document with less on
   // it: a seller may print their own and an organiser or helper may print
   // anybody's. A viewer may not — the sheet is a seller's whole position, and
   // the role that exists to see totals without names is not owed one by name.
-  check_in_sheet: { roles: ['agent', 'recorder'], kind: 'report', fn: deadlines.checkInSheet },
+  check_in_sheet: { roles: ['agent', 'recorder'], kind: 'report', fn: deadlines.checkInSheet, feature: 'checkins' },
   // Moving a reporting date is moving what a dozen people were told to do, so
   // it sits where roll_check_in sits rather than with the ordinary writes.
-  set_check_in_date: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setCheckInDate },
-  round_snapshot: { roles: null, kind: 'read', fn: deadlines.readRoundSnapshot },
-  set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline },
+  set_check_in_date: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setCheckInDate, feature: 'checkins' },
+  round_snapshot: { roles: null, kind: 'read', fn: deadlines.readRoundSnapshot, feature: 'checkins' },
+  set_final_deadline: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: deadlines.setFinalDeadline, feature: 'core' },
   // The organisers', not the owner's. Moving the final deadline moves the draw
   // and every countdown to it; closing the books is the ordinary running of a
   // raffle, decided at a meeting, and a single unreachable person should not
   // stand between the committee and a decision they have already taken.
-  set_sales_close: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setSalesClose },
+  set_sales_close: { roles: ADMIN_ONLY, kind: 'write', fn: deadlines.setSalesClose, feature: 'core' },
   // Organisers only, enforced HERE rather than by hiding a button. Branding is
   // what a buyer sees on a receipt; it is not a thing a desk volunteer changes.
-  upload_logo: { roles: ADMIN_ONLY, kind: 'write', fn: branding.uploadLogo },
-  set_brand_color: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setBrandColor },
+  upload_logo: { roles: ADMIN_ONLY, kind: 'write', fn: branding.uploadLogo, feature: 'core' },
+  set_brand_color: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setBrandColor, feature: 'core' },
   /*
    * The office number, address and website. ADMIN_ONLY for the same reason as
    * the two above and one more: the website becomes a link on the public
    * ticket-check page, which is the only thing in this file that a stranger who
    * has not signed in can be sent to by somebody else's typing.
    */
-  set_org_contact: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setOrgContact },
-  set_org_about: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setOrgAbout },
+  set_org_contact: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setOrgContact, feature: 'core' },
+  set_org_about: { roles: ADMIN_ONLY, kind: 'write', fn: branding.setOrgAbout, feature: 'core' },
 
   /*
    * THE TICKET ARTWORK — organisers and the System Admin, and not grantable.
@@ -425,12 +425,12 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * "tidied" to `kind: 'read'` on the grounds that it does not write anything,
    * that test fails and says why.
    */
-  upload_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.uploadTemplate },
-  list_templates: { roles: ADMIN_ONLY, kind: 'write', fn: templates.listTemplates },
-  set_template_design: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setTemplateDesign },
-  set_active_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setActiveTemplate },
-  remove_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.removeTemplate },
-  set_ticket_sizes: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setTicketSizes },
+  upload_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.uploadTemplate, feature: 'printing' },
+  list_templates: { roles: ADMIN_ONLY, kind: 'write', fn: templates.listTemplates, feature: 'printing' },
+  set_template_design: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setTemplateDesign, feature: 'printing' },
+  set_active_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setActiveTemplate, feature: 'printing' },
+  remove_template: { roles: ADMIN_ONLY, kind: 'write', fn: templates.removeTemplate, feature: 'printing' },
+  set_ticket_sizes: { roles: ADMIN_ONLY, kind: 'write', fn: templates.setTicketSizes, feature: 'printing' },
   /*
    * EMPTYING A RAFFLE. Both are 'write' and both refuse anybody but the System
    * Admin inside the handler as well as here — the registry decides which roles
@@ -442,8 +442,8 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * gives: registering a read as a write is the only way to say this one cannot
    * be given away from the Access screen.
    */
-  reset_preview: { roles: ADMIN_ONLY, kind: 'write', fn: reset.resetPreview },
-  reset_apply: { roles: ADMIN_ONLY, kind: 'write', fn: reset.resetApply },
+  reset_preview: { roles: ADMIN_ONLY, kind: 'write', fn: reset.resetPreview, feature: 'reset' },
+  reset_apply: { roles: ADMIN_ONLY, kind: 'write', fn: reset.resetApply, feature: 'reset' },
   /*
    * AND FILLING ONE UP, which is the same control read the other way. Same
    * bar, same two-step, same reason for `write` on a preview that only counts.
@@ -455,51 +455,51 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * the handler: sample sellers and sample money in somebody's live raffle is
    * not a small mess to clean up by hand.
    */
-  seed_preview: { roles: ADMIN_ONLY, kind: 'write', fn: seed.seedPreview },
-  seed_apply: { roles: ADMIN_ONLY, kind: 'write', fn: seed.seedApply },
+  seed_preview: { roles: ADMIN_ONLY, kind: 'write', fn: seed.seedPreview, feature: 'seed' },
+  seed_apply: { roles: ADMIN_ONLY, kind: 'write', fn: seed.seedApply, feature: 'seed' },
   // Minting the codes that make a ticket provable. Same bar as the artwork
   // above, and for a sharper reason: whoever can generate a code can make a
   // forgery verify.
-  generate_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.generateTickets },
-  render_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.renderTickets },
+  generate_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.generateTickets, feature: 'printing' },
+  render_tickets: { roles: ADMIN_ONLY, kind: 'write', fn: printing.renderTickets, feature: 'printing' },
   // One code for a set of tickets, so a buyer who took ten gets one picture and
   // one QR rather than ten of each. Same bar as the codes it stands on: it
   // makes a verifiable document, and the plan puts sending a digital ticket
   // with the organiser and nowhere else.
-  make_receipt: { roles: ADMIN_ONLY, kind: 'write', fn: printing.makeReceipt },
+  make_receipt: { roles: ADMIN_ONLY, kind: 'write', fn: printing.makeReceipt, feature: 'cards' },
 
   // --- reports ---
-  report_outstanding: { roles: ['viewer', 'recorder', 'agent'], kind: 'report', fn: reports.reportOutstanding },
-  report_overdue: { roles: ['recorder'], kind: 'report', fn: reports.reportOverdue },
+  report_outstanding: { roles: ['viewer', 'recorder', 'agent'], kind: 'report', fn: reports.reportOutstanding, feature: 'reports' },
+  report_overdue: { roles: ['recorder'], kind: 'report', fn: reports.reportOverdue, feature: 'reports' },
   // The same audience as the overdue list it merges, because it IS that
   // list plus the two nobody had put beside it.
-  chase_today: { roles: ['recorder'], kind: 'report', fn: reports.chaseToday },
-  report_missing_contact: { roles: ['recorder'], kind: 'report', fn: reports.reportMissingContact },
-  report_draw_ready: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportDrawReady },
-  agent_statement: { roles: ['agent', 'recorder'], kind: 'report', fn: reports.agentStatement },
-  export_entries: { roles: ADMIN_ONLY, sup: true, kind: 'report', fn: reports.exportEntries },
+  chase_today: { roles: ['recorder'], kind: 'report', fn: reports.chaseToday, feature: 'reports' },
+  report_missing_contact: { roles: ['recorder'], kind: 'report', fn: reports.reportMissingContact, feature: 'reports' },
+  report_draw_ready: { roles: ['viewer', 'recorder'], kind: 'report', fn: reports.reportDrawReady, feature: 'reports' },
+  agent_statement: { roles: ['agent', 'recorder'], kind: 'report', fn: reports.agentStatement, feature: 'money' },
+  export_entries: { roles: ADMIN_ONLY, sup: true, kind: 'report', fn: reports.exportEntries, feature: 'reports' },
 
   // --- the prize schedule ---
   // Anyone signed in, sellers included. "What can I win?" is the question a
   // seller is asked by everybody they sell to, and an answer only an organiser
   // can open is an answer given from memory at the table.
-  list_prizes: { roles: null, kind: 'read', fn: prizes.listPrizes },
+  list_prizes: { roles: null, kind: 'read', fn: prizes.listPrizes, feature: 'prizes' },
   // Organisers, NOT the owner alone. Setting up what is on offer is ordinary
   // organising, decided at a meeting like the sales-close date. The handler is
   // what holds the line that matters: changing a prize somebody has ALREADY
   // WON needs the System Admin, because by then it has been said out loud.
-  upsert_prize: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.upsertPrize },
-  remove_prize: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.removePrize },
-  upsert_prize_type: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.upsertPrizeType },
+  upsert_prize: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.upsertPrize, feature: 'prizes' },
+  remove_prize: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.removePrize, feature: 'prizes' },
+  upsert_prize_type: { roles: ADMIN_ONLY, kind: 'write', fn: prizes.upsertPrizeType, feature: 'prizes' },
 
   // --- winners ---
-  record_winner: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: reports.recordWinner },
-  list_winners: { roles: ['viewer', 'recorder'], kind: 'read', fn: reports.listWinners },
+  record_winner: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: reports.recordWinner, feature: 'prizes' },
+  list_winners: { roles: ['viewer', 'recorder'], kind: 'read', fn: reports.listWinners, feature: 'prizes' },
   // A helper rings the winners and a helper is who is standing there when one
   // turns up for their hamper. Recording that is not the owner's job — it is
   // the job of whoever is at the table, which is exactly what record_payment
   // already assumes about cash.
-  set_winner_status: { roles: ['recorder'], kind: 'write', fn: prizes.setWinnerStatus },
+  set_winner_status: { roles: ['recorder'], kind: 'write', fn: prizes.setWinnerStatus, feature: 'prizes' },
 
   // --- two-person control, and asking for a book ---
   /*
@@ -518,14 +518,14 @@ const REGISTRY: Record<string, ActionSpec & { fn: Handler }> = {
    * decide_approval is NOT on this list and does not move. Granting is the
    * organiser's, which is the whole point of asking.
    */
-  request_approval: { roles: ['recorder', 'agent'], kind: 'write', fn: approvals.requestApproval },
-  list_approvals: { roles: ['recorder', 'agent'], kind: 'read', fn: approvals.listApprovals },
-  cancel_approval: { roles: ['recorder', 'agent'], kind: 'write', fn: approvals.cancelApproval },
-  decide_approval: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: decideApproval },
+  request_approval: { roles: ['recorder', 'agent'], kind: 'write', fn: approvals.requestApproval, feature: 'approvals' },
+  list_approvals: { roles: ['recorder', 'agent'], kind: 'read', fn: approvals.listApprovals, feature: 'approvals' },
+  cancel_approval: { roles: ['recorder', 'agent'], kind: 'write', fn: approvals.cancelApproval, feature: 'approvals' },
+  decide_approval: { roles: ADMIN_ONLY, sup: true, kind: 'write', fn: decideApproval, feature: 'approvals' },
   // Granting a book is the organiser's, which is the whole point of asking one.
   // It can only reach a seller's request for books; approvals.ts refuses it a
   // two-person control, so the bar above is not reachable through this door.
-  decide_book_request: { roles: ADMIN_ONLY, kind: 'write', fn: decideBookRequest },
+  decide_book_request: { roles: ADMIN_ONLY, kind: 'write', fn: decideBookRequest, feature: 'approvals' },
 }
 
 /**

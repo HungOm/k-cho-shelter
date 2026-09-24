@@ -30,6 +30,8 @@
  * design did not need, because nothing could grant it at all.
  */
 
+import type { FeatureId } from '../_shared/features.ts'
+
 export type Role = 'admin' | 'recorder' | 'agent' | 'viewer'
 export const ROLES: Role[] = ['admin', 'recorder', 'agent', 'viewer']
 
@@ -49,6 +51,16 @@ export interface ActionSpec {
   /** Reserved to the super admin, and ungrantable. */
   sup?: boolean
   kind: 'read' | 'write' | 'bulk' | 'report'
+  /**
+   * Which feature an organisation must have for this action to exist at all.
+   *
+   * REQUIRED, AND `core` IS A VALUE SOMEBODY TYPES. Nothing reads it yet — the
+   * entitlement check is Stage 3 and needs `org_features` — but an optional
+   * field defaulting to `core` would mean a forgotten tag silently becomes
+   * always-on and unswitchable for every organisation. See the header of
+   * `_shared/features.ts` for why this repo already knows how that ends.
+   */
+  feature: FeatureId
 }
 
 /**

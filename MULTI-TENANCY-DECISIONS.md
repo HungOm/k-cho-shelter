@@ -67,4 +67,28 @@ Context: `reset.sql` empties the whole database. With one organisation that is t
 - B scope it to one project with a `-v project=` argument
 Your choice: 
 
+### D-007 · Where the twenty-six unnamed actions go · raised by kcho-shelter-51, 2026-09-24
+Blocks: nothing. Tagging is in; this only decides whether the tags stay as written.
+Context: the plan's `core` row names ten actions, and its rule for anything unnamed is `core`. Twenty-six end up there, including account administration (`upsert_user`, `set_permission`) and raffle setup (`set_numbering`, `expand_tickets`, `upload_logo`). `core` is unswitchable, so this is the set no system admin can ever turn off.
+- A ★ as written: the plan's own default, and none of these is a thing an organisation should lack
+- B a fourteenth feature, `settings`, for the sixteen setup and account actions, switchable but standard
+- C split further: `branding` for logo/colour/contact/about, `accounts` for users and permissions
+Your choice: 
+
+### D-008 · `report_draft` and `report_back` are books, not reports · raised by kcho-shelter-51, 2026-09-24
+Blocks: nothing.
+Context: the plan's `reports` row reads "report_*", which by name captures these two. They are not report documents — they are the seller's book return-report flow, and grouping them under `reports` would mean switching off reporting also stops sellers returning books. ACTION_META agrees: both sit in the Books group.
+- A ★ tagged `books`; `reports` keeps only the six documents plus `export_entries`
+- B follow the "report_*" wording literally and tag them `reports`
+Your choice: 
+
+### D-009 · `ACTION_META` covers 92 of 95 actions · raised by kcho-shelter-51, 2026-09-24
+Blocks: nothing in MT-F. Not fixed here, per rule 1.
+Context: `ACTION_META` is optional, so `agent_statement`, `search` and `set_org_about` fall through `m.group ?? 'Other'` and `m.label ?? action` (index.ts:105, 119-120). Permissions.vue renders them in a card headed "Other" with their raw snake_case ids as labels. Nothing in tests/ reads ACTION_META. This is the defect the plan cites as its reason for making `feature` required, three lines from the registry.
+- A ★ its own card: add the three entries and a test that ACTION_META covers REGISTRY, both directions
+- B fold into whichever card next touches the Access screen
+- C leave it; three raw ids on an organiser-only screen is tolerable
+Your choice: 
+
+
 ## Decided
