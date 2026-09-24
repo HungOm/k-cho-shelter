@@ -51,6 +51,8 @@ sessions, that they may work on this plan.
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
 | MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | accepted |
+| MT-L | 7 organisation and project lifecycle (D-006) | unassigned | Stage 5; period from D-013 | not started |
+| MT-T | gate: type-check the functions (D-010) | unassigned | none | ready |
 
 The rest of Stage 2 (handlers on the scoped client, SQL functions taking
 `p_project`, the coalesced predicates) waits for MT-1, because it needs the
@@ -148,3 +150,22 @@ The rest of Stage 2 (handlers on the scoped client, SQL functions taking
   `router`, `everyaction`, `edgehandlers`, `gate` unchanged in count and result;
   the new suite proves all four header cases and that a refused project reads no
   user row.
+
+### MT-T · the gate type-checks the functions (D-010)
+
+- **Ships.** A step in `tests/run.sh` that runs `deno check` on
+  `supabase/functions/api/index.ts` and `supabase/functions/verify/index.ts`,
+  and fails the gate if Deno is missing rather than skipping; Deno installed in
+  `.github/workflows/deploy.yml` before the tests run; a line in SETUP.md.
+- **Must not change.** Any function's code. If the check finds real type errors
+  today, list them in the decisions file instead of fixing them in this card.
+- **Done when.** The gate is green here and in a pushed CI run, and a
+  deliberately missing `feature:` on one registry entry turns it red.
+
+### MT-L · organisation and project lifecycle (D-006)
+
+- **Ships.** Soft delete of a project and deactivate/reactivate of an organisation
+  by its organiser; permanent delete of an organisation by the system admin; the
+  weekly job that deletes for good once the retention period (D-013) ends; the
+  sign-in screens for "deactivated" and "reactivate". Plan § "A project's life".
+- **Waits for** Stage 5 (projects can be created) and an answer to D-013.

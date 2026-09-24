@@ -376,7 +376,10 @@ Restricting an account to one organisation would be one unique index and is not 
 ```
 draft → active → closing → archived —(organiser, audited)→ active
                               └—(purge_personal_after elapsed)→ purged_at
-delete: never from a page; terminal runbook only (like accounts and the audit log today)
+project delete: by the organiser, soft, undone inside the retention period (D-006, D-013)
+organisation: active → deactivated (organiser, soft; data kept for the retention period;
+              members told "deactivated"; organiser offered reactivation at next sign-in)
+              → deleted for good (system admin only, or the weekly job when the period ends)
 ```
 
 - Create (`create_project`): row; `seed_project_config(p_project)` (body of
@@ -398,6 +401,12 @@ delete: never from a page; terminal runbook only (like accounts and the audit lo
   every column named `*phone*`, `*buyer*`, `*name*` on a partitioned table is on the purge
   list or a written exemption list.
 - Empty (`app_reset`): per project, as above.
+- Deactivate and delete (owner's ruling D-006): an organiser deletes a project or
+  deactivates the whole organisation; both are soft (`deleted_at`/`deactivated_at`
+  columns), both are refused by the gate like an archive, and both come back if
+  undone inside the retention period (D-013). Sign-in to a deactivated
+  organisation shows "deactivated" to members and offers reactivation to the
+  organiser. Deleting an organisation for good is the system admin's alone.
 
 ### Client
 
@@ -443,7 +452,7 @@ within every stage: migration, function deploy, client push.
 | 0 control plane | `platform_admins`, `organisations`, `org_features`, `org_defaults`, `projects`, `project_members`; `seed_project()`, `current_project()`; seed rows with every feature on; `resetplan.ts` `tenancy` feature | any existing object | gate; `resetplan.test` | drop six tables, two functions | 3 |
 | 1 the column | `project_id` on 23 tables, default `coalesce(current_project(), seed_project())`, NOT NULL; every index recreated with `project_id` leading; **composite unique indexes added beside the old keys**; `schema.sql` updated | keys, policies, views, handlers; T9 empty | `migrationsql.test`; T9 | drop columns and indexes (script written with the migration) | 3–4 |
 | 2 the function learns the project | `route()` resolves the project first and refuses without a stamped client; caches per project; `scoped.ts` wrapper on every handler, `tests/scopedclient`; `onConflict` strings composite; fakedb default stamp + project-aware stubs; every policy and view gains the coalesced predicate; every config scalar in views and `select into` in SQL functions scoped; all 16 SQL functions take `p_project` and filter (inert with one project); `config_numbering_locked` and `adoptLoneArtwork` scoped; `rls.sql`/`functions.sql` updated | what any role can see; T9 empty; header-less clients | `test-rls.sh` (header absent → seed → identical), T2 first form, `everyaction`, `twoprojects` (A and B in fakedb only) | re-apply previous `rls.sql`/`functions.sql`; redeploy previous function | 8–10 |
-| 3 membership and features | `app_users` → `project_members` (seed); the secret's address becomes the seed organiser, any `superadmin` rows become `platform_admins`; `member_role`, `resolve_member`; `app_role()` re-pointed (coalesced); `resolveUser` fed by `resolve_member`; `people.ts` writes new tables; `app_users` becomes a view; `_shared/features.ts`, `feature:` on every registry entry, entitlement check first in `isActionAllowed`, `entitled` in `buildPermissions`; the 13 suites that build `userClaims`/`resolveUser` fixtures updated | who may do what (seed organisation has every feature); nudges still heard | `gate`, `roles`, `userstatus`, `nudge`, `features`, T8, T10 | re-point `app_role()`; the view keeps old readers alive | 7–9 |
+| 3 membership and features | `app_users` → `project_members` (seed); the one `superadmin` row becomes the seed organiser and the migration refuses unless there is exactly one (D-001); `superadmin` rows become admins of the seed project (D-002); `member_role`, `resolve_member`; `app_role()` re-pointed (coalesced); `resolveUser` fed by `resolve_member`; `people.ts` writes new tables; `app_users` becomes a view; `_shared/features.ts`, `feature:` on every registry entry, entitlement check first in `isActionAllowed`, `entitled` in `buildPermissions`; the 13 suites that build `userClaims`/`resolveUser` fixtures updated | who may do what (seed organisation has every feature); nudges still heard | `gate`, `roles`, `userstatus`, `nudge`, `features`, T8, T10 | re-point `app_role()`; the view keeps old readers alive | 7–9 |
 | 4 the keys (quiet window, announced a week ahead) | drop old PKs/uniques; composite PK/FK swap in one transaction; strict default and strict predicates; `app_role()` strict; realtime topic + policy per project; `pending_approvals.project_id` asserted; `ensure_holding_tx`/`one_per_buyer` per project; `holding_of` by `r.project_id`; `app_reset` rewritten under `app.maintenance`; runbooks/backfills gain `set app.project_id`; `resetplan.test` FK regex handles composite; `tests/sqlscope`, T1/T4 live. Function deployed in the same window. **A second project can exist after this.** | T9 empty; old clients now refused `PROJECT_REQUIRED` | T1, T4, T5, T9; rehearsed twice on restored backups | restore the backup | 7–10 |
 | 5 the second project | control-plane actions (system admin and organiser); storage paths + signed URLs, buckets flipped private last; verify code-first with per-project cache and `?about` by slug; `clone_project`; second-project walk-through live | any answer for the seed project | T3, T6, `verify`, every artwork and logo still renders after the flip | revert the function deploy; flip buckets back to public | 6–8 |
 | 6 client | memberships in `whoami`, picker, headers, cache prefix, channel; organiser screens (projects, members, organisation defaults); system-admin screen (organisations, organiser, status, feature switches); Access screen locks unentitled features; tabs and buttons of an unentitled feature hidden the way unpermitted ones already are; tolerant of an older function | the one-project experience (one membership selects itself; nothing new shown) | `screencalls`, `emits`, `modalwiring`, `i18n`, `permissionui`, `nudgeclient`, UI review per screen | Pages deploy of previous build | 10–14 |
@@ -466,6 +475,11 @@ Pages ships the client on push).
 | Docs | `SETUP.md`, `README.md`, `supabase/RESET-RUNBOOK.md` (`set app.project_id`), `supabase/DEPLOY-PENDING.md`, `supabase/SELF-HOST.md`, `MULTI-TENANCY-PLAN.md` (this plan) |
 
 ## Rulings from the owner, 2026-09-24
+
+The twelve follow-up decisions (D-001 to D-012) were answered the same day and
+are recorded, with what each changes, in `MULTI-TENANCY-DECISIONS.md` under
+"Decided". The ones that change this plan are folded in above: D-001 and D-002
+in Stage 3, D-006 in "A project's life".
 
 - **R1 decided: organisers hold the 11 owner powers.** The `SUPER_ADMIN_EMAIL` secret is
   the system admin for organisations and break-glass inside projects, audited with

@@ -20,6 +20,33 @@ Your choice:
 
 ## Open
 
+### D-013 · How long deactivated data is kept, and whether deleting a project is soft too · raised by multi-tenancy-architecture-plan, 2026-09-24
+Blocks: MT-L (organisation and project lifecycle). Follows from your answer to D-006.
+Context: you asked for deactivating an organisation to keep its data for a period before it is deleted for good. The period is not set, and "delete a project" could be immediate or soft.
+- A ★ 90 days for both; deleting a project is soft as well and can be undone by the organiser inside those 90 days; the weekly workflow does the permanent delete and writes it to the audit log
+- B 30 days for both, same mechanism
+- C a period each organisation chooses, 30 to 365 days
+Your choice: 
+
+## Decided
+
+Your answers, committed verbatim in 689566b, and what each one does to the plan.
+
+- **D-001 → C.** Stage 3 makes the one `app_users` row whose role is `superadmin` the organiser of the existing organisation, and refuses to run if there is not exactly one.
+- **D-002 → A, as you put it.** You, the system admin, stay system-wide with the final say on organisations and system permissions. Organisers are admins of their own organisation and privileged only inside it. Today's `superadmin` rows become admins of the existing project, not platform admins.
+- **D-003 → A.** A stage's migration moves into `supabase/migrations/` only after you say "apply Stage N"; then it goes to a restored backup first, then live.
+- **D-004 → A.** New organisations start with tickets, books, money, check-ins, approvals, prizes and reports on; printing, the digital card, the studio, seeding and reset off.
+- **D-005 → A.** Signed links to artwork and logos last 12 hours.
+- **D-006 → your own answer, wider than both options.** Organisers create and delete their own projects, and can deactivate and reactivate their own organisation. Deactivation is a soft delete: the data is kept for a period, people signing in are told the organisation is deactivated, and the organiser is offered reactivation at their next sign-in. Deleting an organisation is yours alone. This is new scope, now card MT-L; the period is D-013. `reset.sql` keeps refusing while more than one organisation exists.
+- **D-007 → A.** The twenty-six untagged actions stay `core`.
+- **D-008 → A.** `report_draft` and `report_back` are tagged `books`.
+- **D-009 → A.** Done in ff67674: the three actions have labels and a test checks every action has one.
+- **D-010 → A.** The gate gains a `deno check` step, which means installing Deno here and in the Pages workflow. Card MT-T.
+- **D-011 → A.** The diff script compares the stored rows the reports read.
+- **D-012 → A.** Done in 84fb1b2 by kcho-shelter-25. The expected count is now derived from the seed block with a floor of 29. The suite had also not started under Docker since 2026-09-21, because of a missing `service_role`; it now runs, 322 passed, 0 failed.
+
+### The original entries
+
 ### D-001 · Who becomes the organiser of the existing organisation · raised by multi-tenancy-architecture-plan, 2026-09-24
 Blocks: Stage 3. Stage 0 seeds the organisation with no organiser yet, which grants nobody anything.
 Context: a migration cannot read the `SUPER_ADMIN_EMAIL` secret, so it cannot fill `organiser_email` itself.
@@ -113,4 +140,4 @@ Context: two checks expect 29 settings rows and find 42, on master before any te
 - B waive the two checks in writing for MT-1b only, and fix them later
 Your choice: A
 
-## Decided
+
