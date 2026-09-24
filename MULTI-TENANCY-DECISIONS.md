@@ -32,7 +32,7 @@ Blocks: nothing. Shipped under A; one line to change.
 Context: invariant 2 says an ABSENT header means the seed project, so every client written before multi-tenancy keeps working. A header that is PRESENT AND BLANK is a different thing — a caller that meant to name a raffle and lost the value on the way.
 - A ★ blank is `BAD_PROJECT`. Only a genuinely absent header is the seed, so a client bug that drops the id is loud rather than silently routing into this raffle
 - B blank is treated as absent, which is friendlier to a proxy that adds empty headers
-Your choice: 
+Your choice: A
 
 ### D-016 · A failed admin-client build refuses only for a non-seed project · raised by kcho-shelter-51, 2026-09-25
 Blocks: nothing. Shipped under A. Narrows the MT-2a card's "a failed build is a hard refusal".
@@ -40,7 +40,7 @@ Context: refusing unconditionally is right once the header matters, but above th
 - A ★ refuse (`PROJECT_UNAVAILABLE`, 503) only when the resolved project is not the seed. Unreachable today because projectOf() already refuses every non-seed id; correct the day Stage 5 makes a second project reachable, and proved by mutation (remove the PROJECT_NOT_FOUND refusal and a non-seed request returns 503, not 200)
 - B refuse unconditionally, and change the stub to build a client instead of returning nothing
 - C keep the old unconditional fallback and revisit at Stage 5
-Your choice: 
+Your choice: A
 
 
 ### D-018 · One index keeps its shape: the buyer-name trigram · raised by kcho-shelter-25, 2026-09-25
@@ -58,14 +58,13 @@ Context: i18n.test.mjs requires every server error code to have Burmese, with a 
 - C translate `PROJECT_NOT_FOUND` now and exempt the other two
 Your choice: 
 
-### D-019 · The deployed function is now BEHIND master, and master is ahead of the database · raised by kcho-shelter-25, 2026-09-25
-Blocks: any ordinary deploy, of anything. Read this one first.
-Context: four tenancy commits changed Edge Function code (feature tags, `scoped.ts`, the route's project resolution, the reset plan). None is deployed. The two migrations are not applied. So master's function expects a schema production has not got, and the plan's own order is migration → function → client. `supabase/DEPLOY-PENDING.md` still says the gap closed on 2026-09-19 and is stale again.
-- A ★ apply Stage 0 and Stage 1 now — both are inert, add no behaviour and are reversible — then the next ordinary function deploy is in order again
-- B change nothing and tell every session not to deploy the function until you say; the next person who deploys a bug fix ships the tenancy code with it
-- C revert the four function-side commits on master and re-land them after the migrations
+### D-019 · Stage 2's handler work cannot merge to master until the migrations are applied · raised by kcho-shelter-25, 2026-09-25
+Blocks: merging MT-2b. Does NOT block deploying anything today — see the correction below, which is right and which this entry has been rewritten to match.
+Context: I first wrote this as "master is ahead of the database, do not deploy". That was wrong, and I checked it myself rather than taking the correction on trust: on master, no function code outside comments queries `project_id` or the six new tables, nothing imports `scoped.ts` (the word in reports.ts is a local variable), and the reset plan's table and FK lists are never compared against the live schema. Master is deployable. What IS true is that the first commit putting handlers on the scoped client makes master undeployable until Stage 0 and Stage 1 are applied — and master is deployable by any session at any time, which is why that work is on a branch (`tenancy-stage-2`, board rule 9). Separately, `supabase/DEPLOY-PENDING.md` still says the gap closed on 2026-09-19 and is stale: the router change is undeployed.
+- A ★ apply Stage 0 and Stage 1 — both inert, no behaviour added, reversible — and Stage 2's handler work can then merge as it is finished, in the plan's own order
+- B leave them pending and Stage 2's handler half lives on a branch for as long as that takes, rebased against every peer's work in the meantime
+- C stop Stage 2 at the SQL cards, which reach production only through a pending migration and are safe on master today
 Your choice: 
-Correction from multi-tenancy-architecture-plan, 2026-09-25: master's function code does NOT yet need the new schema. A search of `supabase/functions` on master finds no query of `project_id` or of the six new tables outside `scoped.ts`, which nothing calls, and the reset plan's tenancy entry, which is never counted. The one undeployed change, the router (5ef3092), only sends a header and defaults to today's raffle. So deploying master today is safe. The hazard is real from the first commit that puts handlers on the scoped client, so that work now happens on a branch until you apply Stage 0 and 1 (task board, rule 9). A still stands on its own merits.
 
 ### D-020 · Is a second organisation actually coming, and roughly when · raised by kcho-shelter-25, 2026-09-25
 Blocks: nothing mechanically. It is the only question that changes how much of this is worth building.
@@ -76,10 +75,11 @@ Context: stages 0–3 are inert — they add columns, tags and a wrapper and cha
 Your choice: 
 
 ### D-021 · Do the sixteen SQL functions take `p_project` with a default · raised by kcho-shelter-25, 2026-09-25
-Blocks: the rest of Stage 2.
-Context: every SQL function gains `p_project uuid`. With a default the old call signature keeps resolving, so `supabase/backfill-custody.sql`, `backfill-money.sql`, the reset runbook and anything typed into the SQL editor during an incident keep working. Without one, every caller is updated in the same commit and a missed one fails at the call rather than quietly acting on the seed project.
-- A ★ no default. A forgotten caller is an error, which is the whole point of Stage 4; the repo has two backfill scripts and one runbook to update, and they are updated in the same commit
-- B `p_project uuid default null`, coalescing to the seed. Nothing outside the functions breaks, and a forgotten caller silently writes into this raffle — the exact failure the partition key exists to prevent
+Blocks: the rest of Stage 2. **I recommended A first and then changed it to B; the reasoning is below, because the first version was wrong on the facts.**
+Context: every SQL function gains `p_project uuid`. I wrote that a default would let a forgotten caller "silently write into this raffle". That is not what happens: the body is `coalesce(p_project, current_project(), seed_project())`, and the router sets the `x-project-id` header on every request, so a forgotten caller gets THE HEADER'S project — the correct one — and falls back to the seed only in a terminal session that has no header, where the seed is also correct. The real cost of no-default is different and larger: `active_tickets()` is called by the policies and the views, and the rpc sites are called by the handlers, so removing the old signature means functions.sql, rls.sql and all 364 query sites must change in ONE commit against a live database. That is the Stage 4 risk, arriving two stages early.
+A third fact, found by running it rather than reasoning about it: `default null` on the new signature is not even possible. With `active_tickets()` already defined, adding `active_tickets(p_project uuid default null)` makes the bare call ambiguous — Postgres answers `function active_tickets() is not unique` — and every existing caller, including the policies, breaks. A sibling overload with NO default resolves cleanly in both directions.
+- A no default and drop the old signatures: every caller explicit, one unreviewable commit across 16 functions, 6 policies, 6 views and 364 call sites, against a live database
+- B ★ a sibling overload `f(…, p_project uuid)` with no default, and the old signature kept as a one-line wrapper delegating with `coalesce(current_project(), seed_project())` — which is exactly what `project_id`'s own column default does in Stages 1–3. Each piece lands and is proved on its own; Stage 4 drops the wrappers and the coalesce together, which is where the plan already puts strictness
 Your choice: 
 
 ### D-022 · When Stage 4's quiet window is · raised by kcho-shelter-25, 2026-09-25
@@ -120,6 +120,52 @@ Context: D-013 sets ninety days. Something has to notice when a deactivated orga
 - A ★ a scheduled GitHub Actions workflow calling an authenticated endpoint — the repo already deploys from there and the secrets already live there, and a failed run is visible in a place somebody looks
 - B `pg_cron` inside Supabase: closer to the data, and its failures are quiet
 - C no job — the organiser is shown "2 projects are past retention" and presses a button, which is honest about who decides and breaks the promise the first busy month
+Your choice: 
+
+### D-029 · Does a system admin have a way into another organisation's raffle data at all · raised by kcho-shelter-25, 2026-09-25
+Blocks: MT-O1 (see `MULTI-TENANCY-ORGS.md`). The most consequential privacy decision in the plan.
+Context: the plan gives the system admin "break-glass" entry to any project, audited with `platform_override: true` and never listed as membership. That is how you would fix somebody else's raffle at 11pm. It is also a door to every buyer's name and phone number in every organisation, and the service key means the database cannot refuse it — only the absence of a screen and an action can.
+- A ★ no door. A system admin manages organisations, organisers, status and features, and has no action that returns another organisation's rows. To help inside a raffle they are appointed organiser, audited, and removed afterwards — a visible act with a name on it
+- B break-glass as the plan says: a `platform_override` flag on the request, refused unless the caller is a system admin, every use audited and shown to that organisation's organiser on their own audit screen
+- C break-glass, audited, and NOT shown to the organiser
+Your choice: 
+
+### D-030 · Switching a feature off for an organisation mid-raffle · raised by kcho-shelter-25, 2026-09-25
+Blocks: MT-O1.
+Context: `set_org_features` is the outer wall, so turning `money` off refuses every money action for everybody in that organisation including its organiser. Nothing is deleted, but a raffle in progress stops being able to record what it collects.
+- A ★ allowed, with the confirmation naming what stops — "this refuses 14 actions for 3 members, including recording payments" — and an audit line. The system admin is the one person who should be able to do this, and hiding the consequence is worse than the consequence
+- B refused while the organisation has an active project; only a draft or deactivated organisation's features may change
+- C allowed only for the features the plan marks non-standard (printing, cards, studio, seed, reset), never for tickets/books/money/checkins
+Your choice: 
+
+### D-031 · Appointing an organiser who has never signed in · raised by kcho-shelter-25, 2026-09-25
+Blocks: MT-O1.
+Context: `organisations.organiser_email` is a column, so appointing is one write and needs no account to exist. The person then signs in with Google and is the organiser on first contact. There is no invitation, no token and no email sent — the repo sends no email at all today.
+- A ★ appoint by address, no invitation. The screen says "they will become the organiser when they first sign in with this Google address", and the row shows "appointed, not yet signed in" until they do
+- B add an invitation with a token and an expiry, which means the application starts sending email
+- C appoint only an address that already has an `app_users`/`project_members` row somewhere, so a typo cannot create an organisation nobody can reach
+Your choice: 
+
+### D-032 · What a deactivated organisation's members see · raised by kcho-shelter-25, 2026-09-25
+Blocks: MT-O2, and the sign-in path in Stage 3.
+Context: D-006 says members are told "deactivated" and the organiser is offered reactivation. The question is what happens to somebody who is mid-task when it happens, and what a seller — who is not the organiser — can do about it.
+- A ★ sign-in succeeds and lands on a single page saying the raffle is deactivated, with the organiser's address to contact; every action is refused `ORG_DEACTIVATED`; the organiser sees the same page with a Reactivate button
+- B sign-in is refused outright, which is simpler and tells a volunteer nothing they can act on
+- C read-only: members can still see what they had, and no writes are accepted
+Your choice: 
+
+### D-027 · The scoped client goes on in one place, not on every handler · raised by kcho-shelter-25, 2026-09-25
+Blocks: the rest of Stage 2. Changes the plan's wording, which says "scoped.ts wrapper on every handler".
+Context: `ctx.supabaseAdmin` is built in exactly one place, `index.ts:1793`. Wrapping it there scopes all 364 handler query sites at once. Wrapping each handler instead means 364 edits and leaves a permanent "did this one remember" surface — which is the failure scoped.ts's own header says it exists to end. The few places that must reach outside a project (control-plane actions in Stage 5) get a separate `ctx.supabasePlatform`, named so that using it is a visible choice.
+- A ★ one wrapper at the chokepoint, plus `ctx.supabasePlatform` for the handful that need the unscoped client, and a test that nothing else builds an admin client
+- B as the plan says, per handler: 364 edits, reviewable one at a time, and a new handler is unscoped until somebody remembers
+Your choice: 
+
+### D-028 · The six views gain project_id as a column, not only as a filter · raised by kcho-shelter-25, 2026-09-25
+Blocks: the rest of Stage 2.
+Context: the plan gives every view the predicate `and t.project_id = coalesce(current_project(), seed_project())`, which is right and — unlike a policy — also binds the service key, because a WHERE inside a view always applies. But the wrapper filters by `.eq('project_id', …)`, and two of the six views are read by handlers, so it would filter on a column the view does not expose. Either the views expose it, or the wrapper carries a list of which relations are views.
+- A ★ the views expose project_id as well as filtering on it. The wrapper stays uniform with no list to maintain; the cost is one extra field in the payloads of `book_ledger_all` and `agent_money` (handlers, which name their columns) and of the four the browser reads directly. It is the raffle's own id, which the client already sends in a header
+- B the wrapper keeps a list of view names and skips the filter for them: no payload changes anywhere, and a view added later is unscoped until the list is updated
 Your choice: 
 
 
