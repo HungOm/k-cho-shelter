@@ -32,7 +32,7 @@
  * performance property that only matters once a second project exists is a
  * bigger promise than this stage should make. Correctness never depended on
  * it: an index picks rows faster, the predicate decides which rows are
- * allowed. Recorded as D-014, to settle in Stage 4 where the keys move anyway.
+ * allowed. Recorded as D-018, to settle in Stage 4 where the keys move anyway.
  *
  * ONE COSMETIC DIFFERENCE, stated so nobody spends an afternoon on it. A
  * database migrated by this file gets project_id as the LAST column; a fresh

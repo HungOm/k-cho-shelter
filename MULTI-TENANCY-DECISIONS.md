@@ -43,6 +43,13 @@ Context: refusing unconditionally is right once the header matters, but above th
 Your choice: 
 
 
+### D-018 · One index keeps its shape: the buyer-name trigram · raised by kcho-shelter-25, 2026-09-25
+Blocks: nothing. MT-1b shipped under A; settle it in Stage 4, where the keys move anyway.
+Context: Stage 1 says every index gets `project_id` leading, and 40 of the 41 on the raffle tables did. The 41st, `tickets_buyer_name_trgm`, is a GIN index — a scalar cannot lead one without the `btree_gin` extension. It is available on this Postgres and on Supabase, but enabling an extension is a promise a `db push` can fail on.
+- A ★ leave it. Correctness never depended on an index: it picks rows faster, the predicate decides which rows are allowed. With one project there is no difference at all; with several, a buyer-name search scans other projects' trigrams and the predicate discards them
+- B `create extension btree_gin` in Stage 1 and index `(project_id, buyer_name gin_trgm_ops)`
+Your choice: 
+
 ### D-017 · Three project refusals are left in English · raised by kcho-shelter-51, 2026-09-25
 Blocks: nothing now. `PROJECT_NOT_FOUND` blocks Stage 5 if unanswered by then.
 Context: i18n.test.mjs requires every server error code to have Burmese, with a named exemption for codes "a volunteer should never see, where English is the better answer". MT-2a adds `BAD_PROJECT`, `PROJECT_NOT_FOUND` and `PROJECT_UNAVAILABLE`. A project id is never typed by a person — it is a header software sets — and no client sends it at all today, so none is reachable from the app.
