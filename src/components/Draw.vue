@@ -18,6 +18,17 @@ import Bi from './ui/Bi.vue'
 const emit = defineEmits(['open-ticket', 'record-winner', 'edit-prize'])
 
 /*
+ * Why the prize rows are not editable, for somebody who is not an organiser.
+ *
+ * A helper reading the draw page can see every prize and press none of them.
+ * Without this they get a greyed-out row and no account of it, which is the
+ * exact shape `permissionui` exists to prevent: the control is there, it is
+ * not for you, and nothing says so. Worded like ADMIN_ONLY_WHY in Admin.vue —
+ * what the person cannot do and who can, not a rank the reader has to decode.
+ */
+const PRIZE_ADMIN_ONLY_WHY = 'Only an organiser can change the prizes'
+
+/*
  * WHERE EACH BLOCKER IS FIXED.
  *
  * Keyed on what the server SENDS, never on the sentence it sends. A blocker's
@@ -379,7 +390,10 @@ async function exportEntries() {
         </p>
         <ul class="list">
           <li v-for="p in prizes" :key="p.prize_id">
-            <button class="item" :disabled="!isAdmin" @click="emit('edit-prize', p)">
+            <!-- Disabled with the reason on it, never hidden. `permissionui`. -->
+            <button class="item" :disabled="!isAdmin"
+                    :title="isAdmin ? 'Change this prize' : PRIZE_ADMIN_ONLY_WHY"
+                    @click="emit('edit-prize', p)">
               <span class="grow">
                 <span class="lead">
                   {{ p.tier }}<template v-if="p.name"> — {{ p.name }}</template>

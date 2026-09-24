@@ -213,5 +213,90 @@ ok(/Not here to sell/.test(sellBook), 'and says so before the button')
 ok(/\$\{num\} — \$\{why\}/.test(sellBook),
    'naming each book and its reason, so it is an instruction rather than a refusal')
 
+/*
+ * ============ THE RULE, ASKED OF THE WHOLE APP ============
+ *
+ * Everything above reads four files. The rule is not about four files.
+ *
+ * `Draw.vue:382` was a prize row rendered `:disabled="!isAdmin"` with nothing
+ * saying why — the same shape as the incident in this file's header, on a
+ * screen no assertion here had ever opened. It was not caught by anything,
+ * because nothing was looking: this suite names its files, and the studio and
+ * the draw page are not among them. A defect gets fixed once; a gate keeps
+ * finding them, and only over ground it actually covers.
+ *
+ * WHY THIS NAMES THE CAPABILITY WORDS INSTEAD OF MATCHING THEM. The first
+ * version of this check classified by keyword — anything matching /can[A-Z]/,
+ * /role/, /permission/ — and reported 29 capability-gated controls with 9
+ * missing reasons. All but one were wrong. `canSave` in PrizeForm is
+ * `tier && name && quantity >= 1 && !busy`; `canIssue` in IssueBooks is
+ * `!!range && !range.noneFree`; `eligible` in WinnerForm is
+ * `!!ticket && isSold(ticket)`. Those are VALIDITY — the form is incomplete,
+ * the data is not ready — and a form that is not filled in yet does not owe
+ * anybody an explanation of who they are. Only a gate on WHO IS ASKING does.
+ *
+ * So the vocabulary is a short list somebody has to add to deliberately. A new
+ * way of saying "this user may not" that is not on it will not be checked —
+ * which is a real limit, and the reason the list is small enough to read.
+ *
+ * AND IT READS THE WHOLE OPENING TAG. The second version looked for a title on
+ * the same LINE as the `:disabled` and reported eight gaps. Seven were false:
+ * these are multi-line tags and the `:title` sits two lines below. A per-line
+ * check on a multi-line tag looks exactly like a check and answers a different
+ * question.
+ */
+console.log('\nevery control gated on WHO IS ASKING says so')
+{
+  const { readdirSync, statSync } = await import('node:fs')
+  const { join } = await import('node:path')
+
+  /** Ways this app says "this user may not". Extend deliberately. */
+  const CAPABILITY = /\b(isAdmin|isSuper|isOrganiser|canWrite)\b/
+
+  const root = new URL('../src/components/', import.meta.url).pathname
+  const vue = []
+  ;(function walk(d) {
+    for (const e of readdirSync(d)) {
+      const p = join(d, e)
+      if (statSync(p).isDirectory()) walk(p)
+      else if (e.endsWith('.vue')) vue.push(p)
+    }
+  })(root)
+
+  ok(vue.length > 30, `the walk found the components (${vue.length})`)
+
+  /** The opening tag a `:disabled` sits in, quote-aware because handlers contain '>'. */
+  const tagAround = (src, at) => {
+    const start = src.lastIndexOf('<', at)
+    let j = start, q = null
+    while (j < src.length) {
+      const c = src[j]
+      if (q) { if (c === q) q = null }
+      else if (c === '"' || c === "'") q = c
+      else if (c === '>' && j > start) break
+      j++
+    }
+    return src.slice(start, j + 1)
+  }
+
+  let gated = 0
+  for (const file of vue) {
+    const src = readFileSync(file, 'utf8')
+    for (const m of src.matchAll(/:disabled="([^"]*)"/g)) {
+      if (!CAPABILITY.test(m.group ? m.group(1) : m[1])) continue
+      gated++
+      const tag = tagAround(src, m.index)
+      const where = file.slice(file.indexOf('src/')) + ':' + (src.slice(0, m.index).split('\n').length)
+      ok(/\s:?title=/.test(tag),
+        `${where} is disabled on ${m[1]} and gives no reason — a control that is there, is not for you, and says nothing`)
+    }
+  }
+
+  // Guard the parse: if the walk or the pattern stops matching, every
+  // assertion above becomes vacuous and this suite would still print a pass.
+  ok(gated >= 8,
+    `found the capability-gated controls to check (${gated}) — a drop here means this stopped reading, not that the app stopped gating`)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
