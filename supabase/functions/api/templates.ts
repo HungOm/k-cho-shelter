@@ -61,17 +61,18 @@ export const MAX_BYTES = 4 * 1024 * 1024
  * HOW MANY ARTWORKS ONE RAFFLE MAY HOLD.
  *
  * Every one of these is up to MAX_BYTES in Storage, kept for the life of the
- * raffle, on a free tier shared with the ticket images and the logo. Four is
- * the number because the reasons to hold more than one are countable: the
- * ticket, a second size, last year's for reference, and the one being replaced
- * — and a fifth is almost always a draft nobody went back and removed.
+ * raffle, on a free tier shared with the ticket images and the logo. This is
+ * one raffle for one charity, not a print shop: there is usually ONE active
+ * design, occasionally two while a replacement is being tried before it takes
+ * over. Three is active, one draft, one spare — room to work without inviting
+ * a pile of old exports nobody goes back and removes.
  *
- * A CEILING IS NOT A CLEANUP. This refuses the fifth; it never deletes the
+ * A CEILING IS NOT A CLEANUP. This refuses the fourth; it never deletes the
  * first, because deleting somebody's artwork to make room for an upload they
  * have not finished describing is not a trade this screen may make on their
  * behalf. The organiser chooses which one goes.
  */
-export const MAX_TEMPLATES = 4
+export const MAX_TEMPLATES = 3
 
 /*
  * WHAT SHAPE OF TICKET THIS RAFFLE PRINTS.

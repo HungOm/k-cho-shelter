@@ -42,18 +42,18 @@ const emit = defineEmits(['choose', 'remove', 'file', 'blank'])
  * THE CEILING, SHOWN BEFORE IT IS HIT AND NOT ONLY WHEN IT REFUSES.
  *
  * `templates.ts` holds the real one — this number is a copy, so that the count
- * can read "3 of 4" while there is still room and the upload can be disabled
+ * can read "2 of 3" while there is still room and the upload can be disabled
  * WITH ITS REASON rather than accepting a 4 MB file and refusing it after the
  * wait (R8, and permissionui's rule: disabled with the reason, never hidden,
  * never enabled-then-refused). templates.test.mjs pins the two together, which
  * is the only thing that keeps a duplicated constant honest.
  */
-const MAX = 4
+const MAX = 3
 const full = computed(() => props.templates.length >= MAX)
 const whyNoUpload = computed(() => {
   if (props.busy) return 'Working on the last one.'
   if (!full.value) return ''
-  /* Short, because the count beside the heading has already said "4 of 4" and
+  /* Short, because the count beside the heading has already said "3 of 3" and
      the server's own refusal carries the long form. Three lines of amber under
      a disabled button is the text bulk this screen is being cleared of. */
   return `${MAX} is the limit. Remove one to make room.`
@@ -113,7 +113,7 @@ function confirmName() {
 <template>
 <aside class="rail">
   <div class="block grow">
-    <!-- "2 of 4" rather than "2": a bare number answers how many there are,
+    <!-- "2 of 3" rather than "2": a bare number answers how many there are,
          which nobody is asking. The question an artwork rail gets asked is
          whether another one will fit. -->
     <Section label="Templates" :count="`${templates.length} of ${MAX}`" />

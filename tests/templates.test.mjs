@@ -366,18 +366,18 @@ console.log('the shape rule itself')
  * quota. `stored` is the bucket, so asserting it did not grow is asserting
  * exactly that.
  */
-console.log('a raffle may hold four artworks, and the fifth says what to do')
+console.log('a raffle may hold MAX_TEMPLATES artworks, and one more says what to do')
 {
   const w = world()
   for (let i = 0; i < templates.MAX_TEMPLATES; i++) {
     await upload(w, { data: TICKET, contentType: 'image/png', name: `Draft ${i + 1}` })
   }
-  eq(w.stored.length, templates.MAX_TEMPLATES, 'the first four are kept')
+  eq(w.stored.length, templates.MAX_TEMPLATES, 'the first MAX_TEMPLATES are kept')
 
   const err = await errOf(() => upload(w, {
     data: TICKET, contentType: 'image/png', name: 'One too many',
   }))
-  ok(err, 'the fifth throws')
+  ok(err, 'one past the limit throws')
   eq(err?.code, 'TOO_MANY_TEMPLATES', 'with its own code')
   ok(/limit/i.test(err?.message ?? ''), 'the refusal names the limit')
   ok(/remove/i.test(err?.message ?? ''), 'and says to remove one — R8: a refusal is an instruction')
@@ -385,7 +385,7 @@ console.log('a raffle may hold four artworks, and the fifth says what to do')
 }
 
 /*
- * THE RAIL CARRIES A COPY OF THE CEILING so that it can read "3 of 4" and
+ * THE RAIL CARRIES A COPY OF THE CEILING so that it can read "2 of 3" and
  * disable the upload with its reason, rather than taking a 4 MB file and
  * refusing it after the wait. A copy is only safe while something compares it.
  */
