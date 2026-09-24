@@ -1721,6 +1721,48 @@ function onFrameDown(ev) {
 
 const drawn = ref(null)
 
+/*
+ * A MARQUEE CAN START IN THE SPACE AROUND THE TICKET.
+ *
+ * Reported as "multi-select still not working" after the arithmetic had been
+ * proved to work. Both halves were true at once: a band drag DOES select
+ * everything inside it, and there was frequently nowhere left to begin one.
+ *
+ * `startMove` stops propagation, so a press on any visible unlocked shape
+ * drags that shape instead of starting a band — which is right, and is what
+ * every drawing program does. The consequence is that a marquee needs bare
+ * artboard to start from, and the user had a full-bleed rectangle under sixty
+ * logos. There was no bare artboard. The feature was unreachable rather than
+ * broken, which is indistinguishable from the outside.
+ *
+ * NO NEW MODIFIER, because every one is already spoken for on a shape: shift
+ * toggles the selection, ⌘ drags one part out of its group, ⌥ drags a copy.
+ * Taking one of those for "marquee anyway" would trade a reachable feature
+ * for an unreachable one.
+ *
+ * So the grey around the ticket starts a band, which is where Figma and
+ * Illustrator have always had people begin one — drag from the canvas, across
+ * the artwork, and let go. It needed no new arithmetic: the shares simply run
+ * outside 0..1 on the side you began, and `drawBox` and `hitsIn` are share
+ * arithmetic that does not care.
+ *
+ * SAFE TO SHARE THE MOVE AND UP HANDLERS WITH THE FRAME. A press that lands on
+ * the artboard is handled there and also bubbles here, so both fire — and
+ * `onPointerMove` recomputes from the press point it stored rather than
+ * stepping, so running it twice on one event lands in the same place. Checked
+ * rather than assumed: the band, the draw and the pan branches all read
+ * `st.origin`, `st.px`, `st.sl`.
+ */
+function onStageDown(ev) {
+  if (ev.button !== undefined && ev.button !== 0) return
+  if (!frame.value) return
+  /* The artboard and everything on it already has a handler of its own. */
+  if (frame.value.contains?.(ev.target)) return
+  /* And a control in the chrome is a control, not somewhere to begin a drag. */
+  if (ev.target?.closest?.('button, input, select, textarea, a, [role="button"]')) return
+  onFrameDown(ev)
+}
+
 function onPointerMove(ev) {
   const st = drag.value
   /* Between clicks the pen's rubber band follows the pointer. */
@@ -3793,7 +3835,9 @@ const printedSize = computed(() => {
               </span>
             </ToolBar>
 
-            <div ref="stage" class="stage" @wheel="onStageWheel">
+            <div ref="stage" class="stage" @wheel="onStageWheel"
+                 @pointerdown="onStageDown" @pointermove="onPointerMove"
+                 @pointerup="endPointer" @pointercancel="endPointer">
               <!-- Millimetres along the top and down the side, as the ticket
                    prints; the share is in the inspector, beside the pixels. -->
               <Rulers :width-m-m="Number(design.sheet.widthMM)" :height-m-m="printedHeightMM"

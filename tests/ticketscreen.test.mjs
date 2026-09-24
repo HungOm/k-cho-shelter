@@ -1594,5 +1594,71 @@ console.log('shift-clicking two rows selects everything between them')
   cleanup()
 }
 
+/*
+ * A MARQUEE CAN BEGIN IN THE SPACE AROUND THE TICKET.
+ *
+ * "Multi-select still not working", when the arithmetic worked. Both were
+ * true: a band selects everything inside it, AND there was often nowhere to
+ * begin one. `startMove` stops propagation, so a press on any visible shape
+ * drags that shape — correct, and what every drawing program does — which
+ * leaves a marquee needing bare artboard to start from. The user had a
+ * full-bleed rectangle under sixty logos and no bare artboard anywhere.
+ *
+ * Unreachable is indistinguishable from broken, and no test could see the
+ * difference: the band arithmetic passed its own tests the whole time.
+ *
+ * SO THIS ONE PRESSES WHERE THERE IS NO ARTBOARD. The shares run outside 0..1
+ * on the side the drag began, which is the case a band starting on the
+ * artboard can never produce and the reason the old tests could not have
+ * caught this.
+ */
+console.log('a marquee started off the artboard selects what it crosses')
+{
+  const { ctx, cleanup } = await setupOf('src/components/TicketDesign.vue', store(ADMIN, ONE))
+  ctx.design.value = {
+    elements: [],
+    decorations: [
+      { id: 'a', kind: 'rect', box: { left: 0.10, top: 0.10, width: 0.10, height: 0.10 } },
+      { id: 'b', kind: 'rect', box: { left: 0.30, top: 0.10, width: 0.10, height: 0.10 } },
+      { id: 'far', kind: 'rect', box: { left: 0.80, top: 0.80, width: 0.10, height: 0.10 } },
+    ],
+  }
+  await Promise.resolve()
+
+  ok(!!ctx.onStageDown, 'the space around the ticket has a handler at all')
+
+  /* The artboard sits at 100,50 — so 20,10 is grey, left of it and above it.
+     `contains` answers false because the press did not land on the artboard,
+     which is exactly the case the guard is there to distinguish. */
+  ctx.frame.value = { getBoundingClientRect: () => ({ left: 100, top: 50, width: 1000, height: 500 }), contains: () => false }
+  ctx.stage.value = { scrollLeft: 0, scrollTop: 0 }
+  const at = (x, y, over = null) => ({
+    button: 0, clientX: x, clientY: y, shiftKey: false, altKey: false,
+    target: { closest: () => over }, currentTarget: { setPointerCapture() {} },
+    stopPropagation() {}, preventDefault() {}, pointerId: 1,
+  })
+
+  ctx.onStageDown?.(at(20, 10))
+  eq(ctx.drag.value?.mode, 'band', 'a press in the grey starts a band, not a pan or a draw')
+  ctx.onPointerMove?.(at(560, 180))
+  ctx.endPointer?.(at(560, 180))
+  const got = (ctx.picked.value || []).slice().sort()
+  eq(got.length, 2, 'the two shapes the band crossed are selected')
+  ok(got.includes('a') && got.includes('b'), 'and they are the two it crossed')
+  ok(!got.includes('far'), 'and not the one outside it — a band is not select-all')
+
+  /*
+   * AND A CONTROL IN THE CHROME IS STILL A CONTROL. The stage holds the rulers
+   * and sits under the toolbars; a guard that started a drag from any press
+   * outside the artboard would make the zoom stepper unusable.
+   */
+  ctx.pick('')
+  ctx.drag.value = null
+  ctx.onStageDown?.(at(20, 10, {}))
+  ok(!ctx.drag.value, 'a press on a button does not begin a marquee')
+
+  cleanup()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
