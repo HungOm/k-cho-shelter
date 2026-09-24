@@ -98,4 +98,12 @@ Context: `tests/run.sh` has no `deno check` or `tsc` step, so a required TypeScr
 - B keep source-text tests only, one per contract
 Your choice: 
 
+### D-011 · T9 dumps the SQL the reports are built from, not the handlers' answers · raised by kcho-shelter-25, 2026-09-24
+Blocks: nothing. T9 ships under A; read this before reviewing it against the card.
+Context: the card names five "reports", but only `agent_money` is a database object (a view, rls.sql:533). `read_snapshot` (tickets), `list_books` (book_ledger_all), `report_draw_ready` (book_ledger_all, tickets, active_tickets()) and `list_payments` (agent_money, payments) are Edge Function handlers, so a script given a database URL cannot call them.
+- A ★ dump the SQL each report reads — tickets, book_ledger_all, agent_money, payments, active_tickets() — each object once, with the report-to-object mapping recorded in the file. Pure SQL, cannot drift from handler code because it claims nothing about it, and a stronger proof for MT-1b: that migration cannot touch handler code, so if no underlying row moved, no answer can have
+- B call the deployed function with a service key: the exact answers, and it needs production credentials, which rule 3 forbids
+- C reimplement each handler's projection in SQL: exact-looking, and a second copy of five queries that drifts the first time a handler changes — the defect this repo has paid for repeatedly
+Your choice: 
+
 ## Decided
