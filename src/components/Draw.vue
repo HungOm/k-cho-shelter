@@ -488,18 +488,19 @@ async function exportEntries() {
  * A blocker is a row, not a bullet. It has three parts — what, why, and the way
  * out — and a `•` in front of a sentence can carry only the first.
  */
-.ready .row { gap: 8px; margin-bottom: 4px; }
+.ready .row { gap: var(--sp-4); margin-bottom: var(--sp-2); }
 .blocker {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 8px 0; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  display: flex; align-items: flex-start; gap: var(--sp-5);
+  padding: var(--sp-4) 0;
+  border-top: var(--rule) solid color-mix(in srgb, currentColor 18%, transparent);
 }
 .blocker .t { display: block; font-weight: 650; }
 /* The reason is quieter than the problem but it is not decoration — it is why
    the organiser should care, in the server's own words. */
-.blocker .d { display: block; font-size: .88em; opacity: .85; margin-top: 2px; }
+.blocker .d { display: block; font-size: .88em; opacity: .85; margin-top: var(--sp-1); }
 .blocker .fix { flex: 0 0 auto; color: inherit; font-weight: 650; text-decoration: underline; }
-.winner { display: flex; align-items: center; gap: 12px; padding: 12px 0;
-  border-bottom: 1px solid var(--border); }
+.winner { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 0;
+  border-bottom: var(--rule) solid var(--border); }
 .winner:last-child { border-bottom: 0; }
 
 /* How far away the draw is. Sits between the heading and the panel that lists
@@ -510,5 +511,5 @@ async function exportEntries() {
 /* The icon rides with the words rather than sitting in a column of its own:
    this heading CHANGES with the data, and a mark that moves with the sentence
    it qualifies is read as part of it. */
-.head { display: flex; align-items: center; gap: 8px; }
+.head { display: flex; align-items: center; gap: var(--sp-4); }
 </style>

@@ -326,11 +326,24 @@ console.log('and the population of raw literals is falling')
        landed with the baseline not yet lowered. A ratchet left with slack is a
        ratchet a regression can hide in. Counted with the regexes below, on the
        same /components/ filter, not estimated. */
-    'font-size': 151,
-    'font-weight': 73,
+    /* Lowered again 2026-09-25 (kcho-shelter-51), Phase 6 on Draw.vue while it
+       was open for the permissionui fix: eight spacing values and two border
+       widths onto --sp-* and --rule. EVERY SUBSTITUTION WAS VALUE-IDENTICAL —
+       8px became var(--sp-4) which is 8px — so nothing moved and the layout
+       gates are unchanged rather than re-baselined.
+
+       Set to the MEASURED ACTUAL, which is lower than my own work accounts
+       for: the tree had drifted to 149/71/598/98 before I started, so two font
+       sizes, two weights and twelve spacing values were already migrated with
+       the baseline left standing. That is the slack this file's own comment
+       warns about — a ratchet a regression can hide in — and leaving it because
+       the reduction is not mine is how it accumulates. Counted with the regexes
+       below, on the same /components/ filter. */
+    'font-size': 149,
+    'font-weight': 71,
     'border-radius': 62,
-    'spacing (px)': 610,
-    'border-width': 98,
+    'spacing (px)': 590,
+    'border-width': 96,
     'box-shadow': 16,
   }
   const comps = sources.filter(([f]) => f.includes('/components/'))

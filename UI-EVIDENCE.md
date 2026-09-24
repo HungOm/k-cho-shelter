@@ -1,6 +1,8 @@
 # The interface, measured
 
-**Status: Phases 0–5 complete. Phase 6 ongoing, ratcheted. Updated 2026-09-23.**
+**Status: Phases 0–5 complete. Phase 6 ongoing, ratcheted — the free half is
+underway, the half that moves pixels is measured and awaiting a decision (§6.1).
+Updated 2026-09-25.**
 
 | | | |
 |---|---|---|
@@ -682,6 +684,69 @@ Two constraints, because this is the phase that can break things:
 - **The printed ticket is not chrome.** `ticketart.js` places SVG text by
   baseline against a reference artwork in the design JSON. Those are coordinates,
   not CSS, and they are out of scope — `tests/ticketart.test.mjs` owns them.
+
+#### 6.1 Measured 2026-09-25: the scale omits the app's most-used value
+
+Phase 6 divides cleanly into two jobs that were not distinguished when it was
+written, and only one of them is safe to do quietly.
+
+**The free half.** A literal that already equals a scale step is replaced and
+*nothing moves*: `gap: 8px` becomes `gap: var(--sp-4)`, which is 8px. No render
+changes, no layout gate re-baselined. Draw.vue was done this way — eight spacing
+values and two border widths — while it was open for the `permissionui` fix,
+which is exactly the "while already open" rule above.
+
+**The half that is not free, and is larger than the free one.** Counting every
+`margin`/`padding`/`gap` pixel value in `src/components/`:
+
+| px | uses | on the scale? |
+|---|---|---|
+| **10** | **86** | **no** |
+| 12 | 82 | `--sp-5` |
+| 8 | 76 | `--sp-4` |
+| **14** | **63** | **no** |
+| 6 | 61 | `--sp-3` |
+| 4 | 43 | `--sp-2` |
+| 2 | 36 | `--sp-1` |
+| 16 | 30 | `--sp-6` |
+| **18** | **22** | **no** |
+| **20** | **17** | **no** |
+
+**The single most common spacing value in this application is not on the
+scale**, and four of the top ten are not: 10, 14, 18 and 20, together **188
+call sites**.
+
+That is not an argument for adding them. The scale is 2, 4, 6, 8, 12, 16, 24,
+32, 48 — an alternating ×1.5 / ×1.33 ladder, and every step clears Refactoring
+UI's ≥25% rule. Inserting 10 would make 8→10 a 25% step and 10→12 a 20% one,
+breaking the rule the ladder was built on. The scale is right; it is the 188
+call sites that are off it.
+
+**So the rest of Phase 6 is a visible change, and it needs a decision rather
+than a migration.** Everything the programme has shipped so far either moved
+nothing or moved one thing with a stated reason. Snapping 188 gaps by one or
+two pixels each is a different kind of act: individually invisible, collectively
+the whole application's rhythm, and impossible to review as a diff. It is also
+the change P1 predicts people *feel* without being able to name — fixation
+spreads evenly over a layout with no consistent rhythm, which is the measured
+signature of a design judged bad in under a second.
+
+Three ways to take it, for the owner to pick:
+
+1. **Snap them, screen by screen, each with a render check.** Correct by the
+   books, and the only route to the "one system" P1 rewards. Slow, and every
+   screen needs looking at.
+2. **Snap only where a single rule's neighbours already disagree** — the
+   heading-gap finding recorded under Phase 3 (h1 at 6/14/16, h3 at
+   6/8/10/10/14/14 for one role) is the case where the inconsistency is
+   *within* one role and therefore indefensible on any reading.
+3. **Leave them and lower the ratchet no further.** Honest, but it means the
+   scale describes about half the app and the gate stops meaning "falling".
+
+My recommendation is 2, because it is the subset where the current state cannot
+be defended as a deliberate choice — the same heading level, in two files that
+are both `.dense`, with different gaps. 1 is right and should follow if the
+owner wants the whole thing. Nothing here is started.
 
 ---
 
