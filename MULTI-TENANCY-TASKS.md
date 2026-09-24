@@ -34,6 +34,12 @@ self-contained tasks, one owner each. Open questions go to
    <non-volatile>` stores the value without rewriting rows; an UPDATE is refused
    by the append-only tables and, on `tickets`, bumps every version and makes
    every phone re-download every ticket. `tests/migrationsql` enforces it.
+9. **Function code that needs the new schema lives on the `tenancy-stage-2`
+   branch, not master, until the owner applies Stage 0 and 1.** Master must stay
+   deployable against production as it is today: any session's ordinary deploy
+   ships whatever is on master. SQL that only reaches production through a
+   pending migration (`rls.sql`, `functions.sql`, `schema.sql`, `migrations.pending/`)
+   may land on master; handler code on the scoped client may not.
 4. **Behaviour does not change** for the live raffle in any of Stages 0–3. Every
    existing suite stays green; a suite you change must say why in the commit.
 5. **House hygiene.** Announce your file list to the other raffle sessions before
@@ -59,6 +65,10 @@ sessions, that they may work on this plan.
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
 | MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | done (5ef3092); D-015, D-016, D-017 |
+| MT-2b | 2 handlers on scoped() + composite onConflict | kcho-shelter-25 | MT-1b | in progress, on branch `tenancy-stage-2` (rule 9) |
+| MT-2c | 2 policies and views gain the coalesced predicate | kcho-shelter-25 | MT-1b | queued (SQL: may land on master) |
+| MT-2d | 2 the sixteen SQL functions take `p_project` (D-021) | kcho-shelter-25 | MT-1b | queued (SQL: may land on master) |
+| MT-2e | 2 `config_numbering_locked` and `adoptLoneArtwork` scoped | kcho-shelter-25 | MT-1b | queued (trigger on master; handler part on the branch) |
 | MT-L | 7 organisation and project lifecycle (D-006) | unassigned | Stage 5 | not started |
 | MT-T | gate: type-check the functions (D-010) | multi-tenancy-architecture-plan | none | done; lands as a ratchet (D-014) |
 

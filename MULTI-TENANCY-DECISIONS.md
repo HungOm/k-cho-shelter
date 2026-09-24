@@ -65,6 +65,7 @@ Context: four tenancy commits changed Edge Function code (feature tags, `scoped.
 - B change nothing and tell every session not to deploy the function until you say; the next person who deploys a bug fix ships the tenancy code with it
 - C revert the four function-side commits on master and re-land them after the migrations
 Your choice: 
+Correction from multi-tenancy-architecture-plan, 2026-09-25: master's function code does NOT yet need the new schema. A search of `supabase/functions` on master finds no query of `project_id` or of the six new tables outside `scoped.ts`, which nothing calls, and the reset plan's tenancy entry, which is never counted. The one undeployed change, the router (5ef3092), only sends a header and defaults to today's raffle. So deploying master today is safe. The hazard is real from the first commit that puts handlers on the scoped client, so that work now happens on a branch until you apply Stage 0 and 1 (task board, rule 9). A still stands on its own merits.
 
 ### D-020 · Is a second organisation actually coming, and roughly when · raised by kcho-shelter-25, 2026-09-25
 Blocks: nothing mechanically. It is the only question that changes how much of this is worth building.
