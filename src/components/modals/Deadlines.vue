@@ -375,7 +375,7 @@ function explain(err) {
       <!-- ---------------------------------------------------- the soft one -->
       <template v-if="isAdmin && !noFinal">
         <h4>Move the check-in on</h4>
-        <p class="muted small">
+        <p class="hint">
           Do this once you have been through where everybody stands. Books still out
           are given the new date.
         </p>
@@ -393,7 +393,7 @@ function explain(err) {
       <!-- ------------------------------------------------ when selling stops -->
       <template v-if="isAdmin">
         <h4>When ticket sales close</h4>
-        <p class="muted small">
+        <p class="hint">
           The last day a ticket may be sold. Not the day the books come back, and
           not the draw — usually earlier than both. After it, recording a sale is
           refused; an organiser can still force one that was genuinely sold in
@@ -418,7 +418,7 @@ function explain(err) {
         same as the refusal banner: that one reported a working system as
         failing, this one explains a date they can already see.
       -->
-      <p v-if="isAdmin && !isSuper" class="muted small whosets-note">
+      <p v-if="isAdmin && !isSuper" class="hint">
         The final deadline is set by the System Admin. You can move the check-in date
         as far as that, and no further.
       </p>

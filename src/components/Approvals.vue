@@ -514,8 +514,8 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
               <span><b>{{ money(r.detail?.amount, state.cfg?.currency) }}</b> to hand over</span>
             </div>
             <p class="hint tiny">
-              If you sold any of the numbers above, say no and tell them which —
-              agreeing puts those tickets back and takes the money off your total.
+              Sold any of the numbers above? Say no and say which — agreeing puts those
+              tickets back and takes the money off your total.
             </p>
           </div>
         </template>
@@ -536,13 +536,12 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
           </ul>
           <p v-if="reportLines(r).some(l => !l.ready)" class="note bad tiny">
             <template v-if="nothingLeft(r)">
-              None of these books can be moved any more — this report has been
-              overtaken. Say no, and they can send a fresh one.
+              None of these books can move any more; this report has been overtaken. Say
+              no and they can send a fresh one.
             </template>
             <template v-else>
-              Some of these books have moved since this was sent. Accepting will be
-              refused outright rather than doing the rest — say no, and they can send
-              it again.
+              Some of these books have moved since this was sent, so accepting is refused
+              outright rather than done in part. Say no and they can send it again.
             </template>
           </p>
         </template>
@@ -572,8 +571,8 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
             </div>
           </div>
           <p v-if="isReport(r) && differs(r)" class="note warn tiny">
-            This is not what they said. What you counted is what gets recorded; their
-            figures stay on this request, and the difference goes on their check-in.
+            Not what they said. Your count is what gets recorded; theirs stays on this
+              request and the difference goes on their check-in.
           </p>
           <!--
             THE REASON, AND WHY IT IS NOT JUST A REQUIRED BOX.
@@ -636,14 +635,13 @@ const TONE = { Approved: 'ok', Rejected: 'bad', Expired: '', Cancelled: '' }
                  have and becomes something the raffle has been given. Do it
                  with the envelope in front of you. -->
             <template v-if="isReport(r)">
-              Accepting brings those books back, counts in the ones they counted, and
-              records the money against them — all in your name, straight away. Do it
-              when the books and the cash are in front of you; say no if they are not,
-              and they can send it again.
+              Brings the books back, counts in what they counted and records the money
+              against them — in your name, straight away. Do it with the books and cash
+              in front of you; otherwise say no and they can send it again.
             </template>
             <template v-else-if="isRequest(r)">
-              Granting hands the books over straight away, in your name, and they
-              are nobody else's to sell until they come back.
+              Hands the books over straight away, in your name. Nobody else can sell them
+              until they come back.
             </template>
             <template v-else-if="isOffer(r)">
               Saying yes puts these books on your record. They are yours to sell

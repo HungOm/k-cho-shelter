@@ -1054,8 +1054,8 @@ function details(d) {
       <p class="muted small">
         <template v-if="numberingLocked">{{ numberingWhy }}</template>
         <template v-else>
-          Set before the first ticket is made. It cannot be changed afterwards,
-          because the number is written onto every ticket as it is created.
+          Set before the first ticket, and fixed after: the number is written
+              onto each ticket as it is made.
         </template>
       </p>
 
@@ -1146,7 +1146,7 @@ function details(d) {
       </div>
       <div class="sub">
         <span class="muted small grow">
-          The check-in date moves on a month at a time, up to the final deadline.
+          Moves on a month at a time, up to the final deadline.
         </span>
         <button class="btn sm ghost" @click="emit('deadlines')">Deadlines</button>
       </div>
@@ -1156,11 +1156,10 @@ function details(d) {
            them somewhere that cannot work — and they would see the change stick
            in the sheet and nothing happen in the app. -->
       <p class="hint">
-        Ticket numbers are fixed once the tickets are made — the database
-        refuses to change them, because every number already printed was built
-        from them. The dates and the number of tickets are changed here.
-        Anything else — the price, the event name, how many to a book — is in
-        the <b>config</b> table, which whoever set this up can open.
+        Numbers are fixed once tickets exist — every printed one was built from
+            them, and the database refuses. Dates and the count change here; price,
+            event name and per-book are in the <b>config</b> table, open to whoever
+            set this up.
       </p>
     </div>
 
@@ -1200,11 +1199,10 @@ function details(d) {
         frightening, because an organiser who understands it is a poster picks
         the office line themselves.
       -->
-      <p class="muted small">
-        Anyone who opens the public ticket-check page can see these, search engines
-        included. Put only what you would print on a poster &mdash; an office line
-        rather than a volunteer&rsquo;s mobile. Their job is to give somebody holding a
-        ticket that does not verify a person to contact.
+      <p class="hint">
+        Public, search engines included. Put only what you would print on a poster
+            &mdash; an office line, not a volunteer&rsquo;s mobile. It is who somebody
+            calls when their ticket will not verify.
       </p>
 
       <!--
@@ -1234,9 +1232,8 @@ function details(d) {
         does change what a stranger sees.
       -->
       <p class="note tiny">
-        These are shown on the public ticket-check page. Leaving one empty shows
-        nothing rather than an empty heading, so a detail you have not got is a
-        detail nobody is offered.
+        Shown on the public ticket-check page. An empty box shows nothing at all,
+            not an empty heading.
       </p>
 
       <div class="field" style="margin-top:14px">
@@ -1267,9 +1264,8 @@ function details(d) {
                :disabled="!isAdmin || contactSaving"
                :title="isAdmin ? 'Shown as a link on the public ticket-check page' : ADMIN_ONLY_WHY">
         <p class="hint">
-          It has to start with <span class="data">https://</span> &mdash; that is what
-          makes it a link somebody can safely follow from a page they reached without
-          signing in.
+          Must start with <span class="data">https://</span>, so it is safe to follow
+            from a page reached without signing in.
         </p>
       </div>
 
@@ -1296,10 +1292,9 @@ function details(d) {
 
     <div class="card">
       <h3>What the check page says this raffle is</h3>
-      <p class="muted small">
-        Under every answer on the public ticket-check page there is a short
-        paragraph saying what kind of thing somebody is holding. Leave a box
-        empty to use the wording the page comes with.
+      <p class="hint">
+        A short paragraph under every answer on the public page, saying what
+            somebody is holding. Empty uses the page&rsquo;s own wording.
       </p>
 
       <label class="lbl" for="aboutmy">In Burmese</label>
@@ -1339,7 +1334,7 @@ function details(d) {
 
     <div class="card">
       <h3>How this raffle looks</h3>
-      <p class="muted small">
+      <p class="hint">
         Your own logo and colour, on every screen and on the receipt a seller hands over.
       </p>
 
@@ -1381,8 +1376,8 @@ function details(d) {
           <input ref="logoInput" type="file" accept="image/png,image/jpeg,image/webp"
                  :disabled="logoBusy" @change="pickLogo" hidden>
           <p class="tiny muted">
-            PNG, JPEG or WebP. It is shrunk on this device before it is sent, so a
-            large file is fine — and a small one reaches every volunteer&rsquo;s phone faster.
+            PNG, JPEG or WebP, shrunk here before sending. Large is fine; small
+            reaches a volunteer&rsquo;s phone faster.
           </p>
           <button v-if="c?.orgLogo" class="btn sm ghost" :disabled="logoBusy"
                   @click="removeLogo">Remove logo</button>
@@ -1491,9 +1486,8 @@ function details(d) {
         <input id="topprize" v-model="cardWords.topPrize" maxlength="48"
                placeholder="A motorbike" autocomplete="off">
         <p class="hint">
-          How the card advertises the prize. Not taken from the draw schedule:
-          that list carries values, and a card sent weeks early should not
-          quote a figure you did not mean to publish.
+          How the card advertises the prize. Not from the draw schedule, which
+              carries values a card sent weeks early should not publish.
         </p>
       </div>
       <div class="field">
@@ -1647,17 +1641,17 @@ function details(d) {
           {{ seedInfo ? 'Refresh' : 'Show' }}
         </button>
       </div>
-      <p class="muted small">
-        Makes a raffle that looks like one in flight &mdash; sellers, books, some out
-        and some sold, money handed in &mdash; so the screens can be seen with something
-        on them. Everything is made by the app&rsquo;s own actions, so nothing here is a
-        state the raffle could not reach on its own. Undone by the reset below.
+      <p class="hint">
+        Fills the screens with a raffle in flight &mdash; sellers, books, some out,
+        some sold, money handed in. Made only through the app&rsquo;s own actions, so
+        nothing here is a state it could not reach by itself. Undone by the reset
+        below.
       </p>
 
       <p v-if="seedUnavailable" class="note tiny">
-        This raffle&rsquo;s server has not been updated with this yet, so there is nothing
-        to work out. The browser app and the server are deployed separately and the
-        server goes first; whoever deploys will know.
+        The server has not been updated with this yet, so there is nothing to work
+        out. App and server deploy separately, server first &mdash; whoever deploys
+        will know.
       </p>
 
       <template v-else-if="seedInfo">
@@ -1765,10 +1759,10 @@ function details(d) {
           {{ resetInfo ? 'Refresh' : 'Show' }}
         </button>
       </div>
-      <p class="muted small">
-        Empties what you choose, and cannot be undone. Nothing goes until you have
-        seen the counts and typed them back. There is no backup in here &mdash; take
-        one first if this raffle holds anything worth keeping.
+      <p class="hint">
+        Empties what you choose; cannot be undone. Nothing goes until you have seen
+        the counts and typed them back. No backup is taken here &mdash; make one
+        first.
       </p>
 
       <!--
@@ -1777,9 +1771,9 @@ function details(d) {
         the screen differ between two deploys with nothing to say why.
       -->
       <p v-if="resetUnavailable" class="note tiny">
-        This raffle&rsquo;s server has not been updated with the reset yet, so there is
-        nothing to count. The browser app and the server are deployed separately and
-        the server goes first; whoever deploys will know.
+        The server has not been updated with the reset yet, so there is nothing to
+        count. App and server deploy separately, server first &mdash; whoever
+        deploys will know.
       </p>
 
       <template v-else-if="resetInfo">
@@ -1825,8 +1819,8 @@ function details(d) {
             <input v-model="acceptPrinted" type="checkbox">
             <span>Yes, stop {{ resetInfo.printed }} printed ticket{{ resetInfo.printed === 1 ? '' : 's' }} verifying
               <span class="why">
-                They are on paper in people&rsquo;s hands. Emptying their codes means
-                whoever holds one is told no ticket matches their link.
+                On paper in people&rsquo;s hands: emptying their codes tells whoever holds
+              one that no ticket matches their link.
               </span>
             </span>
           </label>

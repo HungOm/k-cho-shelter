@@ -120,7 +120,7 @@ watch(sellable, () => { if ((page.value - 1) * PAGE >= sellable.value.length) pa
 
     <!-- The count moved into the header; what is left here is the part that
          tells somebody what to DO about it, which a header line cannot. -->
-    <p v-if="withSellers" class="muted small">
+    <p v-if="withSellers" class="hint">
       Those tickets are the sellers' to sell — write them down when they report back.
     </p>
   </div>

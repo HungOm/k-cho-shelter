@@ -205,7 +205,7 @@ async function undo() {
       <template v-if="missedLine"> {{ missedLine }}</template>
     </p>
 
-    <p class="muted small lead">
+    <p class="hint">
       Write down what they said. Every box can be left empty — a seller saying
       "nothing sold yet" has still reported, and that is what this records.
     </p>

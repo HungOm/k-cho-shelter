@@ -62,7 +62,7 @@ function doStep(action) {
         <b>Setup → Make the first tickets</b>, which shows the range before it
         writes anything. Nothing here will work until they have.
       </p>
-      <p class="muted small">
+      <p class="hint">
         The ticket numbering has to be right first — the prefix and the padding
         lock the moment the first ticket exists.
       </p>

@@ -412,7 +412,7 @@ async function exportEntries() {
       </div>
 
       <template v-else>
-        <p class="muted small">
+        <p class="hint">
           No prizes have been set up. Until there are, a winner can only be recorded
           against a typed phrase — so nothing can count what is left to give, and the
           same prize can go out twice.

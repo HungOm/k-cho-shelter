@@ -312,8 +312,8 @@ function waLink(a) {
     <h1>{{ scope === 'mine' ? 'Your money' : 'Money' }}</h1>
     <p class="muted">
       <template v-if="scope === 'mine'">
-        What the buyers have handed you, and what of it has reached the organiser.
-        Cash you pass on is recorded by whoever receives it.
+        What buyers handed you, and what of it reached the organiser. Cash you pass
+          on is recorded by whoever receives it.
       </template>
       <template v-else>
         The system records money — it never touches it. Cash is handled in person.
@@ -359,15 +359,15 @@ function waLink(a) {
         {{ scope === 'recorded' ? 'What you wrote down'
            : scope === 'mine' ? 'Where your money stands' : 'What each seller owes' }}
       </h3>
-      <p v-if="scope === 'recorded'" class="muted small">
-        Every sale recorded under your name, and whether the buyer had paid when
-        you wrote it down.
+      <p v-if="scope === 'recorded'" class="hint">
+        Every sale under your name, and whether the buyer had paid when you wrote it
+          down.
       </p>
-      <p v-else-if="scope === 'mine'" class="muted small">
-        Your tickets written down as sold, less the cash an organiser has confirmed
-        receiving from you. Open the line for every dated entry behind it.
+      <p v-else-if="scope === 'mine'" class="hint">
+        Tickets you wrote down as sold, less cash an organiser confirmed receiving.
+          Open the line for every dated entry.
       </p>
-      <p v-else class="muted small">Tickets written down as sold, minus the cash handed in.</p>
+      <p v-else class="hint">Tickets written down as sold, minus the cash handed in.</p>
 
       <div v-if="rows === null" class="col" style="gap:12px;margin-top:14px">
         <div v-for="i in 4" :key="i" class="skel"></div>
@@ -382,9 +382,9 @@ function waLink(a) {
       -->
       <template v-else-if="scope === 'recorded'">
         <div class="note info" style="margin-top:12px">
-          The cash goes to the organiser and every sale is credited to whoever
-          holds the book, so none of the raffle's money is owed by you or to
-          you. This is the record of what you wrote down.
+          Cash goes to the organiser and each sale is credited to whoever holds the
+          book, so none of the raffle's money is owed by you or to you. This is the
+          record of what you wrote down.
         </div>
 
         <div v-if="!mine.length" class="tiny muted" style="margin-top:12px">
@@ -425,9 +425,8 @@ function waLink(a) {
       </template>
 
       <div v-else-if="scope === 'totals'" class="note info" style="margin-top:12px">
-        The figures above are the raffle's. Who owes what is the organiser's to
-        see — this screen shows you whether the money is healthy, not the people
-        behind it.
+        These are the raffle's figures. Who owes what is the organiser's to see —
+          this screen shows whether the money is healthy, not who is behind it.
       </div>
 
       <!-- ONE BRANCH, holding the controls and the table together. They were
@@ -528,9 +527,9 @@ function waLink(a) {
         <!-- Only when the line it explains is on screen. A footnote about a row
              that is not there is a sentence somebody has to rule out. -->
         <p v-if="shownRows.some((a) => !a.agentId)" class="hint">
-          <b>The desk</b> is tickets sold from books nobody holds. The money
-          went into the tin as each sale was written down, so there is
-          nobody to chase — each ticket says who recorded it.
+          <b>The desk</b> is tickets sold from books nobody holds. The money went in the tin as each
+          sale was written down, so there is nobody to chase — each ticket says who
+          recorded it.
         </p>
         <Pager v-model:page="page" :total="matching.length" :size="PAGE" noun="sellers" />
         </div>

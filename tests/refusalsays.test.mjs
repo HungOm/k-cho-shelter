@@ -60,7 +60,11 @@ const SELLER = { email: 's@x.com', role: 'agent', agentId: 'A001', isSuperAdmin:
 console.log('an approver is told what saying no does, not only what yes does')
 {
   const text = await card({ runAs: 'approver', agentName: 'TEST' })
-  ok(/Granting hands the books over/.test(text),
+  /* A FRAGMENT, like `[Ss]aying no` below it. This read `Granting hands the
+     books over` and broke when the sentence lost its first word to a prose
+     pass — the assertion is that the grant is EXPLAINED, not that it opens
+     with a particular verb. */
+  ok(/[Hh]ands the books over/.test(text),
      `what yes does is still said (${text.slice(0, 60)})`)
   ok(/[Ss]aying no/.test(text),
      'and what no does is said beside it, on the same card, before either is pressed')
