@@ -163,7 +163,25 @@ console.log('the untranslated-by-design list is honoured')
     // each one means the system is wrong, not the person holding the phone.
     'QUERY_FAILED',        // the database refused; the sentence under it is Postgres's
     'SCHEMA_DRIFT',        // the tables disagree with the settings — nobody at a desk can fix it
-    'UPLOAD_FAILED'        // storage did not accept the file; trying again is the only move
+    'UPLOAD_FAILED',       // storage did not accept the file; trying again is the only move
+    /*
+     * Which raffle a request is about (MT-2a). A project id is never typed by
+     * a person — it is a header the software sets, or does not — so all three
+     * of these mean the caller is wrong in a way no volunteer can act on, and
+     * the bare code is what they would read back down a phone. No client sends
+     * the header at all today, so none of them is reachable from the app.
+     *
+     * PROJECT_NOT_FOUND WILL NEED BURMESE AT STAGE 5, and this is the note that
+     * says so rather than a silence somebody has to rediscover. Once a second
+     * project can exist, an organiser following a stale or mistyped link is a
+     * PERSON seeing it, about a thing they can act on — pick the other raffle
+     * — which is exactly the line this list is drawn on. The other two stay
+     * here whatever happens: a malformed id and an unreachable environment are
+     * never the reader's doing. See D-017.
+     */
+    'BAD_PROJECT',         // a header that is not a uuid: the caller built it wrong
+    'PROJECT_NOT_FOUND',   // names a raffle that does not exist — unreachable until Stage 5
+    'PROJECT_UNAVAILABLE'  // the admin client could not be built; nothing a person can fix
   ])
 
   ok(codes.size > 60, `found the server's error codes (${codes.size})`)

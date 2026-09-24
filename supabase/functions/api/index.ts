@@ -610,6 +610,13 @@ type Ctx = {
   // because it is what the token asserts, not a row we looked up — the row is
   // the allowlist check below, and the two are deliberately separate.
   userClaims?: { id: string; email?: string; role?: string } | null
+  /*
+   * Which raffle this request is about, set by the router before any read.
+   * Optional because nothing reads it yet — Stage 2 wires it into the query
+   * layer — and because the handler modules each declare their own narrower
+   * Ctx, which this does not have to reach into to be true.
+   */
+  project?: string
 }
 type Handler = (payload: Record<string, unknown>, user: AppUser, ctx: Ctx) => Promise<unknown>
 
@@ -1521,7 +1528,10 @@ const userCache = ttlCache<Record<string, unknown> | null>(60_000)
 const permsCache = ttlCache<Record<string, Partial<Record<Role, boolean>>>>(60_000)
 
 async function readConfig(ctx: Ctx): Promise<Record<string, string>> {
-  return configCache.get('all', async () => {
+  // Per raffle: ACTIVE_TICKETS, the ticket prefix and the card design all live
+  // in `config`, and one raffle's numbering handed to another is how a ticket
+  // that exists stops being findable.
+  return configCache.get(ctx.project ?? SEED_PROJECT, async () => {
     const { data } = await ctx.supabaseAdmin.from('config').select('key,value')
     const out: Record<string, string> = {}
     for (const r of data ?? []) out[r.key] = r.value
@@ -1646,6 +1656,49 @@ const num = (v: unknown, d: number) => {
 }
 const int = (v: unknown, d: number) => num(v, d)
 
+// ============ WHICH RAFFLE THIS REQUEST IS ABOUT ============
+
+/**
+ * The one project that exists. Plan invariant 2: a request with no
+ * `x-project-id` header is about the raffle that was already here, so every
+ * client written before multi-tenancy keeps working unchanged and un-recompiled.
+ */
+const SEED_PROJECT = '00000000-0000-0000-0000-000000000001'
+
+/** Canonical 8-4-4-4-12. Deliberately not a loose `[0-9a-f-]+`. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Which raffle, decided from the header alone and BEFORE anything is read.
+ *
+ * REFUSING A PROJECT MUST NOT LOOK IT UP. `projects` does not exist in the
+ * production database — Stage 0's migration is in `migrations.pending/` — and
+ * function code reaches production with the next deploy of anybody's change.
+ * A lookup here would therefore not refuse an unknown project; it would throw
+ * QUERY_FAILED on a table that is not there, on every request carrying a
+ * header. So until Stage 5 can create a second project, anything that is not
+ * the seed is refused on the spot, from the string.
+ *
+ * AN EMPTY HEADER IS NOT AN ABSENT ONE. `absent` means seed, because that is
+ * every client that predates this. A header present and blank is a caller that
+ * meant to name a project and lost the value somewhere, and treating it as the
+ * seed would silently route somebody else's raffle into this one. Named rather
+ * than defaulted: see D-015.
+ */
+function projectOf(req: Request): string {
+  const raw = req.headers.get('x-project-id')
+  if (raw === null) return SEED_PROJECT
+  const id = raw.trim().toLowerCase()
+  if (!UUID.test(id)) {
+    throw new ApiError('BAD_PROJECT',
+      'The raffle this request names is not a valid id.', { header: 'x-project-id' }, 400)
+  }
+  if (id !== SEED_PROJECT) {
+    throw new ApiError('PROJECT_NOT_FOUND', 'There is no raffle with that id.', { project: id }, 404)
+  }
+  return id
+}
+
 // ============ THE ROUTER ============
 
 /**
@@ -1671,13 +1724,89 @@ const route = async (req: Request, ctx: Ctx): Promise<Response> => {
   if (!spec) return fail(new ApiError('UNKNOWN_ACTION', `Unknown action: ${action}`, null, 404))
 
   try {
+    /*
+     * WHICH RAFFLE, BEFORE WHO. Decided from the header, refused from the
+     * string, and settled before a single row is read — because every read
+     * below is a read WITHIN a project, and a read that happens before the
+     * project is known is a read that cannot be scoped afterwards.
+     */
+    const project = projectOf(req)
+
+    /*
+     * ONE ID FOR EVERYTHING THIS REQUEST TOUCHES, AND ONE RAFFLE.
+     *
+     * Counting a book in writes to four tables — the tickets it marks sold,
+     * the payments row for the cash, the book's custody line and the audit
+     * log — and nothing joined them. "Show me everything that happened when
+     * Book-0031 was counted in" was a join on TIME, which is approximately
+     * right, always available, and wrong in exactly the cases worth
+     * investigating: two people working the same minute.
+     *
+     * CARRIED AS HEADERS rather than threaded through fifty inserts. Every
+     * call this client makes carries them, PostgREST puts the request's
+     * headers where SQL can see them, and a column DEFAULT picks them up —
+     * which is also how the rows written INSIDE settle_book get stamped
+     * without that function growing a parameter. No handler is changed and no
+     * handler can forget.
+     *
+     * BUILT HERE, ABOVE THE IDENTITY READS, and that is the whole point of
+     * moving it: the user row, the permissions and approvalNeeded are reads
+     * within a project too, and they decide who somebody is and what they may
+     * do. Performing them on a client that does not name the project would
+     * scope the answer to nothing.
+     */
+    const requestId = crypto.randomUUID()
+    const ctxWithId = ctx as unknown as
+      { supabaseAdmin: unknown; requestId?: string; project?: string }
+    ctxWithId.requestId = requestId
+    ctxWithId.project = project
+
+    const stamped = createAdminClient({
+      supabaseOptions: {
+        global: { headers: { 'x-request-id': requestId, 'x-project-id': project } },
+      },
+    })
+
+    /*
+     * IF IT CANNOT BE BUILT, WHAT IS LOST DEPENDS ON WHICH RAFFLE THIS IS, and
+     * the old unconditional fallback is not safe here.
+     *
+     * It used to read: keep the platform's client, the id is bookkeeping, the
+     * client is the raffle. That was true while this ran AFTER identity was
+     * resolved — the cost was a correlation id and nothing else. Above those
+     * reads it is a different sentence, because the platform's client carries
+     * no project header at all.
+     *
+     * But "no project header" is not nothing: by invariant 2 it IS the seed
+     * project, which is exactly what every caller without a header gets. So
+     * for the seed the unstamped client is not a degraded answer, it is the
+     * correct one, and refusing would take the whole raffle down whenever the
+     * environment this package reads is unavailable — including under the test
+     * harness, which has no project to talk to and returns nothing on purpose.
+     *
+     * For any OTHER project it is a hard refusal, with no fallback and no
+     * reads performed. Unreachable today, because projectOf() has already
+     * refused every non-seed id; written and tested now so that Stage 5 cannot
+     * introduce the hole by making a second project reachable. Narrowed from
+     * the plan's unconditional refusal — see D-016.
+     */
+    if (stamped) {
+      ctxWithId.supabaseAdmin = stamped
+    } else if (project !== SEED_PROJECT) {
+      throw new ApiError('PROJECT_UNAVAILABLE',
+        'This raffle cannot be reached right now.', { project }, 503)
+    }
+
     // The JWT is already verified by the time we get here; what it proves is
     // WHO is calling. Whether they may be here at all is the allowlist, which
     // is read fresh every request so revoking access takes effect at once.
     const email = String(ctx.userClaims?.email ?? '').trim().toLowerCase()
     if (!email) throw new ApiError('AUTH_REQUIRED', 'No signed-in user.', null, 401)
 
-    const row = await userCache.get(email, async () => {
+    // Keyed by project as well as email: the same address may be a recorder in
+    // one raffle and nothing in another, and a cache keyed on email alone would
+    // answer the second question with the first one's row.
+    const row = await userCache.get(project + '\u0000' + email, async () => {
       const { data } = await ctx.supabaseAdmin
         .from('app_users').select('name,role,active,agent_id').eq('email', email).maybeSingle()
       return data ?? null
@@ -1685,7 +1814,9 @@ const route = async (req: Request, ctx: Ctx): Promise<Response> => {
 
     const user = resolveUser(email, row, Deno.env)
 
-    const overrides = await permsCache.get('all', async () => {
+    // Keyed by project for the same reason: the permissions table is per
+    // raffle, and 'all' would hand one raffle's overrides to another.
+    const overrides = await permsCache.get(project, async () => {
       const { data } = await ctx.supabaseAdmin.from('permissions').select('action,role,allowed')
       const out: Record<string, Partial<Record<Role, boolean>>> = {}
       for (const p of data ?? []) (out[p.action] ??= {})[p.role as Role] = p.allowed
@@ -1719,40 +1850,6 @@ const route = async (req: Request, ctx: Ctx): Promise<Response> => {
     // Handed to decideApproval so an approved action is re-checked against
     // the same overrides this request was.
     ;(ctx as unknown as { _overrides?: unknown })._overrides = overrides
-
-    /*
-     * ONE ID FOR EVERYTHING THIS REQUEST TOUCHES.
-     *
-     * Counting a book in writes to four tables — the tickets it marks sold,
-     * the payments row for the cash, the book's custody line and the audit
-     * log — and nothing joined them. "Show me everything that happened when
-     * Book-0031 was counted in" was a join on TIME, which is approximately
-     * right, always available, and wrong in exactly the cases worth
-     * investigating: two people working the same minute.
-     *
-     * CARRIED AS A HEADER rather than threaded through fifty inserts. Every
-     * call this client makes carries it, PostgREST puts the request's headers
-     * where SQL can see them, and a column DEFAULT picks it up — which is
-     * also how the rows written INSIDE settle_book get stamped without that
-     * function growing a parameter. No handler is changed and no handler can
-     * forget.
-     *
-     * Replaced rather than reconfigured, because a client's headers are fixed
-     * when it is built and this id is per request. Cheap: it is an HTTP
-     * client, not a connection.
-     */
-    const requestId = crypto.randomUUID()
-    const ctxWithId = ctx as unknown as { supabaseAdmin: unknown; requestId?: string }
-    ctxWithId.requestId = requestId
-    // KEPT IF IT CANNOT BE BUILT. The id is bookkeeping; the client is the
-    // raffle. Anything that stops a second admin client being made — an
-    // environment this package cannot read, a test harness with no project to
-    // talk to — must cost the correlation id and not the request, so the one
-    // the platform already handed us stands and the rows carry ''.
-    const stamped = createAdminClient({
-      supabaseOptions: { global: { headers: { 'x-request-id': requestId } } },
-    })
-    if (stamped) ctxWithId.supabaseAdmin = stamped
 
     const data = await spec.fn(body.payload ?? {}, user, ctx)
     // Returned so a person reporting something odd can name the one action

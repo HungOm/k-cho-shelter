@@ -27,6 +27,31 @@ Context: your D-010 answer asked for a gate step that fails on type errors. The 
 - B a wall: fix all 78 first, as their own card, before the step goes in
 Your choice: 
 
+### D-015 · An empty `x-project-id` header · raised by kcho-shelter-51, 2026-09-25
+Blocks: nothing. Shipped under A; one line to change.
+Context: invariant 2 says an ABSENT header means the seed project, so every client written before multi-tenancy keeps working. A header that is PRESENT AND BLANK is a different thing — a caller that meant to name a raffle and lost the value on the way.
+- A ★ blank is `BAD_PROJECT`. Only a genuinely absent header is the seed, so a client bug that drops the id is loud rather than silently routing into this raffle
+- B blank is treated as absent, which is friendlier to a proxy that adds empty headers
+Your choice: 
+
+### D-016 · A failed admin-client build refuses only for a non-seed project · raised by kcho-shelter-51, 2026-09-25
+Blocks: nothing. Shipped under A. Narrows the MT-2a card's "a failed build is a hard refusal".
+Context: refusing unconditionally is right once the header matters, but above the identity reads it would take the SEED raffle down whenever the environment is unreadable — and tests/stubs/supabase-server-core.js returns nothing on purpose, so every handler suite would go red. By invariant 2 "no project header" IS the seed, so for the seed an unstamped client is the correct answer rather than a degraded one.
+- A ★ refuse (`PROJECT_UNAVAILABLE`, 503) only when the resolved project is not the seed. Unreachable today because projectOf() already refuses every non-seed id; correct the day Stage 5 makes a second project reachable, and proved by mutation (remove the PROJECT_NOT_FOUND refusal and a non-seed request returns 503, not 200)
+- B refuse unconditionally, and change the stub to build a client instead of returning nothing
+- C keep the old unconditional fallback and revisit at Stage 5
+Your choice: 
+
+
+### D-017 · Three project refusals are left in English · raised by kcho-shelter-51, 2026-09-25
+Blocks: nothing now. `PROJECT_NOT_FOUND` blocks Stage 5 if unanswered by then.
+Context: i18n.test.mjs requires every server error code to have Burmese, with a named exemption for codes "a volunteer should never see, where English is the better answer". MT-2a adds `BAD_PROJECT`, `PROJECT_NOT_FOUND` and `PROJECT_UNAVAILABLE`. A project id is never typed by a person — it is a header software sets — and no client sends it at all today, so none is reachable from the app.
+- A ★ all three exempt now, with a note in the test that `PROJECT_NOT_FOUND` needs Burmese at Stage 5: once a second raffle exists, an organiser following a stale link is a PERSON seeing it, about something they can act on
+- B translate all three now, accepting unreviewed Burmese for two sentences nobody can currently reach
+- C translate `PROJECT_NOT_FOUND` now and exempt the other two
+Your choice: 
+
+
 ## Decided
 
 Your answers, committed verbatim in 689566b, and what each one does to the plan.
