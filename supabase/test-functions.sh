@@ -34,6 +34,35 @@ pass=0; fail=0
 ok()  { if [ "$1" = "$2" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "  FAIL $3"; echo "    got:  $1"; echo "    want: $2"; fi; }
 has() { if grep -q "$2" <<<"$1"; then pass=$((pass+1)); else fail=$((fail+1)); echo "  FAIL $3"; echo "    got: $1"; fi; }
 
+# HOW MANY SETTINGS A FRESH PROJECT HAS, read off schema.sql's own seed block
+# rather than written here as a number.
+#
+# It was written here as 29, and feature work took the seed to 42 across eight
+# commits — the digital card's treatment and layout, the decorations, the design
+# library, the motto and impact line, the top prize, the supporter bands, the
+# organiser's contact lines and about text. Not one of them broke anything. Each
+# one just made this file red, and a suite that is already red cannot show a new
+# failure: it is where a real regression hides, which is the whole reason this
+# file is not allowed to exit 0 when it cannot run.
+#
+# The floor below is what a derived count cannot do on its own. Empty the seed
+# block and the derived number goes to zero, the database has zero rows, the two
+# agree, and the suite goes green on precisely the outage the section downstream
+# was written for — a project built from nothing with an EMPTY config table. The
+# checker and the thing checked must not be able to fail together, so the floor
+# is asserted against a literal that only ever moves downwards: 29 is the count
+# at the time that outage was known to be possible, and fewer than that means
+# rows were lost, not that a feature was added.
+SEEDED=$(awk '/^insert into config \(key, value, notes\) values/{f=1;next}
+              f&&/^  \(/{n++}
+              f&&/;[[:space:]]*$/{f=0}
+              END{print n+0}' supabase/schema.sql)
+if [ "${SEEDED:-0}" -lt 29 ]; then
+  echo "CANNOT RUN: found ${SEEDED:-0} seeded settings in supabase/schema.sql, expected at least 29."
+  echo "Either the seed block moved and the reader above no longer finds it, or rows were deleted."
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # TWO WAYS TO GET A POSTGRES, because "skipped" was being read as "passed".
 #
@@ -82,10 +111,17 @@ if [ "$MODE" = docker ]; then
   # tries for it. The concurrency cases below are the only reason this exists.
   PBG() { docker exec "$NAME" psql -U postgres -d kcho -tAc "$1" >/dev/null 2>&1 & }
   APPLY() { docker cp "$1" "$NAME":/tmp/f.sql >/dev/null &&             docker exec "$NAME" psql -U postgres -d kcho -q -v ON_ERROR_STOP=1 -f /tmp/f.sql; }
-  # Supabase creates these; a bare Postgres does not, and rls.sql grants to them.
+  # Supabase creates these three; a bare Postgres does not, and our SQL grants
+  # to all of them. service_role is the one that is easy to forget, because it
+  # appears exactly once — functions.sql:1375, `grant execute on function
+  # holding_of` — and it was forgotten: from 2026-09-21, when that grant landed,
+  # until this line, every docker run of this suite stopped at "functions.sql
+  # failed" with the role missing. Grep before removing one: a role nothing
+  # grants to looks unused right up to the single line that needs it.
   P "do \$\$ begin
        if not exists (select 1 from pg_roles where rolname='anon') then create role anon; end if;
        if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
+       if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role; end if;
      end \$\$;" >/dev/null
 else
   # A throwaway database named after this process, dropped on the way out, so a
@@ -95,19 +131,28 @@ else
   echo "Starting Postgres (local, server $(psql -d postgres -tAc 'show server_version' 2>/dev/null))…"
   cleanup
   psql -d postgres -q -c "create database $DB" >/dev/null
-  # rls.sql is not applied here, but schema.sql may still mention the browser
-  # roles; create them so a grant is a grant rather than an error.
+  # The same three roles as the docker branch. Postgres roles are CLUSTER-wide,
+  # not per-database, so on a machine where an earlier run created them this
+  # block does nothing and the suite passes — which is why the missing
+  # service_role showed up only under docker, on a container that starts empty
+  # every time. A local Postgres remembers the fix somebody else made.
   psql -d "$DB" -q -c "do \$\$ begin
       if not exists (select 1 from pg_roles where rolname='anon') then create role anon; end if;
       if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
+      if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role; end if;
     end \$\$;" >/dev/null 2>&1 || true
   P() { psql -d "$DB" -tAc "$1" 2>&1; }
   PBG() { psql -d "$DB" -tAc "$1" >/dev/null 2>&1 & }
   APPLY() { psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$1"; }
 fi
 
-APPLY supabase/schema.sql    >/dev/null 2>&1 || { echo "schema.sql failed"; exit 1; }
-APPLY supabase/functions.sql >/dev/null 2>&1 || { echo "functions.sql failed"; exit 1; }
+# WHY IT FAILED, not just which file. These printed one line — "functions.sql
+# failed" — and threw the reason away, for three days, while the reason was a
+# single missing role that psql names in full. A suite that cannot start has to
+# say why on the way out, or the next person bisects it.
+BUILD() { out=$(APPLY "$1" 2>&1) || { echo "$1 failed"; echo "$out" | grep -i "error" | head -3 | sed 's/^/  /'; exit 1; }; }
+BUILD supabase/schema.sql
+BUILD supabase/functions.sql
 # AND rls.sql, because the VIEWS are in it. book_ledger_all and agent_money are
 # where the money arithmetic actually lives, and a suite that applies only the
 # tables and the functions cannot see either — which is how cases asserting on
@@ -115,7 +160,7 @@ APPLY supabase/functions.sql >/dev/null 2>&1 || { echo "functions.sql failed"; e
 # this file does NOT test is the row security itself: it runs as the owner,
 # which bypasses every policy. test-rls.sh is where that is checked, as the
 # browser's own roles.
-APPLY supabase/rls.sql >/dev/null 2>&1 || { echo "rls.sql failed"; exit 1; }
+BUILD supabase/rls.sql
 
 # 5 books of 10. Books 1-3 with A001, 4-5 with A002.
 # UPSERT, because schema.sql now SEEDS these keys. A fixture that plain-inserts
@@ -1133,7 +1178,7 @@ ok "$(P "select count(*) from information_schema.role_table_grants where grantee
 # numbered 1 to 10000 with no prefix and no padding.
 
 echo "a project built from nothing knows how to number a ticket"
-ok "$(P "select count(*) from config")" "29" "the defaults are seeded"
+ok "$(P "select count(*) from config")" "$SEEDED" "all $SEEDED defaults are seeded"
 ok "$(P "select value from config where key='TICKET_PREFIX'")" "KS-" "there is a prefix to build a number from"
 ok "$(P "select value from config where key='TICKET_DIGITS'")" "5" "and a width to pad it to"
 # BLANK, and that is the guarantee, not an oversight: a raffle that has not set
@@ -1434,6 +1479,7 @@ C "create schema if not exists realtime;
 C "do \$\$ begin
      if not exists (select 1 from pg_roles where rolname='anon') then create role anon; end if;
      if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
+     if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role; end if;
    end \$\$;" >/dev/null
 
 broke=""
@@ -1484,7 +1530,7 @@ ok "$(C "select count(*) from information_schema.columns where table_name='books
    "with a column for it to write to"
 ok "$(C "select count(*) from information_schema.views where table_schema='public' and table_name in ('agent_money','book_ledger_all','book_ledger')")" "3" \
    "the three money views survived the push that replaces them"
-ok "$(C "select count(*) from config")" "29" \
+ok "$(C "select count(*) from config")" "$SEEDED" \
    "and the raffle knows how to number a ticket"
 
 echo
