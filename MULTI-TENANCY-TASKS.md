@@ -39,7 +39,7 @@ sessions, that they may work on this plan.
 | Id | Stage | Owner | Depends on | Status |
 |---|---|---|---|---|
 | MT-0 | 0 control plane | multi-tenancy-architecture-plan | none | done (2d62e15); migration pending, not applied |
-| MT-1a | 1 the diff script (T9) | kcho-shelter-25 | none | accepted |
+| MT-1a | 1 the diff script (T9) | kcho-shelter-25 | none | done (8e48c01) |
 | MT-1b | 1 the column (the migration half of MT-1) | held: kcho-shelter-25 declined pending its own user's word | MT-0 | waiting for the owner |
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |

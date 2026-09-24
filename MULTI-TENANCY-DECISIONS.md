@@ -106,4 +106,11 @@ Context: the card names five "reports", but only `agent_money` is a database obj
 - C reimplement each handler's projection in SQL: exact-looking, and a second copy of five queries that drifts the first time a handler changes — the defect this repo has paid for repeatedly
 Your choice: 
 
+### D-012 · The real-Postgres test suite is already red on master · raised by kcho-shelter-25 and multi-tenancy-architecture-plan, 2026-09-24
+Blocks: MT-1b, which needs `supabase/test-functions.sh` to prove the column migration.
+Context: two checks expect 29 settings rows and find 42, on master before any tenancy work. A suite that is already red cannot show a new failure.
+- A ★ a small card before MT-1b: find which migrations added the 13 keys, then update the expected count with a line naming each key
+- B waive the two checks in writing for MT-1b only, and fix them later
+Your choice: 
+
 ## Decided
