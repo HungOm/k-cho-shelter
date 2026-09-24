@@ -93,9 +93,38 @@ const registryBlock = indexSrc.slice(start, indexSrc.indexOf('\n}\n', start))
 const entries = [...registryBlock.matchAll(/^  ([a-z_]+): \{ (.*) \},$/gm)]
   .map((m) => ({ action: m[1], body: m[2] }))
 
+/*
+ * TWO COUNTS THAT MUST AGREE, because a floor is not a guard.
+ *
+ * The strict pattern above needs the whole entry on one line. That is how all
+ * 95 are written, but it is a formatting convention, not a rule — and an entry
+ * broken across two lines is legal TypeScript that simply falls out of the
+ * match. It does not fail anything. It stops being looked at.
+ *
+ * This was shipped with `entries.length >= 90` in place of the identity below,
+ * which is worthless for exactly the case it was meant to cover: reformat one
+ * entry across two lines AND delete its feature tag, and the suite reported
+ * 187 passed, 0 failed. 94 is comfortably more than 90. A floor cannot catch a
+ * single disappearance; only comparing against an independent count can.
+ *
+ * So the loose pattern counts KEYS regardless of what follows them — two
+ * spaces then a name then a colon, which an indented inner property like
+ * `    roles:` cannot match — and the two counts must be equal. The diagnosis
+ * names the missing actions, because "94 != 95" sends somebody hunting.
+ *
+ * Raised by kcho-shelter-25, who put it exactly right: adding a field to 95
+ * entries is safe, adding it to 94 is the failure that looks like success.
+ */
+const looseKeys = [...registryBlock.matchAll(/^  ([a-z_]+):/gm)].map((m) => m[1])
+const strictKeys = new Set(entries.map((e) => e.action))
+const unread = looseKeys.filter((k) => !strictKeys.has(k))
+
 console.log('\nevery action names a feature that exists')
 ok(entries.length > 0, 'the REGISTRY parse found at least one action (a zero here means this file stopped reading index.ts)')
-ok(entries.length >= 90, `the registry has ${entries.length} actions parsed; it had 95 when this was written, so a large drop means the parse broke, not that the raffle shrank`)
+ok(unread.length === 0,
+  `every registry entry was read: ${looseKeys.length} keys are declared but only ${entries.length} matched the entry pattern` +
+  (unread.length ? ` — unread: ${unread.join(', ')}. An entry this file cannot read is an entry it cannot check, and it fails NOTHING` : ''))
+ok(looseKeys.length === new Set(looseKeys).size, 'no action is declared twice in the registry')
 
 const used = new Set()
 for (const { action, body } of entries) {
