@@ -138,5 +138,74 @@ console.log('and the one that got through is the one it would now catch')
     'and the broken form is refused by the same rule, naming the column')
 }
 
+console.log('no migration updates a table the database refuses to update')
+{
+  /*
+   * WHAT THIS CATCHES, AND WHERE IT CAME FROM. Stage 1 of the multi-tenancy
+   * plan adds project_id to twenty-three tables, and the obvious way to fill
+   * it for the rows already there is `update t set project_id = …`. On
+   * ticket_history that is not a slow statement, it is a refused one: the
+   * table is append-only and a trigger raises on UPDATE. `db push` stops at
+   * the first statement Postgres refuses, so such a migration lands half
+   * applied on a live raffle — the same shape of loss this file was written
+   * for. It was written that way here and stopped at statement 115.
+   *
+   * ON tickets IT DID NOT STOP, WHICH IS THE WORSE HALF. The update fired the
+   * row trigger, bumped `version` on every row and set `modified_at` to the
+   * migration's clock, so read_delta would have re-sent every ticket to every
+   * client and every version number a client was holding would have been
+   * stale — from a migration whose whole promise is that nothing moves. That
+   * half cannot be seen in the text, and it is not what is checked here. It
+   * was caught by dumping the reports before and after (tenancy-diff.sh).
+   * This checks the half that IS in the text.
+   *
+   * THE LIST IS DERIVED, not typed: every append-only table in this schema
+   * declares a `<table>_append_only()` trigger function, so a table that gains
+   * one later is covered without anybody remembering to come back here.
+   */
+  const appendOnly = [...schema.matchAll(/create or replace function ([a-z_]+)_append_only\s*\(\)/g)]
+    .map((m) => m[1])
+  ok(appendOnly.length >= 4,
+    `the schema declares ${appendOnly.length} append-only tables, read from their trigger functions`)
+  for (const t of ['audit_log', 'book_history', 'ticket_history', 'ticket_movements']) {
+    ok(appendOnly.includes(t), `${t} is one of them`)
+  }
+
+  /* Pending migrations are migrations. They are where the next one is being
+     written, which is the only moment this check is worth anything. */
+  const pendDir = join(ROOT, 'supabase/migrations.pending')
+  const pending = readdirSync(pendDir).filter((f) => f.endsWith('.sql')).sort()
+  const files = [
+    ...migrations.map((f) => [`migrations/${f}`, readFileSync(join(migDir, f), 'utf8')]),
+    ...pending.map((f) => [`migrations.pending/${f}`, readFileSync(join(pendDir, f), 'utf8')]),
+  ]
+  ok(files.length >= 50, `${files.length} migration files were read`)
+
+  const updatesIn = (sql) => [...bare(sql).matchAll(/\bupdate\s+(?:public\.)?([a-z_][a-z0-9_]*)\s+set\b/gi)]
+    .map((m) => m[1].toLowerCase())
+
+  let scanned = 0
+  for (const [name, raw] of files) {
+    for (const table of updatesIn(raw)) {
+      scanned += 1
+      ok(!appendOnly.includes(table),
+        `${name} updates ${table}, which is append-only — Postgres refuses it and db push stops there`)
+    }
+  }
+  /* A rule that matched no UPDATE at all would report every file clean, which
+     looks exactly like every file being clean. The rollback beside the Stage 1
+     migration has none, and neither do most; what matters is that the reader
+     is working, so it is proved against text rather than against silence. */
+  const bait = 'update ticket_history set project_id = seed_project() where project_id is null;'
+  eq(updatesIn(bait).join(), 'ticket_history', 'the reader finds the statement that started this')
+  ok(appendOnly.includes(updatesIn(bait)[0]),
+    'and the rule refuses it, which is how the Stage 1 migration came to be written without one')
+  /* A floor on the work, not on the findings. The migrations genuinely update
+     books, tickets and organisations — forty-one statements at the time of
+     writing — so a reader that had stopped matching would show up here as a
+     number near zero rather than as a clean run. */
+  ok(scanned >= 20, `${scanned} update statements across the migrations were judged`)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

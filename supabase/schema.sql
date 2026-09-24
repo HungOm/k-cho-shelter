@@ -29,6 +29,196 @@
 -- schedule, so the human-readable copy survives without being the thing the
 -- app depends on.
 
+-- THIS SITS ABOVE THE TABLES, AND IS OTHERWISE UNTOUCHED. Every raffle table's
+-- project_id default calls current_project() and seed_project(), so they have to
+-- exist before the first `create table` below. The block is moved, not edited:
+-- tests/tenancy.test.mjs compares it against the Stage 0 migration character for
+-- character, which is what makes a fresh install and a migrated database the same
+-- database. It depends on nothing outside itself — its foreign keys are all to
+-- its own six tables, and the raffle tables it names are named in comments.
+
+-- ============ ORGANISATIONS AND PROJECTS (MULTI-TENANCY-PLAN.md, Stage 0) ============
+--
+-- THE CONTROL PLANE, AND NOTHING READS IT YET. Six tables and three functions,
+-- added so that every later stage has somewhere to hang: an organisation owns
+-- projects, a project is one raffle, and today's raffle becomes the seed
+-- project with a NAMED id, so it reads in every audit line as the raffle that
+-- predates projects.
+--
+-- NO EXISTING TABLE, VIEW, POLICY OR HANDLER CHANGES HERE. That is the whole
+-- promise of Stage 0: the live raffle cannot tell these exist. Stage 1 adds the
+-- project_id column; Stage 3 starts reading membership from here.
+--
+-- DEFAULT DENY, like everything else in this file. None of these is readable
+-- from a browser; the api function reads them with the service key, and later
+-- stages expose what they need through functions, not grants.
+
+-- Who may run the platform: create organisations, appoint an organiser.
+-- The SUPER_ADMIN_EMAIL secret is always one of them and is not a row.
+create table if not exists platform_admins (
+  email        text primary key check (email = lower(btrim(email)) and email <> ''),
+  added_by     text not null default '',
+  added_at     timestamptz not null default now()
+);
+
+create table if not exists organisations (
+  org_id       uuid primary key default gen_random_uuid(),
+  slug         text not null unique
+                 check (slug ~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$'),
+  name         text not null,
+  /*
+   * EXACTLY ONE ORGANISER, AS A COLUMN, so "one" is a fact of the table rather
+   * than a count somebody has to keep. Changed only by a system admin.
+   *
+   * '' IS "NOBODY YET", and it grants nothing: auth_email() is never '', so no
+   * comparison against it can match. A migration cannot read the function
+   * secret, so the seed organisation starts this way (MULTI-TENANCY-DECISIONS.md
+   * D-001).
+   */
+  organiser_email text not null default ''
+                 check (organiser_email = lower(btrim(organiser_email))),
+  status       text not null default 'active' check (status in ('active','suspended')),
+  created_at   timestamptz not null default now(),
+  created_by   text not null default ''
+);
+
+-- The outer wall: which features an organisation may use at all. The list of
+-- feature ids is supabase/functions/_shared/features.ts. A missing row is OFF.
+create table if not exists org_features (
+  org_id       uuid not null references organisations(org_id) on delete restrict,
+  feature      text not null,
+  enabled      boolean not null,
+  set_by       text not null default '',
+  set_at       timestamptz not null default now(),
+  primary key (org_id, feature)
+);
+
+-- What a new project of the organisation starts from, keyed like config.
+create table if not exists org_defaults (
+  org_id       uuid not null references organisations(org_id) on delete restrict,
+  key          text not null,
+  value        text not null default '',
+  primary key (org_id, key)
+);
+
+create table if not exists projects (
+  project_id   uuid primary key default gen_random_uuid(),
+  org_id       uuid not null references organisations(org_id) on delete restrict,
+  slug         text not null,
+  name         text not null,
+  status       text not null default 'active'
+                 check (status in ('draft','active','closing','archived')),
+  created_at   timestamptz not null default now(),
+  created_by   text not null default '',
+  archived_at  timestamptz,
+  archived_by  text,
+  -- Null is "never", and never is the default: nothing is purged unless an
+  -- organiser has written down a period.
+  purge_personal_after interval,
+  purged_at    timestamptz,
+  unique (org_id, slug)
+);
+
+-- app_users, per project. Same lifecycle and the same generated `active`.
+-- Stage 4 adds the foreign key from (project_id, agent_id) to agents.
+create table if not exists project_members (
+  project_id   uuid not null references projects(project_id) on delete restrict,
+  email        text not null check (email = lower(btrim(email)) and email <> ''),
+  name         text not null default '',
+  role         text not null check (role in ('admin','recorder','agent','viewer')),
+  status       text not null default 'active'
+                 check (status in ('pending','active','suspended','banned')),
+  active       boolean generated always as (status = 'active') stored,
+  agent_id     text,
+  added_by     text not null default '',
+  added_at     timestamptz not null default now(),
+  primary key (project_id, email)
+);
+
+alter table platform_admins enable row level security;
+alter table organisations   enable row level security;
+alter table org_features    enable row level security;
+alter table org_defaults    enable row level security;
+alter table projects        enable row level security;
+alter table project_members enable row level security;
+revoke all on platform_admins, organisations, org_features, org_defaults,
+              projects, project_members from anon, authenticated;
+
+/*
+ * THE RAFFLE THAT PREDATES PROJECTS, by a name rather than a lookup. Every row
+ * that exists before Stage 1 belongs to it, and a constant is something a
+ * reader of an audit line can recognise.
+ */
+create or replace function seed_project() returns uuid as $$
+  select '00000000-0000-0000-0000-000000000001'::uuid
+$$ language sql immutable;
+
+/*
+ * WHICH PROJECT THIS REQUEST IS ABOUT, read the way request_id() reads its id:
+ * from the header PostgREST exposes, or from a session setting a runbook sets.
+ *
+ * NULL WHEN NEITHER IS PRESENT. What to do about that is each caller's
+ * decision, and through Stage 3 every caller says coalesce(…, seed_project()).
+ * A malformed value is not null: the cast fails and the statement with it,
+ * which is a refusal rather than a guess.
+ */
+create or replace function current_project() returns uuid as $$
+  select coalesce(
+    nullif(nullif(current_setting('request.headers', true), '')::json ->> 'x-project-id', ''),
+    nullif(current_setting('app.project_id', true), ''))::uuid
+$$ language sql stable set search_path = public;
+
+/*
+ * THE SEED ORGANISATION AND PROJECT, made once and safe to call again.
+ *
+ * Called by the Stage 0 migration with no organiser and by supabase/reset.sql
+ * with the super admin's address. A second call never makes a second
+ * organisation; it only fills an organiser that is still blank, and it never
+ * replaces one that is set — that is a system admin's act, not a side effect.
+ *
+ * EVERY FEATURE IS ON for this organisation, because it is the raffle that
+ * already uses all of them. `core` is not listed: it is always on and a row
+ * for it would be a switch that does nothing.
+ */
+create or replace function seed_tenancy(p_organiser text default '') returns uuid as $$
+declare
+  v_org   uuid;
+  v_name  text;
+  v_event text;
+  v_slug  text;
+  v_email text := lower(btrim(coalesce(p_organiser, '')));
+begin
+  select org_id into v_org from projects where project_id = seed_project();
+
+  if v_org is null then
+    select nullif(btrim(value), '') into v_name  from config where key = 'ORG_NAME';
+    select nullif(btrim(value), '') into v_event from config where key = 'EVENT_NAME';
+    v_name := coalesce(v_name, 'Organisation');
+    v_slug := btrim(left(btrim(regexp_replace(lower(v_name), '[^a-z0-9]+', '-', 'g'), '-'), 40), '-');
+    if v_slug !~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$' then v_slug := 'default'; end if;
+
+    insert into organisations (slug, name, organiser_email, created_by)
+      values (v_slug, v_name, v_email, 'seed_tenancy')
+      returning org_id into v_org;
+    insert into projects (project_id, org_id, slug, name, created_by)
+      values (seed_project(), v_org, 'raffle', coalesce(v_event, v_name), 'seed_tenancy');
+  elsif v_email <> '' then
+    update organisations set organiser_email = v_email
+     where org_id = v_org and organiser_email = '';
+  end if;
+
+  insert into org_features (org_id, feature, enabled, set_by)
+    select v_org, f, true, 'seed_tenancy'
+      from unnest(array['tickets','books','money','checkins','approvals','prizes',
+                        'reports','printing','cards','studio','seed','reset']) f
+  on conflict (org_id, feature) do nothing;
+
+  return seed_project();
+end $$ language plpgsql security definer set search_path = public;
+
+revoke all on function seed_tenancy(text) from public, anon, authenticated;
+-- ============ ORGANISATIONS AND PROJECTS (end) ============
+
 -- ============ IDENTITY ============
 -- Ticket and book numbers are arithmetic: ticket N sits at index N, and its
 -- printed number is derived from prefix/start/padding. That property is what
@@ -42,6 +232,7 @@ create table if not exists config (
   value        text not null default '',
   notes        text not null default ''
 );
+alter table config add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 /*
  * The picture a ticket is printed on, and where the number sits on it.
@@ -70,6 +261,7 @@ create table if not exists ticket_templates (
   uploaded_by  text not null default '',
   uploaded_at  timestamptz not null default now()
 );
+alter table ticket_templates add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 alter table ticket_templates enable row level security;
 revoke all on ticket_templates from anon, authenticated;
@@ -106,6 +298,7 @@ create table if not exists agents (
   active       boolean not null default true,
   notes        text not null default ''
 );
+alter table agents add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 create table if not exists app_users (
   email        text primary key,
@@ -144,6 +337,7 @@ create table if not exists app_users (
   added_by     text not null default '',
   added_at     timestamptz not null default now()
 );
+alter table app_users add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 create table if not exists books (
   idx            integer primary key,
@@ -197,6 +391,7 @@ create table if not exists books (
   constraint books_offered_is_on_nobodys_balance
     check (status <> 'Offered' or held_by_agent is null)
 );
+alter table books add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 create table if not exists tickets (
   idx            integer primary key,
@@ -228,27 +423,28 @@ create table if not exists tickets (
    */
   holder         text not null default 'desk'
 );
-create index if not exists tickets_holder_idx on tickets (holder) where holder <> 'desk';
+alter table tickets add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
+create index if not exists tickets_holder_idx on tickets (project_id, holder) where holder <> 'desk';
 
 -- ============ INDEXES ============
 -- Chosen from the queries the app actually makes, not by guesswork.
 
 -- read_delta: "what changed since T". Today this walks every row; here it is a
 -- range scan.
-create index if not exists tickets_modified_at_idx on tickets (modified_at desc);
+create index if not exists tickets_modified_at_idx on tickets (project_id, modified_at desc);
 
 -- Every book summary groups by book.
-create index if not exists tickets_book_idx on tickets (book_idx);
+create index if not exists tickets_book_idx on tickets (project_id, book_idx);
 
 -- Draw readiness asks for sold tickets with no phone number — the report that
 -- decides whether a winner can be telephoned.
-create index if not exists tickets_missing_contact_idx on tickets (status)
+create index if not exists tickets_missing_contact_idx on tickets (project_id, status)
   where status in ('Sold','Donated') and buyer_phone = '';
 
 -- A seller's statement, and "who still owes money".
 create index if not exists books_settled_by_agent_idx
-  on books (settled_by_agent) where settled_by_agent is not null;
-create index if not exists tickets_agent_idx on tickets (sold_by_agent)
+  on books (project_id, settled_by_agent) where settled_by_agent is not null;
+create index if not exists tickets_agent_idx on tickets (project_id, sold_by_agent)
   where sold_by_agent is not null;
 
 -- Search by buyer. trigram, because the names in this raffle are transliterated
@@ -257,13 +453,13 @@ create index if not exists tickets_agent_idx on tickets (sold_by_agent)
 -- the client.
 create extension if not exists pg_trgm;
 create index if not exists tickets_buyer_name_trgm on tickets using gin (buyer_name gin_trgm_ops);
-create index if not exists tickets_buyer_phone_idx on tickets (buyer_phone)
+create index if not exists tickets_buyer_phone_idx on tickets (project_id, buyer_phone)
   where buyer_phone <> '';
 
-create index if not exists books_status_idx on books (status);
-create index if not exists books_agent_idx on books (held_by_agent)
+create index if not exists books_status_idx on books (project_id, status);
+create index if not exists books_agent_idx on books (project_id, held_by_agent)
   where held_by_agent is not null;
-create index if not exists books_overdue_idx on books (due_at)
+create index if not exists books_overdue_idx on books (project_id, due_at)
   where status = 'Out';
 
 -- ============ THE COMPUTED COLUMNS, AS A VIEW ============
@@ -353,7 +549,8 @@ create table if not exists audit_log (
   details      jsonb,
   email        text not null default ''
 );
-create index if not exists audit_log_at_idx on audit_log (at desc);
+alter table audit_log add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
+create index if not exists audit_log_at_idx on audit_log (project_id, at desc);
 
 /*
  * APPEND ONLY, like the other four. This is where every override, forced
@@ -389,7 +586,8 @@ create table if not exists book_history (
   by_user      text not null default '',
   note         text not null default ''
 );
-create index if not exists book_history_book_idx on book_history (book_idx, at desc);
+alter table book_history add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
+create index if not exists book_history_book_idx on book_history (project_id, book_idx, at desc);
 
 -- APPEND ONLY, like the other three. payments, ticket_history and
 -- round_snapshots each refuse an update, a delete and a truncate at the
@@ -452,7 +650,8 @@ create table if not exists ticket_history (
   by_user       text not null default '',
   note          text not null default ''
 );
-create index if not exists ticket_history_ticket_idx on ticket_history (ticket_idx, at);
+alter table ticket_history add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
+create index if not exists ticket_history_ticket_idx on ticket_history (project_id, ticket_idx, at);
 
 
 /*
@@ -496,17 +695,18 @@ create table if not exists ticket_movements (
   backfilled  boolean not null default false,
   check (from_holder <> to_holder or kind = 'correction')
 );
+alter table ticket_movements add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 -- Partial, and it has to be: every NULL is distinct in Postgres, so a plain
 -- unique column would be relying on that by accident. Two movements nobody gave
 -- a key are two movements.
 create unique index if not exists ticket_movements_client_key_idx
-  on ticket_movements (client_key) where client_key is not null;
+  on ticket_movements (project_id, client_key) where client_key is not null;
 -- `id` rather than `at`: two rows in one batch share a timestamp and replay
 -- order has to be total.
 create index if not exists ticket_movements_ticket_idx
-  on ticket_movements (ticket_idx, id);
-create index if not exists ticket_movements_batch_idx on ticket_movements (batch_id);
-create index if not exists ticket_movements_holder_idx on ticket_movements (to_holder, id desc);
+  on ticket_movements (project_id, ticket_idx, id);
+create index if not exists ticket_movements_batch_idx on ticket_movements (project_id, batch_id);
+create index if not exists ticket_movements_holder_idx on ticket_movements (project_id, to_holder, id desc);
 
 -- Append only, all three ways. Truncate is the one people leave off: it is
 -- neither an update nor a delete and would empty the ledger without firing
@@ -564,10 +764,11 @@ create table if not exists ticket_codes (
   printed_at   timestamptz,
   printed_by   text not null default ''
 );
+alter table ticket_codes add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 alter table ticket_codes enable row level security;
 revoke all on ticket_codes from anon, authenticated;
-create index if not exists ticket_codes_batch_idx on ticket_codes (batch_id);
+create index if not exists ticket_codes_batch_idx on ticket_codes (project_id, batch_id);
 
 /*
  * A RECEIPT: THE TICKETS ONE BUYER WAS GIVEN, IN ONE ACT.
@@ -684,9 +885,10 @@ create table if not exists ticket_receipts (
    */
   buyer_name   text not null default ''
 );
+alter table ticket_receipts add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 create unique index if not exists ticket_receipts_one_per_buyer
-  on ticket_receipts (buyer_phone, buyer_key(buyer_name))
+  on ticket_receipts (project_id, buyer_phone, buyer_key(buyer_name))
   where buyer_phone <> '';
 
 create table if not exists ticket_receipt_items (
@@ -694,6 +896,7 @@ create table if not exists ticket_receipt_items (
   ticket_idx integer not null references tickets(idx) on delete restrict,
   primary key (code, ticket_idx)
 );
+alter table ticket_receipt_items add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 alter table ticket_receipts enable row level security;
 alter table ticket_receipt_items enable row level security;
@@ -703,8 +906,8 @@ revoke all on ticket_receipts from anon, authenticated;
 revoke all on ticket_receipt_items from anon, authenticated;
 -- "Which receipts is this ticket on" — asked when a ticket is re-sent, and the
 -- only query here that is not by code.
-create index if not exists ticket_receipt_items_ticket on ticket_receipt_items (ticket_idx);
-create index if not exists ticket_history_book_idx on ticket_history (book_idx, at);
+create index if not exists ticket_receipt_items_ticket on ticket_receipt_items (project_id, ticket_idx);
+create index if not exists ticket_history_book_idx on ticket_history (project_id, book_idx, at);
 
 create or replace function record_ticket_history() returns trigger as $$
 begin
@@ -780,6 +983,7 @@ create table if not exists permissions (
   allowed      boolean not null,
   primary key (action, role)
 );
+alter table permissions add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 create table if not exists pending_approvals (
   request_id   text primary key,
@@ -803,12 +1007,13 @@ create table if not exists pending_approvals (
   -- the seller being deleted.
   decide_by_agent text
 );
-create index if not exists pending_status_idx on pending_approvals (status, requested_at desc);
+alter table pending_approvals add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
+create index if not exists pending_status_idx on pending_approvals (project_id, status, requested_at desc);
 
 create index if not exists books_offered_to_idx
-  on books (offered_to_agent) where status = 'Offered';
+  on books (project_id, offered_to_agent) where status = 'Offered';
 create index if not exists pending_approvals_decide_by_idx
-  on pending_approvals (decide_by_agent) where status = 'Pending';
+  on pending_approvals (project_id, decide_by_agent) where status = 'Pending';
 
 -- ============ THE PRIZE SCHEDULE ============
 --
@@ -862,6 +1067,7 @@ create table if not exists prize_types (
   added_by     text not null default '',
   added_at     timestamptz not null default now()
 );
+alter table prize_types add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 
 insert into prize_types (type_id, label, valuing, sort, built_in) values
   ('cash',      'Cash',            'fixed',   10, true),
@@ -927,7 +1133,8 @@ create table if not exists prizes (
   removed_at   timestamptz,
   removed_by   text
 );
-create index if not exists prizes_rank_idx on prizes (rank);
+alter table prizes add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
+create index if not exists prizes_rank_idx on prizes (project_id, rank);
 
 create table if not exists winners (
   /*
@@ -977,6 +1184,7 @@ create table if not exists winners (
   notes        text not null default '',
   recorded_by  text not null default ''
 );
+alter table winners add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 alter table winners add column if not exists prize_id text references prizes(prize_id) on delete restrict;
 alter table winners add column if not exists seq integer;
 alter table winners add column if not exists prize_value numeric(12,2);
@@ -987,7 +1195,7 @@ alter table winners add column if not exists forfeited_at timestamptz;
  * existed have no prize_id and must not all collide on null.
  */
 create unique index if not exists winners_one_per_seat
-  on winners (prize_id, seq) where prize_id is not null;
+  on winners (project_id, prize_id, seq) where prize_id is not null;
 
 /*
  * A seat that does not exist cannot be filled, and the quantity cannot be cut
@@ -1082,8 +1290,9 @@ create table if not exists check_in_reports (
   undone_by    text,
   primary key (agent_id, round)
 );
+alter table check_in_reports add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 -- "Who has answered this round" is the question asked on every seller list.
-create index if not exists check_in_round_idx on check_in_reports (round);
+create index if not exists check_in_round_idx on check_in_reports (project_id, round);
 
 -- ============ WHAT THE SELLER PHYSICALLY BROUGHT (begin) ============
 -- A check-in used to record three numbers: books back, tickets sold, money
@@ -1140,6 +1349,7 @@ create table if not exists check_in_dates (
   cleared_at timestamptz,
   cleared_by text
 );
+alter table check_in_dates add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 -- ============ A ROUND'S DATE, WHERE SOMEBODY MOVED IT (end) ============
 
 -- ============ WHAT THE ROUND SAID WHEN IT CLOSED ============
@@ -1211,8 +1421,9 @@ create table if not exists round_snapshots (
 
   primary key (round, agent_id)
 );
+alter table round_snapshots add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 -- "Show me round 2" is the only way this table is ever read.
-create index if not exists round_snapshots_round_idx on round_snapshots (round);
+create index if not exists round_snapshots_round_idx on round_snapshots (project_id, round);
 
 -- APPEND ONLY, ENFORCED RATHER THAN INTENDED — the same bar, and the same
 -- reasoning, as the TICKET HISTORY block: the one caller that can reach this
@@ -1283,10 +1494,11 @@ create table if not exists payments (
    */
   source       text not null default 'hand' check (source in ('hand','settlement','writeoff'))
 );
-create index if not exists payments_agent_idx on payments (agent_id);
+alter table payments add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
+create index if not exists payments_agent_idx on payments (project_id, agent_id);
 -- Settlement rows are read per book on every re-settle, to find what to reverse.
 create index if not exists payments_settlement_book_idx
-  on payments (book_idx) where source = 'settlement';
+  on payments (project_id, book_idx) where source = 'settlement';
 
 -- ============ THE LEDGER IS APPEND ONLY, AND ENFORCED (begin) ============
 -- Every ringgit that moves is a row here: cash handed in, a settlement, a
@@ -1342,7 +1554,7 @@ create trigger payments_no_truncate before truncate on payments
 -- column would work here by accident rather than by design.
 alter table payments add column if not exists client_key text;
 create unique index if not exists payments_client_key_idx
-  on payments (client_key) where client_key is not null;
+  on payments (project_id, client_key) where client_key is not null;
 -- ============ THE SAME MONEY, RECORDED TWICE (end) ============
 
 
@@ -1408,16 +1620,17 @@ create table if not exists money_entries (
   -- A reversal names what it undoes, and only a reversal claims to.
   check ((kind = 'reversal') = (reverses is not null))
 );
+alter table money_entries add column if not exists project_id uuid not null default coalesce(current_project(), seed_project());
 -- Partial, both of them. Every NULL is distinct in Postgres, so a plain unique
 -- column would be relying on that by accident.
 create unique index if not exists money_entries_client_key_idx
-  on money_entries (client_key) where client_key is not null;
+  on money_entries (project_id, client_key) where client_key is not null;
 -- This one is what makes an interrupted backfill safe to re-run.
 create unique index if not exists money_entries_legacy_idx
-  on money_entries (legacy_id) where legacy_id is not null;
-create index if not exists money_entries_party_idx on money_entries (party, at desc);
+  on money_entries (project_id, legacy_id) where legacy_id is not null;
+create index if not exists money_entries_party_idx on money_entries (project_id, party, at desc);
 create index if not exists money_entries_reference_idx
-  on money_entries (reference_kind, reference_id) where reference_kind is not null;
+  on money_entries (project_id, reference_kind, reference_id) where reference_kind is not null;
 
 -- Append only, all three ways. Truncate is the one people leave off.
 create or replace function money_entries_append_only() returns trigger as $$
@@ -1477,8 +1690,8 @@ alter table book_history add column if not exists request_id text not null defau
 alter table ticket_history add column if not exists request_id text not null default request_id();
 
 -- "Everything that happened in that one action" is the only way this is read.
-create index if not exists audit_log_request_idx on audit_log (request_id) where request_id <> '';
-create index if not exists payments_request_idx on payments (request_id) where request_id <> '';
+create index if not exists audit_log_request_idx on audit_log (project_id, request_id) where request_id <> '';
+create index if not exists payments_request_idx on payments (project_id, request_id) where request_id <> '';
 -- ============ ONE REQUEST, ONE THREAD (end) ============
 
 /*
@@ -1716,184 +1929,34 @@ begin
   end if;
 end $$;
 
--- ============ ORGANISATIONS AND PROJECTS (MULTI-TENANCY-PLAN.md, Stage 0) ============
+-- ============ THE KEYS STAGE 4 WILL SWAP IN ============
 --
--- THE CONTROL PLANE, AND NOTHING READS IT YET. Six tables and three functions,
--- added so that every later stage has somewhere to hang: an organisation owns
--- projects, a project is one raffle, and today's raffle becomes the seed
--- project with a NAMED id, so it reads in every audit line as the raffle that
--- predates projects.
+-- Fourteen composite unique indexes, beside the keys that are already there
+-- rather than instead of them. Nothing uses them today and nothing is meant
+-- to: they exist so that Stage 2's function deploy can point its eleven
+-- `onConflict` strings at (project_id, <old key>) while the old keys are still
+-- in place, because PostgREST needs a unique index matching the conflict
+-- target and a deploy cannot land between two migrations. Stage 4 drops the
+-- old keys and these become the real ones.
 --
--- NO EXISTING TABLE, VIEW, POLICY OR HANDLER CHANGES HERE. That is the whole
--- promise of Stage 0: the live raffle cannot tell these exist. Stage 1 adds the
--- project_id column; Stage 3 starts reading membership from here.
---
--- DEFAULT DENY, like everything else in this file. None of these is readable
--- from a browser; the api function reads them with the service key, and later
--- stages expose what they need through functions, not grants.
+-- project_id leads every one of them, because that is the column order those
+-- onConflict strings will name. ticket_receipt_items is the exception the plan
+-- writes deliberately, `code` first, because a receipt code is global and
+-- outlives the project it was issued for — as does ticket_codes.code, which is
+-- why there is no composite for it here.
 
--- Who may run the platform: create organisations, appoint an organiser.
--- The SUPER_ADMIN_EMAIL secret is always one of them and is not a row.
-create table if not exists platform_admins (
-  email        text primary key check (email = lower(btrim(email)) and email <> ''),
-  added_by     text not null default '',
-  added_at     timestamptz not null default now()
-);
-
-create table if not exists organisations (
-  org_id       uuid primary key default gen_random_uuid(),
-  slug         text not null unique
-                 check (slug ~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$'),
-  name         text not null,
-  /*
-   * EXACTLY ONE ORGANISER, AS A COLUMN, so "one" is a fact of the table rather
-   * than a count somebody has to keep. Changed only by a system admin.
-   *
-   * '' IS "NOBODY YET", and it grants nothing: auth_email() is never '', so no
-   * comparison against it can match. A migration cannot read the function
-   * secret, so the seed organisation starts this way (MULTI-TENANCY-DECISIONS.md
-   * D-001).
-   */
-  organiser_email text not null default ''
-                 check (organiser_email = lower(btrim(organiser_email))),
-  status       text not null default 'active' check (status in ('active','suspended')),
-  created_at   timestamptz not null default now(),
-  created_by   text not null default ''
-);
-
--- The outer wall: which features an organisation may use at all. The list of
--- feature ids is supabase/functions/_shared/features.ts. A missing row is OFF.
-create table if not exists org_features (
-  org_id       uuid not null references organisations(org_id) on delete restrict,
-  feature      text not null,
-  enabled      boolean not null,
-  set_by       text not null default '',
-  set_at       timestamptz not null default now(),
-  primary key (org_id, feature)
-);
-
--- What a new project of the organisation starts from, keyed like config.
-create table if not exists org_defaults (
-  org_id       uuid not null references organisations(org_id) on delete restrict,
-  key          text not null,
-  value        text not null default '',
-  primary key (org_id, key)
-);
-
-create table if not exists projects (
-  project_id   uuid primary key default gen_random_uuid(),
-  org_id       uuid not null references organisations(org_id) on delete restrict,
-  slug         text not null,
-  name         text not null,
-  status       text not null default 'active'
-                 check (status in ('draft','active','closing','archived')),
-  created_at   timestamptz not null default now(),
-  created_by   text not null default '',
-  archived_at  timestamptz,
-  archived_by  text,
-  -- Null is "never", and never is the default: nothing is purged unless an
-  -- organiser has written down a period.
-  purge_personal_after interval,
-  purged_at    timestamptz,
-  unique (org_id, slug)
-);
-
--- app_users, per project. Same lifecycle and the same generated `active`.
--- Stage 4 adds the foreign key from (project_id, agent_id) to agents.
-create table if not exists project_members (
-  project_id   uuid not null references projects(project_id) on delete restrict,
-  email        text not null check (email = lower(btrim(email)) and email <> ''),
-  name         text not null default '',
-  role         text not null check (role in ('admin','recorder','agent','viewer')),
-  status       text not null default 'active'
-                 check (status in ('pending','active','suspended','banned')),
-  active       boolean generated always as (status = 'active') stored,
-  agent_id     text,
-  added_by     text not null default '',
-  added_at     timestamptz not null default now(),
-  primary key (project_id, email)
-);
-
-alter table platform_admins enable row level security;
-alter table organisations   enable row level security;
-alter table org_features    enable row level security;
-alter table org_defaults    enable row level security;
-alter table projects        enable row level security;
-alter table project_members enable row level security;
-revoke all on platform_admins, organisations, org_features, org_defaults,
-              projects, project_members from anon, authenticated;
-
-/*
- * THE RAFFLE THAT PREDATES PROJECTS, by a name rather than a lookup. Every row
- * that exists before Stage 1 belongs to it, and a constant is something a
- * reader of an audit line can recognise.
- */
-create or replace function seed_project() returns uuid as $$
-  select '00000000-0000-0000-0000-000000000001'::uuid
-$$ language sql immutable;
-
-/*
- * WHICH PROJECT THIS REQUEST IS ABOUT, read the way request_id() reads its id:
- * from the header PostgREST exposes, or from a session setting a runbook sets.
- *
- * NULL WHEN NEITHER IS PRESENT. What to do about that is each caller's
- * decision, and through Stage 3 every caller says coalesce(…, seed_project()).
- * A malformed value is not null: the cast fails and the statement with it,
- * which is a refusal rather than a guess.
- */
-create or replace function current_project() returns uuid as $$
-  select coalesce(
-    nullif(nullif(current_setting('request.headers', true), '')::json ->> 'x-project-id', ''),
-    nullif(current_setting('app.project_id', true), ''))::uuid
-$$ language sql stable set search_path = public;
-
-/*
- * THE SEED ORGANISATION AND PROJECT, made once and safe to call again.
- *
- * Called by the Stage 0 migration with no organiser and by supabase/reset.sql
- * with the super admin's address. A second call never makes a second
- * organisation; it only fills an organiser that is still blank, and it never
- * replaces one that is set — that is a system admin's act, not a side effect.
- *
- * EVERY FEATURE IS ON for this organisation, because it is the raffle that
- * already uses all of them. `core` is not listed: it is always on and a row
- * for it would be a switch that does nothing.
- */
-create or replace function seed_tenancy(p_organiser text default '') returns uuid as $$
-declare
-  v_org   uuid;
-  v_name  text;
-  v_event text;
-  v_slug  text;
-  v_email text := lower(btrim(coalesce(p_organiser, '')));
-begin
-  select org_id into v_org from projects where project_id = seed_project();
-
-  if v_org is null then
-    select nullif(btrim(value), '') into v_name  from config where key = 'ORG_NAME';
-    select nullif(btrim(value), '') into v_event from config where key = 'EVENT_NAME';
-    v_name := coalesce(v_name, 'Organisation');
-    v_slug := btrim(left(btrim(regexp_replace(lower(v_name), '[^a-z0-9]+', '-', 'g'), '-'), 40), '-');
-    if v_slug !~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$' then v_slug := 'default'; end if;
-
-    insert into organisations (slug, name, organiser_email, created_by)
-      values (v_slug, v_name, v_email, 'seed_tenancy')
-      returning org_id into v_org;
-    insert into projects (project_id, org_id, slug, name, created_by)
-      values (seed_project(), v_org, 'raffle', coalesce(v_event, v_name), 'seed_tenancy');
-  elsif v_email <> '' then
-    update organisations set organiser_email = v_email
-     where org_id = v_org and organiser_email = '';
-  end if;
-
-  insert into org_features (org_id, feature, enabled, set_by)
-    select v_org, f, true, 'seed_tenancy'
-      from unnest(array['tickets','books','money','checkins','approvals','prizes',
-                        'reports','printing','cards','studio','seed','reset']) f
-  on conflict (org_id, feature) do nothing;
-
-  return seed_project();
-end $$ language plpgsql security definer set search_path = public;
-
-revoke all on function seed_tenancy(text) from public, anon, authenticated;
--- ============ ORGANISATIONS AND PROJECTS (end) ============
+create unique index if not exists config_project_key_uidx on config (project_id, key);
+create unique index if not exists app_users_project_email_uidx on app_users (project_id, email);
+create unique index if not exists permissions_project_action_role_uidx on permissions (project_id, action, role);
+create unique index if not exists round_snapshots_project_round_agent_uidx on round_snapshots (project_id, round, agent_id);
+create unique index if not exists check_in_dates_project_round_uidx on check_in_dates (project_id, round);
+create unique index if not exists check_in_reports_project_agent_round_uidx on check_in_reports (project_id, agent_id, round);
+create unique index if not exists tickets_project_idx_uidx on tickets (project_id, idx);
+create unique index if not exists tickets_project_number_uidx on tickets (project_id, number);
+create unique index if not exists books_project_idx_uidx on books (project_id, idx);
+create unique index if not exists books_project_number_uidx on books (project_id, number);
+create unique index if not exists agents_project_agent_uidx on agents (project_id, agent_id);
+create unique index if not exists winners_project_ticket_uidx on winners (project_id, ticket_idx);
+create unique index if not exists ticket_codes_project_ticket_uidx on ticket_codes (project_id, ticket_idx);
+create unique index if not exists ticket_receipt_items_code_project_ticket_uidx on ticket_receipt_items (code, project_id, ticket_idx);
+-- ============ THE KEYS STAGE 4 WILL SWAP IN (end) ============

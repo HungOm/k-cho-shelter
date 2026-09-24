@@ -77,13 +77,25 @@ fi
 # two faults above it means the docker branch of this suite has never completed
 # a run; everybody who has exercised these policies did it through the local
 # Postgres fallback.
+#
+# AND IT HAPPENED AGAIN, with the third role. On 2026-09-21 functions.sql:1375
+# gained `grant execute on function holding_of to service_role` — Supabase makes
+# that role too, and this list did not. From that day this suite printed
+# "functions failed" and exited before its first case, exactly as the paragraph
+# above describes, and for the same reason one role further along. A role that
+# appears once in the SQL looks unused until the statement that needs it runs.
 DB_ -q -c "do \$\$ begin
     if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
     if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+    if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
   end \$\$;" >/dev/null 2>&1 || true
-APPLY supabase/schema.sql    >/dev/null 2>&1 || { echo "schema failed"; exit 1; }
-APPLY supabase/functions.sql >/dev/null 2>&1 || { echo "functions failed"; exit 1; }
-APPLY supabase/rls.sql       >/dev/null 2>&1 || { echo "rls failed"; exit 1; }
+
+# WHY IT FAILED, not just which file. Three days of "functions failed" with the
+# reason discarded, while psql was naming the missing role in full every time.
+BUILD() { out=$(APPLY "$1" 2>&1) || { echo "$1 failed"; echo "$out" | grep -i "error" | head -3 | sed 's/^/  /'; exit 1; }; }
+BUILD supabase/schema.sql
+BUILD supabase/functions.sql
+BUILD supabase/rls.sql
 
 # PostgREST connects as a role called `authenticated`; recreate that here so the
 # policies are exercised as they will be in production rather than as superuser,

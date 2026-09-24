@@ -60,9 +60,19 @@ console.log('1. the wrapper exists and knows the control plane')
   ok(typeof scoped === 'function', 'scoped() is exported')
   eq([...CONTROL_PLANE].sort(), ['org_defaults', 'org_features', 'organisations', 'platform_admins',
     'project_members', 'projects'], 'the six Stage 0 tables are the control plane')
-  /* The list must match the tables schema.sql actually creates in Stage 0. */
+  /* The list must match the tables schema.sql actually creates in Stage 0.
+     BETWEEN BOTH MARKERS, not from the first one to the end of the file. That
+     read the six tables correctly only while the block happened to be last;
+     Stage 1 moved it above the tables — every raffle table's project_id default
+     calls the two functions in it — and the same slice then returned all
+     twenty-nine. The block has always carried an end marker, and
+     tenancy.test.mjs has always used it. */
   const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8')
-  const block = schema.slice(schema.indexOf('ORGANISATIONS AND PROJECTS (MULTI-TENANCY-PLAN.md'))
+  const BEGIN = 'ORGANISATIONS AND PROJECTS (MULTI-TENANCY-PLAN.md'
+  const END = '-- ============ ORGANISATIONS AND PROJECTS (end) ============'
+  const from = schema.indexOf(BEGIN), to = schema.indexOf(END)
+  ok(from >= 0 && to > from, 'schema.sql carries the Stage 0 block between its two markers')
+  const block = schema.slice(from, to)
   const created = [...block.matchAll(/create table if not exists ([a-z_]+)/g)].map((m) => m[1]).sort()
   ok(created.length === 6, `found the Stage 0 tables in schema.sql (${created.length})`)
   eq([...CONTROL_PLANE].sort(), created, 'CONTROL_PLANE is exactly what Stage 0 creates')
