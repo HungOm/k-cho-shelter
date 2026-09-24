@@ -137,6 +137,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   read_snapshot: { group: 'Basics', label: 'Load the tickets' },
   read_delta: { group: 'Basics', label: 'Load what changed' },
   read_version: { group: 'Basics', label: 'Check for changes' },
+  search: { group: 'Basics', label: 'Find a ticket' },
   sell_ticket: { group: 'Tickets', label: 'Record a sale' },
   reserve_ticket: { group: 'Tickets', label: 'Hold a ticket' },
   release_ticket: { group: 'Tickets', label: 'Let a held ticket go' },
@@ -191,6 +192,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
    * screen an organiser opens to understand what the roles can do.
    */
   set_org_contact: { group: 'Access', label: 'Change the raffle\'s contact details' },
+  set_org_about: { group: 'Access', label: 'Change the raffle\'s description' },
   upload_template: { group: 'Access', label: 'Change the ticket artwork', danger: true },
   list_templates: { group: 'Access', label: 'See the ticket artwork' },
   set_template_design: { group: 'Access', label: 'Move the number on the ticket' },
@@ -210,6 +212,7 @@ const ACTION_META: Record<string, { group: string; label: string; danger?: boole
   write_off: { group: 'Money', label: 'Write off money that is not coming back', danger: true },
   list_payments: { group: 'Money', label: 'See what has been handed in' },
   report_outstanding: { group: 'Money', label: 'Who still owes money' },
+  agent_statement: { group: 'Money', label: 'One seller\'s statement' },
   list_agents: { group: 'People', label: 'See the sellers' },
   upsert_agent: { group: 'People', label: 'Add or change a seller' },
   list_users: { group: 'People', label: 'See who can sign in' },
