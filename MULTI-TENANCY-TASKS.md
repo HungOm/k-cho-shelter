@@ -26,6 +26,14 @@ self-contained tasks, one owner each. Open questions go to
    database as it is in production today: no Stage 0 tables, no `project_id`
    column. Code that needs either must stay unwired until its migration is
    applied.
+7. **Rollback scripts live beside the backfills in `supabase/`, never in
+   `migrations.pending/`.** Everything in that directory is applied to a clean
+   build by `test-functions.sh`, so a rollback filed there runs straight after
+   the migration it undoes. Stage 1's is `supabase/rollback-project-column.sql`.
+8. **A migration never backfills with UPDATE.** `add column … not null default
+   <non-volatile>` stores the value without rewriting rows; an UPDATE is refused
+   by the append-only tables and, on `tickets`, bumps every version and makes
+   every phone re-download every ticket. `tests/migrationsql` enforces it.
 4. **Behaviour does not change** for the live raffle in any of Stages 0–3. Every
    existing suite stays green; a suite you change must say why in the commit.
 5. **House hygiene.** Announce your file list to the other raffle sessions before
@@ -47,7 +55,7 @@ sessions, that they may work on this plan.
 |---|---|---|---|---|
 | MT-0 | 0 control plane | multi-tenancy-architecture-plan | none | done (2d62e15); migration pending, not applied |
 | MT-1a | 1 the diff script (T9) | kcho-shelter-25 | none | done (8e48c01) |
-| MT-1b | 1 the column (the migration half of MT-1) | kcho-shelter-25 (released by its user, 2026-09-25) | MT-0 | in progress |
+| MT-1b | 1 the column (the migration half of MT-1) | kcho-shelter-25 (released by its user, 2026-09-25) | MT-0 | done (3a20fc9, a44b22a); migration pending, not applied; D-018 |
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
 | MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | done (5ef3092); D-015, D-016, D-017 |
