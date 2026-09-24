@@ -33,13 +33,15 @@ self-contained tasks, one owner each. Open questions go to
 
 | Id | Stage | Owner | Depends on | Status |
 |---|---|---|---|---|
-| MT-0 | 0 control plane | multi-tenancy-architecture-plan | none | done, pending migration not applied |
+| MT-0 | 0 control plane | multi-tenancy-architecture-plan | none | done (2d62e15); migration pending, not applied |
 | MT-1 | 1 the column | offered to kcho-shelter-25 | MT-0 landed (T9 script can start now) | offered |
-| MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 sha (for tests/run.sh) | accepted |
-| MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done |
+| MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
+| MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
+| MT-2a | 2 the function resolves the project first | offered to kcho-shelter-51 | MT-K | offered |
 
-Stages 2 (wiring), 3 (membership), 4 onward are not yet cut into cards. They
-start after MT-0, MT-1, MT-F and MT-K land.
+The rest of Stage 2 (handlers on the scoped client, SQL functions taking
+`p_project`, the coalesced predicates) waits for MT-1, because it needs the
+`project_id` column. Stages 3 onward are not yet cut into cards.
 
 ### MT-0 · Stage 0 · control plane
 
@@ -98,3 +100,28 @@ start after MT-0, MT-1, MT-F and MT-K land.
 - **Watch for** (from ticket-studio-redesign): `tests/templates.test.mjs` builds
   its own storage stub on `db.ctx.supabaseAdmin`, so the wrapper must carry
   `.storage` through rather than returning a fresh object without it.
+
+### MT-2a · Stage 2 · the function resolves the project first
+
+- **Ships.** In `supabase/functions/api/index.ts` `route()`: read the
+  `x-project-id` request header before anything else. Absent means the seed
+  project (`00000000-0000-0000-0000-000000000001`, plan invariant 2). Not a uuid
+  is refused `BAD_PROJECT`. Any other uuid is refused `PROJECT_NOT_FOUND`: no
+  second project can exist before Stage 5 (plan invariant 6). Only then read the
+  user row, the permissions and `approvalNeeded`, all through the per-request
+  admin client, which now carries `x-project-id` beside `x-request-id` and is
+  built BEFORE those reads (the review's finding at `index.ts:1677-1709`). Put
+  the id on `ctx.project`. Key `configCache`, `permsCache` and `userCache` by
+  project. New `tests/projectroute.test.mjs`.
+- **Must not change.** Any answer to a request with no header or with the seed
+  header. No handler, no client file, no SQL. Nothing is deployed.
+- **Watch for.** The review found `createAdminClient` returns nothing under the
+  test stub, and today the request carries on with the platform client. The plan
+  says a request whose stamped client cannot be built is refused. If refusing
+  there turns suites red because of the stub, make the stub build a client
+  rather than weakening the refusal; if that is not possible, log a decision and
+  keep today's behaviour.
+- **Done when.** Gate green in a frozen archive (symlink `node_modules` into it);
+  `router`, `everyaction`, `edgehandlers`, `gate` unchanged in count and result;
+  the new suite proves all four header cases and that a refused project reads no
+  user row.

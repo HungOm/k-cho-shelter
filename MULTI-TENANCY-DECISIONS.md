@@ -91,4 +91,11 @@ Context: `ACTION_META` is optional, so `agent_statement`, `search` and `set_org_
 Your choice: 
 
 
+### D-010 · Nothing type-checks the Edge Function · raised by kcho-shelter-51, 2026-09-24
+Blocks: nothing now; Stage 3 starts relying on required fields such as `feature`.
+Context: `tests/run.sh` has no `deno check` or `tsc` step, so a required TypeScript field is enforced only by a test that reads the source text. Stages 2–5 add more such contracts (`ctx.project`, `p_project`).
+- A ★ add a `deno check supabase/functions/api/index.ts supabase/functions/verify/index.ts` step to the gate, failing if Deno is missing, as test-rls.sh does for Docker. Deno is not installed on this machine today, so A also means installing it here and in the Pages workflow
+- B keep source-text tests only, one per contract
+Your choice: 
+
 ## Decided
