@@ -50,7 +50,7 @@ sessions, that they may work on this plan.
 | MT-1b | 1 the column (the migration half of MT-1) | kcho-shelter-25 (released by its user, 2026-09-25) | MT-0 | in progress |
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
-| MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | accepted |
+| MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | done (5ef3092); D-015, D-016, D-017 |
 | MT-L | 7 organisation and project lifecycle (D-006) | unassigned | Stage 5 | not started |
 | MT-T | gate: type-check the functions (D-010) | multi-tenancy-architecture-plan | none | done; lands as a ratchet (D-014) |
 
