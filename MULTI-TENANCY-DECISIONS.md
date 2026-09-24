@@ -20,7 +20,12 @@ Your choice:
 
 ## Open
 
-None right now.
+### D-014 · The type-check lands as a ratchet over 78 existing errors · raised by multi-tenancy-architecture-plan, 2026-09-25
+Blocks: nothing. MT-T ships under A.
+Context: your D-010 answer asked for a gate step that fails on type errors. The first run found 78 in code already in production: loose `any`s, handler signatures the registry type does not accept, and one `role === 'superadmin'` that is only a too-narrow type, not a bug. Failing on all 78 would stop every deploy.
+- A ★ ratchet: the 78 are listed in `tests/typecheck-baseline.txt`; the gate fails on any error not on the list, and on any listed error that has been fixed, so the list only shrinks. A missing or misspelt `feature` tag is proved to turn it red
+- B a wall: fix all 78 first, as their own card, before the step goes in
+Your choice: 
 
 ## Decided
 

@@ -52,7 +52,7 @@ sessions, that they may work on this plan.
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
 | MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | accepted |
 | MT-L | 7 organisation and project lifecycle (D-006) | unassigned | Stage 5 | not started |
-| MT-T | gate: type-check the functions (D-010) | unassigned | none | ready |
+| MT-T | gate: type-check the functions (D-010) | multi-tenancy-architecture-plan | none | done; lands as a ratchet (D-014) |
 
 The rest of Stage 2 (handlers on the scoped client, SQL functions taking
 `p_project`, the coalesced predicates) waits for MT-1, because it needs the

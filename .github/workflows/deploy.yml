@@ -30,6 +30,15 @@ jobs:
 
       - run: npm ci
 
+      # The gate type-checks the Edge Functions (tests/typecheck.test.mjs,
+      # decision D-010) and FAILS if Deno is missing rather than skipping, so
+      # it has to be installed before the tests run. Pinned to the version the
+      # recorded list of known errors was made with: a newer checker can find
+      # different errors, and that should be a deliberate bump, not a Tuesday.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+
       - name: Run tests
         run: ./tests/run.sh
 

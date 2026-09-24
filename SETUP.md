@@ -86,6 +86,10 @@ skip and what replaces them. Read that one alongside this, not instead of it.
    This screen, and everything behind it, is **organisers and the System Admin only** — and
    unlike most features it cannot be handed to another role from the Access screen.
 10. Check it: `./tests/run.sh`, and `./supabase/test-rls.sh` against a throwaway database.
+    `./tests/run.sh` needs [Deno](https://deno.com) 2.9.7 as well as Node, because it type-checks the
+    Edge Functions; without Deno that suite fails rather than being skipped. Errors that already
+    existed are listed in `tests/typecheck-baseline.txt`; fix one and take it off the list with
+    `node tests/typecheck.test.mjs --write-baseline`.
 
 The numbered steps below expand on the two that need a Google account rather than a Supabase one.
 
