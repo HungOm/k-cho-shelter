@@ -19,6 +19,13 @@ self-contained tasks, one owner each. Open questions go to
    `supabase/migrations.pending/`, never `supabase/migrations/` (the next push by
    anybody applies whatever is in that directory). Applying one is an owner
    decision, logged in the decisions file.
+   **Function code is different: it reaches production with the next
+   `functions deploy`, whoever runs it and for whatever reason.** `api` v71
+   (2026-09-24) already carries MT-0's reset plan, MT-F's tags and MT-K's
+   `scoped.ts`, all inert. So every function change must be safe against the
+   database as it is in production today: no Stage 0 tables, no `project_id`
+   column. Code that needs either must stay unwired until its migration is
+   applied.
 4. **Behaviour does not change** for the live raffle in any of Stages 0–3. Every
    existing suite stays green; a suite you change must say why in the commit.
 5. **House hygiene.** Announce your file list to the other raffle sessions before
@@ -43,7 +50,7 @@ sessions, that they may work on this plan.
 | MT-1b | 1 the column (the migration half of MT-1) | held: kcho-shelter-25 declined pending its own user's word | MT-0 | waiting for the owner |
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
-| MT-2a | 2 the function resolves the project first | held: kcho-shelter-51 declined pending its own user's word | MT-K | waiting for the owner |
+| MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | accepted |
 
 The rest of Stage 2 (handlers on the scoped client, SQL functions taking
 `p_project`, the coalesced predicates) waits for MT-1, because it needs the
@@ -121,6 +128,9 @@ The rest of Stage 2 (handlers on the scoped client, SQL functions taking
   project. New `tests/projectroute.test.mjs`.
 - **Must not change.** Any answer to a request with no header or with the seed
   header. No handler, no client file, no SQL. Nothing is deployed.
+- **Must run on today's production database** (rule 3): refusing a
+  non-seed project must not look it up, because `projects` does not exist there
+  yet.
 - **Watch for.** The review found `createAdminClient` returns nothing under the
   test stub, and today the request carries on with the platform client. The plan
   says a request whose stamped client cannot be built is refused. If refusing
