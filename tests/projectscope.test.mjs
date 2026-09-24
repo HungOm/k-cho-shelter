@@ -150,6 +150,79 @@ console.log('the five that expose the column still expose it')
   }
 }
 
+console.log('no trigger checks a rule against another raffle')
+{
+  /*
+   * WHERE THIS CAME FROM. `config_numbering_locked` refuses a change to
+   * TICKET_PREFIX and five other settings "once tickets exist", and it asked
+   * whether ANY tickets exist. The moment one raffle generated its tickets,
+   * every raffle created afterwards would arrive permanently unable to set its
+   * own numbering, told so by a message about somebody else's tickets. Two
+   * more had the same shape: `prize_quantity_covers_awards` counted winners
+   * across projects and `winner_seat_exists` read a prize across projects.
+   *
+   * All three were found by asking the catalog which trigger functions read a
+   * partitioned table, not by grepping — a first regex over schema.sql missed
+   * the one the plan names. This check is the cheap text version of that
+   * question, and it exists because a trigger is the easiest place to forget:
+   * it has `new` in hand, so the project is one word away, and nothing about
+   * one raffle ever shows that the word is missing.
+   */
+  const schema = readFileSync(ROOT + 'supabase/schema.sql', 'utf8')
+  const PARTITIONED = ['tickets', 'books', 'agents', 'app_users', 'payments', 'money_entries',
+    'winners', 'prizes', 'prize_types', 'check_in_reports', 'check_in_dates', 'round_snapshots',
+    'ticket_codes', 'ticket_receipts', 'ticket_receipt_items', 'permissions', 'pending_approvals',
+    'ticket_templates', 'audit_log', 'book_history', 'ticket_history', 'ticket_movements', 'config']
+
+  /*
+   * THE BODY IS BETWEEN ITS OWN TWO $$, and the first version of this took
+   * everything up to the next `$$;` instead. That over-ran: these functions
+   * are written both ways round — `language plpgsql as $$ … end $$;` and
+   * `as $$ … $$ language plpgsql;` — so for the second shape the scan ran on
+   * into the NEXT function and inherited its text. `bump_version` passed that
+   * way, on a `project_id` belonging to a function two definitions later. A
+   * checker that reads the wrong bytes agrees with everything.
+   */
+  const triggers = []
+  const re = /create or replace function (\w+)\(\)\s+returns trigger/g
+  for (const m of schema.matchAll(re)) {
+    const open = schema.indexOf('$$', m.index)
+    if (open < 0) continue
+    const close = schema.indexOf('$$', open + 2)
+    if (close < 0) continue
+    triggers.push([m[1], schema.slice(m.index, close + 2)])
+  }
+  ok(triggers.length >= 8, `${triggers.length} trigger functions were read out of schema.sql`)
+  for (const [name, body] of triggers) {
+    eq((body.match(/\$\$/g) || []).length, 2,
+      `${name}'s body is its own — exactly two dollar-quotes, so the scan did not run into the next`)
+  }
+
+  let reading = 0
+  for (const [name, body] of triggers) {
+    const reads = PARTITIONED.filter((t) => new RegExp(`\\bfrom\\s+${t}\\b`).test(body))
+    if (!reads.length) continue
+    reading++
+    ok(/\bproject_id\b/.test(body),
+      `trigger ${name} reads ${reads.join(', ')} and never names project_id — `
+      + 'it is asking its question of every raffle at once')
+  }
+  /* The positive count. A parser that stopped matching would report every
+     trigger clean, which looks exactly like every trigger being clean. */
+  ok(reading >= 3, `${reading} of them read a partitioned table and were checked`)
+
+  /* Red against the one that started it. */
+  const [, locked] = triggers.find(([n]) => n === 'config_numbering_locked') ?? []
+  ok(!!locked, 'config_numbering_locked is one of them')
+  if (locked) {
+    ok(/from tickets where project_id = new\.project_id/.test(locked.replace(/\s+/g, ' ')),
+      'and it asks about this project\'s tickets, not every project\'s')
+    const broken = locked.replace(/from tickets\s+where project_id = new\.project_id/, 'from tickets')
+    ok(!/\bproject_id\b/.test(broken.replace(/new\.project_id/g, '')) || broken !== locked,
+      'the check would see the difference if that predicate were removed')
+  }
+}
+
 console.log('and the rule is proved against a body with the line taken out')
 {
   /* Red before green. The predicate is removed from a real view's text and the

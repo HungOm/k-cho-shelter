@@ -1206,7 +1206,13 @@ language plpgsql as $$
 declare q integer;
 begin
   if new.prize_id is null then return new; end if;
-  select quantity into q from prizes where prize_id = new.prize_id;
+  -- The prize in THIS project. prize_id stays globally unique through Stage 4,
+  -- so today this could only match the right row; filtering anyway because the
+  -- plan's rule for the text-id tables is "project_id column, composite FKs,
+  -- every read filters", and a read that is correct only because of a property
+  -- two stages away is one nobody can check.
+  select quantity into q from prizes
+   where prize_id = new.prize_id and project_id = new.project_id;
   if q is null then
     raise exception 'No prize called % is set up.', new.prize_id;
   end if;
@@ -1226,7 +1232,8 @@ language plpgsql as $$
 declare given integer;
 begin
   select count(*) into given from winners
-    where prize_id = new.prize_id and forfeited_at is null;
+    where prize_id = new.prize_id and forfeited_at is null
+      and project_id = new.project_id;
   if new.quantity < given then
     raise exception 'The % has been given % times already, so it cannot be cut to %.',
       new.tier, given, new.quantity;
@@ -1234,7 +1241,8 @@ begin
   -- A seat number cannot be left stranded above the new ceiling either.
   if exists (select 1 from winners
              where prize_id = new.prize_id and seq > new.quantity
-               and forfeited_at is null) then
+               and forfeited_at is null
+               and project_id = new.project_id) then
     raise exception 'Somebody holds a % above number %.', new.tier, new.quantity;
   end if;
   return new;
@@ -1868,7 +1876,13 @@ declare
 begin
   if new.value is not distinct from old.value then return new; end if;
 
-  select exists (select 1 from tickets) into have_tickets;
+  -- THIS PROJECT'S TICKETS, not every project's. Unscoped, the first raffle to
+  -- generate tickets would lock the numbering of every raffle created
+  -- afterwards, for good: a brand-new project with no tickets at all would be
+  -- told its prefix cannot change because somebody else's tickets exist. The
+  -- plan names this one specifically.
+  select exists (select 1 from tickets where project_id = new.project_id)
+    into have_tickets;
 
   if new.key = 'TOTAL_TICKETS' then
     -- Blank or non-numeric on either side is left to the handlers; this guard
