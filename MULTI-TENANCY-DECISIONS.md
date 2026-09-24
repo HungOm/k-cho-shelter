@@ -122,6 +122,14 @@ Context: D-013 sets ninety days. Something has to notice when a deactivated orga
 - C no job — the organiser is shown "2 projects are past retention" and presses a button, which is honest about who decides and breaks the promise the first busy month
 Your choice: 
 
+### D-033 · A second raffle cannot have its own settings until Stage 4, so half of T4 cannot be written yet · raised by kcho-shelter-25, 2026-09-26
+Blocks: nothing. It confirms the plan's own scheduling and says what the Stage 2 cards can and cannot prove.
+Context: I tried to bring the two-project suite forward, so that Stage 2's predicates could be proved as they were written instead of taken on trust — with one raffle every one of them is a no-op, so the suites can only show nothing broke. It works for `tickets`, `books`, `agents` and `ticket_receipts`, where distinct numbers and codes get past the old global uniques, and the receipt-path leaks are now proved both ways. It does NOT work for `config`, `permissions` or `check_in_dates`: their primary keys are still `(key)`, `(action, role)` and `(round)`, so a second raffle cannot hold a `TOTAL_TICKETS` row at all — `duplicate key value violates config_pkey`. So anything reading config per project, `active_tickets(B)` included, is unprovable until the composite keys land.
+- A ★ accept it: the twelve remaining SQL functions are scoped in Stage 2 as the plan says, with their predicates proved where a second raffle is possible and reviewed by reading where it is not, and T4 stays in Stage 4 where the plan already puts it
+- B hold the twelve until Stage 4 and do them in the same window as the key swap, so every predicate is proved when written — a smaller Stage 2 and a much larger Stage 4, which is already the risky one
+- C bring the composite-key swap for `config` alone forward into Stage 2, so settings are per project early; it is the smallest of the key changes and nothing reads config by its old key outside the eleven upserts
+Your choice: 
+
 ### D-029 · Does a system admin have a way into another organisation's raffle data at all · raised by kcho-shelter-25, 2026-09-25
 Blocks: MT-O1 (see `MULTI-TENANCY-ORGS.md`). The most consequential privacy decision in the plan.
 Context: the plan gives the system admin "break-glass" entry to any project, audited with `platform_override: true` and never listed as membership. That is how you would fix somebody else's raffle at 11pm. It is also a door to every buyer's name and phone number in every organisation, and the service key means the database cannot refuse it — only the absence of a screen and an action can.

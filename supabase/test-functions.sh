@@ -1450,6 +1450,112 @@ r=$(P "update books set status='Offered', held_by_agent='A001' where idx=4")
 has "$r" "books_offered_is_on_nobodys_balance" "setting both is refused"
 P "update books set status='Out', held_by_agent='A002', offered_to_agent=null where idx in (4,5)" >/dev/null
 
+# ---------------------------------------------------------------------------
+# TWO RAFFLES, WHICH IS THE ONLY WAY TO TEST A PARTITION KEY.
+#
+# Stage 2 adds `project_id` predicates all over the SQL, and with one raffle
+# every one of them selects exactly what it selected before. So the whole of
+# this file passing proves nothing broke; it cannot prove anything was scoped.
+# The predicate that was forgotten and the predicate that was written look
+# identical from here.
+#
+# HOW MUCH OF A SECOND RAFFLE IS POSSIBLE BEFORE STAGE 4, measured rather than
+# assumed, because the first version of this section assumed too much:
+#
+#   tickets, books, agents, ticket_receipts   yes, with distinct idx, numbers
+#                                             and codes — the old global
+#                                             uniques are still standing
+#   config, permissions, check_in_dates       NO. Their primary keys are still
+#                                             (key), (action, role) and (round),
+#                                             so a second raffle cannot have a
+#                                             TOTAL_TICKETS row of its own at
+#                                             all: `duplicate key value
+#                                             violates config_pkey`
+#
+# Which is why the plan puts T2 and T4 — the full two-project read and write
+# suites — in Stage 4, and it is right to. Anything that reads config per
+# project, `active_tickets(B)` included, cannot be proved with two raffles
+# until the composite keys land. Recorded as D-033.
+#
+# WHAT IS PROVED HERE is the receipt path, because that is where a leak is a
+# privacy breach rather than a wrong total: the same person buys in two
+# raffles, and each organiser must hand them their own raffle's digital ticket.
+# ---------------------------------------------------------------------------
+echo "a second raffle is a second raffle"
+B='00000000-0000-0000-0000-0000000000b2'
+P "insert into organisations (slug, name, organiser_email, created_by)
+     values ('other-org', 'Other Org', 'other@x.com', 'test') on conflict (slug) do nothing;
+   insert into projects (project_id, org_id, slug, name, created_by)
+     select '$B', org_id, 'other-raffle', 'Other Raffle', 'test'
+       from organisations where slug = 'other-org'
+   on conflict (project_id) do nothing;
+   insert into agents (agent_id, name, phone, project_id)
+     values ('B001','Other Seller','0999000111','$B') on conflict do nothing;
+   insert into books (idx, number, first_ticket, last_ticket, status, held_by_agent, project_id)
+     values (901,'OB-0901','OT-00901','OT-00910','Out','B001','$B') on conflict do nothing;
+   insert into tickets (idx, number, book_idx, status, project_id)
+     select 900+i, 'OT-'||lpad((900+i)::text,5,'0'), 901, 'Available', '$B'
+       from generate_series(1,10) i on conflict do nothing;" >/dev/null
+ok "$(P "select count(*) from projects")" "1" "the second project row is there (the seed has none until Stage 0 is applied)"
+ok "$(P "select count(*) from tickets where project_id = '$B'")" "10" "and it has its own ten tickets"
+# NOT A FIXED COUNT: cases above this one generate tickets, so the number here
+# depends on the whole file. The invariant is what matters — the two raffles
+# partition the table, with nothing in neither and nothing in both.
+ok "$(P "select (select count(*) from tickets) - (select count(*) from tickets where project_id = '$B')
+          = (select count(*) from tickets where project_id = seed_project())")" "t" \
+   "every ticket belongs to exactly one of the two raffles"
+
+# THE SAME BUYER IN BOTH. One telephone number, one name, two raffles — an
+# ordinary thing for a person to do, and the case every predicate below is for.
+P "update tickets set status='Sold', buyer_name='Same Person', buyer_phone='0125559999',
+     amount=10, payment_status='Paid' where number='KS-00007';
+   update tickets set status='Sold', buyer_name='Same Person', buyer_phone='0125559999',
+     amount=25, payment_status='Paid' where number='OT-00901';
+   insert into ticket_receipts (code, created_by, buyer_phone, buyer_name, project_id)
+     values ('AAAAAAAAAAAA','t','0125559999','Same Person', seed_project()),
+            ('BBBBBBBBBBBB','t','0125559999','Same Person', '$B')
+   on conflict (code) do nothing;" >/dev/null
+ok "$(P "select count(*) from ticket_receipts where buyer_phone='0125559999'")" "2" \
+   "the same buyer holds a receipt in each raffle, which Stage 1's composite index allows"
+
+echo "a digital ticket shows the raffle it was minted in, and no other"
+# THE DEFECT THIS CATCHES: holding_of matched buyer_phone and buyer_name across
+# every raffle, so scanning B's code returned A's tickets as well — a
+# stranger's purchases, to whoever was holding the code. The verify function is
+# public and sends no header, so the project has to come off the receipt row.
+ok "$(P "select coalesce(string_agg(number, ','), '(none)') from holding_of('AAAAAAAAAAAA', 100)")" \
+   "KS-00007" "this raffle's code lists this raffle's ticket"
+ok "$(P "select coalesce(string_agg(number, ','), '(none)') from holding_of('BBBBBBBBBBBB', 100)")" \
+   "OT-00901" "and the other raffle's lists its own, not both"
+
+echo "asking for a digital ticket twice in one raffle finds the one that exists"
+# `set local` needs the statement and the select in one psql call, which prints
+# SET first, so the answer is the last line.
+ok "$(P "set local app.project_id = '00000000-0000-0000-0000-000000000001';
+        select holding_code from ensure_holding_tx('0125559999','Same Person','NEWCODE00001','t')" | tail -1)" \
+   "AAAAAAAAAAAA" "in this raffle it finds this raffle's code"
+# AND THE OTHER WAY, the half that was wrong: the second organiser asking for
+# the same buyer used to be handed the FIRST raffle's code, so their buyer
+# received a link to another organisation's raffle, and no receipt was ever
+# created for them at all.
+ok "$(P "set local app.project_id = '$B';
+        select holding_code from ensure_holding_tx('0125559999','Same Person','NEWCODE00002','t')" | tail -1)" \
+   "BBBBBBBBBBBB" "in the other raffle it finds theirs and not this one's"
+ok "$(P "select count(*) from ticket_receipts where buyer_phone='0125559999'")" "2" \
+   "and neither call minted a third receipt"
+
+echo "how many tickets are in play is asked of one raffle"
+# Again the property, not the number, which earlier cases move around: the
+# no-argument wrapper must answer exactly what the explicit call answers for
+# the raffle that was already here, because that is all it does.
+ok "$(P "select active_tickets() = active_tickets(seed_project())")" "t" \
+   "the old no-argument form answers about the raffle that was already here"
+ok "$(P "select active_tickets(seed_project()) > 0")" "t" "which is a real number of tickets"
+
+# Put the raffle back as the cases below expect to find it.
+P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,
+     payment_status='Unpaid' where number='KS-00007'" >/dev/null
+
 echo "a project built by following SETUP.md comes up"
 if [ "$MODE" = docker ]; then
   docker exec "$NAME" psql -U postgres -d postgres -q -c "create database cleanbuild" >/dev/null 2>&1

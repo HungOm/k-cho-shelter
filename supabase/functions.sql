@@ -1370,7 +1370,14 @@ as $$
       select t.idx, t.number, t.status, t.buyer_name, t.amount, t.book_idx
         from ticket_receipts r
         join tickets t
-          on t.buyer_phone = r.buyer_phone
+          -- THE RAFFLE COMES FROM THE RECEIPT, and there is no header to read:
+          -- the verify function is public and sends none. Without this join
+          -- condition a receipt minted in one organisation, whose buyer shares
+          -- a telephone number and name with a buyer in another, returns the
+          -- OTHER organisation's tickets — a stranger's purchases, to whoever
+          -- scanned the code.
+          on t.project_id = r.project_id
+         and t.buyer_phone = r.buyer_phone
          and buyer_key(t.buyer_name) = buyer_key(r.buyer_name)
        where r.code = p_code
          and r.buyer_phone <> ''
@@ -1382,7 +1389,9 @@ as $$
       select t.idx, t.number, t.status, t.buyer_name, t.amount, t.book_idx
         from ticket_receipts r
         join ticket_receipt_items ri on ri.code = r.code
+                                    and ri.project_id = r.project_id
         join tickets t on t.idx = ri.ticket_idx
+                      and t.project_id = ri.project_id
        where r.code = p_code
          and r.buyer_phone = ''
     ) q
@@ -1418,10 +1427,22 @@ begin
     raise exception 'a digital ticket needs a buyer';
   end if;
 
+  -- WITHIN THIS RAFFLE. The same person may buy in two organisations' raffles,
+  -- and they are two holdings: one code each, listing that raffle's tickets.
+  -- Unscoped, the second organiser asking for a digital ticket would be handed
+  -- the FIRST organisation's code — so their buyer would receive a link to
+  -- somebody else's raffle showing tickets they did not buy, and no new
+  -- receipt would ever be created for them.
+  --
+  -- The project comes from the request header, which the router sets on every
+  -- request, and falls back to the raffle that was already here. Not an
+  -- argument, because that would change the signature every handler calls;
+  -- explicit carriage arrives with the scoped client, and the two must agree.
   select r.code into found_code
     from ticket_receipts r
    where r.buyer_phone = phone
      and buyer_key(r.buyer_name) = buyer_key(name_given)
+     and r.project_id = coalesce(current_project(), seed_project())
    limit 1;
 
   if found_code is null then
