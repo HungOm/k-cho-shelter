@@ -62,6 +62,7 @@ create or replace function bulk_record_sales(
   p_user text,
   p_role text,
   p_agent_id text,
+  p_project uuid,
   p_force boolean default false
 ) returns jsonb as $$
 declare
@@ -77,8 +78,13 @@ declare
   written integer := 0;
   touched integer;
 begin
-  live := active_tickets();
-  select coalesce(nullif(value, '')::numeric, 10) into price from config where key = 'TICKET_PRICE';
+  -- BOTH OF THESE ARE THIS RAFFLE'S. The in-play ceiling and the ticket price
+  -- are settings, and settings belong to a project: a batch priced at another
+  -- organisation's TICKET_PRICE writes the wrong amount onto every row, and a
+  -- ceiling read from elsewhere admits or refuses the wrong tickets.
+  live := active_tickets(p_project);
+  select coalesce(nullif(value, '')::numeric, 10) into price
+    from config where key = 'TICKET_PRICE' and project_id = p_project;
 
 
   /*
@@ -96,6 +102,7 @@ begin
    */
   perform 1 from tickets
    where number in (select trim(s->>'ticketNumber') from jsonb_array_elements(p_sales) s)
+     and project_id = p_project
    order by idx
      for update;
 
@@ -138,8 +145,12 @@ begin
            -- without this the check compares against a column that is not here.
            b.status as book_status, b.held_by_agent, b.offered_to_agent
       into t
+      -- number is the GLOBAL unique until Stage 4, so without the project a
+      -- batch naming another organisation's ticket numbers finds their rows,
+      -- judges them against their books, and sells their tickets.
       from tickets tk join books b on b.idx = tk.book_idx
-     where tk.number = num;
+                                  and b.project_id = tk.project_id
+     where tk.number = num and tk.project_id = p_project;
 
     if not found then
       failures := failures || jsonb_build_object('ticketNumber', num,
@@ -234,14 +245,16 @@ begin
       sold_by_agent = (
         select case when b2.status = 'Out' then b2.held_by_agent else null end
           from books b2
-          join tickets t2 on t2.book_idx = b2.idx
-         where t2.number = trim(sale->>'ticketNumber')),
+          join tickets t2 on t2.book_idx = b2.idx and t2.project_id = b2.project_id
+         where t2.number = trim(sale->>'ticketNumber')
+           and t2.project_id = p_project),
       amount = case when coalesce((sale->>'donated')::boolean, false) then 0 else price end,
       payment_status = coalesce(sale->>'paymentStatus', 'Paid'),
       sold_at = now(),
       source = 'bulk',
       recorded_by = p_user
     where number = trim(sale->>'ticketNumber')
+      and project_id = p_project
       -- Belt to the lock's braces. This cannot be false while the row is held,
       -- and it is what refuses to overwrite a sale if a later edit ever loses
       -- the lock: the write finds nothing, and the check below turns a silent
@@ -258,6 +271,28 @@ begin
 
   return jsonb_build_object('recorded', written);
 end $$ language plpgsql;
+
+create or replace function bulk_record_sales(
+  p_sales jsonb,
+  p_user text,
+  p_role text,
+  p_agent_id text,
+  p_force boolean default false
+) returns jsonb as $$
+  select bulk_record_sales(p_sales, p_user, p_role, p_agent_id,
+                           coalesce(current_project(), seed_project()), p_force)
+$$ language sql;
+
+-- THE ORIGINAL IS REVOKED TOO, which it never was. bulk_record_sales is an
+-- invoker function, so the table grants stopped an anonymous caller reaching
+-- the rows — but it is the batch sale entry point and the api's service key is
+-- its only caller (tickets.ts:824; nothing in src/ calls it). Grepped before
+-- revoking, as the review asked.
+revoke execute on function bulk_record_sales(jsonb, text, text, text, boolean)
+  from public, anon, authenticated;
+revoke execute on function bulk_record_sales(jsonb, text, text, text, uuid, boolean)
+  from public, anon, authenticated;
+
 
 -- ============ SELLING WHOLE BOOKS ============
 -- Tickets already sold to somebody else are SKIPPED and reported, never

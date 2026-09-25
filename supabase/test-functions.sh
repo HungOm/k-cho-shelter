@@ -1684,6 +1684,57 @@ r=$(P "select move_tickets(array[902], 'desk', 'B001', 'issue', 'admin@x.com',
                            '$B'::uuid, '', 'SHARED-BROWSER-KEY')")
 has "$r" '"replayed": true' "a second attempt in the SAME raffle is still a replay"
 
+echo "a batch cannot sell a ticket belonging to the other raffle"
+# THE DEFECT THIS CATCHES: every lookup in bulk_record_sales keys on
+# tickets.number, the GLOBAL unique until Stage 4, so a batch naming another
+# organisation's ticket numbers reaches their rows and judges them against
+# their books.
+#
+# WHAT ACTUALLY STOPS THE SALE TODAY, stated precisely because the difference
+# matters later: not the scoping, but the active-tickets ceiling. Removing the
+# predicate changes the refusal from TICKET_NOT_FOUND to TICKET_NOT_RELEASED —
+# the row is found, and then rejected because idx 905 is past this raffle's
+# range. Two raffles' idx ranges cannot overlap while idx is the global primary
+# key, so the harm is bounded for now.
+#
+# It stops being bounded at Stage 4, which is the point of writing the
+# predicate now: once the key is composite, both raffles number from 1, every
+# idx is inside every ceiling, and the only thing left between a batch and
+# another organisation's tickets is this line.
+r=$(P "select bulk_record_sales(
+         '[{\"ticketNumber\":\"OT-00905\",\"buyerName\":\"Wrong Raffle\",\"buyerPhone\":\"0125557777\"}]'::jsonb,
+         'admin@x.com','admin',null,seed_project(),false)")
+has "$r" "TICKET_NOT_FOUND" "this raffle cannot find the other raffle's ticket number"
+ok "$(P "select status from tickets where number='OT-00905'")" "Available" \
+   "and OT-00905 is still unsold in the raffle that owns it"
+ok "$(P "select buyer_name from tickets where number='OT-00905'")" "" \
+   "with nobody's name on it"
+# AND A BATCH THAT NAMES ITS OWN RAFFLE STILL WORKS, so the predicate cannot
+# be read as having made every batch fail.
+#
+# Asked of THIS raffle rather than the other one, and that is D-033 rather than
+# a preference: active_tickets(B) is 0, because config's primary key is still
+# (key) and a second raffle cannot hold a TOTAL_TICKETS row of its own until
+# Stage 4. So every ticket in B reads as not yet released, and no batch there
+# can succeed at all. When the composite keys land, this case should be moved
+# to B and the note deleted.
+# Every precondition the function itself checks, asked of the data rather than
+# assumed: in play, available, and in a book that is neither closed nor out
+# with a seller — an admin desk sale needs paper it can hand over.
+freetk=$(P "select t.number from tickets t
+              join books b on b.idx = t.book_idx and b.project_id = t.project_id
+             where t.project_id = seed_project()
+               and t.status = 'Available'
+               and t.idx <= active_tickets(seed_project())
+               and b.status not in ('Settled','Void','Lost','Out','Offered')
+             order by t.idx limit 1")
+r=$(P "select bulk_record_sales(
+         '[{\"ticketNumber\":\"$freetk\",\"buyerName\":\"Right Raffle\",\"buyerPhone\":\"0125558888\"}]'::jsonb,
+         'admin@x.com','admin',null,seed_project(),false)")
+has "$r" '"recorded": 1' "a batch naming this raffle's own ticket records the sale"
+ok "$(P "select buyer_name from tickets where number='$freetk'")" "Right Raffle" \
+   "and the buyer is on it"
+
 # Put the raffle back as the cases below expect to find it.
 P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,
      payment_status='Unpaid' where number='KS-00007'" >/dev/null
