@@ -821,12 +821,20 @@ $$ language sql stable;
 --
 -- Returns the books actually written, so the caller can report the rest as
 -- taken meanwhile, exactly as it does today.
+-- MULTI-TENANCY, D-021's shape: p_project is REQUIRED (no default) so that a
+-- call naming it and a call not naming it resolve to different, unambiguous
+-- overloads — proved in a scratch database before writing any of the twelve
+-- this way. Placed before the two arguments that already had defaults (p_note,
+-- p_force), because Postgres requires every parameter after the first default
+-- to have one too; PostgREST calls by name, so the position changes nothing
+-- about how a caller invokes it.
 create or replace function issue_books_tx(
   p_idxs           integer[],
   p_empty_returned integer[],
   p_agent_id       text,
   p_due_at         date,
   p_user           text,
+  p_project        uuid,
   p_note           text default '',
   p_force          boolean default false
 ) returns table (idx integer, number text) as $$
@@ -834,6 +842,10 @@ declare
   issued integer[];
 begin
   with written as (
+    -- b.idx = any(p_idxs) IS NOT ENOUGH. idx is still the global PK through
+    -- Stage 4, so without project_id an issue naming another organisation's
+    -- book idx would take that book out from under its own seller — an
+    -- ordinary-looking issue call reaching across the wall entirely.
     update books b set
       status = 'Out',
       held_by_agent = p_agent_id,
@@ -841,6 +853,7 @@ begin
       due_at = p_due_at,
       modified_by = p_user
      where b.idx = any(p_idxs)
+       and b.project_id = p_project
        and (
          p_force
          or (b.status = 'Unassigned' and not (b.idx = any(coalesce(p_empty_returned, '{}'))))
@@ -859,19 +872,39 @@ begin
     return;                       -- nothing matched; the caller says so
   end if;
 
-  insert into book_history (book_idx, to_agent, action, by_user, note)
-  select i, p_agent_id, 'issue', p_user, coalesce(p_note, '')
+  -- Stamped explicitly, matching the books it just wrote rather than left to
+  -- the column default: the two must agree, and an explicit p_project is what
+  -- the write above was already asked for.
+  insert into book_history (book_idx, to_agent, action, by_user, note, project_id)
+  select i, p_agent_id, 'issue', p_user, coalesce(p_note, ''), p_project
     from unnest(issued) i order by i;
 
   return query
     select b.idx, b.number from books b where b.idx = any(issued) order by b.idx;
 end $$ language plpgsql;
 
+-- Old six-argument form: kept for the reason every wrapper in this file is,
+-- and driven directly by test-functions.sh via `set local app.project_id`.
+create or replace function issue_books_tx(
+  p_idxs           integer[],
+  p_empty_returned integer[],
+  p_agent_id       text,
+  p_due_at         date,
+  p_user           text,
+  p_note           text default '',
+  p_force          boolean default false
+) returns table (idx integer, number text) as $$
+  select * from issue_books_tx(
+    p_idxs, p_empty_returned, p_agent_id, p_due_at, p_user,
+    coalesce(current_project(), seed_project()), p_note, p_force)
+$$ language sql;
+
 -- ============ BRING BACK ============
 create or replace function return_books_tx(
-  p_idxs integer[],
-  p_user text,
-  p_note text default ''
+  p_idxs   integer[],
+  p_user   text,
+  p_project uuid,
+  p_note   text default ''
 ) returns integer as $$
 declare
   moved integer;
@@ -879,43 +912,71 @@ begin
   -- The history row names who it came FROM, so it is read before the update
   -- clears nothing — held_by_agent deliberately survives a return, which is how
   -- "brought back by" keeps a name on it.
-  insert into book_history (book_idx, from_agent, action, by_user, note)
-  select b.idx, b.held_by_agent, 'return', p_user, coalesce(p_note, '')
-    from books b where b.idx = any(p_idxs) order by b.idx;
+  insert into book_history (book_idx, from_agent, action, by_user, note, project_id)
+  select b.idx, b.held_by_agent, 'return', p_user, coalesce(p_note, ''), p_project
+    from books b where b.idx = any(p_idxs) and b.project_id = p_project order by b.idx;
 
+  -- WITHOUT project_id, this would return a book by idx alone: another
+  -- organisation's book number colliding with one of these idxs would be
+  -- marked Returned in a raffle its own seller never touched.
   update books set status = 'Returned', modified_by = p_user
-   where idx = any(p_idxs);
+   where idx = any(p_idxs) and project_id = p_project;
   get diagnostics moved = row_count;
 
   -- A ticket held for a buyer who never came is stock again the moment the
-  -- book is on the desk. Sold ones are untouched.
+  -- book is on the desk. Sold ones are untouched. Scoped through the book's
+  -- own project rather than repeating the array test, so a ticket cannot be
+  -- freed by naming a book idx that belongs to a different raffle.
   update tickets set
     status = 'Available', buyer_name = '', buyer_phone = '', recorded_by = p_user
-   where book_idx = any(p_idxs) and status = 'Reserved';
+   where book_idx in (select idx from books where idx = any(p_idxs) and project_id = p_project)
+     and status = 'Reserved';
 
   return moved;
 end $$ language plpgsql;
+
+create or replace function return_books_tx(
+  p_idxs integer[],
+  p_user text,
+  p_note text default ''
+) returns integer as $$
+  select return_books_tx(p_idxs, p_user, coalesce(current_project(), seed_project()), p_note)
+$$ language sql;
 
 -- ============ PASS TO SOMEBODY ELSE ============
 create or replace function transfer_books_tx(
   p_idxs     integer[],
   p_to_agent text,
   p_user     text,
+  p_project  uuid,
   p_note     text default ''
 ) returns integer as $$
 declare
   moved integer;
 begin
-  insert into book_history (book_idx, from_agent, to_agent, action, by_user, note)
-  select b.idx, b.held_by_agent, p_to_agent, 'transfer', p_user, coalesce(p_note, '')
-    from books b where b.idx = any(p_idxs) order by b.idx;
+  -- p_to_agent is an agent_id, still a global PK through Stage 4, so it names
+  -- no project by itself. Scoping the read and the write both to p_project is
+  -- what stops a transfer naming another raffle's book idx from moving it to
+  -- an agent in THIS raffle — a book leaving its own organisation entirely.
+  insert into book_history (book_idx, from_agent, to_agent, action, by_user, note, project_id)
+  select b.idx, b.held_by_agent, p_to_agent, 'transfer', p_user, coalesce(p_note, ''), p_project
+    from books b where b.idx = any(p_idxs) and b.project_id = p_project order by b.idx;
 
   update books set held_by_agent = p_to_agent, modified_by = p_user
-   where idx = any(p_idxs);
+   where idx = any(p_idxs) and project_id = p_project;
   get diagnostics moved = row_count;
 
   return moved;
 end $$ language plpgsql;
+
+create or replace function transfer_books_tx(
+  p_idxs     integer[],
+  p_to_agent text,
+  p_user     text,
+  p_note     text default ''
+) returns integer as $$
+  select transfer_books_tx(p_idxs, p_to_agent, p_user, coalesce(current_project(), seed_project()), p_note)
+$$ language sql;
 
 -- ============ BACK ON THE SHELF ============
 -- The one with money in it. Clearing amount_paid takes the settlement figure
@@ -1223,10 +1284,44 @@ revoke execute on function release_offer_tx(integer[], text, text)
 
 -- Called by the Edge Function under the service role, and by nobody else: these
 -- take an already-judged list of books and do not re-check who may move them.
+--
+-- EVERY OVERLOAD NEEDS ITS OWN LINE, and this is the trap the multi-tenancy
+-- work walked into. A REVOKE names an exact signature, and `create or replace`
+-- preserves privileges only when it replaces the SAME signature — so a sibling
+-- overload taking p_project is a brand new function object, and Postgres grants
+-- EXECUTE on a new function to PUBLIC by default. Every p_project sibling added
+-- for Stage 2 arrived publicly callable, including these three. Measured with
+-- has_function_privilege, not read: anon could call all of them.
+--
+-- service_role is deliberately not named. Revoking PUBLIC does not touch the
+-- separate grant Supabase's own bootstrap gives service_role on functions in
+-- this schema, which is why the lines above have always been enough for the
+-- Edge Function to keep working.
 revoke execute on function issue_books_tx(integer[], integer[], text, date, text, text, boolean) from public, anon, authenticated;
+revoke execute on function issue_books_tx(integer[], integer[], text, date, text, uuid, text, boolean) from public, anon, authenticated;
 revoke execute on function return_books_tx(integer[], text, text) from public, anon, authenticated;
+revoke execute on function return_books_tx(integer[], text, uuid, text) from public, anon, authenticated;
 revoke execute on function transfer_books_tx(integer[], text, text, text) from public, anon, authenticated;
+revoke execute on function transfer_books_tx(integer[], text, text, uuid, text) from public, anon, authenticated;
 revoke execute on function restock_books_tx(integer[], text, text) from public, anon, authenticated;
+
+
+-- desk_money() is revoked in rls.sql:835; its p_project sibling is revoked here
+-- beside the rest of Stage 2's, so the pair is not split across two files.
+revoke execute on function desk_money(uuid) from public, anon, authenticated;
+
+-- active_tickets(uuid) IS THE ONE THAT KEEPS authenticated, and that is
+-- measured rather than assumed. Revoking it from authenticated breaks
+-- tickets_readable and book_ledger with `permission denied for function
+-- active_tickets` — a definer view runs its TABLE access as the view owner but
+-- still checks function EXECUTE against the calling role, which is not what
+-- "security_invoker = false" reads like it would do.
+--
+-- anon losing it is the point: with the project as an argument, anyone holding
+-- another organisation's project id could read that raffle's in-play count.
+-- Stage 3 should make it answer nothing for a project the caller is not a
+-- member of, once member_role() exists — recorded as D-035.
+revoke execute on function active_tickets(uuid) from public, anon;
 
 
 -- ============ MOVING TICKETS, AS A LEDGER ============
@@ -1488,3 +1583,12 @@ create or replace function ensure_holding_tx(
   select * from ensure_holding_tx(
     p_phone, p_name, p_code, p_user, coalesce(current_project(), seed_project()))
 $$ language sql;
+
+-- THE DIGITAL TICKET PAIR, revoked here rather than beside the book functions
+-- because a REVOKE needs the function to exist already and ensure_holding_tx is
+-- defined at the bottom of this file. The four-argument form's exposure
+-- predates the multi-tenancy work — it has never had a revoke at all. It finds
+-- or mints a receipt from a telephone number and a name, so whoever may run it
+-- can ask whether a given person holds tickets, and can mint codes.
+revoke execute on function ensure_holding_tx(text, text, text, text) from public, anon, authenticated;
+revoke execute on function ensure_holding_tx(text, text, text, text, uuid) from public, anon, authenticated;

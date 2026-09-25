@@ -93,18 +93,39 @@ DB_ -q -c "do \$\$ begin
 # WHY IT FAILED, not just which file. Three days of "functions failed" with the
 # reason discarded, while psql was naming the missing role in full every time.
 BUILD() { out=$(APPLY "$1" 2>&1) || { echo "$1 failed"; echo "$out" | grep -i "error" | head -3 | sed 's/^/  /'; exit 1; }; }
+
+# SUPABASE'S OWN GRANTS COME FIRST, AND THAT ORDER IS THE POINT.
+#
+# This block used to sit AFTER the three BUILD lines and to open with
+# `create role authenticated nologin;` — a role the do-block above has already
+# created. psql runs a -c string as one implicit transaction, so that duplicate
+# aborted the statement and every grant beneath it. The block has never run.
+#
+# Nothing failed, because Postgres grants EXECUTE on a new function to PUBLIC
+# by default and `authenticated` reaches PUBLIC's grant like any other role. So
+# for as long as this suite has existed, `authenticated` has been exercising
+# these policies on privileges it was never actually given here.
+#
+# It also could not simply be repaired in place. Running those grants AFTER our
+# own files would re-grant execute on every function the repository
+# deliberately revokes — `revoke execute on function settle_book … from
+# authenticated` and a dozen like it — and the suite would stop being able to
+# see the difference. Production's order is the other way round: Supabase's
+# template grants anon, authenticated and service_role broad access to the
+# public schema when the project is created, and OUR sql then claws back the
+# sensitive ones. So the grants belong here, before the build, and what the
+# suite exercises afterwards is what our own revokes actually left standing.
+DB_ -q -c "
+  grant usage on schema public to anon, authenticated;
+  alter default privileges in schema public grant execute on functions to anon, authenticated;" >/dev/null 2>&1
+
 BUILD supabase/schema.sql
 BUILD supabase/functions.sql
 BUILD supabase/rls.sql
 
-# PostgREST connects as a role called `authenticated`; recreate that here so the
-# policies are exercised as they will be in production rather than as superuser,
-# who bypasses row security entirely and would make every test pass.
-DB_ -q -c "
-  create role authenticated nologin;
-  grant usage on schema public to authenticated;
-  grant select on tickets_readable, book_ledger, agents_readable, config_readable to authenticated;
-  grant execute on all functions in schema public to authenticated;" >/dev/null 2>&1
+# The view grants our own rls.sql already makes are not repeated here; it grants
+# select on tickets_readable, book_ledger, agents_readable and config_readable
+# itself, which is why those kept working while the dead block above did not.
 
 DB_ -q -c "
   -- UPSERT: schema.sql seeds these keys now, so a plain insert duplicates them.
@@ -431,6 +452,73 @@ fi
 # above and hand every seller back their neighbour's takings.
 ok "$(AS 'a1@x.com' "select coalesce(sold_by_agent,'') from tickets_readable where number='KS-00021'")" "" \
    "and another seller's takings are still masked after the second run"
+
+# ---------------------------------------------------------------------------
+# NO FUNCTION THE BROWSER SHOULD NOT REACH IS REACHABLE BY anon.
+#
+# WHERE THIS CAME FROM. Stage 2 gives a dozen SQL functions a sibling overload
+# taking p_project. A REVOKE names an exact signature, and `create or replace`
+# carries privileges across only when it replaces the SAME signature — so every
+# one of those siblings is a NEW function object, and Postgres grants EXECUTE on
+# a new function to PUBLIC by default. Each arrived publicly callable while its
+# original sat correctly revoked one line above it in the same file.
+#
+# That is invisible to every other check here: the function behaves identically,
+# the suites pass, and the only difference is who may call it. With one raffle
+# `active_tickets(uuid)` leaks a count; with two, anyone holding another
+# organisation's project id reads that organisation's numbers.
+#
+# ASKED OF THE ROLE, not of the source text, because the question is what the
+# database will actually permit.
+# ---------------------------------------------------------------------------
+echo "anon cannot call the functions that are not its business"
+CLOSED="active_tickets(uuid)
+desk_money()
+desk_money(uuid)
+ensure_holding_tx(text,text,text,text)
+ensure_holding_tx(text,text,text,text,uuid)
+holding_of(text,integer)
+issue_books_tx(integer[],integer[],text,date,text,text,boolean)
+issue_books_tx(integer[],integer[],text,date,text,uuid,text,boolean)
+return_books_tx(integer[],text,text)
+return_books_tx(integer[],text,uuid,text)
+transfer_books_tx(integer[],text,text,text)
+transfer_books_tx(integer[],text,text,uuid,text)
+restock_books_tx(integer[],text,text)"
+checked=0
+while IFS= read -r sig; do
+  [ -n "$sig" ] || continue
+  # STDIN CLOSED FOR THE CALL, and without it this loop asks exactly one
+  # question. DB_ is `docker exec -i` on the docker branch, so it inherits and
+  # drains the loop's stdin — the heredoc feeding the signatures — and the
+  # second iteration finds nothing left to read. It reported "1 of 13 asked",
+  # which is the only reason it was noticed; a check that had simply returned
+  # early with everything green would have looked like a clean run.
+  got=$(DB_ -tAc "select has_function_privilege('anon', '$sig'::regprocedure, 'EXECUTE')" </dev/null 2>&1)
+  case "$got" in
+    f) pass=$((pass+1)); checked=$((checked+1)) ;;
+    t) fail=$((fail+1)); checked=$((checked+1))
+       echo "  FAIL anon may execute $sig — a new overload without its own revoke line" ;;
+    *) fail=$((fail+1))
+       echo "  FAIL could not ask about $sig: $got" ;;
+  esac
+done <<< "$CLOSED"
+# THE POSITIVE COUNT. A typo in a signature would make every case unaskable and
+# a silent loop would report nothing at all, which reads exactly like a clean
+# run. This is the assertion that the questions were asked.
+ok "$checked" "13" "all thirteen signatures were actually asked about"
+
+# AND THE ONE THAT MUST STAY OPEN, so this section cannot be "fixed" by
+# revoking everything: tickets_readable and book_ledger are definer views, but a
+# definer view still checks function EXECUTE against the CALLING role, so
+# authenticated needs active_tickets(uuid) or both views answer
+# "permission denied for function active_tickets".
+ok "$(DB_ -tAc "select has_function_privilege('authenticated', 'active_tickets(uuid)'::regprocedure, 'EXECUTE')")" "t" \
+   "authenticated keeps active_tickets(uuid), which its views cannot work without"
+ok "$(AS 'a1@x.com' "select count(*) >= 0 from tickets_readable")" "t" \
+   "and tickets_readable still answers, which is what that grant is for"
+ok "$(AS 'a1@x.com' "select count(*) >= 0 from book_ledger")" "t" \
+   "as does book_ledger"
 
 echo
 echo "$pass passed, $fail failed"

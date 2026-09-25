@@ -20,6 +20,15 @@ Your choice:
 
 ## Open
 
+### D-035 · active_tickets(uuid) answers about any project, to any signed-in person · raised by kcho-shelter-25, 2026-09-26
+Blocks: nothing now. Stage 3 should close it, once member_role() exists.
+Context: Stage 2 gives `active_tickets` a sibling taking the project as an argument, and `authenticated` must keep EXECUTE on it — measured: revoking it breaks `tickets_readable` and `book_ledger` with "permission denied for function active_tickets", because a definer view runs its TABLE access as the view owner but still checks FUNCTION execute against the calling role. anon is revoked, so the public cannot ask. What remains is that any signed-in person who holds another organisation's project id can read that raffle's in-play ticket count. It is a count, not personal data, and no screen offers the id — but it crosses the wall this plan exists to build, and the same shape will repeat for every function that takes a project and is callable by `authenticated`.
+- A ★ Stage 3: once `member_role(p_project)` exists, `active_tickets(p_project)` returns null for a project the caller is not a member of, and the views pass their own row's project so they are unaffected. One predicate, in the stage that already introduces the function it needs
+- B now, with a membership check written against `project_members` directly, before Stage 3 has settled what membership means — a second definition of the rule that has to be reconciled later
+- C accept it: a ticket count is not worth a function call's worth of complexity, and Stage 8's non-bypass role closes it wholesale
+Your choice: 
+
+
 ### D-034 · app_reset is not in tonight's MT-2d pass, and it needs a p_project before MT-2b can merge · raised by kcho-shelter-25, 2026-09-26
 Blocks: MT-2b merging (it wires every ctx.supabaseAdmin.rpc call through the scoped client, which will inject p_project into app_reset's call and find no matching signature). Does not block MT-1b, MT-2c/d/e, or anything already shipped.
 Context: reset.ts calls `rpc('app_reset', { p_tables, p_by })`. Once MT-2b lands, that arrives as three named arguments and app_reset only has two. It is the most dangerous function in the schema — it empties a raffle — and it is the subject of an OPEN, UNRESOLVED production incident (2026-09-21: a reset failed with "DELETE requires a WHERE clause" but had already emptied `config`; three theories for the cause have died and the fourth is unconfirmed, see memory `the-reset-emptied-config-and-left-the-tickets`). It is also defined only inside migrations, never rolled into `functions.sql`, and it has been rewritten three times already for reasons each recorded in its own migration's header. I am not willing to add a parameter to it at 3am inside a pass otherwise going through desk_money and issue_books_tx.
