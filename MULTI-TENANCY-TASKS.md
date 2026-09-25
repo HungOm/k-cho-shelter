@@ -67,9 +67,9 @@ sessions, that they may work on this plan.
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
 | MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | done (5ef3092); D-015, D-016, D-017 |
-| MT-2b | 2 handlers on scoped() + composite onConflict (D-027) | multi-tenancy-architecture-plan (handed over by kcho-shelter-25) | MT-1b, and MT-2d before merge | done on branch `tenancy-stage-2` (19cb3ba); merges only after Stage 0 and 1 are applied (rule 9) |
+| MT-2b | 2 handlers on scoped() + composite onConflict (D-027) | multi-tenancy-architecture-plan (handed over by kcho-shelter-25) | MT-1b, MT-2d | done on branch `tenancy-stage-2` (f70e9e7, rebased on 9546e74); merge blocked by the owner applying Stage 0 and 1 (D-019) and by app_reset (D-034) |
 | MT-2c | 2 policies and views gain the coalesced predicate | kcho-shelter-25 | MT-1b | done (ecbb13d); migration pending |
-| MT-2d | 2 the sixteen SQL functions take `p_project` (D-021) | kcho-shelter-25, reviewed per commit by multi-tenancy-architecture-plan | MT-1b | in progress: `active_tickets` and the receipt pair done (defbe63); twelve left, one group per commit |
+| MT-2d | 2 the sixteen SQL functions take `p_project` (D-021) | kcho-shelter-25, each commit reviewed by multi-tenancy-architecture-plan | MT-1b | done (71ac6e9 to 9546e74): fifteen of the sixteen api-called functions, all revoked from anon; app_reset held as D-034; collision-form proofs owed at Stage 4 (D-036) |
 | MT-2e | 2 `config_numbering_locked` and `adoptLoneArtwork` scoped | kcho-shelter-25 | MT-1b | done: triggers in 0445f33; the artwork lookup is scoped by MT-2b's wrapper on the branch |
 | MT-L | 7 organisation and project lifecycle (D-006) | unassigned | Stage 5 | not started |
 | MT-T | gate: type-check the functions (D-010) | multi-tenancy-architecture-plan | none | done; lands as a ratchet (D-014) |
@@ -170,6 +170,13 @@ The rest of Stage 2 (handlers on the scoped client, SQL functions taking
   `router`, `everyaction`, `edgehandlers`, `gate` unchanged in count and result;
   the new suite proves all four header cases and that a refused project reads no
   user row.
+
+**Stage 2 status, 2026-09-26.** Everything is built. The SQL (read path,
+triggers, the fifteen functions, their revokes) is on master in
+`migrations.pending/`. The handler wrap is on `tenancy-stage-2`. Two things
+stand between it and production: the owner applying Stage 0 and 1 (D-019), then
+this stage's migrations, and a card for `app_reset` (D-034). `tests/scopedclient`
+on the branch names what still blocks the merge.
 
 ### MT-T · the gate type-checks the functions (D-010)
 
