@@ -342,7 +342,7 @@ export async function setCardDesign(p: Record<string, unknown>, user: AppUser, c
 async function writeConfig(ctx: Ctx, rows: Record<string, string>) {
   const payload = Object.entries(rows).map(([key, value]) => ({ key, value }))
   const { error } = await ctx.supabaseAdmin
-    .from('config').upsert(payload, { onConflict: 'key' })
+    .from('config').upsert(payload, { onConflict: 'project_id,key' })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 }
 

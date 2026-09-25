@@ -397,7 +397,7 @@ export async function upsertUser(p: Record<string, unknown>, user: AppUser, ctx:
   }
 
   const { error } = await ctx.supabaseAdmin
-    .from('app_users').upsert(row, { onConflict: 'email' })
+    .from('app_users').upsert(row, { onConflict: 'project_id,email' })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   await audit(ctx, existing ? 'UPDATE_USER' : 'CREATE_USER',
@@ -491,7 +491,7 @@ export async function setPermission(p: Record<string, unknown>, user: AppUser, c
 
   const { error } = await ctx.supabaseAdmin
     .from('permissions')
-    .upsert({ action, role, allowed: !!p.allowed }, { onConflict: 'action,role' })
+    .upsert({ action, role, allowed: !!p.allowed }, { onConflict: 'project_id,action,role' })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   await audit(ctx, 'SET_PERMISSION', { action, role, allowed: !!p.allowed }, user.email)
@@ -937,7 +937,7 @@ export async function setNumbering(p: Record<string, unknown>, user: AppUser, ct
   }
   const { error } = await ctx.supabaseAdmin
     .from('config')
-    .upsert(Object.entries(rows).map(([key, value]) => ({ key, value })), { onConflict: 'key' })
+    .upsert(Object.entries(rows).map(([key, value]) => ({ key, value })), { onConflict: 'project_id,key' })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   await ctx.supabaseAdmin.from('audit_log').insert({
@@ -977,7 +977,7 @@ export async function setTicketCeiling(p: Record<string, unknown>, user: AppUser
   }
 
   const { error } = await ctx.supabaseAdmin
-    .from('config').upsert({ key: 'TICKET_CEILING', value: String(target) }, { onConflict: 'key' })
+    .from('config').upsert({ key: 'TICKET_CEILING', value: String(target) }, { onConflict: 'project_id,key' })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 
   await ctx.supabaseAdmin.from('audit_log').insert({

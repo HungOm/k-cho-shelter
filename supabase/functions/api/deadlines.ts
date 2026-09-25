@@ -355,7 +355,7 @@ export async function configDate(ctx: Ctx, key: string): Promise<string> {
 
 async function setConfig(ctx: Ctx, key: string, value: string) {
   const { error } = await ctx.supabaseAdmin
-    .from('config').upsert({ key, value }, { onConflict: 'key' })
+    .from('config').upsert({ key, value }, { onConflict: 'project_id,key' })
   if (error) throw new ApiError('QUERY_FAILED', error.message)
 }
 
@@ -990,7 +990,7 @@ export async function snapshotRound(ctx: Ctx, round: number, takenBy: string) {
    */
   const { error } = await ctx.supabaseAdmin
     .from('round_snapshots')
-    .upsert([...byAgent.values()], { onConflict: 'round,agent_id', ignoreDuplicates: true })
+    .upsert([...byAgent.values()], { onConflict: 'project_id,round,agent_id', ignoreDuplicates: true })
   if (error) {
     console.error(`SNAPSHOT_NOT_TAKEN: round ${round}: ${error.message}`)
     return 0
@@ -1377,7 +1377,7 @@ export async function setCheckInDate(p: Record<string, unknown>, user: AppUser, 
       round, due_at: target, note: String(p.note ?? '').trim(), set_by: user.email,
       set_at: new Date().toISOString(),
       cleared_at: null, cleared_by: null,
-    }, { onConflict: 'round' })
+    }, { onConflict: 'project_id,round' })
     if (error) throw new ApiError('QUERY_FAILED', error.message)
   }
 

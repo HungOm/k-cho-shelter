@@ -100,7 +100,7 @@ async function activeTemplateId(
 
   if (ids.length === 1) {
     const { error: wErr } = await ctx.supabaseAdmin
-      .from('config').upsert([{ key: 'TICKET_ARTWORK_ID', value: ids[0] }], { onConflict: 'key' })
+      .from('config').upsert([{ key: 'TICKET_ARTWORK_ID', value: ids[0] }], { onConflict: 'project_id,key' })
     if (wErr) throw new ApiError('QUERY_FAILED', wErr.message)
     return ids[0]
   }

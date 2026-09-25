@@ -24,6 +24,7 @@
  */
 import { withSupabase } from 'npm:@supabase/server'
 import { createAdminClient } from 'npm:@supabase/server/core'
+import { scoped, type AdminClient } from './scoped.ts'
 import { sessionSecret, withSecretSession } from '../_shared/session.ts'
 import {
   ApiError,
@@ -1572,7 +1573,7 @@ async function adoptLoneArtwork(ctx: Ctx, cfg: Record<string, string>) {
     if (ids.length !== 1) return
     cfg.TICKET_ARTWORK_ID = ids[0]
     await ctx.supabaseAdmin
-      .from('config').upsert([{ key: 'TICKET_ARTWORK_ID', value: ids[0] }], { onConflict: 'key' })
+      .from('config').upsert([{ key: 'TICKET_ARTWORK_ID', value: ids[0] }], { onConflict: 'project_id,key' })
   } catch { /* the raffle still loads without its artwork named */ }
 }
 
@@ -1757,7 +1758,7 @@ const route = async (req: Request, ctx: Ctx): Promise<Response> => {
      */
     const requestId = crypto.randomUUID()
     const ctxWithId = ctx as unknown as
-      { supabaseAdmin: unknown; requestId?: string; project?: string }
+      { supabaseAdmin: unknown; supabasePlatform?: unknown; requestId?: string; project?: string }
     ctxWithId.requestId = requestId
     ctxWithId.project = project
 
@@ -1796,6 +1797,28 @@ const route = async (req: Request, ctx: Ctx): Promise<Response> => {
       throw new ApiError('PROJECT_UNAVAILABLE',
         'This raffle cannot be reached right now.', { project }, 503)
     }
+
+    /*
+     * EVERY READ AND WRITE BELOW HAPPENS INSIDE THIS RAFFLE, and no handler
+     * has to remember to say so (MULTI-TENANCY-PLAN.md Stage 2, decision D-027).
+     *
+     * This is the only place an admin client is built, so wrapping it here
+     * scopes every query site in every handler at once: selects, updates and
+     * deletes are filtered to the project, inserts and upserts are stamped with
+     * it, and every rpc carries p_project. A handler added next year is scoped
+     * the day it is written, which a per-handler edit could never promise.
+     *
+     * The unscoped client stays reachable as ctx.supabasePlatform, for the few
+     * actions that are about projects rather than inside one (Stage 5). Its
+     * name makes using it a visible choice; tests/scopedclient.test.mjs lists
+     * the files allowed to make it.
+     *
+     * NOT SAFE ON TODAY'S PRODUCTION DATABASE, which has no project_id column.
+     * This lives on the tenancy-stage-2 branch until the owner applies Stage 0
+     * and Stage 1 (task board, rule 9).
+     */
+    ctxWithId.supabasePlatform = ctxWithId.supabaseAdmin
+    ctxWithId.supabaseAdmin = scoped(ctxWithId.supabaseAdmin as AdminClient, project)
 
     // The JWT is already verified by the time we get here; what it proves is
     // WHO is calling. Whether they may be here at all is the allowlist, which
