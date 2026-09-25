@@ -607,7 +607,8 @@ create or replace function settle_book(
   p_sold_count integer,
   p_force boolean,
   p_user text,
-  p_note text
+  p_note text,
+  p_project uuid
 ) returns jsonb as $$
 declare
   b record;
@@ -623,7 +624,11 @@ begin
   -- book within a second both passed the "already settled" check below and
   -- both wrote; the second silently replaced the first. Now the second waits,
   -- re-reads, and is refused like any other re-settle.
-  select * into b from books where number = p_book_number for update;
+  -- THE LOCK IS TAKEN ON THIS RAFFLE'S BOOK. number is the global unique until
+  -- Stage 4, so without the project this locks and then settles whichever
+  -- raffle's book happens to carry that number.
+  select * into b from books
+   where number = p_book_number and project_id = p_project for update;
   if not found then
     return jsonb_build_object('error', jsonb_build_object(
       'code','BOOK_NOT_FOUND','message','Book ' || p_book_number || ' does not exist.'));
@@ -634,7 +639,10 @@ begin
       'code','ALREADY_SETTLED','message','Book ' || p_book_number || ' is already settled.'));
   end if;
 
-  select coalesce(nullif(value,'')::numeric, 10) into price from config where key = 'TICKET_PRICE';
+  -- This raffle's price. It multiplies the declared count into amount_due,
+  -- which is the figure a seller is asked to hand over.
+  select coalesce(nullif(value,'')::numeric, 10) into price
+    from config where key = 'TICKET_PRICE' and project_id = p_project;
 
   if p_allow_unidentified then
     -- The fallback for when the leftovers are lost: record the book total and
@@ -644,7 +652,8 @@ begin
       return jsonb_build_object('error', jsonb_build_object(
         'code','MISSING_FIELD','message','How many tickets were sold? (soldCount)'));
     end if;
-    if p_sold_count > (select count(*) from tickets where book_idx = b.idx) then
+    if p_sold_count > (select count(*) from tickets
+                        where book_idx = b.idx and project_id = b.project_id) then
       return jsonb_build_object('error', jsonb_build_object(
         'code','BAD_REQUEST','message','That is more tickets than the book contains.'));
     end if;
@@ -658,7 +667,9 @@ begin
     -- a typo, and accepting it would mark the wrong ticket unsold.
     select t into bad from (
       select x from unnest(unsold_numbers) x
-      where not exists (select 1 from tickets where upper(number) = x and book_idx = b.idx)
+      where not exists (select 1 from tickets
+                         where upper(number) = x and book_idx = b.idx
+                           and project_id = b.project_id)
     ) s(t) limit 1;
     if bad is not null then
       return jsonb_build_object('error', jsonb_build_object(
@@ -681,6 +692,7 @@ begin
     select string_agg(t.number || ' (' || t.buyer_name || ')', ', ' order by t.idx) into bad
       from tickets t
      where t.book_idx = b.idx
+       and t.project_id = b.project_id
        and upper(t.number) = any(unsold_numbers)
        and t.status in ('Sold','Donated')
        and t.source <> 'settlement';
@@ -697,7 +709,8 @@ begin
       status = 'Available', buyer_name = '', buyer_phone = '', buyer_zone = '',
       sold_by_agent = null, amount = null, payment_status = '', sold_at = null,
       source = '', recorded_by = p_user
-    where book_idx = b.idx and upper(number) = any(unsold_numbers) and status <> 'Void';
+    where book_idx = b.idx and project_id = b.project_id
+      and upper(number) = any(unsold_numbers) and status <> 'Void';
 
     /*
      * Everything else in the book sold, and THE SELLER IS THE CONTACT.
@@ -717,8 +730,10 @@ begin
      * Anything already Sold or Donated keeps the buyer somebody took the
      * trouble to write down. A real buyer is never overwritten by this.
      */
+    -- agent_id is global until Stage 4, so the seller whose name goes onto
+    -- these tickets has to be this raffle's seller of that id.
     select name, phone into seller_name, seller_phone
-      from agents where agent_id = b.held_by_agent;
+      from agents where agent_id = b.held_by_agent and project_id = b.project_id;
 
     /*
      * DO NOT WRITE A CONTACT NOBODY CAN RING.
@@ -757,11 +772,13 @@ begin
         when coalesce(buyer_name, '') <> '' then buyer_phone
         else coalesce(seller_phone, '') end
     where book_idx = b.idx
+      and project_id = b.project_id
       and upper(number) <> all(unsold_numbers)
       and status not in ('Sold','Donated','Void');
 
     select count(*) into declared from tickets
-      where book_idx = b.idx and status in ('Sold','Donated');
+      where book_idx = b.idx and project_id = b.project_id
+        and status in ('Sold','Donated');
   end if;
 
   v_amount_due := declared * price;
@@ -779,11 +796,12 @@ begin
     amount_paid = p_amount_paid, settled_at = now(), settled_by = p_user,
     settled_by_agent = b.held_by_agent,
     notes = coalesce(nullif(p_note,''), notes), modified_by = p_user
-  where idx = b.idx;
+  where idx = b.idx and project_id = b.project_id;
 
-  insert into book_history(book_idx, from_agent, action, by_user, note)
+  insert into book_history(book_idx, from_agent, action, by_user, note, project_id)
   values (b.idx, b.held_by_agent, 'settle', p_user,
-          'sold ' || declared || ', due ' || v_amount_due || ', paid ' || p_amount_paid);
+          'sold ' || declared || ', due ' || v_amount_due || ', paid ' || p_amount_paid,
+          b.project_id);
 
   /*
    * THE CASH GOES IN THE LEDGER HERE, INSIDE THE TRANSACTION THAT COUNTED IT.
@@ -813,17 +831,29 @@ begin
    * was claimed and then taken back.
    */
   if b.held_by_agent is not null then
-    insert into payments(agent_id, amount, received_by, method, note, book_idx, source, reverses)
+    -- THE REVERSAL FINDS ONLY THIS RAFFLE'S PAYMENT ROWS. Without the
+    -- project this is restock_books_tx's defect in a second place: a
+    -- re-settle would reverse another organisation's settlement payments for
+    -- a book index it shares, taking money off a seller in a raffle nobody
+    -- was counting in.
+    --
+    -- r.project_id = p.project_id, not p_project: this asks whether THIS
+    -- payment already has a reversal, and a reversal lives in the same raffle
+    -- as the payment it reverses by construction.
+    insert into payments(agent_id, amount, received_by, method, note, book_idx, source, reverses, project_id)
     select p.agent_id, -p.amount, p_user, p.method,
-           'Reversed: ' || p_book_number || ' counted in again', p.book_idx, 'settlement', p.id
+           'Reversed: ' || p_book_number || ' counted in again', p.book_idx, 'settlement', p.id,
+           p.project_id
       from payments p
-     where p.book_idx = b.idx and p.source = 'settlement' and p.reverses is null
-       and not exists (select 1 from payments r where r.reverses = p.id);
+     where p.book_idx = b.idx and p.project_id = b.project_id
+       and p.source = 'settlement' and p.reverses is null
+       and not exists (select 1 from payments r
+                        where r.reverses = p.id and r.project_id = p.project_id);
 
     if p_amount_paid <> 0 then
-      insert into payments(agent_id, amount, received_by, method, note, book_idx, source)
+      insert into payments(agent_id, amount, received_by, method, note, book_idx, source, project_id)
       values (b.held_by_agent, p_amount_paid, p_user, 'cash',
-              'Counted in with ' || p_book_number, b.idx, 'settlement');
+              'Counted in with ' || p_book_number, b.idx, 'settlement', b.project_id);
     end if;
   end if;
 
@@ -836,6 +866,30 @@ begin
     'unidentified', p_allow_unidentified
   );
 end $$ language plpgsql;
+
+create or replace function settle_book(
+  p_book_number text,
+  p_unsold jsonb,
+  p_amount_paid numeric,
+  p_allow_unidentified boolean,
+  p_sold_count integer,
+  p_force boolean,
+  p_user text,
+  p_note text
+) returns jsonb as $$
+  select settle_book(p_book_number, p_unsold, p_amount_paid, p_allow_unidentified,
+                     p_sold_count, p_force, p_user, p_note,
+                     coalesce(current_project(), seed_project()))
+$$ language sql;
+
+-- Both signatures revoked; the original never was. An invoker function, so the
+-- table grants stopped an anonymous caller reaching the rows, but this one
+-- moves money — it writes payments and sets what a seller owes — and the api's
+-- service key is its only caller (books.ts:954; nothing in src/).
+revoke execute on function settle_book(text, jsonb, numeric, boolean, integer, boolean, text, text)
+  from public, anon, authenticated;
+revoke execute on function settle_book(text, jsonb, numeric, boolean, integer, boolean, text, text, uuid)
+  from public, anon, authenticated;
 
 -- ============ MONEY THAT NEVER HAD A SELLER ============
 -- A ticket sold at the desk, from a book nobody is holding, has no custodian:

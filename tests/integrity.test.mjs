@@ -479,6 +479,20 @@ console.log('a function the migrations install matches the one the repo calls ca
   const { fileURLToPath } = await import('node:url')
   const ROOT = fileURLToPath(new URL('../', import.meta.url))
 
+  /*
+   * KEYED BY NAME AND ARGUMENT COUNT, not by name alone.
+   *
+   * It was name alone, and that was right while every function had one
+   * signature. Stage 2 gives a dozen of them a sibling taking p_project, and
+   * the last definition in a file silently won: `settle_book` resolved to the
+   * one-line WRAPPER, so "settle_book writes settled_by_agent" started failing
+   * — and, worse, the drift comparison below was only ever looking at one of
+   * each pair. A drifted or stale FIRST overload was invisible.
+   *
+   * The arity is taken from the parameter list rather than a full type parse:
+   * enough to tell a wrapper from the body it delegates to, which is the
+   * distinction that was being lost.
+   */
   const bodies = (sql) => {
     const out = new Map()
     const re = /create\s+or\s+replace\s+function\s+([a-z_][a-z0-9_]*)\s*\(/gi
@@ -488,8 +502,23 @@ console.log('a function the migrations install matches the one the repo calls ca
       if (lang < 0) continue
       const end = sql.indexOf(';', lang)
       if (end < 0) continue
+      // The parameter list: from the opening bracket to its match.
+      let i = start + m[0].length - 1, depth = 0, close = -1
+      while (i < sql.length) {
+        if (sql[i] === '(') depth++
+        else if (sql[i] === ')') { depth--; if (depth === 0) { close = i; break } }
+        i++
+      }
+      const params = close < 0 ? '' : sql.slice(start + m[0].length, close).trim()
+      // Commas at depth zero, so a `numeric(12,2)` counts as one parameter.
+      let d = 0, n = params ? 1 : 0
+      for (const ch of params) {
+        if (ch === '(') d++
+        else if (ch === ')') d--
+        else if (ch === ',' && d === 0) n++
+      }
       // Whitespace-insensitive, so reindenting a function is not a failure.
-      out.set(m[1].toLowerCase(), sql.slice(start, end + 1).replace(/\s+/g, ' ').trim())
+      out.set(`${m[1].toLowerCase()}/${n}`, sql.slice(start, end + 1).replace(/\s+/g, ' ').trim())
     }
     return out
   }
@@ -567,9 +596,11 @@ console.log('a function the migrations install matches the one the repo calls ca
 
   // The specific one that started this, named so a future reader can see the
   // case rather than only the rule.
-  ok(/settled_by_agent/.test(canonical.get('settle_book') ?? ''),
+  /* The nine-argument signature is the one with a body; the eight-argument one
+     is the wrapper that delegates to it and names no column at all. */
+  ok(/settled_by_agent/.test(canonical.get('settle_book/9') ?? canonical.get('settle_book/8') ?? ''),
      'settle_book writes settled_by_agent in functions.sql')
-  ok(/settled_by_agent/.test(newest.get('settle_book')?.body ?? ''),
+  ok(/settled_by_agent/.test(newest.get('settle_book/9')?.body ?? newest.get('settle_book/8')?.body ?? ''),
      'and a migration carries that same writer, so db push alone installs it')
 }
 

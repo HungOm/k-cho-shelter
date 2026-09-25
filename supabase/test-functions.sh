@@ -523,7 +523,17 @@ ok "$(P "select status from tickets where number='KS-00012'")" "Available" "and 
 ok "$(P "select buyer_name from tickets where number='KS-00011'")" "Real Buyer" "while the real buyer is still there"
 
 echo "two settlements of one book cannot interleave"
-ok "$(P "select count(*) from pg_proc where proname='settle_book' and prosrc ilike '%for update%'")" "1" "the book row is locked for the transaction"
+# Asked of the signature that HAS a body. There are two settle_books now — the
+# raffle-aware one and a wrapper that only delegates — so "one function
+# mentions for update" would still read 1 if the lock moved into the wrapper,
+# or out of the real one and into a stale leftover.
+ok "$(P "select count(*) from pg_proc p where p.proname='settle_book'
+          and pg_get_function_identity_arguments(p.oid) like '%uuid%'
+          and p.prosrc ilike '%for update%'")" "1" "the book row is locked for the transaction"
+ok "$(P "select prosrc ilike '%project_id = p_project for update%' from pg_proc p
+          where p.proname='settle_book'
+            and pg_get_function_identity_arguments(p.oid) like '%uuid%'")" "t" \
+   "and the row it locks is this raffle's book, not whichever raffle owns that number"
 
 echo "a ticket keeps its past"
 n0=$(P "select count(*) from ticket_history where ticket_idx=11")
@@ -1746,6 +1756,31 @@ ok "$(P "select status from books where number='OB-0902'")" "Settled" \
 ok "$(P "select count(*) from tickets where book_idx = 902 and buyer_name = 'Wrong Raffle'")" "0" \
    "with nobody's name written into it"
 
+echo "counting a book in cannot reach the other raffle"
+# settle_book locks and settles the book it resolves from p_book_number, the
+# global unique until Stage 4. Unscoped, `select * into b from books where
+# number = p_book_number for update` locks whichever raffle's book carries that
+# number — and everything after it, the ticket rewrites, the amount due, the
+# payments, lands on that raffle.
+r=$(P "select settle_book('OB-0902', null, 30, false, 3, false, 'admin@x.com', '', seed_project())")
+has "$r" "BOOK_NOT_FOUND" "this raffle cannot count in the other raffle's book"
+ok "$(P "select amount_paid from books where number='OB-0902'")" "30.00" \
+   "and OB-0902 still carries its own thirty"
+ok "$(P "select count(*) from payments where book_idx = 902")" "0" \
+   "with no payment row written against it"
+#
+# WHAT IS NOT PROVED HERE, and it is the half I most wanted: that the
+# re-settle REVERSAL finds only this raffle's payment rows. The reversal
+# matches `p.book_idx = b.idx`, so reaching another raffle's payments needs two
+# raffles holding the same book INDEX — and idx is the global primary key until
+# Stage 4, so they cannot. The predicate is written and reviewed; the case that
+# would fail without it cannot be built yet. D-036, with the others.
+#
+# The other raffle settling its OWN book is unprovable for a second reason:
+# `select … into price from config where key='TICKET_PRICE' and project_id = …`
+# finds no row for a second raffle, so price is null and amount due with it.
+# Both go away when config's key becomes composite.
+
 # Put the raffle back as the cases below expect to find it.
 P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,
      payment_status='Unpaid' where number='KS-00007'" >/dev/null
@@ -1822,30 +1857,49 @@ fi
 # AND IT IS THE SAME DATABASE, not merely one that did not error. These are the
 # three things the drift between functions.sql and the migrations could silently
 # get wrong, checked on the build rather than on the files.
-# THIS ASKED FOR EXACTLY ONE sell_books, and the invariant it was protecting is
-# not the count — it is that a sale cannot be ambiguous between two signatures.
-# Stage 2 adds a second on purpose: sell_books(…, p_project uuid, …) carries the
-# body and the original becomes a wrapper, so that every existing caller keeps
-# working while the scoped client can name a raffle.
+# THIS ASKED FOR EXACTLY ONE sell_books, and Stage 2 adds a second on purpose:
+# sell_books(…, p_project uuid, …) carries the body and the original becomes a
+# wrapper, so every existing caller keeps working while the scoped client can
+# name a raffle. The count could not survive that. What it was protecting can.
 #
-# The pair is unambiguous because p_project has NO default. A call that does
-# not name it cannot match the raffle-aware signature at all, and a call that
-# does cannot match the old one. That is the property now asserted, rather than
-# the count that used to stand in for it — and the resolution itself is proved
-# by every old-style sell_books call in the PRISTINE half of this file, which
-# would raise "function sell_books(…) is not unique" if it were wrong.
-ok "$(C "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='sell_books'")" "2" \
-   "two sell_books: the raffle-aware one, and the wrapper that keeps old callers working"
-ok "$(C "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-          where n.nspname='public' and p.proname='sell_books'
-            and pg_get_function_identity_arguments(p.oid) like '%uuid%'")" "1" \
-   "exactly one of the two takes a project"
-ok "$(C "select bool_and(pg_get_function_identity_arguments(p.oid) not like '%uuid%'
-                      or pg_get_function_arguments(p.oid) not like '%p_project uuid DEFAULT%')
+# TWO SEPARATE PROPERTIES LIVED IN THAT ONE NUMBER, and only one of them is
+# about ambiguity. The first: a call must not match both signatures — which
+# holds because p_project has NO default, so a call that does not name it
+# cannot match the raffle-aware one and a call that does cannot match the
+# wrapper. Proved by giving p_project a default in a scratch copy: fourteen
+# cases go red with "function sell_books(…) is not unique".
+#
+# The second is the one this section is actually for, and a resolution proof
+# cannot see it. This sits among "the three things the drift between
+# functions.sql and the migrations could silently get wrong". A migration that
+# changes an argument list does not replace the old function, it adds a new
+# one — and the leftover is usually NOT ambiguous. It takes different
+# arguments, resolves cleanly for anyone who passes them, and runs old logic
+# against a database the rest of the file has moved on from.
+#
+# So the assertion is the exact SET of signatures, not their number: a third,
+# stale one fails it, and a missing one fails it too.
+ok "$(C "select string_agg(p.oid::regprocedure::text, ' | ' order by p.oid::regprocedure::text)
            from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-          where n.nspname='public' and p.proname='sell_books'")" "t" \
-   "and it has no default, which is what stops a call matching both"
-ok "$(C "select bool_or(pg_get_functiondef(p.oid) ~ 'settled_by_agent') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='settle_book'")" "t" \
+          where n.nspname='public' and p.proname='sell_books'")" \
+   "sell_books(text,text,jsonb,text,text,text,boolean,text,text,text,text) | sell_books(text,text,jsonb,text,text,text,boolean,text,text,text,uuid,text)" \
+   "exactly two sell_books signatures, the wrapper and the raffle-aware one, and no stale third"
+ok "$(C "select string_agg(p.oid::regprocedure::text, ' | ' order by p.oid::regprocedure::text)
+           from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+          where n.nspname='public' and p.proname='settle_book'")" \
+   "settle_book(text,jsonb,numeric,boolean,integer,boolean,text,text) | settle_book(text,jsonb,numeric,boolean,integer,boolean,text,text,uuid)" \
+   "and exactly two settle_book signatures, for the same reason"
+ok "$(C "select bool_and(pg_get_function_arguments(p.oid) not like '%p_project uuid DEFAULT%')
+           from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+          where n.nspname='public' and p.proname in ('sell_books','settle_book')")" "t" \
+   "and neither p_project has a default, which is what stops a call matching both"
+# bool_and over the RAFFLE-AWARE signature only: bool_or would be satisfied by
+# any one of them, including a stale leftover, and the wrapper does not carry
+# the column name because it carries no body.
+ok "$(C "select bool_and(pg_get_functiondef(p.oid) ~ 'settled_by_agent')
+           from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+          where n.nspname='public' and p.proname='settle_book'
+            and pg_get_function_identity_arguments(p.oid) like '%uuid%'")" "t" \
    "and it can write down who a settled book's money belongs to"
 ok "$(C "select count(*) from information_schema.columns where table_name='books' and column_name='settled_by_agent'")" "1" \
    "with a column for it to write to"
