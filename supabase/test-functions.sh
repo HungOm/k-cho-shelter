@@ -1482,6 +1482,7 @@ P "update books set status='Out', held_by_agent='A002', offered_to_agent=null wh
 # raffles, and each organiser must hand them their own raffle's digital ticket.
 # ---------------------------------------------------------------------------
 echo "a second raffle is a second raffle"
+before_dm=$(P "select desk_money()")
 B='00000000-0000-0000-0000-0000000000b2'
 P "insert into organisations (slug, name, organiser_email, created_by)
      values ('other-org', 'Other Org', 'other@x.com', 'test') on conflict (slug) do nothing;
@@ -1495,7 +1496,15 @@ P "insert into organisations (slug, name, organiser_email, created_by)
      values (901,'OB-0901','OT-00901','OT-00910','Out','B001','$B') on conflict do nothing;
    insert into tickets (idx, number, book_idx, status, project_id)
      select 900+i, 'OT-'||lpad((900+i)::text,5,'0'), 901, 'Available', '$B'
-       from generate_series(1,10) i on conflict do nothing;" >/dev/null
+       from generate_series(1,10) i on conflict do nothing;
+   -- A DESK SALE IN THE OTHER RAFFLE: settled, nobody's balance, exactly the
+   -- shape desk_money's closed_desk counts. Its idx (902) is past the seed's
+   -- active-tickets ceiling, so a ceiling check would exclude it by accident;
+   -- closed_desk has NO ceiling at all, which is why this is the row that
+   -- proves the predicate rather than the idx range doing the work for it.
+   insert into books (idx, number, first_ticket, last_ticket, status,
+                      declared_sold, amount_due, amount_paid, project_id)
+     values (902,'OB-0902','OT-00911','OT-00920','Settled',3,30,30,'$B') on conflict do nothing;" >/dev/null
 ok "$(P "select count(*) from projects")" "1" "the second project row is there (the seed has none until Stage 0 is applied)"
 ok "$(P "select count(*) from tickets where project_id = '$B'")" "10" "and it has its own ten tickets"
 # NOT A FIXED COUNT: cases above this one generate tickets, so the number here
@@ -1544,6 +1553,30 @@ ok "$(P "set local app.project_id = '$B';
 ok "$(P "select count(*) from ticket_receipts where buyer_phone='0125559999'")" "2" \
    "and neither call minted a third receipt"
 
+echo "the five-argument form is the one the scoped client will call"
+# NOT A DUPLICATE OF THE CASES ABOVE. Those drive the four-argument form via
+# `set local app.project_id`, which is how test-functions.sh reaches it and
+# how a runbook would. Once MT-2b's wrapper replaces ctx.supabaseAdmin for
+# every handler, printing.ts's call arrives as the FIVE-argument form with
+# p_project added by name — a different overload, unexercised by anything
+# above, and the one PostgREST will actually be asked for in production.
+ok "$(P "select holding_code from ensure_holding_tx(
+          '0125559999','Same Person','NEWCODE00003','t','$B')")" \
+   "BBBBBBBBBBBB" "asked explicitly for the other raffle's project, it finds the other raffle's code"
+ok "$(P "select holding_code from ensure_holding_tx(
+          '0125559999','Same Person','NEWCODE00004','t',seed_project())")" \
+   "AAAAAAAAAAAA" "and asked explicitly for this one, this one's"
+ok "$(P "select count(*) from ticket_receipts where buyer_phone='0125559999'")" "2" \
+   "still no third receipt, from either overload"
+
+# A NEW BUYER, PROVING THE INSERT ITSELF IS STAMPED, not merely the read
+# before it. The row this creates has to carry the raffle it was asked for.
+ok "$(P "select was_created from ensure_holding_tx(
+          '0177778888','New Buyer','FRESHCODE001','t','$B')")" \
+   "t" "a genuinely new buyer gets a freshly minted holding"
+ok "$(P "select project_id from ticket_receipts where code='FRESHCODE001'")" "$B" \
+   "and the receipt is stamped with the project it was asked for, not the caller's own"
+
 echo "how many tickets are in play is asked of one raffle"
 # Again the property, not the number, which earlier cases move around: the
 # no-argument wrapper must answer exactly what the explicit call answers for
@@ -1551,6 +1584,21 @@ echo "how many tickets are in play is asked of one raffle"
 ok "$(P "select active_tickets() = active_tickets(seed_project())")" "t" \
    "the old no-argument form answers about the raffle that was already here"
 ok "$(P "select active_tickets(seed_project()) > 0")" "t" "which is a real number of tickets"
+
+echo "desk money does not add another raffle's settled book to this one's"
+# THE DEFECT THIS CATCHES: closed_desk in desk_money had no project_id
+# predicate at all before this fix — unlike the ceiling on open_desk, nothing
+# incidentally protected it, and book 902's idx (902) being past the seed's
+# active-tickets range would not have saved it: closed_desk has no ceiling. A
+# desk sale settled in another organisation's raffle would be summed straight
+# into this one's "money that never had a seller" figure, inflating both what
+# is expected and what looks collected.
+after_dm=$(P "select desk_money()")
+ok "$before_dm" "$after_dm" \
+   "this raffle's desk money is unchanged by book 902 existing in the other one"
+ok "$(P "select desk_money('$B')->>'sold'")" "3" "asked of the OTHER raffle, book 902's three sold ARE there"
+ok "$(P "select (desk_money('$B')->>'expected')::numeric")" "30.00" "with its own thirty expected"
+ok "$(P "select (desk_money('$B')->>'collected')::numeric")" "30.00" "and its own thirty collected"
 
 # Put the raffle back as the cases below expect to find it.
 P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,

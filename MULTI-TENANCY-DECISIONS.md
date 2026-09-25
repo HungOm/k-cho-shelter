@@ -20,6 +20,15 @@ Your choice:
 
 ## Open
 
+### D-034 · app_reset is not in tonight's MT-2d pass, and it needs a p_project before MT-2b can merge · raised by kcho-shelter-25, 2026-09-26
+Blocks: MT-2b merging (it wires every ctx.supabaseAdmin.rpc call through the scoped client, which will inject p_project into app_reset's call and find no matching signature). Does not block MT-1b, MT-2c/d/e, or anything already shipped.
+Context: reset.ts calls `rpc('app_reset', { p_tables, p_by })`. Once MT-2b lands, that arrives as three named arguments and app_reset only has two. It is the most dangerous function in the schema — it empties a raffle — and it is the subject of an OPEN, UNRESOLVED production incident (2026-09-21: a reset failed with "DELETE requires a WHERE clause" but had already emptied `config`; three theories for the cause have died and the fourth is unconfirmed, see memory `the-reset-emptied-config-and-left-the-tickets`). It is also defined only inside migrations, never rolled into `functions.sql`, and it has been rewritten three times already for reasons each recorded in its own migration's header. I am not willing to add a parameter to it at 3am inside a pass otherwise going through desk_money and issue_books_tx.
+- A ★ a dedicated card, done in daylight, with its own review pass: add `p_project uuid`, scope every table it empties by project, decide whether app_reset should even run per-project before Stage 4 (today it empties the WHOLE database, which the plan's own D-006 answer says a full reset should refuse to do "while more than one organisation exists" — app_reset doing it per-project early would be new, narrower behaviour, not a mechanical scoping pass) or should stay whole-database and simply refuse when more than one project exists, matching D-006's ruling for the terminal reset it is a sibling of
+- B block MT-2b on it: nothing merges until app_reset is done, which makes a plumbing question gate a security fix
+- C give scoped.ts a one-line skip list so app_reset keeps its two-argument form and bypasses the wrapper's injection, reaching ctx.supabasePlatform's behaviour by name rather than by an explicit unscoped call — the plan session already said it leans against a skip list, and I agree: it is the one exception that would make "every rpc from the api carries p_project" false silently
+Your choice: 
+
+
 ### D-014 · The type-check lands as a ratchet over 78 existing errors · raised by multi-tenancy-architecture-plan, 2026-09-25
 Blocks: nothing. MT-T ships under A.
 Context: your D-010 answer asked for a gate step that fails on type errors. The first run found 78 in code already in production: loose `any`s, handler signatures the registry type does not accept, and one `role === 'superadmin'` that is only a too-narrow type, not a bug. Failing on all 78 would stop every deploy.

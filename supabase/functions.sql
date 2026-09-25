@@ -770,16 +770,23 @@ end $$ language plpgsql;
 -- exactly the set the seller lines cannot cover, so the two add up to the
 -- whole raffle and nothing is counted twice.
 
-create or replace function desk_money() returns jsonb as $$
+-- MULTI-TENANCY, D-021's shape: a sibling overload carries the body, the old
+-- zero-argument form delegates with the coalesce. One caller,
+-- api/money.ts:236, unchanged — `rpc('desk_money', {})` still resolves to the
+-- wrapper, which reads this raffle. p_project is not optional here either: a
+-- default beside the existing zero-arg function makes the bare call
+-- ambiguous, as it did for active_tickets (D-021).
+create or replace function desk_money(p_project uuid) returns jsonb as $$
   with open_desk as (
     select count(*) as sold,
            coalesce(sum(t.amount), 0) as expected,
            coalesce(sum(t.amount) filter (where t.payment_status = 'Paid'), 0) as collected
     from tickets t
-    join books b on b.idx = t.book_idx
-    where t.sold_by_agent is null
+    join books b on b.idx = t.book_idx and b.project_id = t.project_id
+    where t.project_id = p_project
+      and t.sold_by_agent is null
       and t.status in ('Sold','Donated')
-      and t.idx <= active_tickets()
+      and t.idx <= active_tickets(p_project)
       and not (b.status in ('Settled','Lost') and b.declared_sold is not null)
   ),
   closed_desk as (
@@ -787,7 +794,8 @@ create or replace function desk_money() returns jsonb as $$
            coalesce(sum(b.amount_due), 0) as expected,
            coalesce(sum(b.amount_paid), 0) as collected
     from books b
-    where b.settled_by_agent is null
+    where b.project_id = p_project
+      and b.settled_by_agent is null
       and b.status in ('Settled','Lost')
       and b.declared_sold is not null
   )
@@ -795,6 +803,10 @@ create or replace function desk_money() returns jsonb as $$
     'sold',      (select sold from open_desk) + (select sold from closed_desk),
     'expected',  (select expected from open_desk) + (select expected from closed_desk),
     'collected', (select collected from open_desk) + (select collected from closed_desk));
+$$ language sql stable;
+
+create or replace function desk_money() returns jsonb as $$
+  select desk_money(coalesce(current_project(), seed_project()))
 $$ language sql stable;
 
 
@@ -1409,11 +1421,20 @@ grant execute on function holding_of(text, integer) to service_role;
  * argument is a call that resolves to whichever Postgres prefers, and the one
  * it prefers would be the one that keys on the number alone.
  */
+-- MULTI-TENANCY, D-021's shape, and a correction to the comment this replaces.
+-- That comment said an argument would change a signature every handler calls
+-- and explicit carriage would arrive WITH the scoped client — which is now:
+-- the wrapper replaces ctx.supabaseAdmin for every handler (index.ts, the
+-- tenancy-stage-2 branch), so printing.ts:680's call arrives with p_project
+-- ADDED, not with the same four names. Keeping the four-argument form as the
+-- only signature would make that call fail with no matching function, the
+-- same trap active_tickets and desk_money were written to avoid.
 create or replace function ensure_holding_tx(
-  p_phone text,
-  p_name  text,
-  p_code  text,
-  p_user  text
+  p_phone   text,
+  p_name    text,
+  p_code    text,
+  p_user    text,
+  p_project uuid
 ) returns table (holding_code text, was_created boolean) as $$
 declare
   found_code text;
@@ -1433,23 +1454,37 @@ begin
   -- the FIRST organisation's code — so their buyer would receive a link to
   -- somebody else's raffle showing tickets they did not buy, and no new
   -- receipt would ever be created for them.
-  --
-  -- The project comes from the request header, which the router sets on every
-  -- request, and falls back to the raffle that was already here. Not an
-  -- argument, because that would change the signature every handler calls;
-  -- explicit carriage arrives with the scoped client, and the two must agree.
   select r.code into found_code
     from ticket_receipts r
    where r.buyer_phone = phone
      and buyer_key(r.buyer_name) = buyer_key(name_given)
-     and r.project_id = coalesce(current_project(), seed_project())
+     and r.project_id = p_project
    limit 1;
 
   if found_code is null then
-    insert into ticket_receipts (code, created_by, buyer_phone, buyer_name)
-      values (p_code, coalesce(p_user, ''), phone, name_given);
+    -- STAMPED EXPLICITLY, not left to the column default. p_project is what
+    -- the caller named; the default reads the header, and a caller that
+    -- passed an explicit project through a path with no matching header
+    -- (a runbook, a future control-plane action) must not have its receipt
+    -- land somewhere it did not ask for.
+    insert into ticket_receipts (code, created_by, buyer_phone, buyer_name, project_id)
+      values (p_code, coalesce(p_user, ''), phone, name_given, p_project);
     return query select p_code, true;
   else
     return query select found_code, false;
   end if;
 end $$ language plpgsql;
+
+-- The old four-argument form, kept for the same reason active_tickets and
+-- desk_money keep theirs: test-functions.sh drives this directly with
+-- `set local app.project_id = …`, and a caller with no p_project to give
+-- still needs an answer about the raffle that was already here.
+create or replace function ensure_holding_tx(
+  p_phone text,
+  p_name  text,
+  p_code  text,
+  p_user  text
+) returns table (holding_code text, was_created boolean) as $$
+  select * from ensure_holding_tx(
+    p_phone, p_name, p_code, p_user, coalesce(current_project(), seed_project()))
+$$ language sql;
