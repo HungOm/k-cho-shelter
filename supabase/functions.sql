@@ -325,6 +325,7 @@ create or replace function sell_books(
    * defaulting to whoever is signed in. Null means "use the caller", which is
    * what every existing call passes by not passing it at all.
    */
+  p_project uuid,
   p_sold_by text default null
 ) returns jsonb as $$
 declare
@@ -341,15 +342,23 @@ declare
   book_numbers text[] := '{}';
   part_sold integer;
 begin
-  live := active_tickets();
-  select coalesce(nullif(value, '')::numeric, 10) into price from config where key = 'TICKET_PRICE';
+  -- This raffle's ceiling and this raffle's price. A whole-book sale priced at
+  -- another organisation's TICKET_PRICE puts the wrong amount on every one of
+  -- up to two hundred tickets, and on the buyer's receipt.
+  live := active_tickets(p_project);
+  select coalesce(nullif(value, '')::numeric, 10) into price
+    from config where key = 'TICKET_PRICE' and project_id = p_project;
 
   if p_book_numbers is not null then
     select array_agg(bk.idx order by bk.idx) into idxs
+      -- books.number is the GLOBAL unique until Stage 4, so a list of book
+      -- numbers names rows in any raffle unless this says which.
       from books bk where bk.number = any(
-        select jsonb_array_elements_text(p_book_numbers));
+        select jsonb_array_elements_text(p_book_numbers))
+        and bk.project_id = p_project;
   else
-    select idx into first_idx from books where number = p_from_book;
+    select idx into first_idx from books
+      where number = p_from_book and project_id = p_project;
     if first_idx is null then
       return jsonb_build_object('error', jsonb_build_object(
         'code', 'BOOK_NOT_FOUND', 'message', 'Book ' || coalesce(p_from_book, '?') || ' does not exist.'));
@@ -357,7 +366,8 @@ begin
     if p_to_book is null or p_to_book = '' then
       last_idx := first_idx;
     else
-      select idx into last_idx from books where number = p_to_book;
+      select idx into last_idx from books
+        where number = p_to_book and project_id = p_project;
       if last_idx is null then
         return jsonb_build_object('error', jsonb_build_object(
           'code', 'BOOK_NOT_FOUND', 'message', 'Book ' || p_to_book || ' does not exist.'));
@@ -380,10 +390,12 @@ begin
 
   -- Every book is checked before any ticket is written, so a range that crosses
   -- into another seller's books leaves nothing half recorded.
-  for b in select * from books where idx = any(idxs) order by idx loop
+  for b in select * from books
+            where idx = any(idxs) and project_id = p_project order by idx loop
     book_numbers := book_numbers || b.number;
 
-    if b.idx * (select coalesce(nullif(value, '')::integer, 10) from config where key = 'TICKETS_PER_BOOK')
+    if b.idx * (select coalesce(nullif(value, '')::integer, 10) from config
+                 where key = 'TICKETS_PER_BOOK' and project_id = p_project)
        > live then
       return jsonb_build_object('error', jsonb_build_object(
         'code', 'TICKET_NOT_RELEASED',
@@ -433,7 +445,8 @@ begin
     -- "record t is not assigned yet" — a body that compiled and could not run,
     -- which is the same shape as the idx shadowing in the offer functions.
     select count(*) into part_sold from tickets tk
-     where tk.book_idx = b.idx and tk.status in ('Sold', 'Donated');
+     where tk.book_idx = b.idx and tk.project_id = b.project_id
+       and tk.status in ('Sold', 'Donated');
     if part_sold > 0 then
       return jsonb_build_object('error', jsonb_build_object(
         'code', 'BOOK_NOT_WHOLE',
@@ -449,7 +462,9 @@ begin
    * free here. Without it two sessions selling the same book both read every
    * stub as available and the second overwrote the first buyer.
    */
-  for t in select * from tickets where book_idx = any(idxs) order by idx for update loop
+  for t in select * from tickets
+            where book_idx = any(idxs) and project_id = p_project
+            order by idx for update loop
     if t.status in ('Sold', 'Donated') then
       skipped := skipped || jsonb_build_object('ticketNumber', t.number, 'reason', 'already sold');
       continue;
@@ -515,13 +530,14 @@ begin
        */
       sold_by_agent = (
         select case when bk.status = 'Out' then bk.held_by_agent else null end
-          from books bk where bk.idx = t.book_idx),
+          from books bk where bk.idx = t.book_idx and bk.project_id = p_project),
       amount = case when p_donated then 0 else price end,
       payment_status = 'Paid',
       sold_at = now(),
       source = 'book sale',
       recorded_by = p_user
     where idx = t.idx
+      and project_id = p_project
       and status not in ('Sold', 'Donated', 'Void');
 
     get diagnostics touched = row_count;
@@ -542,6 +558,33 @@ begin
     'buyerName', p_buyer_name
   );
 end $$ language plpgsql;
+
+create or replace function sell_books(
+  p_from_book text,
+  p_to_book text,
+  p_book_numbers jsonb,
+  p_buyer_name text,
+  p_buyer_phone text,
+  p_buyer_zone text,
+  p_donated boolean,
+  p_user text,
+  p_role text,
+  p_agent_id text,
+  p_sold_by text default null
+) returns jsonb as $$
+  select sell_books(p_from_book, p_to_book, p_book_numbers, p_buyer_name, p_buyer_phone,
+                    p_buyer_zone, p_donated, p_user, p_role, p_agent_id,
+                    coalesce(current_project(), seed_project()), p_sold_by)
+$$ language sql;
+
+-- Both signatures revoked. The original never was: an invoker function, so the
+-- table grants stopped an anonymous caller reaching the rows, but this sells a
+-- whole book to a named buyer and the api's service key is its only caller
+-- (tickets.ts:912; nothing in src/). Grepped before revoking.
+revoke execute on function sell_books(text, text, jsonb, text, text, text, boolean, text, text, text, text)
+  from public, anon, authenticated;
+revoke execute on function sell_books(text, text, jsonb, text, text, text, boolean, text, text, text, uuid, text)
+  from public, anon, authenticated;
 
 -- ============ SETTLEMENT ============
 -- What an agent owes, decided in one transaction.

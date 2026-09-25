@@ -1735,6 +1735,17 @@ has "$r" '"recorded": 1' "a batch naming this raffle's own ticket records the sa
 ok "$(P "select buyer_name from tickets where number='$freetk'")" "Right Raffle" \
    "and the buyer is on it"
 
+echo "a whole-book sale cannot reach the other raffle's book"
+# books.number is the GLOBAL unique until Stage 4, so a whole-book sale naming
+# OB-0902 — which belongs to the other organisation — resolved to their row.
+r=$(P "select sell_books('OB-0902', null, null, 'Wrong Raffle', '0125556666', '',
+                          false, 'admin@x.com', 'admin', null, seed_project())")
+has "$r" "BOOK_NOT_FOUND" "this raffle cannot find the other raffle's book number"
+ok "$(P "select status from books where number='OB-0902'")" "Settled" \
+   "and OB-0902 is untouched in the raffle that owns it"
+ok "$(P "select count(*) from tickets where book_idx = 902 and buyer_name = 'Wrong Raffle'")" "0" \
+   "with nobody's name written into it"
+
 # Put the raffle back as the cases below expect to find it.
 P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,
      payment_status='Unpaid' where number='KS-00007'" >/dev/null
@@ -1811,8 +1822,29 @@ fi
 # AND IT IS THE SAME DATABASE, not merely one that did not error. These are the
 # three things the drift between functions.sql and the migrations could silently
 # get wrong, checked on the build rather than on the files.
-ok "$(C "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='sell_books'")" "1" \
-   "one sell_books, so a sale is not ambiguous between two signatures"
+# THIS ASKED FOR EXACTLY ONE sell_books, and the invariant it was protecting is
+# not the count — it is that a sale cannot be ambiguous between two signatures.
+# Stage 2 adds a second on purpose: sell_books(…, p_project uuid, …) carries the
+# body and the original becomes a wrapper, so that every existing caller keeps
+# working while the scoped client can name a raffle.
+#
+# The pair is unambiguous because p_project has NO default. A call that does
+# not name it cannot match the raffle-aware signature at all, and a call that
+# does cannot match the old one. That is the property now asserted, rather than
+# the count that used to stand in for it — and the resolution itself is proved
+# by every old-style sell_books call in the PRISTINE half of this file, which
+# would raise "function sell_books(…) is not unique" if it were wrong.
+ok "$(C "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='sell_books'")" "2" \
+   "two sell_books: the raffle-aware one, and the wrapper that keeps old callers working"
+ok "$(C "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+          where n.nspname='public' and p.proname='sell_books'
+            and pg_get_function_identity_arguments(p.oid) like '%uuid%'")" "1" \
+   "exactly one of the two takes a project"
+ok "$(C "select bool_and(pg_get_function_identity_arguments(p.oid) not like '%uuid%'
+                      or pg_get_function_arguments(p.oid) not like '%p_project uuid DEFAULT%')
+           from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+          where n.nspname='public' and p.proname='sell_books'")" "t" \
+   "and it has no default, which is what stops a call matching both"
 ok "$(C "select bool_or(pg_get_functiondef(p.oid) ~ 'settled_by_agent') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='settle_book'")" "t" \
    "and it can write down who a settled book's money belongs to"
 ok "$(C "select count(*) from information_schema.columns where table_name='books' and column_name='settled_by_agent'")" "1" \

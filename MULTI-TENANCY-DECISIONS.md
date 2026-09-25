@@ -20,6 +20,14 @@ Your choice:
 
 ## Open
 
+### D-036 · Three Stage 2 red checks are masked by the idx ceiling and must be re-run at Stage 4 · raised by kcho-shelter-25, 2026-09-26
+Blocks: nothing now. It is a debt Stage 4's T4 has to settle, recorded so it is not lost between the two stages.
+Context: some of Stage 2's project predicates cannot be shown doing their job yet, because something that is not the predicate is stopping the cross-raffle reach. `bulk_record_sales` with the predicate removed answers TICKET_NOT_RELEASED rather than selling — the row IS found, then rejected because its idx is past this raffle's active-tickets ceiling. `desk_money`'s open_desk is protected the same incidental way (closed_desk is not, which is why that one could be proved). `settle_book`'s number-based reach will be the same shape. Two raffles' idx ranges cannot overlap while idx is the global primary key, so the ceiling masks the question. At Stage 4 both raffles number from 1, every idx is inside every ceiling, and the predicate becomes the only thing standing there.
+- A ★ T4 re-runs these three red checks in their collision form — both raffles numbering from 1, the same book and ticket numbers in each — and they must fail without the predicate and pass with it. Added to Stage 4's card rather than left in the Stage 2 commits, where a reader would have to notice the caveat
+- B leave the Stage 2 caveats where they are, in the test comments, and trust that whoever writes T4 reads them
+Your choice: 
+
+
 ### D-035 · active_tickets(uuid) answers about any project, to any signed-in person · raised by kcho-shelter-25, 2026-09-26
 Blocks: nothing now. Stage 3 should close it, once member_role() exists.
 Context: Stage 2 gives `active_tickets` a sibling taking the project as an argument, and `authenticated` must keep EXECUTE on it — measured: revoking it breaks `tickets_readable` and `book_ledger` with "permission denied for function active_tickets", because a definer view runs its TABLE access as the view owner but still checks FUNCTION execute against the calling role. anon is revoked, so the public cannot ask. What remains is that any signed-in person who holds another organisation's project id can read that raffle's in-play ticket count. It is a count, not personal data, and no screen offers the id — but it crosses the wall this plan exists to build, and the same shape will repeat for every function that takes a project and is callable by `authenticated`.
