@@ -49,6 +49,45 @@ console.log('1. one place builds the client, and it scopes it')
   for (const c of conflicts) ok(/:project_id,/.test(c), `${c} leads with project_id`)
 }
 
+console.log('1b. every database function the server calls can be told the raffle')
+{
+  /*
+   * The wrapper adds p_project to EVERY rpc. PostgREST resolves an overload by
+   * its argument NAMES, so a function without a p_project version is refused
+   * the moment this branch reaches production: "could not find the function".
+   * So the functions called here are read from the handlers, and the SQL that
+   * will exist once the pending migrations are applied is read for a version
+   * of each that takes `p_project uuid`.
+   *
+   * THE ONE EXCEPTION IS NAMED, AND IT BLOCKS THE MERGE. app_reset is held for
+   * its own card (MULTI-TENANCY-DECISIONS.md D-034). It is listed rather than
+   * skipped, this checks it is STILL missing so the list cannot go stale, and
+   * this branch must not merge while the list is non-empty.
+   */
+  const BLOCKED = { app_reset: 'D-034' }
+
+  const called = [...new Set(files.flatMap((f) => [...code(f).matchAll(/\.rpc\(\s*'([a-z_]+)'/g)].map((m) => m[1])))].sort()
+  ok(called.length >= 14, `found the functions the server calls (${called.length})`)
+
+  const ROOT = new URL('../', import.meta.url)
+  const sqlFiles = ['supabase/functions.sql',
+    ...readdirSync(new URL('supabase/migrations.pending/', ROOT)).filter((f) => f.endsWith('.sql')).map((f) => 'supabase/migrations.pending/' + f)]
+  const sql = sqlFiles.map((f) => readFileSync(new URL(f, ROOT), 'utf8')).join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '')
+  const takesProject = new Set([...sql.matchAll(/create or replace function (\w+)\s*\(([^)]*)\)/gi)]
+    .filter((m) => /\bp_project\s+uuid\b/i.test(m[2])).map((m) => m[1].toLowerCase()))
+  ok(takesProject.size >= 14, `found the p_project versions (${takesProject.size})`)
+
+  for (const fn of called) {
+    if (BLOCKED[fn]) {
+      ok(!takesProject.has(fn), `${fn} is still waiting on ${BLOCKED[fn]} — take it off BLOCKED now that it has a p_project version`)
+    } else {
+      ok(takesProject.has(fn), `${fn} has a version taking p_project uuid — without one, every call to it fails once this branch is live`)
+    }
+  }
+  console.log(`  merge blocked by: ${Object.entries(BLOCKED).map(([f, d]) => `${f} (${d})`).join(', ') || 'nothing'}`)
+}
+
 console.log('2. through the real router, a second raffle stays out of sight')
 setEnv({ SUPER_ADMIN_EMAIL: 'boss@x.com' })
 const api = (await loadModule('index.ts')).default
