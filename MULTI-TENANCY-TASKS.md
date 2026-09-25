@@ -65,10 +65,10 @@ sessions, that they may work on this plan.
 | MT-F | 3 feature list (tagging only) | kcho-shelter-51 | MT-0 | done (a20dfdf) |
 | MT-K | 2 test double + wrapper | multi-tenancy-architecture-plan (declined by ticket-studio-redesign) | none | done (d0b52d1) |
 | MT-2a | 2 the function resolves the project first | kcho-shelter-51 (released by its user) | MT-K | done (5ef3092); D-015, D-016, D-017 |
-| MT-2b | 2 handlers on scoped() + composite onConflict | kcho-shelter-25 | MT-1b | not started; on branch `tenancy-stage-2` when it starts (rule 9) |
+| MT-2b | 2 handlers on scoped() + composite onConflict (D-027) | multi-tenancy-architecture-plan (handed over by kcho-shelter-25) | MT-1b, and MT-2d before merge | done on branch `tenancy-stage-2` (19cb3ba); merges only after Stage 0 and 1 are applied (rule 9) |
 | MT-2c | 2 policies and views gain the coalesced predicate | kcho-shelter-25 | MT-1b | done (ecbb13d); migration pending |
-| MT-2d | 2 the sixteen SQL functions take `p_project` (D-021) | kcho-shelter-25 | MT-1b | part done: `active_tickets` and the receipt pair (defbe63); twelve left, paused for review and D-033 |
-| MT-2e | 2 `config_numbering_locked` and `adoptLoneArtwork` scoped | kcho-shelter-25 | MT-1b | trigger half done, with two more triggers (0445f33); handler half waits for the branch |
+| MT-2d | 2 the sixteen SQL functions take `p_project` (D-021) | kcho-shelter-25, reviewed per commit by multi-tenancy-architecture-plan | MT-1b | in progress: `active_tickets` and the receipt pair done (defbe63); twelve left, one group per commit |
+| MT-2e | 2 `config_numbering_locked` and `adoptLoneArtwork` scoped | kcho-shelter-25 | MT-1b | done: triggers in 0445f33; the artwork lookup is scoped by MT-2b's wrapper on the branch |
 | MT-L | 7 organisation and project lifecycle (D-006) | unassigned | Stage 5 | not started |
 | MT-T | gate: type-check the functions (D-010) | multi-tenancy-architecture-plan | none | done; lands as a ratchet (D-014) |
 
