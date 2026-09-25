@@ -984,10 +984,17 @@ $$ language sql;
 -- so they are reversed in the same breath, or the book and the ledger disagree
 -- from the moment this returns. That reversal used to be one statement and the
 -- clearing another.
+-- MULTI-TENANCY: the money one. Every table it touches is partitioned — it
+-- reverses payments, writes new ones, adds history, clears the book and frees
+-- the tickets — and each was matched by book idx alone, which is the global
+-- primary key until Stage 4. A restock naming another organisation's book idx
+-- would have reversed THEIR settlement payments and written the cash back as a
+-- hand-over in a raffle whose seller never handed anything over.
 create or replace function restock_books_tx(
-  p_idxs integer[],
-  p_user text,
-  p_note text default ''
+  p_idxs    integer[],
+  p_user    text,
+  p_project uuid,
+  p_note    text default ''
 ) returns integer as $$
 declare
   moved integer;
@@ -1007,26 +1014,32 @@ begin
            p.id, 'Reversed: book put back on the shelf'
       from payments p
      where p.book_idx = any(p_idxs)
+       and p.project_id = p_project
        and p.source = 'settlement'
        and p.reverses is null
-       and not exists (select 1 from payments r where r.reverses = p.id)
+       -- r.project_id = p.project_id, not p_project: this asks whether THIS
+       -- payment already has a reversal, and a reversal lives in the same
+       -- raffle as the payment it reverses by construction.
+       and not exists (select 1 from payments r
+                        where r.reverses = p.id and r.project_id = p.project_id)
     returning agent_id, -amount as amount, book_idx, method
   )
-  insert into payments (agent_id, amount, received_by, method, book_idx, source, note)
+  insert into payments (agent_id, amount, received_by, method, book_idx, source, note, project_id)
   select u.agent_id, u.amount, p_user, u.method, u.book_idx, 'hand',
          'Cash kept from the count-in of ' ||
-         coalesce((select b.number from books b where b.idx = u.book_idx), 'a book') ||
-         ', which went back on the shelf'
+         coalesce((select b.number from books b
+                    where b.idx = u.book_idx and b.project_id = p_project), 'a book') ||
+         ', which went back on the shelf', p_project
     from undone u
    where u.amount <> 0;
 
-  insert into book_history (book_idx, from_agent, action, by_user, note)
+  insert into book_history (book_idx, from_agent, action, by_user, note, project_id)
   select b.idx, b.held_by_agent, 'restock', p_user,
          coalesce(nullif(p_note, ''),
                   case when b.declared_sold is not null
                        then 'Settlement of ' || b.declared_sold || ' cleared.'
-                       else '' end)
-    from books b where b.idx = any(p_idxs) order by b.idx;
+                       else '' end), p_project
+    from books b where b.idx = any(p_idxs) and b.project_id = p_project order by b.idx;
 
   update books set
     status = 'Unassigned', held_by_agent = null,
@@ -1034,17 +1047,30 @@ begin
     declared_sold = null, amount_due = null, amount_paid = null,
     settled_at = null, settled_by = '', settled_by_agent = null, notes = '',
     modified_by = p_user
-   where idx = any(p_idxs);
+   where idx = any(p_idxs) and project_id = p_project;
   get diagnostics moved = row_count;
 
+  -- Through the book's own project rather than repeating the array test, so a
+  -- ticket cannot be freed by naming a book idx belonging to another raffle.
   update tickets set
     status = 'Available', buyer_name = '', buyer_phone = '', buyer_zone = '',
     sold_by_agent = null, amount = null, payment_status = '', sold_at = null,
     source = '', recorded_by = p_user
-   where book_idx = any(p_idxs) and status in ('Available', 'Reserved');
+   where book_idx in (select idx from books
+                       where idx = any(p_idxs) and project_id = p_project)
+     and project_id = p_project
+     and status in ('Available', 'Reserved');
 
   return moved;
 end $$ language plpgsql;
+
+create or replace function restock_books_tx(
+  p_idxs integer[],
+  p_user text,
+  p_note text default ''
+) returns integer as $$
+  select restock_books_tx(p_idxs, p_user, coalesce(current_project(), seed_project()), p_note)
+$$ language sql;
 
 -- ============================================================================
 -- OFFERING A BOOK, WHICH TAKES TWO PEOPLE
@@ -1064,6 +1090,7 @@ create or replace function offer_books_tx(
   p_agent_id text,
   p_due_at   date,
   p_user     text,
+  p_project  uuid,
   p_note     text default ''
 ) returns table (idx integer, number text) as $$
 declare
@@ -1077,17 +1104,22 @@ begin
   if coalesce(trim(p_agent_id), '') = '' then
     raise exception 'MISSING_HOLDER: an offer needs somebody to offer it to';
   end if;
-  if not exists (select 1 from agents where agent_id = p_agent_id) then
+  -- agent_id is the global primary key until Stage 4, so a seller id alone
+  -- names no raffle: without the project this would accept another
+  -- organisation's seller as the person to offer this raffle's books to.
+  if not exists (select 1 from agents
+                  where agent_id = p_agent_id and project_id = p_project) then
     raise exception 'AGENT_NOT_FOUND: no seller with id %', p_agent_id;
   end if;
 
   -- In book order, so two overlapping batches queue rather than deadlock.
-  perform 1 from books b where b.idx = any(p_idxs) order by b.idx for update;
+  perform 1 from books b
+   where b.idx = any(p_idxs) and b.project_id = p_project order by b.idx for update;
 
   select count(*), string_agg(b.number, ', ' order by b.idx)
     into wrong, offenders
     from books b
-   where b.idx = any(p_idxs) and b.status <> 'Unassigned';
+   where b.idx = any(p_idxs) and b.project_id = p_project and b.status <> 'Unassigned';
 
   if wrong > 0 then
     raise exception 'BOOKS_NOT_FREE: % of % are not on the shelf — %',
@@ -1120,8 +1152,11 @@ begin
     into wrong, offenders
     from books b
    where b.idx = any(p_idxs)
+     and b.project_id = p_project
      and exists (select 1 from tickets tk
-                  where tk.book_idx = b.idx and tk.status <> 'Available');
+                  where tk.book_idx = b.idx
+                    and tk.project_id = b.project_id
+                    and tk.status <> 'Available');
 
   if wrong > 0 then
     raise exception 'BOOK_NOT_WHOLE: % of % are not whole books — %',
@@ -1140,20 +1175,33 @@ begin
       offered_by = p_user,
       due_at = p_due_at,
       modified_by = p_user
-     where b.idx = any(p_idxs) and b.status = 'Unassigned'
+     where b.idx = any(p_idxs) and b.project_id = p_project
+       and b.status = 'Unassigned'
     returning b.idx
   )
   select array_agg(w.idx order by w.idx) into offered from written w;
 
   if offered is null then return; end if;
 
-  insert into book_history (book_idx, to_agent, action, by_user, note)
+  insert into book_history (book_idx, to_agent, action, by_user, note, project_id)
   select i, p_agent_id, 'offer', p_user,
-         coalesce(nullif(p_note, ''), 'Offered, waiting for the seller to accept')
+         coalesce(nullif(p_note, ''), 'Offered, waiting for the seller to accept'), p_project
     from unnest(offered) i order by i;
 
-  return query select b.idx, b.number from books b where b.idx = any(offered) order by b.idx;
+  return query select b.idx, b.number from books b
+   where b.idx = any(offered) and b.project_id = p_project order by b.idx;
 end $$ language plpgsql;
+
+create or replace function offer_books_tx(
+  p_idxs     integer[],
+  p_agent_id text,
+  p_due_at   date,
+  p_user     text,
+  p_note     text default ''
+) returns table (idx integer, number text) as $$
+  select * from offer_books_tx(
+    p_idxs, p_agent_id, p_due_at, p_user, coalesce(current_project(), seed_project()), p_note)
+$$ language sql;
 
 -- ============ ACCEPT ============
 --
@@ -1164,6 +1212,7 @@ create or replace function accept_offer_tx(
   p_idxs     integer[],
   p_agent_id text,
   p_user     text,
+  p_project  uuid,
   p_note     text default ''
 ) returns table (idx integer, number text) as $$
 declare
@@ -1175,17 +1224,23 @@ begin
     raise exception 'NOTHING_TO_ACCEPT: no books were named';
   end if;
 
-  perform 1 from books b where b.idx = any(p_idxs) order by b.idx for update;
+  perform 1 from books b
+   where b.idx = any(p_idxs) and b.project_id = p_project order by b.idx for update;
 
   /*
    * NOT OFFERED TO YOU IS NOT AN ACCEPTANCE. Checked as one question — offered,
    * and offered to this seller — because splitting them into "is it offered"
    * and "is it yours" invites a later edit that answers only the first.
+   *
+   * And not offered in THIS raffle either: offered_to_agent holds an agent_id,
+   * still global until Stage 4, so without the project a seller could accept a
+   * book offered to their namesake id in another organisation.
    */
   select count(*), string_agg(b.number, ', ' order by b.idx)
     into wrong, offenders
     from books b
    where b.idx = any(p_idxs)
+     and b.project_id = p_project
      and (b.status <> 'Offered' or b.offered_to_agent is distinct from p_agent_id);
 
   if wrong > 0 then
@@ -1203,7 +1258,8 @@ begin
       offered_at = null,
       offered_by = '',
       modified_by = p_user
-     where b.idx = any(p_idxs) and b.status = 'Offered'
+     where b.idx = any(p_idxs) and b.project_id = p_project
+       and b.status = 'Offered'
        and b.offered_to_agent = p_agent_id
     returning b.idx
   )
@@ -1211,13 +1267,24 @@ begin
 
   if taken is null then return; end if;
 
-  insert into book_history (book_idx, to_agent, action, by_user, note)
+  insert into book_history (book_idx, to_agent, action, by_user, note, project_id)
   select i, p_agent_id, 'issue', p_user,
-         coalesce(nullif(p_note, ''), 'Accepted by the seller')
+         coalesce(nullif(p_note, ''), 'Accepted by the seller'), p_project
     from unnest(taken) i order by i;
 
-  return query select b.idx, b.number from books b where b.idx = any(taken) order by b.idx;
+  return query select b.idx, b.number from books b
+   where b.idx = any(taken) and b.project_id = p_project order by b.idx;
 end $$ language plpgsql;
+
+create or replace function accept_offer_tx(
+  p_idxs     integer[],
+  p_agent_id text,
+  p_user     text,
+  p_note     text default ''
+) returns table (idx integer, number text) as $$
+  select * from accept_offer_tx(
+    p_idxs, p_agent_id, p_user, coalesce(current_project(), seed_project()), p_note)
+$$ language sql;
 
 -- ============ RELEASE ============
 --
@@ -1230,9 +1297,10 @@ end $$ language plpgsql;
 -- It does NOT care who the book was offered to. An offer whose seller has since
 -- been deleted is exactly the one somebody needs to clear.
 create or replace function release_offer_tx(
-  p_idxs   integer[],
-  p_user   text,
-  p_reason text default ''
+  p_idxs    integer[],
+  p_user    text,
+  p_project uuid,
+  p_reason  text default ''
 ) returns integer as $$
 declare
   freed integer[];
@@ -1241,7 +1309,8 @@ begin
     return 0;
   end if;
 
-  perform 1 from books b where b.idx = any(p_idxs) order by b.idx for update;
+  perform 1 from books b
+   where b.idx = any(p_idxs) and b.project_id = p_project order by b.idx for update;
 
   -- Silent about books that are not Offered. Unlike offering and accepting,
   -- this is a cleanup that runs from three places including an expiry sweep,
@@ -1259,26 +1328,41 @@ begin
       offered_by = '',
       due_at = null,
       modified_by = p_user
-     where b.idx = any(p_idxs) and b.status = 'Offered'
+     where b.idx = any(p_idxs) and b.project_id = p_project
+       and b.status = 'Offered'
     returning b.idx
   )
   select array_agg(w.idx order by w.idx) into freed from written w;
 
   if freed is null then return 0; end if;
 
-  insert into book_history (book_idx, action, by_user, note)
+  insert into book_history (book_idx, action, by_user, note, project_id)
   select i, 'release', p_user,
-         coalesce(nullif(p_reason, ''), 'Offer ended without being accepted')
+         coalesce(nullif(p_reason, ''), 'Offer ended without being accepted'), p_project
     from unnest(freed) i order by i;
 
   return array_length(freed, 1);
 end $$ language plpgsql;
 
+create or replace function release_offer_tx(
+  p_idxs   integer[],
+  p_user   text,
+  p_reason text default ''
+) returns integer as $$
+  select release_offer_tx(p_idxs, p_user, coalesce(current_project(), seed_project()), p_reason)
+$$ language sql;
+
 revoke execute on function offer_books_tx(integer[], text, date, text, text)
+  from public, anon, authenticated;
+revoke execute on function offer_books_tx(integer[], text, date, text, uuid, text)
   from public, anon, authenticated;
 revoke execute on function accept_offer_tx(integer[], text, text, text)
   from public, anon, authenticated;
+revoke execute on function accept_offer_tx(integer[], text, text, uuid, text)
+  from public, anon, authenticated;
 revoke execute on function release_offer_tx(integer[], text, text)
+  from public, anon, authenticated;
+revoke execute on function release_offer_tx(integer[], text, uuid, text)
   from public, anon, authenticated;
 
 
@@ -1304,6 +1388,7 @@ revoke execute on function return_books_tx(integer[], text, uuid, text) from pub
 revoke execute on function transfer_books_tx(integer[], text, text, text) from public, anon, authenticated;
 revoke execute on function transfer_books_tx(integer[], text, text, uuid, text) from public, anon, authenticated;
 revoke execute on function restock_books_tx(integer[], text, text) from public, anon, authenticated;
+revoke execute on function restock_books_tx(integer[], text, uuid, text) from public, anon, authenticated;
 
 
 -- desk_money() is revoked in rls.sql:835; its p_project sibling is revoked here

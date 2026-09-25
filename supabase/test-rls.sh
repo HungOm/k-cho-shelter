@@ -484,7 +484,14 @@ return_books_tx(integer[],text,text)
 return_books_tx(integer[],text,uuid,text)
 transfer_books_tx(integer[],text,text,text)
 transfer_books_tx(integer[],text,text,uuid,text)
-restock_books_tx(integer[],text,text)"
+restock_books_tx(integer[],text,text)
+restock_books_tx(integer[],text,uuid,text)
+offer_books_tx(integer[],text,date,text,text)
+offer_books_tx(integer[],text,date,text,uuid,text)
+accept_offer_tx(integer[],text,text,text)
+accept_offer_tx(integer[],text,text,uuid,text)
+release_offer_tx(integer[],text,text)
+release_offer_tx(integer[],text,uuid,text)"
 checked=0
 while IFS= read -r sig; do
   [ -n "$sig" ] || continue
@@ -506,7 +513,7 @@ done <<< "$CLOSED"
 # THE POSITIVE COUNT. A typo in a signature would make every case unaskable and
 # a silent loop would report nothing at all, which reads exactly like a clean
 # run. This is the assertion that the questions were asked.
-ok "$checked" "13" "all thirteen signatures were actually asked about"
+ok "$checked" "20" "all twenty signatures were actually asked about"
 
 # AND THE ONE THAT MUST STAY OPEN, so this section cannot be "fixed" by
 # revoking everything: tickets_readable and book_ledger are definer views, but a

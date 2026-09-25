@@ -1600,6 +1600,45 @@ ok "$(P "select desk_money('$B')->>'sold'")" "3" "asked of the OTHER raffle, boo
 ok "$(P "select (desk_money('$B')->>'expected')::numeric")" "30.00" "with its own thirty expected"
 ok "$(P "select (desk_money('$B')->>'collected')::numeric")" "30.00" "and its own thirty collected"
 
+echo "a book movement cannot reach into the other raffle by index"
+# THE DEFECT THIS CATCHES. Every one of these matched books by
+# `idx = any(p_idxs)` alone, and idx is the global primary key until Stage 4 —
+# so naming another organisation's book index was enough to move their book.
+# restock is the worst of them: it reverses that raffle's settlement payments
+# and writes the cash back as a hand-over, in a raffle whose seller handed over
+# nothing. Asked here from THIS raffle about book 902, which belongs to the
+# other one and is Settled with thirty paid.
+ok "$(P "select restock_books_tx(array[902], 't', seed_project())")" "0" \
+   "restock from this raffle moves none of the other raffle's books"
+ok "$(P "select status from books where idx = 902")" "Settled" \
+   "and book 902 is still settled, not put back on the shelf"
+ok "$(P "select amount_paid from books where idx = 902")" "30.00" \
+   "with its thirty still on it"
+ok "$(P "select count(*) from book_history where book_idx = 902")" "0" \
+   "and no history row was written about it"
+ok "$(P "select transfer_books_tx(array[901], 'A001', 't', seed_project())")" "0" \
+   "a transfer cannot hand the other raffle's book to a seller in this one"
+ok "$(P "select held_by_agent from books where idx = 901")" "B001" \
+   "book 901 is still held by the seller it belongs to"
+# AND THE SAME CALL, ASKED OF THE RIGHT RAFFLE, DOES WORK — otherwise the four
+# assertions above would pass just as well against a function that does nothing.
+# ::uuid IS LOAD-BEARING, and finding out why cost an hour. Called as
+# `release_offer_tx(array[901], 't', '<uuid text>')` with three positional
+# arguments and an untyped literal, Postgres resolves to the OLD three-argument
+# form and passes the project id as p_reason — so it runs against the ambient
+# raffle, finds nothing, and returns 0. It looks exactly like correct scoping.
+# PostgREST calls by name so production is unaffected, but anything positional
+# — psql, a runbook, a fixture like this one — must say ::uuid or it silently
+# gets the wrong overload.
+ok "$(P "select release_offer_tx(array[901], 't', '$B'::uuid)")" "0" \
+   "release asked of the right raffle finds book 901 is not Offered, so frees none"
+P "update books set status='Offered', offered_to_agent='B001', held_by_agent=null
+    where idx = 901 and project_id = '$B'" >/dev/null
+ok "$(P "select release_offer_tx(array[901], 't', '$B'::uuid)")" "1" \
+   "and once it IS offered, the other raffle can release its own book"
+ok "$(P "select status from books where idx = 901")" "Unassigned" \
+   "which put it back on that raffle's shelf"
+
 # Put the raffle back as the cases below expect to find it.
 P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,
      payment_status='Unpaid' where number='KS-00007'" >/dev/null
