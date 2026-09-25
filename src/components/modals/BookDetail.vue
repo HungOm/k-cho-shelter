@@ -12,6 +12,10 @@ import History from './History.vue'
 const props = defineProps({ book: Object })
 const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock', 'view-book', 'print-book', 'print-sample'])
 
+// `permissionui`: shown and disabled rather than hidden, matching the
+// cannotSellWhole button already on this sheet.
+const ADMIN_ONLY_WHY = 'Only an organiser can do this'
+
 /*
  * Whether this raffle has artwork to print tickets onto. A yes or no carried on
  * the boot config — not the artwork itself, which would be kilobytes of
@@ -355,14 +359,14 @@ const showHistory = ref(false)
         control on this sheet is held to. The title is bound only when there is
         something to say, because a valueless title attribute is its own bug.
       -->
-      <button v-if="isAdmin" class="btn" :disabled="!hasArtwork"
-              :title="hasArtwork ? null : noArtworkWhy"
+      <button class="btn" :disabled="!isAdmin || !hasArtwork"
+              :title="!isAdmin ? ADMIN_ONLY_WHY : (hasArtwork ? null : noArtworkWhy)"
               @click="emit('view-book', book)">View a ticket</button>
-      <button v-if="isAdmin" class="btn" :disabled="!hasArtwork"
-              :title="hasArtwork ? null : noArtworkWhy"
+      <button class="btn" :disabled="!isAdmin || !hasArtwork"
+              :title="!isAdmin ? ADMIN_ONLY_WHY : (hasArtwork ? null : noArtworkWhy)"
               @click="emit('print-book', book)">Print this book</button>
-      <button v-if="isAdmin" class="btn" :disabled="!hasArtwork"
-              title="Ten watermarked sample tickets. Not in the raffle, cannot be sold."
+      <button class="btn" :disabled="!isAdmin || !hasArtwork"
+              :title="!isAdmin ? ADMIN_ONLY_WHY : 'Ten watermarked sample tickets. Not in the raffle, cannot be sold.'"
               @click="emit('print-sample')">Print samples</button>
       <button class="btn" title="Every hand this book has passed through"
               @click="showHistory = true">Where it has been</button>
@@ -380,8 +384,8 @@ const showHistory = ref(false)
       <!-- The tooltip is the answer to a question that was actually asked:
            if the whole book is sold, why is this still here. Sold is about
            tickets; this is about money, and they are different facts. -->
-      <button v-if="isAdmin && canSettle" class="btn primary"
-              :disabled="soldByMe" :title="settleHelp"
+      <button v-if="canSettle" class="btn primary"
+              :disabled="soldByMe || !isAdmin" :title="!isAdmin ? ADMIN_ONLY_WHY : settleHelp"
               @click="emit('settle', book)">Count it in</button>
 
       <!-- Primary only while the book is actually stuck. On a book that sold
@@ -398,8 +402,9 @@ const showHistory = ref(false)
            mistake could only be undone by waiting a week for it to lapse.
            Nothing has been accepted, so nothing has to come back: the books go
            straight to the shelf and the seller's request closes as cancelled. -->
-      <button v-if="isAdmin && book.status === 'Offered'" class="btn primary"
-              title="Take the offer back — nothing has been accepted, so the books go straight to the shelf"
+      <button v-if="book.status === 'Offered'" class="btn primary"
+              :disabled="!isAdmin"
+              :title="!isAdmin ? ADMIN_ONLY_WHY : 'Take the offer back — nothing has been accepted, so the books go straight to the shelf'"
               @click="emit('withdraw-offer', book)">Take it back</button>
 
       <button v-if="canRecount" class="btn" @click="emit('settle', book)">Count it in again</button>

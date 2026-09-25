@@ -14,6 +14,9 @@ import History from './modals/History.vue'
 
 const emit = defineEmits(['issue', 'transfer', 'return-books', 'restock', 'mark', 'open-book', 'sell-book', 'print-range', 'print-sample'])
 
+// `permissionui`.
+const ISSUE_BOOKS_WHY = 'Only an organiser can give out books'
+
 /* The book whose trail is open, or null. */
 const showHistory = ref(null)
 
@@ -48,7 +51,9 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
       <h1>Books</h1>
       <div class="row">
         <button class="btn primary" @click="emit('sell-book')">Sell a whole book</button>
-        <button v-if="isAdmin" class="btn" @click="emit('issue')">Give out books</button>
+        <button class="btn" :disabled="!isAdmin"
+                :title="isAdmin ? null : ISSUE_BOOKS_WHY"
+                @click="emit('issue')">Give out books</button>
       </div>
     </div>
 

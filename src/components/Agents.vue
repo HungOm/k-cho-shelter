@@ -14,6 +14,11 @@ import Empty from './ui/Empty.vue'
 
 const emit = defineEmits(['add-agent', 'open-agent', 'record-check-in'])
 
+// Worded like Admin.vue's ADMIN_ONLY_WHY: what the person cannot do and who
+// can, not a rank to decode. `permissionui`.
+const ADD_SELLER_WHY = 'Only an organiser can add a seller'
+const CHECK_IN_WHY = 'Only an organiser can record a report'
+
 /*
  * WHO HAS NOT REPORTED, which is a different question from which book is late.
  *
@@ -99,7 +104,9 @@ function waLink(o) {
   <div class="dense">
     <div class="spread" style="margin-bottom:var(--sp-3)">
       <h1>Sellers</h1>
-      <button v-if="isAdmin" class="btn primary" @click="emit('add-agent')">Add someone</button>
+      <button class="btn primary" :disabled="!isAdmin"
+              :title="isAdmin ? null : ADD_SELLER_WHY"
+              @click="emit('add-agent')">Add someone</button>
     </div>
     <p class="muted">
       People who carry books and sell tickets. Most never open the app —
@@ -123,7 +130,9 @@ function waLink(o) {
         <a v-if="reportWaLink(a)" class="btn sm" :href="reportWaLink(a)" target="_blank" rel="noopener">
           Remind
         </a>
-        <button v-if="isAdmin" class="btn sm primary" @click="emit('record-check-in', a)">
+        <button class="btn sm primary" :disabled="!isAdmin"
+                :title="isAdmin ? null : CHECK_IN_WHY"
+                @click="emit('record-check-in', a)">
           Reported
         </button>
       </div>

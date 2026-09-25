@@ -28,6 +28,10 @@ const emit = defineEmits(['open-ticket', 'record-winner', 'edit-prize'])
  */
 const PRIZE_ADMIN_ONLY_WHY = 'Only an organiser can change the prizes'
 
+// Same shape: shared cards everyone reads, one action some roles cannot use.
+const RECORD_WINNER_WHY = 'Only the System Admin can record a winner'
+const MARK_WINNER_WHY = 'Only somebody who can write to the raffle can do this'
+
 /*
  * WHERE EACH BLOCKER IS FIXED.
  *
@@ -436,7 +440,9 @@ async function exportEntries() {
 
     <div class="card">
       <div class="spread"><h3>Winners</h3>
-        <button v-if="isSuper" class="btn sm primary" @click="emit('record-winner')">Add a winner</button></div>
+        <button class="btn sm primary" :disabled="!isSuper"
+                :title="isSuper ? null : RECORD_WINNER_WHY"
+                @click="emit('record-winner')">Add a winner</button></div>
       <div v-if="winners.length">
         <div v-for="w in winners" :key="w.ticket || w.tickets?.number" class="winner">
           <div class="grow">
@@ -449,17 +455,20 @@ async function exportEntries() {
             <!-- A helper moves these, which is the whole reason they exist: the
                  pills have been rendered since the beginning and nothing could
                  set them, so every winner read "new" for ever. -->
-            <div v-if="canWrite" class="row wrap" style="gap:6px;margin-top:6px">
-              <button class="btn sm" :disabled="busyTicket === (w.ticket || w.tickets?.number)"
+            <div class="row wrap" style="gap:6px;margin-top:6px">
+              <button class="btn sm" :disabled="!canWrite || busyTicket === (w.ticket || w.tickets?.number)"
+                      :title="canWrite ? null : MARK_WINNER_WHY"
                       @click="mark(w, { notified: !w.notified })">
                 {{ w.notified ? 'Not told after all' : 'Told them' }}
               </button>
-              <button class="btn sm" :disabled="busyTicket === (w.ticket || w.tickets?.number)"
+              <button class="btn sm" :disabled="!canWrite || busyTicket === (w.ticket || w.tickets?.number)"
+                      :title="canWrite ? null : MARK_WINNER_WHY"
                       @click="mark(w, { claimed: !w.claimed })">
                 {{ w.claimed ? 'Not collected after all' : 'Collected it' }}
               </button>
               <button v-if="!w.claimed" class="btn sm"
-                      :disabled="busyTicket === (w.ticket || w.tickets?.number)"
+                      :disabled="!canWrite || busyTicket === (w.ticket || w.tickets?.number)"
+                      :title="canWrite ? null : MARK_WINNER_WHY"
                       @click="mark(w, { forfeited: !(w.forfeited_at || w.forfeitedDate) })">
                 {{ (w.forfeited_at || w.forfeitedDate) ? 'Back in play' : 'Never claimed' }}
               </button>

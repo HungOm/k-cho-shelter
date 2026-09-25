@@ -12,6 +12,11 @@ import Bi from './ui/Bi.vue'
 
 const emit = defineEmits(['issue', 'add-agent', 'open-book', 'sell-book', 'report-back', 'make-tickets'])
 
+// The quick-action grid's own reasons, worded like ADMIN_ONLY_WHY elsewhere:
+// what the person cannot do and who can. `permissionui`.
+const VIEWER_WHY = 'Only somebody who can write to the raffle can do this'
+const ADMIN_TILE_WHY = 'Only an organiser can do this'
+
 /*
  * A SELLER HAS ONE JOB THIS SCREEN NEVER OFFERED THEM: reporting back.
  *
@@ -160,22 +165,22 @@ function doStep(action) {
     <!-- shortcuts -->
     <h3 class="sect"><Bi text="What do you want to do?" /></h3>
     <div class="quick">
-      <button v-if="canWrite" @click="go('sell')">
+      <button :disabled="!canWrite" :title="canWrite ? null : VIEWER_WHY" @click="go('sell')">
         <Icon name="ticket" :size="30" class="em" /><Bi class="mid" text="Write down a sale" />
       </button>
       <button @click="go('search')">
         <Icon name="search" :size="30" class="em" /><Bi class="mid" text="Find a ticket" />
       </button>
-      <button v-if="canWrite" @click="emit('sell-book')">
+      <button :disabled="!canWrite" :title="canWrite ? null : VIEWER_WHY" @click="emit('sell-book')">
         <Icon name="bookPlus" :size="30" class="em" /><Bi text="Sell a whole book" class="mid" />
       </button>
       <button v-if="isSeller" @click="emit('report-back')">
         <Icon name="clock" :size="30" class="em" /><Bi class="mid" text="Report back" />
       </button>
-      <button v-if="isAdmin" @click="emit('issue')">
+      <button :disabled="!isAdmin" :title="isAdmin ? null : ADMIN_TILE_WHY" @click="emit('issue')">
         <Icon name="books" :size="30" class="em" /><Bi class="mid" text="Give out books" />
       </button>
-      <button v-if="isAdmin" @click="emit('add-agent')">
+      <button :disabled="!isAdmin" :title="isAdmin ? null : ADMIN_TILE_WHY" @click="emit('add-agent')">
         <Icon name="people" :size="30" class="em" /><Bi class="mid" text="Add a seller" />
       </button>
     </div>

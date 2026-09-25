@@ -38,6 +38,9 @@ import Sheet from '../ui/Sheet.vue'
 
 const emit = defineEmits(['close', 'round-report'])
 
+// `permissionui`.
+const ADMIN_ONLY_WHY = 'Only an organiser can do this'
+
 const s = ref(null)             // deadline_status
 const preview = ref(null)       // the dry run we are about to apply
 const kind = ref('')            // 'roll' | 'final'
@@ -308,8 +311,9 @@ function explain(err) {
             <!-- Only rounds nobody is reporting to yet. The live one belongs to
                  "Move the check-in on" below, which says first how many books
                  it would give more time to. -->
-            <button v-if="isAdmin && r.state === 'ahead' && !r.last"
-                    class="btn sm ghost noprint" @click="startMove(r)">Move</button>
+            <button v-if="r.state === 'ahead' && !r.last"
+                    class="btn sm ghost noprint" :disabled="!isAdmin"
+                    :title="isAdmin ? null : ADMIN_ONLY_WHY" @click="startMove(r)">Move</button>
             <button v-if="r.state === 'done'" class="btn sm ghost noprint"
                     @click="emit('round-report', r.round)">Report</button>
           </li>
