@@ -1634,8 +1634,23 @@ ok "$(P "select release_offer_tx(array[901], 't', '$B'::uuid)")" "0" \
    "release asked of the right raffle finds book 901 is not Offered, so frees none"
 P "update books set status='Offered', offered_to_agent='B001', held_by_agent=null
     where idx = 901 and project_id = '$B'" >/dev/null
+
+# THE TRAP ITSELF, PINNED. Same call, same book, genuinely Offered — but the
+# project written as a bare literal instead of ::uuid. Postgres picks the OLD
+# three-argument signature, the uuid lands in p_reason, and the function runs
+# against the ambient raffle, which is not the one that owns book 901. It frees
+# nothing and answers 0, which is indistinguishable from correct scoping.
+#
+# Asserted rather than merely commented so that whoever meets this next finds
+# it named. Stage 4 drops the old signatures, and when it does this case should
+# start returning 1 — at which point delete it and say so in the commit.
+ok "$(P "select release_offer_tx(array[901], 't', '$B')")" "0" \
+   "an untyped project literal silently runs against the ambient raffle, not the named one"
+ok "$(P "select status from books where idx = 901")" "Offered" \
+   "so book 901 is still sitting offered, untouched by that call"
+
 ok "$(P "select release_offer_tx(array[901], 't', '$B'::uuid)")" "1" \
-   "and once it IS offered, the other raffle can release its own book"
+   "and once it IS offered, the other raffle can release its own book — with the cast"
 ok "$(P "select status from books where idx = 901")" "Unassigned" \
    "which put it back on that raffle's shelf"
 
