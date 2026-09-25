@@ -1654,6 +1654,36 @@ ok "$(P "select release_offer_tx(array[901], 't', '$B'::uuid)")" "1" \
 ok "$(P "select status from books where idx = 901")" "Unassigned" \
    "which put it back on that raffle's shelf"
 
+echo "one raffle's client key is not a replay of another's"
+# THE DEFECT THIS CATCHES, and it is the only one in this group that changes an
+# ANSWER rather than guarding a write. move_tickets treats a repeated
+# client_key as a replay and returns the first attempt's batch without moving
+# anything. Stage 1 made that index (project_id, client_key), so the same key
+# CAN now exist in two raffles — which is the point: a client key comes from a
+# browser, and two organisations' browsers know nothing of each other.
+#
+# Unscoped, the second raffle's FIRST attempt is answered as a replay of the
+# first raffle's batch. It moves nothing, reports somebody else's batch id and
+# their row count, and says replayed: true — so the second organisation's
+# tickets silently never move and the screen shows a success.
+seedtk=$(P "select min(idx) from tickets where project_id = seed_project() and holder = 'desk'")
+r=$(P "select move_tickets(array[$seedtk], 'desk', 'MA', 'issue', 'admin@x.com',
+                           seed_project(), '', 'SHARED-BROWSER-KEY')")
+has "$r" '"replayed": false' "this raffle moves its ticket under a client key"
+r=$(P "select move_tickets(array[901], 'desk', 'B001', 'issue', 'admin@x.com',
+                           '$B'::uuid, '', 'SHARED-BROWSER-KEY')")
+has "$r" '"replayed": false' "and the other raffle using the SAME key is not told it is a replay"
+has "$r" '"moved": 1' "it moves its own ticket"
+ok "$(P "select holder from tickets where idx = 901")" "B001" \
+   "which really is where that ticket now is"
+ok "$(P "select count(*) from ticket_movements where client_key = 'SHARED-BROWSER-KEY'")" "2" \
+   "and the key names one movement in each raffle, which the composite index allows"
+# AND A GENUINE REPLAY STILL IS ONE, so the predicate has not simply switched
+# the feature off.
+r=$(P "select move_tickets(array[902], 'desk', 'B001', 'issue', 'admin@x.com',
+                           '$B'::uuid, '', 'SHARED-BROWSER-KEY')")
+has "$r" '"replayed": true' "a second attempt in the SAME raffle is still a replay"
+
 # Put the raffle back as the cases below expect to find it.
 P "update tickets set status='Available', buyer_name='', buyer_phone='', amount=null,
      payment_status='Unpaid' where number='KS-00007'" >/dev/null

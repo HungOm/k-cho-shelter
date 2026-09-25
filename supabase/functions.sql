@@ -1416,6 +1416,7 @@ create or replace function move_tickets(
   p_to_holder   text,
   p_kind        text,
   p_user        text,
+  p_project     uuid,
   p_reason      text default '',
   p_client_key  text default null
 ) returns jsonb as $$
@@ -1440,18 +1441,30 @@ begin
    * error or a second set of movements. Checked before the locks: a replay
    * should not queue behind the batch it is a replay of.
    */
+  --
+  -- WITHIN THIS RAFFLE, and this is the one predicate here that changes an
+  -- answer rather than guarding a write. Stage 1 made the client_key index
+  -- `(project_id, client_key)`, so the same key CAN now exist in two raffles —
+  -- which is the point, since a client key comes from a browser and two
+  -- organisations' browsers know nothing of each other. Unscoped, the second
+  -- raffle's first attempt would be answered as a replay of the first
+  -- raffle's batch: it would move nothing, report somebody else's batch id and
+  -- their row count, and say `replayed: true`.
   if p_client_key is not null and p_client_key <> '' then
     select batch_id into existing from ticket_movements
-     where client_key = p_client_key limit 1;
+     where client_key = p_client_key and project_id = p_project limit 1;
     if existing is not null then
       return jsonb_build_object(
-        'batch', existing, 'moved', (select count(*) from ticket_movements where batch_id = existing),
+        'batch', existing,
+        'moved', (select count(*) from ticket_movements
+                   where batch_id = existing and project_id = p_project),
         'replayed', true);
     end if;
   end if;
 
   -- In ticket order, so overlapping batches queue rather than deadlock.
-  perform 1 from tickets where idx = any(p_ticket_idxs) order by idx for update;
+  perform 1 from tickets
+   where idx = any(p_ticket_idxs) and project_id = p_project order by idx for update;
 
   /*
    * EVERY TICKET MUST BE WHERE THE CALLER SAYS IT IS.
@@ -1466,6 +1479,7 @@ begin
     into wrong, offenders
     from tickets t
    where t.idx = any(p_ticket_idxs)
+     and t.project_id = p_project
      and t.holder is distinct from p_from_holder;
 
   if wrong > 0 then
@@ -1476,26 +1490,42 @@ begin
   end if;
 
   insert into ticket_movements
-    (ticket_idx, from_holder, to_holder, kind, batch_id, by_user, reason, client_key)
+    (ticket_idx, from_holder, to_holder, kind, batch_id, by_user, reason, client_key, project_id)
   select t.idx, p_from_holder, p_to_holder, p_kind, batch, p_user, coalesce(p_reason, ''),
          -- One key per batch, on its first row: the index is unique, so hanging
          -- it on every row would refuse the batch's own second ticket.
          case when t.idx = (select min(x) from unnest(p_ticket_idxs) x)
-              then nullif(p_client_key, '') end
+              then nullif(p_client_key, '') end,
+         p_project
     from tickets t
-   where t.idx = any(p_ticket_idxs)
+   where t.idx = any(p_ticket_idxs) and t.project_id = p_project
    order by t.idx;
   get diagnostics moved = row_count;
 
   -- The projection, in the same statement's transaction. A screen reads this
   -- column; the ledger above is what it must always be derivable from.
   update tickets set holder = p_to_holder
-   where idx = any(p_ticket_idxs);
+   where idx = any(p_ticket_idxs) and project_id = p_project;
 
   return jsonb_build_object('batch', batch, 'moved', moved, 'replayed', false);
 end $$ language plpgsql;
 
+create or replace function move_tickets(
+  p_ticket_idxs integer[],
+  p_from_holder text,
+  p_to_holder   text,
+  p_kind        text,
+  p_user        text,
+  p_reason      text default '',
+  p_client_key  text default null
+) returns jsonb as $$
+  select move_tickets(p_ticket_idxs, p_from_holder, p_to_holder, p_kind, p_user,
+                      coalesce(current_project(), seed_project()), p_reason, p_client_key)
+$$ language sql;
+
 revoke execute on function move_tickets(integer[], text, text, text, text, text, text)
+  from public, anon, authenticated;
+revoke execute on function move_tickets(integer[], text, text, text, text, uuid, text, text)
   from public, anon, authenticated;
 
 -- ============ WHAT THE LEDGER SAYS, INDEPENDENTLY OF THE COLUMN ============
