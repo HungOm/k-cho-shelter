@@ -20,9 +20,11 @@ self-contained tasks, one owner each. Open questions go to
    anybody applies whatever is in that directory). Applying one is an owner
    decision, logged in the decisions file.
    **Function code is different: it reaches production with the next
-   `functions deploy`, whoever runs it and for whatever reason.** `api` v71
-   (2026-09-24) already carries MT-0's reset plan, MT-F's tags and MT-K's
-   `scoped.ts`, all inert. So every function change must be safe against the
+   `functions deploy`, whoever runs it and for whatever reason.** `api` v72
+   (2026-09-25 10:04Z, from ca8bf57) carries MT-0's reset plan, MT-F's tags,
+   MT-K's unused `scoped.ts` and MT-2a's project resolution, which defaults to
+   today's raffle and refuses any other. None of the tenancy migrations is
+   applied: they are all still in `migrations.pending/`. So every function change must be safe against the
    database as it is in production today: no Stage 0 tables, no `project_id`
    column. Code that needs either must stay unwired until its migration is
    applied.
