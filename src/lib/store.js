@@ -708,8 +708,8 @@ export async function loadDelta() {
      */
     if (d.booksComplete === false) {
       try {
-        const all = await api('list_books', {})
-        if (all.books) { state.books = all.books; applied++ }
+        await loadAllBooks()
+        applied++
       } catch { /* the next nudge tries again; a stale grid is not worth an error screen */ }
     }
 
@@ -828,6 +828,34 @@ export function reindex() {
 }
 
 /**
+ * Every book, a page at a time.
+ *
+ * list_books used to walk every page inside one request. That sat inside the
+ * 20-second read timeout, and 2,000 books from the ledger view do not finish
+ * in time — Home then said the books could not be loaded while Setup still
+ * named how many there were. Tickets already page this way; books follow.
+ *
+ * An older function that still sends the whole list in one reply has no
+ * nextCursor, so this loop runs once and stops.
+ */
+async function loadAllBooks() {
+  const all = []
+  let cursor = null
+  let last = {}
+  for (let page = 0; page < 100; page++) {
+    last = await api('list_books', cursor == null ? {} : { cursor })
+    all.push(...(last.books ?? []))
+    if (!last.nextCursor) break
+    cursor = last.nextCursor
+  }
+  state.books = all
+  state.bookStats = last.stats ?? {}
+  // Last page says complete; a truncated last page (safety bound, or an older
+  // server that cut at 1000 and set complete false) must not look like all.
+  state.booksAllLoaded = last.complete !== false
+}
+
+/**
  * Loads each part of the picture independently.
  *
  * This used to be one try block, so a single failing call threw the user back
@@ -906,18 +934,7 @@ export async function refresh() {
     })
 
     await step('books', async () => {
-      const books = await api('list_books', {})
-      state.books = books.books ?? []
-      state.bookStats = books.stats ?? {}
-      /*
-       * WHETHER THAT IS ALL OF THEM. list_books pages past PostgREST's 1000-row
-       * cap, so 2,000 books from 20,000 tickets arrive as one list. complete is
-       * still false if a safety bound stopped it, and the counts below are
-       * derived from this list only when it is the whole of it; otherwise the
-       * server's own totals stand, because a number derived from a truncated
-       * list describes part of the raffle while looking like all of it.
-       */
-      state.booksAllLoaded = books.complete !== false
+      await loadAllBooks()
     })
 
     reindex()

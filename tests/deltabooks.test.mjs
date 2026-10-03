@@ -173,7 +173,7 @@ console.log('6. the client applies them, and asks again when told to')
   ok(/state\.books\.push\(b\)/.test(fn), 'and a book it has never seen is added rather than dropped')
   ok(/if \(d\.booksComplete === false\)/.test(fn),
      'too many to stream means ask for the whole list')
-  ok(/api\('list_books'/.test(fn), 'which it does')
+  ok(/loadAllBooks\(\)/.test(fn), 'which it does, paging the same way the first load does')
   // === false, not falsy: an older backend sends no such field, and treating
   // undefined as "incomplete" would refetch the entire list on every poll.
   ok(!/if \(!d\.booksComplete\)/.test(fn),
@@ -201,9 +201,16 @@ console.log('7. the number above the grid describes the grid')
     const list = src.slice(src.indexOf('async function listBooks'), src.indexOf('async function readAudit'))
     ok(/\.gt\('idx'/.test(list),
        'list_books pages past PostgREST\'s 1000-row cap instead of stopping there')
+    ok(/nextCursor:/.test(list),
+       'and hands the client a cursor so each page is its own request')
     ok(/\bcomplete[,:]/.test(list),
-       'and still says whether it got everything, rather than leaving the client to infer a cap')
+       'and still says whether that page was the last')
   }
+  const storeAll = readFileSync(new URL('../src/lib/store.js', import.meta.url), 'utf8')
+  ok(/async function loadAllBooks/.test(storeAll),
+     'the client follows that cursor rather than waiting for every page in one call')
+  ok(/last\.nextCursor/.test(storeAll),
+     'and stops when the server says there is no next page')
 
   const store = readFileSync(new URL('../src/lib/store.js', import.meta.url), 'utf8')
   ok(/if \(!state\.booksAllLoaded\) state\.bookStats = draw\.booksByStatus/.test(store),
@@ -238,19 +245,24 @@ console.log('8. releasing past ten thousand tickets still lists every book')
       variance_amount: 0, missing_contact: 0, declared_sold: null,
     })),
   })
-  const res = await api.fetch(
-    new Request('https://x/api', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'list_books', payload: {} }),
-    }),
-    { ...big.ctx, userClaims: { id: 'u1', email: 'boss@x.com' } })
-  const body = await res.json()
-  const d = body.data
-  ok(d && Array.isArray(d.books), 'list_books still returns a books array')
-  eq(d.books.length, N, 'every book past the first thousand arrives')
-  ok(d.books.some((b) => b.book === pad(1001)), 'Book-1001 is in the list')
-  eq(d.complete, true, 'and the server says that is all of them')
-  eq(d.total, N, 'the count describes the list, not the first page')
+  const ask = async (payload) => {
+    const res = await api.fetch(
+      new Request('https://x/api', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list_books', payload }),
+      }),
+      { ...big.ctx, userClaims: { id: 'u1', email: 'boss@x.com' } })
+    return (await res.json()).data
+  }
+  const first = await ask({})
+  ok(first && Array.isArray(first.books), 'list_books still returns a books array')
+  eq(first.books.length, 1000, 'the first page stops at PostgREST\'s cap')
+  eq(first.complete, false, 'and says there is more')
+  eq(first.nextCursor, 1000, 'naming the last idx so the next ask can seek')
+  const rest = await ask({ cursor: first.nextCursor })
+  eq(rest.books.length, 1, 'the second page is the book past the cap')
+  ok(rest.books.some((b) => b.book === pad(1001)), 'Book-1001 is on that page')
+  eq(rest.complete, true, 'and the server says that is the last of them')
 }
 
 cleanup()
