@@ -267,6 +267,32 @@ console.log('expand_tickets refuses everything it should')
     'SCHEMA_DRIFT', 'a database that disagrees with the config refuses to grow')
 }
 
+console.log('expand_tickets will not guess at a settings table a reset emptied')
+{
+  // The 2026-10-03 incident: config held one row, so TOTAL_TICKETS was absent,
+  // the generator used its own fallbacks, 20,000 tickets came out as 00001…
+  // with no KS- prefix, and the total was never saved (an UPDATE on no row).
+  const emptied = fakeDb({ config: [{ key: 'SUPPORTER_BANDS', value: '{}' }], tickets: [], books: [] })
+  const e = await codeOf(() => people.expandTickets({ totalTickets: 20000, dryRun: false }, users.boss, emptied.ctx))
+  eq(e, 'SETTINGS_MISSING', 'a config with the numbering rows gone is refused')
+  eq(emptied.table('tickets').length, 0, 'and no tickets were created')
+  eq(emptied.table('books').length, 0, 'and no books')
+
+  // A dry run is refused too, so nobody previews numbers that would be wrong.
+  const dry = fakeDb({ config: [{ key: 'SUPPORTER_BANDS', value: '{}' }], tickets: [], books: [] })
+  eq(await codeOf(() => people.expandTickets({ totalTickets: 20000 }, users.boss, dry.ctx)),
+    'SETTINGS_MISSING', 'the preview says so as well')
+
+  // A BLANK prefix is a row with an empty value, and is a legitimate choice. Only
+  // an absent row is refused.
+  const blank = fakeDb({
+    config: baseConfig({ TOTAL_TICKETS: '0', ACTIVE_TICKETS: '', TICKET_PREFIX: '' }),
+    tickets: [], books: [],
+  })
+  const b = await people.expandTickets({ totalTickets: 20 }, users.boss, blank.ctx)
+  ok(b.dryRun, 'a blank prefix is still allowed')
+}
+
 console.log('expand_tickets previews, then appends exactly')
 {
   const mk = () => fakeDb({

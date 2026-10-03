@@ -725,6 +725,31 @@ export async function expandTickets(p: Record<string, unknown>, user: AppUser, c
   for (const r of cfgRows ?? []) cfg[String(r.key)] = String(r.value ?? '')
   const n = (k: string, d: number) => parseInt(cfg[k] ?? '', 10) || d
 
+  /*
+   * REFUSE TO GENERATE AGAINST A SETTINGS TABLE THAT IS MISSING ITS ROWS.
+   *
+   * After a reset that emptied `config`, the numbering keys were simply absent
+   * and this function carried on with its own fallbacks: no TICKET_PREFIX, three
+   * book digits. 20,000 tickets were created as 00001… and books as Book-001…,
+   * and because numbering locks the moment a ticket exists that could not be
+   * corrected from Settings afterwards. An absent key is not the same as a blank
+   * one (a blank prefix is a row whose value is ''), so this checks for the row.
+   * Checked first, so a dry run says so too instead of previewing numbers that
+   * would then be wrong.
+   */
+  const REQUIRED_SETTINGS = ['TOTAL_TICKETS', 'TICKETS_PER_BOOK', 'TICKET_PREFIX', 'TICKET_START',
+    'TICKET_DIGITS', 'BOOK_PREFIX', 'BOOK_DIGITS']
+  const missingSettings = REQUIRED_SETTINGS.filter((k) => cfg[k] === undefined)
+  if (missingSettings.length) {
+    throw new ApiError(
+      'SETTINGS_MISSING',
+      `The raffle's settings are missing ${missingSettings.join(', ')}, so tickets would be ` +
+      'numbered from guesses. Nothing was written. Restore the default settings first ' +
+      '(select config_restore_defaults();), then try again.',
+      { missing: missingSettings },
+    )
+  }
+
   const current = n('TOTAL_TICKETS', 0)
   const per = n('TICKETS_PER_BOOK', 10)
   const ceiling = n('TICKET_CEILING', 0)
@@ -842,7 +867,20 @@ export async function expandTickets(p: Record<string, unknown>, user: AppUser, c
     if (error) throw new ApiError('QUERY_FAILED', error.message)
   }
 
-  await ctx.supabaseAdmin.from('config').update({ value: String(target) }).eq('key', 'TOTAL_TICKETS')
+  // WAS: await ctx.supabaseAdmin.from('config').update({ value: String(target) }).eq('key', 'TOTAL_TICKETS')
+  // WHY CHANGED: an UPDATE that matches no row succeeds and changes nothing, and
+  // the result was never read. With the TOTAL_TICKETS row missing, 20,000 tickets
+  // were created, the count stayed 0, active_tickets() returned 0, and the book
+  // ledger view hid every book — while this action reported success. An upsert
+  // writes the row either way, and the error is now checked.
+  const { error: totalError } = await ctx.supabaseAdmin
+    .from('config').upsert({ key: 'TOTAL_TICKETS', value: String(target) }, { onConflict: 'key' })
+  if (totalError) {
+    throw new ApiError(
+      'QUERY_FAILED',
+      `The tickets were created but the total could not be saved: ${totalError.message}`,
+    )
+  }
 
   await ctx.supabaseAdmin.from('audit_log').insert({
     action: 'EXPAND_TICKETS',

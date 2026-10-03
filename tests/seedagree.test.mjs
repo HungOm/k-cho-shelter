@@ -33,6 +33,10 @@ const SOURCES = [
   'supabase/schema.sql',
   'supabase/reset.sql',
   'supabase/migrations/20260917180000_config_defaults.sql',
+  // A fourth route in: config_restore_defaults(), which app_reset calls after
+  // emptying config. Without this a reset would put back whatever that copy says,
+  // and nothing would notice if it drifted from the other three.
+  'supabase/migrations/20260927000000_a_reset_puts_the_settings_back.sql',
 ]
 
 /*

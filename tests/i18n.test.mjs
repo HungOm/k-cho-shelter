@@ -163,6 +163,7 @@ console.log('the untranslated-by-design list is honoured')
     // each one means the system is wrong, not the person holding the phone.
     'QUERY_FAILED',        // the database refused; the sentence under it is Postgres's
     'SCHEMA_DRIFT',        // the tables disagree with the settings — nobody at a desk can fix it
+    'SETTINGS_MISSING',    // a reset emptied config and nothing put the defaults back — the fix is a SQL function, not a screen
     'UPLOAD_FAILED',       // storage did not accept the file; trying again is the only move
     /*
      * Which raffle a request is about (MT-2a). A project id is never typed by
