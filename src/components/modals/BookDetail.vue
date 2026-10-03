@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { state, isAdmin, go, bookBlock, isSold, api } from '../../lib/store.js'
-import { custodyOf } from '../../lib/books.js'
+import { custodyOf, isFreeToIssue } from '../../lib/books.js'
 import { money, date, BOOK_WORDS, COUNTED_IN_HELP } from '../../lib/format.js'
 import Sheet from '../ui/Sheet.vue'
 import RoleTag from '../ui/RoleTag.vue'
@@ -10,7 +10,9 @@ import StatusPill from '../ui/StatusPill.vue'
 import History from './History.vue'
 
 const props = defineProps({ book: Object })
-const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock', 'view-book', 'print-book', 'print-sample'])
+// WAS: the same list without 'issue'. A book's sheet could sell it, count it in and
+// put it back on the shelf, but not give it to a seller — see canOffer below.
+const emit = defineEmits(['withdraw-offer', 'close', 'settle', 'receipt', 'see-tickets', 'sell-book', 'restock', 'view-book', 'print-book', 'print-sample', 'issue'])
 
 // `permissionui`: shown and disabled rather than hidden, matching the
 // cannotSellWhole button already on this sheet.
@@ -136,6 +138,35 @@ const notWhole = computed(() => Number(props.book?.sold || 0) > 0
 
 /** Either reason, whichever applies, for the one control that has both. */
 const cannotSellWhole = computed(() => blocked.value || notWhole.value)
+
+/**
+ * GIVING THIS BOOK TO A SELLER, FROM THE BOOK.
+ *
+ * The sheet could sell a book whole, count it in and put it back on the shelf,
+ * and had no way to hand it to somebody — which is the first thing anyone does
+ * with a book sitting in the office. It lived only on the Home tile and the
+ * Books toolbar, each of which starts by asking WHICH book, so a person already
+ * looking at Book-0330 had to leave it and type 330 back in. Reported as "it
+ * has sell it whole and others, but no Give out".
+ *
+ * OFFERED for the two states a book can be handed out from, the same two
+ * isFreeToIssue accepts: in the office, or brought back. For a book that is out,
+ * settled or lost it is not the next step and is not drawn at all, like "Count
+ * it in" on a book that is already counted.
+ *
+ * SHOWN AND DISABLED rather than hidden when this person cannot, or the book is
+ * not whole (a part-sold book carries the first seller's money to the second —
+ * the rule isFreeToIssue already holds): this file's own rule, and the server
+ * refuses either way, so the control is not a way round anything.
+ */
+const canOffer = computed(() => ['Unassigned', 'Returned'].includes(props.book.status))
+const giveOutWhy = computed(() => {
+  if (!isAdmin.value) return ADMIN_ONLY_WHY
+  if (isFreeToIssue(props.book)) return ''
+  return notWhole.value
+    ? `Cannot give it out — ${notWhole.value}`
+    : 'Cannot give it out — not every ticket in it is available to sell'
+})
 
 /**
  * THE WAY BACK OUT, ON THE BOOK IT IS ABOUT.
@@ -375,6 +406,12 @@ const showHistory = ref(false)
            people for no stated reason; letting them press it makes the server
            refuse after they have committed to the action. Disabled with the
            reason on it is the only one of the three that tells them anything. -->
+      <!-- Before "Sell it whole": for a book in the office this is the usual
+           next step, so on an unassigned book it is the primary action. -->
+      <button v-if="canOffer" :class="['btn', book.status === 'Unassigned' ? 'primary' : '']"
+              :disabled="!!giveOutWhy"
+              :title="giveOutWhy || 'Give this book to a seller'"
+              @click="emit('issue', book)">Give it out</button>
       <button v-if="book.available" class="btn" :disabled="!!cannotSellWhole"
               :title="cannotSellWhole ? `Cannot sell it whole — ${cannotSellWhole}` : undefined"
               @click="emit('sell-book', book)">

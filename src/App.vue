@@ -527,6 +527,7 @@ function seeTickets(book) {
                 @settle="b => openModal('settle', b)"
                 @receipt="id => openModal('receipt', id)"
                 @sell-book="b => openModal('sellbook', b)"
+                @issue="b => openModal('issue', { book: b.book })"
                 @restock="b => openModal('bookaction', { kind: 'restock', book: b.book })"
                 @withdraw-offer="withdrawOffer"
                 @see-tickets="seeTickets"

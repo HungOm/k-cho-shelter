@@ -379,5 +379,57 @@ console.log('and the sentence is written once, for every place the phrase appear
      `every screen that names it also explains it (${missing.map(rel).join(', ') || 'all do'})`)
 }
 
+
+console.log('a book in the office can be given out from its own sheet')
+{
+  /*
+   * REPORTED: "when the book is clicked the pop-up has Sell it whole and others,
+   * but it does not have a Give Out button." The sheet could sell, count in and
+   * shelve a book and had no way to hand it to a seller — which is the first
+   * thing done with a book in the office. Each case is about the one button.
+   */
+  const ADMIN = (o) => withStore(o).replace('computed(() => false)', 'computed(() => true)')
+  const give = async (isAdmin, over) => {
+    const html = await renderScreen('src/components/modals/BookDetail.vue',
+      isAdmin ? ADMIN() : withStore(),
+      { props: { book: { ...BASE, agentName: '', agentId: '', ...over } } })
+    const m = html.match(/<button[^>]*>\s*Give it out\s*<\/button>/)
+    return { html, btn: m ? m[0] : '', text: visibleText(html) }
+  }
+
+  const office = await give(true, { status: 'Unassigned' })
+  ok(/Give it out/.test(office.text), 'a book in the office offers it')
+  ok(office.btn && !/disabled/.test(office.btn), 'and it is live for an organiser')
+  ok(/class="btn primary"/.test(office.btn), 'as the main action on an unassigned book')
+
+  const back = await give(true, { status: 'Returned', sold: 0, available: 10 })
+  ok(/Give it out/.test(back.text) && !/disabled/.test(back.btn),
+    'a book brought back with nothing sold can go straight out again')
+  ok(!/primary/.test(back.btn), 'but is not the main action there (counting it in is)')
+
+  const partSold = await give(true, { status: 'Returned', sold: 8, available: 2 })
+  ok(/Give it out/.test(partSold.text), 'a part-sold book still shows the button, so the state is legible')
+  ok(/disabled/.test(partSold.btn), 'but greyed: it would carry the first seller\'s money to the second')
+  ok(/Cannot give it out — 8 of its tickets are already sold/.test(partSold.html),
+    'and hovering says why, in the sheet\'s own words')
+
+  const notAdmin = await give(false, { status: 'Unassigned' })
+  ok(/Give it out/.test(notAdmin.text) && /disabled/.test(notAdmin.btn),
+    'somebody who cannot give out books sees it greyed, not missing')
+  ok(/Only an organiser can do this/.test(notAdmin.btn), 'with the reason on it')
+
+  for (const status of ['Out', 'Settled', 'Lost', 'Offered']) {
+    const r = await give(true, { status })
+    ok(!/Give it out/.test(r.text), `a book that is ${status} is not offered (it is not the next step)`)
+  }
+
+  // Wired: the sheet raises it and the App opens the Give out screen on that book.
+  const src = readFileSync(new URL('../src/components/modals/BookDetail.vue', import.meta.url), 'utf8')
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  ok(/emit\('issue', book\)/.test(src), 'the button raises "issue" with the book')
+  ok(/@issue="b => openModal\('issue', \{ book: b\.book \}\)"/.test(app),
+    'and App.vue opens Give out on that book from the sheet')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
