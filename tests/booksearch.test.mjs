@@ -49,7 +49,7 @@ export const isSuper = computed(() => false)
 export const canWrite = computed(() => true)
 export const go = () => {}
 `
-const REAL = { renderReal: ['BookRow.vue'] }
+const REAL = { renderReal: ['BookRow.vue', 'BookSearchBox.vue'] }
 
 console.log('the Books screen has a search box')
 {
@@ -111,6 +111,33 @@ console.log('Find shows matching books above the tickets')
     store({ books, query: 'zzzzzz', tickets: [{ number: 'KS-00001', book: 'Book-0001', status: 'Available' }] }), REAL)
   ok(/Try the last few numbers on the ticket/.test(nothing) && !nothing.includes('Book-0013'),
     'a query nothing matches still gets the ticket help and lists no books')
+}
+
+
+/** Home reads a lot of derived values; none of them matter to the grid, so they are inert. */
+const homeStore = (s = {}) => store({ problems: [], needsSetup: false, loadProgress: null, ...s }) + `
+export const overview = computed(() => null)
+export const attention = computed(() => [])
+export const gettingStarted = computed(() => null)
+`
+
+console.log('the Home grid has a search box too')
+{
+  const books = [book(1), book(2), withMana(13), book(31)]
+  const all = await renderScreen('src/components/Home.vue', homeStore({ books }), REAL)
+  ok(/aria-label="Search books"/.test(all), 'the box is on the dashboard')
+  ok(!/books match/.test(all), 'and says nothing about matches until something is typed')
+
+  const by = await renderScreen('src/components/Home.vue', homeStore({ books, bookQuery: 'Mana' }), REAL)
+  ok(/>1<\/b>\s*of 4 books match/.test(by.replace(/<!--[\s\S]*?-->/g, '')),
+    'a search says how many of the books match, so a narrowed grid is not read as a short raffle')
+  ok(/>Clear<\/button>/.test(by), 'with a Clear button')
+
+  const none = await renderScreen('src/components/Home.vue', homeStore({ books, bookQuery: 'zzzzzz' }), REAL)
+  ok(/try a book number, a run such as 31-45/.test(none), 'a search that matches nothing says how to search')
+
+  const empty = await renderScreen('src/components/Home.vue', homeStore({ books: [] }), REAL)
+  ok(!/aria-label="Search books"/.test(empty), 'no box before there are any books to look through')
 }
 
 cleanup()

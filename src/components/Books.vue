@@ -9,6 +9,7 @@ import { BOOK_WORDS, money, relative } from '../lib/format.js'
 import { searchBooks } from '../lib/search.js'
 import BookGrid from './ui/BookGrid.vue'
 import BookRow from './ui/BookRow.vue'
+import BookSearchBox from './ui/BookSearchBox.vue'
 import Pager from './ui/Pager.vue'
 import StatusPill from './ui/StatusPill.vue' // no longer used here: BookRow draws the pill. Left so the import list reads as it did.
 import Icon from './ui/Icon.vue'
@@ -103,13 +104,9 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
          (KS-00131) or a seller's name — the same matching as Find, so a thing
          typed here and there means the same. The grid and the list below both
          narrow to it. -->
-    <div class="row" style="margin-bottom:var(--sp-6)">
-      <input v-model="state.bookQuery" class="xl grow" type="search"
-             placeholder="Book number, a range like 31-45, a ticket number or a seller"
-             autocomplete="off" autocapitalize="off" spellcheck="false"
-             aria-label="Search books">
-      <button v-if="state.bookQuery" class="btn sm" @click="state.bookQuery = ''">Clear</button>
-    </div>
+    <!-- WAS: the input and its Clear button written out here. Now BookSearchBox,
+         shared with the Home grid, so the two ask for the same things. -->
+    <BookSearchBox v-model="state.bookQuery" style="margin-bottom:var(--sp-6)" />
 
     <div class="card">
       <div class="spread" style="margin-bottom:var(--sp-5)">

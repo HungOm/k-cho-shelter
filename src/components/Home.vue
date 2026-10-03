@@ -4,9 +4,11 @@
  * going, and what needs doing. Every attention row is a shortcut to the fix.
  */
 import { computed } from 'vue'
-import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh } from '../lib/store.js'
+import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh, agentMap } from '../lib/store.js'
+import { searchBooks } from '../lib/search.js'
 import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
+import BookSearchBox from './ui/BookSearchBox.vue'
 import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
 
@@ -38,6 +40,20 @@ const ADMIN_TILE_WHY = 'Only an organiser can do this'
  */
 const isSeller = computed(() =>
   state.user?.role === 'agent' || !!state.user?.agentId)
+
+/*
+ * FIND A BOOK IN THE GRID. It draws the first 180 of 2,000 squares and a "+1820"
+ * tile, so getting to Book-1347 meant leaving for the Books screen and scrolling
+ * there. The box is the SAME one as that screen and holds the same query
+ * (state.bookQuery): what is typed here is already typed when "See list" is
+ * pressed, and what was searched there still narrows this. The count says so
+ * out loud, so a narrowed grid is never mistaken for a short raffle.
+ */
+const bookQuery = computed(() => String(state.bookQuery ?? '').trim())
+// WAS: <BookGrid :books="state.books" ...> — the whole list, always.
+const gridBooks = computed(() => bookQuery.value
+  ? searchBooks(state.books ?? [], { query: bookQuery.value, agents: agentMap.value }).results
+  : (state.books ?? []))
 
 function doStep(action) {
   if (action === 'add-agent') emit('add-agent')
@@ -191,7 +207,18 @@ function doStep(action) {
         <h3><Bi text="All the books" /></h3>
         <button class="btn sm" @click="go('books')"><Bi text="See list" /></button>
       </div>
-      <BookGrid :books="state.books" :limit="180"
+      <!-- Only once there are books to look through. -->
+      <template v-if="state.books?.length">
+        <BookSearchBox v-model="state.bookQuery" style="margin-bottom:var(--sp-5)" />
+        <p v-if="bookQuery" class="small muted" style="margin-bottom:var(--sp-5)">
+          <b class="data">{{ gridBooks.length.toLocaleString() }}</b>
+          of {{ state.books.length.toLocaleString() }} books match
+          <template v-if="!gridBooks.length"> — try a book number, a run such as 31-45, a ticket number, or a seller's name.</template>
+        </p>
+      </template>
+      <!-- WAS: :books="state.books". Narrowed by the box above; "+N" and "See
+           list" go to the Books screen, which holds the same query. -->
+      <BookGrid :books="gridBooks" :limit="180"
                 @pick="b => emit('open-book', b)" @more="go('books')" />
     </div>
   </div>
