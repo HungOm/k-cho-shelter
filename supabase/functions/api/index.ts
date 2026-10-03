@@ -1308,53 +1308,65 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   // needs is done in code below, because it has to be: the service role is
   // above the policies, so nothing else can do it.
   /*
-   * THE CAP AND THE RAFFLE ARE THE SAME SIZE, WHICH IS NOT A MARGIN.
+   * PAGE PAST POSTGREST'S CAP. A single `.limit(1000)` used to be the whole
+   * list, and the raffle sat exactly on that number: ACTIVE_TICKETS = 10000
+   * and ten to a book is 1000 rows. Releasing more tickets then dropped every
+   * book after 1000 from the grid and nothing said so — 20,000 tickets, 2,000
+   * books, the list stopped at Book-1000.
    *
-   * book_ledger_all is already scoped to ACTIVE books, so at ACTIVE_TICKETS =
-   * 10000 and ten to a book it returns exactly 1000 rows — precisely this
-   * limit. Right today, and silently short the first time somebody releases
-   * more tickets: the grid would lose its tail and nothing would say so.
-   *
-   * So the caller is TOLD whether it got everything, rather than left to infer
-   * it from a row count it would have to know the cap to interpret.
+   * Telling the caller `complete: false` was the warning, not the fix. Tickets
+   * already page by idx; books do the same here, inside the action, so the
+   * client still gets one list and still treats it as the whole raffle.
    */
-  const BOOKS_LIMIT = 1000
-  let query = ctx.supabaseAdmin.from('book_ledger_all').select('*').order('idx').limit(BOOKS_LIMIT)
-  if (p.status) query = query.eq('status', String(p.status))
-  if (p.agentId) query = query.eq('held_by_agent', String(p.agentId))
+  const BOOKS_PAGE = 1000
+  const data: Array<Record<string, unknown>> = []
+  let cursor: number | null = null
+  let complete = false
+  for (let page = 0; page < 100; page++) {
+    let query = ctx.supabaseAdmin.from('book_ledger_all').select('*').order('idx').limit(BOOKS_PAGE)
+    // Keyset, not offset: "after this idx" is a primary-key seek. Same reason
+    // read_snapshot pages tickets this way — offset walks and discards.
+    if (cursor !== null) query = query.gt('idx', cursor)
+    if (p.status) query = query.eq('status', String(p.status))
+    if (p.agentId) query = query.eq('held_by_agent', String(p.agentId))
 
-  /*
-   * A SELLER'S BOOK LIST IS THE BOOKS IN THEIR HANDS — which is what this said
-   * and not what it did.
-   *
-   * held_by_agent deliberately SURVIVES a return and a settlement, because
-   * settlement has to know whose money it is. So a seller who handed a book
-   * back last month, and watched an organiser count it in, kept seeing it on
-   * their own screen for the rest of the raffle: a book they no longer have,
-   * beside the ones they do, with no way to tell which is which. Asked for in
-   * exactly those terms — a book the organiser has accepted should no longer be
-   * the seller's to look at.
-   *
-   * 'Out' is that list. Returned and Settled are books the desk has; Lost and
-   * Void are closed. An organiser still sees every one of them, because the
-   * holder is how the money is chased.
-   */
-  /*
-   * AND THE BOOKS BEING OFFERED TO THEM, which are not Out and are not theirs.
-   *
-   * An offer that a seller cannot see is an offer they cannot answer. The row
-   * lands in their approvals queue naming books — and under 'Out' alone, every
-   * one of those books was invisible on the screen the queue points at. They
-   * would be asked to accept twenty books they had no way to look at.
-   *
-   * Offered rows carry no money and no buyer: held_by_agent is null, which is
-   * the whole design, so nothing about another seller's takings travels with
-   * them. It is the seller's own pending offer or it is not returned at all.
-   */
-  query = scopeBooks(query, user)
+    /*
+     * A SELLER'S BOOK LIST IS THE BOOKS IN THEIR HANDS — which is what this said
+     * and not what it did.
+     *
+     * held_by_agent deliberately SURVIVES a return and a settlement, because
+     * settlement has to know whose money it is. So a seller who handed a book
+     * back last month, and watched an organiser count it in, kept seeing it on
+     * their own screen for the rest of the raffle: a book they no longer have,
+     * beside the ones they do, with no way to tell which is which. Asked for in
+     * exactly those terms — a book the organiser has accepted should no longer be
+     * the seller's to look at.
+     *
+     * 'Out' is that list. Returned and Settled are books the desk has; Lost and
+     * Void are closed. An organiser still sees every one of them, because the
+     * holder is how the money is chased.
+     */
+    /*
+     * AND THE BOOKS BEING OFFERED TO THEM, which are not Out and are not theirs.
+     *
+     * An offer that a seller cannot see is an offer they cannot answer. The row
+     * lands in their approvals queue naming books — and under 'Out' alone, every
+     * one of those books was invisible on the screen the queue points at. They
+     * would be asked to accept twenty books they had no way to look at.
+     *
+     * Offered rows carry no money and no buyer: held_by_agent is null, which is
+     * the whole design, so nothing about another seller's takings travels with
+     * them. It is the seller's own pending offer or it is not returned at all.
+     */
+    query = scopeBooks(query, user)
 
-  const { data, error } = await query
-  if (error) throw new ApiError('QUERY_FAILED', error.message)
+    const { data: pageRows, error } = await query
+    if (error) throw new ApiError('QUERY_FAILED', error.message)
+    if (!pageRows?.length) { complete = true; break }
+    data.push(...(pageRows as Array<Record<string, unknown>>))
+    if (pageRows.length < BOOKS_PAGE) { complete = true; break }
+    cursor = Number(pageRows[pageRows.length - 1].idx)
+  }
 
   /*
    * AND THE BOOKS THAT ARE IN A REPORT NOBODY HAS ACCEPTED YET.
@@ -1376,7 +1388,7 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
    */
   const reported = await reportedBooks(user, ctx)
 
-  const books = (data ?? []).map((r: Record<string, unknown>) => bookWire(r, reported))
+  const books = data.map((r: Record<string, unknown>) => bookWire(r, reported))
 
   // The counts the home screen reads. Apps Script has always returned these and
   // this did not, which store.js papered over by overwriting bookStats from
@@ -1399,9 +1411,9 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   const liveBooks = Math.ceil((await activeTickets(ctx)) / per)
 
   return {
-    // False means the list was cut at the cap: the caller must not derive
-    // totals from it, because they would describe part of the raffle.
-    complete: books.length < BOOKS_LIMIT,
+    // False only if the safety bound stopped us: the caller must not derive
+    // totals from a truncated list, because they would describe part of the raffle.
+    complete,
     books,
     stats,
     total: books.length,

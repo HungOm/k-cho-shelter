@@ -910,13 +910,12 @@ export async function refresh() {
       state.books = books.books ?? []
       state.bookStats = books.stats ?? {}
       /*
-       * WHETHER THAT IS ALL OF THEM. list_books caps at 1000 and the view is
-       * scoped to active books, so the raffle currently sits exactly ON the cap
-       * — right today and short the first time somebody releases more tickets.
-       * The counts below are derived from this list only when it is the whole
-       * of it; otherwise the server's own totals stand, because a number
-       * derived from a truncated list describes part of the raffle while
-       * looking like all of it.
+       * WHETHER THAT IS ALL OF THEM. list_books pages past PostgREST's 1000-row
+       * cap, so 2,000 books from 20,000 tickets arrive as one list. complete is
+       * still false if a safety bound stopped it, and the counts below are
+       * derived from this list only when it is the whole of it; otherwise the
+       * server's own totals stand, because a number derived from a truncated
+       * list describes part of the raffle while looking like all of it.
        */
       state.booksAllLoaded = books.complete !== false
     })

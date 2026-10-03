@@ -188,22 +188,69 @@ console.log('7. the number above the grid describes the grid')
 
   ok(/state\.bookStats = counts/.test(fn), 'the counts are derived from the list that is shown')
   /*
-   * ONLY WHEN THAT LIST IS THE WHOLE RAFFLE, and the margin here is nil rather
-   * than comfortable: book_ledger_all is scoped to ACTIVE books, so at
-   * ACTIVE_TICKETS = 10000 and ten to a book it returns exactly 1000 rows —
-   * precisely list_books' cap. Right today and silently short the first time
-   * somebody releases more tickets. A count derived from a truncated list would
-   * describe part of the raffle while looking like all of it.
+   * ONLY WHEN THAT LIST IS THE WHOLE RAFFLE. list_books used to stop at 1000
+   * and set complete from that cap; it now pages, and complete is still the
+   * signal that the list was cut (the safety bound, not the first page). A
+   * count derived from a truncated list would describe part of the raffle
+   * while looking like all of it.
    */
   ok(/if \(state\.booksAllLoaded\)/.test(fn),
      'and only when the client holds all of them')
-  ok(/complete: books\.length < BOOKS_LIMIT/.test(
-       readFileSync(new URL('../supabase/functions/api/index.ts', import.meta.url), 'utf8')),
-     'which the server states rather than leaving the client to infer from a cap it would have to know')
+  {
+    const src = readFileSync(new URL('../supabase/functions/api/index.ts', import.meta.url), 'utf8')
+    const list = src.slice(src.indexOf('async function listBooks'), src.indexOf('async function readAudit'))
+    ok(/\.gt\('idx'/.test(list),
+       'list_books pages past PostgREST\'s 1000-row cap instead of stopping there')
+    ok(/\bcomplete[,:]/.test(list),
+       'and still says whether it got everything, rather than leaving the client to infer a cap')
+  }
 
   const store = readFileSync(new URL('../src/lib/store.js', import.meta.url), 'utf8')
   ok(/if \(!state\.booksAllLoaded\) state\.bookStats = draw\.booksByStatus/.test(store),
      'and report_draw_ready no longer overwrites a count derived from the list beneath it')
+}
+
+console.log('8. releasing past ten thousand tickets still lists every book')
+{
+  /*
+   * THE FAILURE ON THE SCREEN. 20,000 tickets in play is 2,000 books. A single
+   * PostgREST page is 1,000 rows, so Book-1001 and everything after it vanished
+   * from the grid the moment somebody raised ACTIVE_TICKETS. Nothing looked
+   * broken: the first thousand tiles were right, the count was plausible, and
+   * the book they had just released was simply not there.
+   *
+   * One more than the page is enough to prove the second page is asked for.
+   * Two thousand would only take longer to say the same thing.
+   */
+  const N = 1001
+  const pad = (n) => 'Book-' + String(n).padStart(4, '0')
+  const big = fakeDb({
+    config: baseConfig({ TOTAL_TICKETS: String(N * 10), ACTIVE_TICKETS: String(N * 10) }),
+    app_users: [
+      { email: 'boss@x.com', name: 'Boss', role: 'admin', active: true, agent_id: null },
+    ],
+    book_ledger_all: Array.from({ length: N }, (_, i) => ({
+      idx: i + 1, number: pad(i + 1), status: 'Unassigned',
+      held_by_agent: null, agent_name: null,
+      first_ticket: 'KS-' + String(i * 10 + 1).padStart(5, '0'),
+      last_ticket: 'KS-' + String((i + 1) * 10).padStart(5, '0'),
+      counted_sold: 0, available: 10, counted_expected: 0, counted_collected: 0,
+      variance_amount: 0, missing_contact: 0, declared_sold: null,
+    })),
+  })
+  const res = await api.fetch(
+    new Request('https://x/api', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list_books', payload: {} }),
+    }),
+    { ...big.ctx, userClaims: { id: 'u1', email: 'boss@x.com' } })
+  const body = await res.json()
+  const d = body.data
+  ok(d && Array.isArray(d.books), 'list_books still returns a books array')
+  eq(d.books.length, N, 'every book past the first thousand arrives')
+  ok(d.books.some((b) => b.book === pad(1001)), 'Book-1001 is in the list')
+  eq(d.complete, true, 'and the server says that is all of them')
+  eq(d.total, N, 'the count describes the list, not the first page')
 }
 
 cleanup()
