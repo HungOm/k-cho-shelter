@@ -9,7 +9,7 @@
  */
 import {
   fold, phoneDigits, waNumber, isDialable, closeEnough,
-  buildIndex, parseBookRange, scoreEntry, runSearch
+  buildIndex, parseBookRange, scoreEntry, runSearch, searchBooks
 } from '../src/lib/search.js'
 
 let pass = 0, fail = 0
@@ -188,6 +188,80 @@ console.log('scoring order')
   const e = index.find(x => x.t.number === 'KS-0042')
   ok(scoreEntry(e, 'ks0042', '0042', null) === 100, 'exact ticket scores highest')
   ok(scoreEntry(e, 'kajang', '', null) === 30, 'zone scores low')
+}
+
+/* ---------------------------------------------------------------
+ * BOOKS. The same search, over the book list. Built from a fixture shaped like
+ * the real wire row (bookWire in the Edge Function) at the real scale: 2,000
+ * books of ten, KS- tickets to five digits, which is where the number-ending and
+ * whole-ticket cases are different from a 30-book toy.
+ */
+console.log('searching books')
+{
+  const agents = { A001: { name: 'Mana Kee' }, A002: { name: 'Shwe Thuang' } }
+  const pad = (n, w) => String(n).padStart(w, '0')
+  const books = Array.from({ length: 2000 }, (_, i) => {
+    const n = i + 1
+    return {
+      book: 'Book-' + pad(n, 4),
+      firstTicket: 'KS-' + pad((n - 1) * 10 + 1, 5),
+      lastTicket: 'KS-' + pad(n * 10, 5),
+      status: 'Unassigned', agentId: '', agentName: '', offeredTo: '',
+    }
+  })
+  // Book 13 is out with Mana; Book 14 is out with Shwe; Book 15 is offered to Shwe.
+  Object.assign(books[12], { status: 'Out', agentId: 'A001', agentName: 'Mana Kee' })
+  Object.assign(books[13], { status: 'Out', agentId: 'A002', agentName: 'Shwe Thuang' })
+  Object.assign(books[14], { status: 'Offered', offeredTo: 'A002' })
+  const sb = (query, extra = {}) => searchBooks(books, { query, agents, ...extra })
+  const nums = (r) => r.results.map(b => b.book)
+
+  // The number, however it is written
+  for (const form of ['31', '031', '0031', 'book 31', 'Book-031', 'Book-0031', 'b31']) {
+    ok(nums(sb(form))[0] === 'Book-0031', `"${form}" finds Book-0031 first`)
+  }
+  eq(nums(sb('book 31')).length, 1, '"book 31" is that one book and not every book ending in 31')
+  ok(nums(sb('31'))[0] === 'Book-0031' && nums(sb('31')).includes('Book-0131'),
+    'a bare number also finds the books whose number ends that way, exact one first')
+  eq(sb('31', { tail: false }).total, 1, 'with tail off (the Find screen) only the exact book')
+  eq(sb('9999').total, 0, 'a book that is not in the raffle finds nothing')
+
+  // A run of books, with and without the word "book"
+  eq(sb('31-45').total, 15, 'a bare range names books on this screen')
+  eq(sb('book 31 to 45').total, 15, 'and in words')
+  eq(sb('45-31').total, 15, 'and backwards')
+  eq(sb('31-45').results[0].book, 'Book-0031', 'in book order')
+  eq(parseBookRange('3291-3300'), null, 'but the ticket screen still does not take it for books')
+  eq(parseBookRange('KS-03291-KS-03300', { bare: true }), null,
+    'and a range of ticket numbers is never a range of books, even bare')
+
+  // A ticket names the book it is printed in
+  eq(nums(sb('KS-00131'))[0], 'Book-0014', 'a whole ticket number finds its book (ticket 131 is in book 14)')
+  eq(nums(sb('00131'))[0], 'Book-0014', 'and so do just its five digits')
+  ok(nums(sb('131'))[0] === 'Book-0131', 'three digits is a BOOK, not a ticket: book 131 beats the ticket')
+
+  // Sellers
+  eq(nums(sb('Mana'))[0], 'Book-0013', 'a seller\'s name finds the book they hold')
+  eq(nums(sb('A001'))[0], 'Book-0013', 'and so does their ID')
+  ok(nums(sb('shwe')).includes('Book-0014') && nums(sb('shwe')).includes('Book-0015'),
+    'a seller\'s name finds a book waiting on them as well as one they hold')
+  eq(nums(sb('Shwe'))[0], 'Book-0014', 'held ranks above offered')
+  ok(nums(sb('thaung')).includes('Book-0014'), 'a misspelt name still finds them (Thuang)')
+  eq(sb('zzzzzz').total, 0, 'gibberish finds nothing')
+
+  // Filters, which are the same words as for tickets
+  eq(sb('', { status: 'Out' }).total, 2, 'status alone')
+  eq(sb('', { agent: 'A002' }).total, 2, 'a seller alone: held and offered')
+  eq(sb('', { where: 'out' }).total, 2, 'out with a seller')
+  eq(sb('', { where: 'office' }).total, 1998, 'and in the office')
+  eq(sb('', { agent: 'A001' }).results[0].book, 'Book-0013', 'a seller alone lists their books')
+  eq(sb('Shwe', { where: 'out' }).total, 1, 'a name and a filter together')
+  eq(sb('').total, 2000, 'nothing typed is every book')
+  eq(sb('', { limit: 5 }).results.length, 5, 'limit caps what is returned')
+  eq(sb('', { limit: 5 }).total, 2000, 'but the total still says how many there are')
+
+  // Shape: the same as runSearch, so a screen can treat them alike
+  ok('total' in sb('1') && Array.isArray(sb('1').results), 'returns { total, results } like runSearch')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

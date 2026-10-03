@@ -3,11 +3,14 @@
  * Books. The grid is the point: six hundred squares say where the stock is at a
  * glance, in a way six hundred table rows never will.
  */
-import { ref, computed } from 'vue'
-import { state, isAdmin, go } from '../lib/store.js'
+import { ref, computed, watch } from 'vue'
+import { state, isAdmin, go, agentMap } from '../lib/store.js'
 import { BOOK_WORDS, money, relative } from '../lib/format.js'
+import { searchBooks } from '../lib/search.js'
 import BookGrid from './ui/BookGrid.vue'
-import StatusPill from './ui/StatusPill.vue'
+import BookRow from './ui/BookRow.vue'
+import Pager from './ui/Pager.vue'
+import StatusPill from './ui/StatusPill.vue' // no longer used here: BookRow draws the pill. Left so the import list reads as it did.
 import Icon from './ui/Icon.vue'
 import Empty from './ui/Empty.vue'
 import History from './modals/History.vue'
@@ -33,9 +36,39 @@ const showHistory = ref(null)
 const status = ref('')
 const agent = ref('')
 
-const shown = computed(() => state.books.filter(b =>
+// The status chip and the seller menu, exactly as they were. Kept as their own
+// step (and not folded into searchBooks' filters) because the seller menu here
+// has always meant "books this person HOLDS", where search's seller filter also
+// takes books waiting on them — a change to what an existing control means.
+const filtered = computed(() => state.books.filter(b =>
   (!status.value || b.status === status.value) &&
   (!agent.value || b.agentId === agent.value)))
+
+/*
+ * SEARCH, ON TOP OF THOSE. This screen could only be narrowed by status and by
+ * seller, so finding Book-1347 meant scrolling a grid of two thousand squares or
+ * a list that stopped at 200. The same matching Find uses for tickets (number,
+ * run of books, a ticket number's book, a seller's name) over the books the
+ * chips have already left. Nothing typed leaves the list untouched.
+ */
+const query = computed(() => String(state.bookQuery ?? '').trim())
+// WAS: const shown = computed(() => state.books.filter(...)) — now `filtered` above.
+const shown = computed(() => query.value
+  ? searchBooks(filtered.value, { query: query.value, agents: agentMap.value }).results
+  : filtered.value)
+
+/*
+ * A PAGE AT A TIME, NOT THE FIRST TWO HUNDRED. The list drew `shown.slice(0,
+ * 200)` and said nothing, so at 2,000 books ninety per cent of them could not be
+ * reached from here at all, and the count above read as if they could. The shared
+ * pager states the total where it can be acted on, the way the ticket list does.
+ */
+const PAGE = 100
+const page = ref(1)
+const pageRows = computed(() => shown.value.slice((page.value - 1) * PAGE, page.value * PAGE))
+// A new search or filter starts at the top: landing on page seven of the old one
+// looks like no results.
+watch([() => state.bookQuery, status, agent], () => { page.value = 1 })
 
 const counts = computed(() => state.bookStats || {})
 const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
@@ -64,6 +97,18 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
         <div class="n">{{ counts[k] }}</div>
         <div class="l">{{ BOOK_WORDS[k] }}</div>
       </button>
+    </div>
+
+    <!-- FIND A BOOK. Number (31), a run (31-45), the book a ticket is printed in
+         (KS-00131) or a seller's name — the same matching as Find, so a thing
+         typed here and there means the same. The grid and the list below both
+         narrow to it. -->
+    <div class="row" style="margin-bottom:var(--sp-6)">
+      <input v-model="state.bookQuery" class="xl grow" type="search"
+             placeholder="Book number, a range like 31-45, a ticket number or a seller"
+             autocomplete="off" autocapitalize="off" spellcheck="false"
+             aria-label="Search books">
+      <button v-if="state.bookQuery" class="btn sm" @click="state.bookQuery = ''">Clear</button>
     </div>
 
     <div class="card">
@@ -112,23 +157,15 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
     </div>
 
     <h3 class="mt">{{ shown.length }} {{ shown.length === 1 ? 'book' : 'books' }}</h3>
+    <!-- Top and bottom, like the ticket list: a pager only under the list is off
+         the bottom of every screen. -->
+    <Pager v-model:page="page" :total="shown.length" :size="PAGE" noun="books" />
     <div class="card flush">
       <TransitionGroup v-if="shown.length" name="list" tag="ul" class="list">
-        <li v-for="b in shown.slice(0, 200)" :key="b.book" class="rowpair">
-          <button class="item" @click="emit('open-book', b)">
-            <span class="grow">
-              <span class="lead">{{ b.book }}</span>
-              <span class="sub">
-                {{ b.firstTicket }}–{{ b.lastTicket }}
-                <template v-if="b.agentName"> · {{ b.agentName }}</template>
-                <template v-if="b.sold"> · {{ b.sold }} sold</template>
-              </span>
-            </span>
-            <span v-if="b.inReport" class="pill warn">reported</span>
-            <span v-if="b.daysOverdue > 0" class="pill bad">{{ b.daysOverdue }} days late</span>
-            <StatusPill :status="b.status" kind="book" />
-            <span class="chev">›</span>
-          </button>
+        <!-- WAS: v-for="b in shown.slice(0, 200)" with the row's markup written out
+             here. Now a page of rows, and the row is BookRow (shared with Find). -->
+        <li v-for="b in pageRows" :key="b.book" class="rowpair">
+          <BookRow :book="b" @open="emit('open-book', b)" />
           <!-- The same question from the book side, and the same answer: its
                own control on the row, rather than two taps down inside a sheet
                that also gives books out. -->
@@ -136,11 +173,19 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
                   :aria-label="`Where ${b.book} has been`" @click="showHistory = b.book"><Icon name="clock" :size="17" /></button>
         </li>
       </TransitionGroup>
-      <Empty v-else art="📚" :title="status ? `No books ${BOOK_WORDS[status].toLowerCase()}` : 'No books'"
-             :action="isAdmin && status === 'Out' ? 'Give out books' : ''" @action="emit('issue')">
-        Nothing here with those filters.
+      <!-- WAS: only the status/no-books titles. A search that finds nothing now
+           says what it looked for, and offers the way back. -->
+      <Empty v-else art="📚"
+             :title="query ? `No book matches “${query}”` : status ? `No books ${BOOK_WORDS[status].toLowerCase()}` : 'No books'"
+             :action="query ? 'Clear the search' : isAdmin && status === 'Out' ? 'Give out books' : ''"
+             @action="query ? (state.bookQuery = '') : emit('issue')">
+        <template v-if="query">
+          Try a book number, a run such as 31-45, a ticket number, or part of a seller's name.
+        </template>
+        <template v-else>Nothing here with those filters.</template>
       </Empty>
     </div>
+    <Pager v-model:page="page" :total="shown.length" :size="PAGE" noun="books" />
 
     <!-- On top of the list, so closing it puts you back where you were. -->
     <History v-if="showHistory" :book="showHistory" @close="showHistory = null" />

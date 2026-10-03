@@ -7,6 +7,8 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { state, searchResults, agentMap, whereIs, isSold, isAdmin, api, toast, go, sellBlock } from '../lib/store.js'
 import { STATUS_WORDS } from '../lib/format.js'
 import { isFreeToIssue } from '../lib/books.js'
+import { searchBooks } from '../lib/search.js'
+import BookRow from './ui/BookRow.vue'
 import StatusPill from './ui/StatusPill.vue'
 import Empty from './ui/Empty.vue'
 import History from './modals/History.vue'
@@ -21,8 +23,43 @@ import Icon from './ui/Icon.vue'
 import YourStock from './ui/YourStock.vue'
 import Pager from './ui/Pager.vue'
 
-const emit = defineEmits(['open'])
+// WAS: only 'open' was declared. 'open-book' is new: a book found here opens in the
+// same sheet it opens in from the Books screen — App.vue already routes it.
+const emit = defineEmits(['open', 'open-book'])
 const box = ref(null)
+
+/*
+ * BOOKS, ABOVE THE TICKETS. Find answered "Book-003" with that book's ten
+ * tickets and never with the book, and "Pa Thang" with tickets he sold but not
+ * the books he is carrying. A few matching books go first; the rest are one tap
+ * away on the Books screen.
+ *
+ * tail: false — here a bare "721" is somebody remembering how a TICKET ends
+ * (the examples under the box say so), and listing every book whose number ends
+ * 721 above their ticket is noise. The exact book and a whole ticket number's
+ * book still show. The Books screen keeps the ends-with match, where narrowing
+ * a list of books is the whole job.
+ *
+ * NOT SHOWN under a ticket-status filter: "Sold" means nothing for a book.
+ * Shown for a seller filter alone, which is the books they hold.
+ */
+const BOOK_PEEK = 5
+const bookHits = computed(() => {
+  const none = { total: 0, results: [] }
+  if (state.filterStatus) return none
+  // String(... ?? '') because a screen can be rendered against a store with no query yet.
+  if (!String(state.query ?? '').trim() && !state.filterAgent) return none
+  return searchBooks(state.books ?? [], {
+    query: state.query, agent: state.filterAgent, where: state.filterWhere,
+    agents: agentMap.value, tail: false,
+  })
+})
+
+/* Hands the query to the Books screen, so "see all 14" lands on those 14. */
+function seeAllBooks() {
+  state.bookQuery = state.query
+  go('books')
+}
 
 /*
  * The ticket whose trail is open, or null. Held here rather than in the row so
@@ -306,9 +343,9 @@ function onKey(ev) {
 
     <div class="card searchcard">
       <input ref="box" v-model="state.query" class="xl" type="search"
-             placeholder="Number, name or phone"
+             placeholder="Number, name, phone or book"
              autocomplete="off" autocapitalize="off" spellcheck="false"
-             aria-label="Search tickets">
+             aria-label="Search tickets and books">
 
       <div class="row wrap" style="margin-top:12px">
         <select v-model="state.filterStatus" class="grow" aria-label="Filter by status">
@@ -333,6 +370,20 @@ function onKey(ev) {
           {{ e.text }}
         </button>
       </div>
+    </div>
+
+    <!-- The books that match, before the tickets. Each opens the book's sheet. -->
+    <div v-if="bookHits.total" class="card flush" style="margin-bottom:var(--sp-6)">
+      <div class="spread" style="padding:var(--sp-5) var(--sp-6) var(--sp-2)">
+        <h3>{{ bookHits.total === 1 ? '1 book' : `${bookHits.total.toLocaleString()} books` }}</h3>
+        <button v-if="bookHits.total > BOOK_PEEK && String(state.query ?? '').trim()" class="btn sm"
+                @click="seeAllBooks">See all in Books</button>
+      </div>
+      <ul class="list">
+        <li v-for="b in bookHits.results.slice(0, BOOK_PEEK)" :key="b.book" class="rowpair">
+          <BookRow :book="b" @open="emit('open-book', b)" />
+        </li>
+      </ul>
     </div>
 
     <div class="spread count">
@@ -426,7 +477,10 @@ function onKey(ev) {
         The tickets have not been made. The organiser needs to set the numbers
         and run setup.
       </Empty>
-      <Empty v-else art="🔍" :title="state.query ? `Nothing matches “${state.query}”` : 'Nothing here'"
+      <!-- WAS: `Nothing matches “…”` whatever else had matched. With a book
+           listed just above, "nothing matches" contradicts the screen. -->
+      <Empty v-else art="🔍"
+             :title="state.query ? (bookHits.total ? `No tickets match “${state.query}”` : `Nothing matches “${state.query}”`) : 'Nothing here'"
              :action="hasFilters ? 'Clear and start again' : ''" @action="clear">
         Try the last few numbers on the ticket, part of a name,
         or a phone number written any way you like.

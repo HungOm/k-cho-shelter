@@ -129,10 +129,18 @@ export function buildIndex(tickets, agentMap, bookHolders = {}) {
 }
 
 /** "Book-031..045", "book 3 to 9" — a range of books in one query. */
-export function parseBookRange(raw) {
+// WHY `bare` WAS ADDED: on the ticket Find screen "3291-3300" is a ticket range
+// and must NOT be read as books, so the word "book" stays required there (the
+// default, unchanged). On the Books screen everything typed is about books, and
+// making somebody write "book 31-45" to find books 31 to 45 is a rule for the
+// other screen. Only a range with NO letters at all is accepted bare: "KS-03291-
+// KS-03300" has letters, so it is still not a book range even there.
+export function parseBookRange(raw, { bare = false } = {}) {
   const m = raw.match(/^\s*([A-Za-z-]*)\s*(\d+)\s*(?:\.\.|–|-|to)\s*([A-Za-z-]*)\s*(\d+)\s*$/i)
   if (!m) return null
-  if (!/book|b$/i.test((m[1] || m[3] || '').trim())) return null
+  // WAS: if (!/book|b$/i.test((m[1] || m[3] || '').trim())) return null
+  const label = (m[1] || m[3] || '').trim()
+  if (label ? !/book|b$/i.test(label) : !bare) return null
   return [parseInt(m[2], 10), parseInt(m[4], 10)].sort((a, b) => a - b)
 }
 
@@ -194,4 +202,109 @@ export function runSearch(index, { query = '', status = '', agent = '', where = 
 
   hits.sort((a, b) => b.score - a.score || a.e.t.number.localeCompare(b.e.t.number))
   return { total: hits.length, results: hits.slice(0, limit).map(h => h.e.t) }
+}
+
+/*
+ * ================= BOOKS =================
+ *
+ * THE SAME SEARCH, OVER BOOKS. Tickets were the only thing that could be found:
+ * the Books screen had a status chip and a seller menu and nothing to type into,
+ * and Find drew a book's ten tickets for "Book-003" but never the book. So this
+ * reuses what is already here rather than growing a second idea of matching:
+ * the same fold(), the same closeEnough() spelling tolerance for a seller's name
+ * (Thang/Thuang), the same range syntax, and the same { total, results } shape
+ * runSearch returns, so a screen can treat the two alike.
+ *
+ * WHAT A PERSON TYPES, and what each reads as:
+ *   31, 031, book 31, Book-0031   the book with that number (exactly)
+ *   31-45, book 31 to 45          a run of books (see parseBookRange `bare`)
+ *   KS-03291, or all five digits  the book that ticket is printed in
+ *   Pa Thang, A001                books held by, or offered to, that seller
+ *   a bare few digits             also books whose number ENDS that way ("it
+ *                                 ends in 31") — `tail`, below
+ *
+ * A book row carries what this needs already: book, firstTicket, lastTicket,
+ * agentId, agentName, offeredTo, status. Nothing new is fetched.
+ */
+const bookNo = (s) => parseInt(String(s ?? '').replace(/\D/g, ''), 10)
+
+/**
+ * Scores one book against a query. Higher is better; 0 is no match.
+ * `ctx` is built once per search in searchBooks, not per book.
+ */
+export function scoreBook(b, ctx) {
+  const { q, qDigits, range, asBook, tail, agents } = ctx
+  const n = bookNo(b.book)
+
+  if (range) return n >= range[0] && n <= range[1] ? 90 : 0
+  if (asBook) return n === parseInt(asBook[1], 10) ? 100 : 0
+
+  const first = bookNo(b.firstTicket)
+  const last = bookNo(b.lastTicket)
+  // The width the ticket numbers are printed to (5 for KS-00001), read off the
+  // book itself so this needs no config and cannot disagree with the raffle.
+  const width = (String(b.firstTicket ?? '').match(/\d+$/) || [''])[0].length
+  const prefix = fold(String(b.firstTicket ?? '').replace(/\d+$/, ''))
+
+  if (!/[a-z]/.test(q)) {
+    if (!qDigits) return 0
+    const want = parseInt(qDigits, 10)
+    // A WHOLE ticket number names its book, and is checked BEFORE the exact book
+    // number: "00131" is five digits, the width tickets are printed to, so it is
+    // unmistakably ticket 131 (in book 14) and not book 131, which would be
+    // written to the book width. Anything shorter is ambiguous between the two
+    // and the book wins below. 101 so it outranks an exact book number (100).
+    if (width && qDigits.length >= width && want >= first && want <= last) return 101
+    if (n === want) return 100
+    if (tail && want > 0 && String(n).endsWith(String(want))) return 80
+    return 0
+  }
+
+  // "KS-03291": the ticket prefix and a number, so it is a ticket, not a name.
+  if (prefix && q.startsWith(prefix) && qDigits) {
+    const want = parseInt(qDigits, 10)
+    if (want >= first && want <= last) return 101
+  }
+
+  const holder = fold(b.agentName)
+  if (holder && holder.includes(q)) return 60
+  // The seller's ID as typed ("A001"), which is how an organiser says it on the phone.
+  if (b.agentId && fold(b.agentId) === q) return 58
+  // An offered book has no holder yet; it is waiting on somebody, and that is who
+  // a person looking for "Pa Thang's books" also means.
+  const offered = fold(agents?.[b.offeredTo]?.name)
+  if (offered && offered.includes(q)) return 50
+  if (q.length >= 4 && holder.split(' ').some((tok) => closeEnough(tok, q))) return 25
+  return 0
+}
+
+export function searchBooks(books, {
+  query = '', status = '', agent = '', where = '', agents = {}, tail = true, limit = Infinity,
+} = {}) {
+  const raw = String(query ?? '').trim()
+  const q = fold(raw)
+  const ctx = {
+    q,
+    qDigits: raw.replace(/\D/g, ''),
+    range: parseBookRange(raw, { bare: true }),
+    asBook: raw.match(/^\s*b(?:ook)?[\s-]*0*(\d+)\s*$/i),
+    tail,
+    agents,
+  }
+  const plain = !q && !ctx.range
+
+  const hits = []
+  for (const b of books) {
+    if (status && b.status !== status) continue
+    // "Anything to do with this person", as for tickets: books they hold, and
+    // books that are waiting on them to accept.
+    if (agent && b.agentId !== agent && b.offeredTo !== agent) continue
+    if (where === 'out' && b.status !== 'Out') continue
+    if (where === 'office' && b.status === 'Out') continue
+    const score = plain ? 1 : scoreBook(b, ctx)
+    if (score) hits.push({ b, score })
+  }
+
+  hits.sort((x, y) => y.score - x.score || bookNo(x.b.book) - bookNo(y.b.book))
+  return { total: hits.length, results: hits.slice(0, limit).map((h) => h.b) }
 }

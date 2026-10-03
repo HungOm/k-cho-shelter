@@ -214,7 +214,11 @@ export const canWrite = computed(() => true)
 export const agentMap = computed(() => ({}))
 export const isSold = () => false
 `
-  const html = await renderScreen('src/components/Books.vue', bookStore)
+  // WAS: renderScreen('src/components/Books.vue', bookStore). The row's button
+  // now lives in ui/BookRow.vue (shared with Find), and the harness stubs
+  // children, so the row has to be named to be drawn — the assertion below is
+  // about the SHAPE of the row, which is unchanged: button, then history control.
+  const html = await renderScreen('src/components/Books.vue', bookStore, { renderReal: ['BookRow.vue'] })
   ok(/class="rowhist"/.test(html), 'the book row has a history control of its own')
   ok(/Where Book-001 has been/.test(html), 'labelled with the book it is about')
   const row = html.slice(html.indexOf('<li'), html.indexOf('</li>'))

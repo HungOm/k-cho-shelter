@@ -104,6 +104,10 @@ export const state = reactive({
   lastSync: null,
   sellMode: readSellMode(),                             // 'steps' | 'quick'
   query: '',
+  // What is typed into the Books screen's search. In the store rather than in
+  // that screen so Find can hand its query over ("see all 14 books") and the
+  // screen is KeepAlive'd, so a search survives a trip into a book and back.
+  bookQuery: '',
   filterStatus: '',
   filterAgent: '',
   filterWhere: '',        // '' | 'office' | 'out'
