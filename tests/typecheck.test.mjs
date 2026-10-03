@@ -54,7 +54,11 @@ if (!deno) { console.log(`\n${pass} passed, ${fail} failed`); process.exit(1) }
 const run = spawnSync(deno, ['check', ...ENTRIES], {
   cwd: ROOT, encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' }, maxBuffer: 64 << 20,
 })
-const out = (run.stdout ?? '') + (run.stderr ?? '')
+// Deno 2.9.7 still paints TS2345 [ERROR] with colour codes when it
+// thinks it has a terminal, even with NO_COLOR=1. The parser keys on
+// that plain text, so a coloured line never matches, every baseline
+// error looks "fixed", and the gate refuses every deploy.
+const out = ((run.stdout ?? '') + (run.stderr ?? '')).replace(/\x1b\[[0-9;]*m/g, '')
 
 /* Every error, as "file | code | message | source line". */
 const found = []

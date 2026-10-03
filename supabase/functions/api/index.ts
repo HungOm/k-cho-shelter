@@ -1413,7 +1413,7 @@ async function listBooks(p: Record<string, unknown>, user: AppUser, ctx: Ctx) {
   return {
     // False only if the safety bound stopped us: the caller must not derive
     // totals from a truncated list, because they would describe part of the raffle.
-    complete,
+    complete: complete,
     books,
     stats,
     total: books.length,
