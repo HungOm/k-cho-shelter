@@ -49,7 +49,7 @@ export const isSuper = computed(() => false)
 export const canWrite = computed(() => true)
 export const go = () => {}
 `
-const REAL = { renderReal: ['BookRow.vue', 'BookSearchBox.vue'] }
+const REAL = { renderReal: ['BookRow.vue', 'BookSearchBox.vue', 'TicketInBook.vue'] }
 
 console.log('the Books screen has a search box')
 {
@@ -72,6 +72,18 @@ console.log('the Books screen has a search box')
   const run = await renderScreen('src/components/Books.vue', store({ books, bookQuery: '1-2' }), REAL)
   ok(run.includes('Book-0001') && run.includes('Book-0002') && !run.includes('Book-0031'),
     'a bare range of numbers finds a run of books')
+
+  // A ticket number: the book it is in is said in words, and is the way in
+  const tk = await renderScreen('src/components/Books.vue', store({ books, bookQuery: 'KS-00125' }), REAL)
+  const tkText = tk.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+  ok(/Ticket KS-00125 is in Book-0013/.test(tkText), 'a ticket number says which book it is in')
+  ok(/<button[^>]*class="note info ticketin"/.test(tk), 'as a button, so the book can be opened from it')
+  ok(/With a seller/.test(tkText) && /Mana Kee/.test(tkText), 'and says where that book is')
+  const tkShort = await renderScreen('src/components/Books.vue', store({ books, bookQuery: '125' }), REAL)
+  ok(/Ticket KS-00125 is in Book-0013/.test(tkShort.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')),
+    'a shorter number no book has is read as a ticket')
+  ok(!/ticketin/.test(num), 'a book number is not offered as a ticket')
+  ok(!/ticketin/.test(by), 'nor a seller\'s name')
 
   const none = await renderScreen('src/components/Books.vue', store({ books, bookQuery: 'zzzzzz' }), REAL)
   ok(!none.includes('Book-0001'), 'a search that matches nothing lists no books')
@@ -132,6 +144,12 @@ console.log('the Home grid has a search box too')
   ok(/>1<\/b>\s*of 4 books match/.test(by.replace(/<!--[\s\S]*?-->/g, '')),
     'a search says how many of the books match, so a narrowed grid is not read as a short raffle')
   ok(/>Clear<\/button>/.test(by), 'with a Clear button')
+
+  const tk = await renderScreen('src/components/Home.vue', homeStore({ books, bookQuery: 'KS-00125' }), REAL)
+  ok(/Ticket KS-00125 is in Book-0013/.test(tk.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')),
+    'a ticket number on the dashboard says which book it is in')
+  ok(/<button[^>]*class="note info ticketin"/.test(tk), 'and the line is a button')
+  ok(!/ticketin/.test(by), 'a seller\'s name is not offered as a ticket')
 
   const none = await renderScreen('src/components/Home.vue', homeStore({ books, bookQuery: 'zzzzzz' }), REAL)
   ok(/try a book number, a run such as 31-45/.test(none), 'a search that matches nothing says how to search')

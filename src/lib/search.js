@@ -257,6 +257,12 @@ export function scoreBook(b, ctx) {
     if (width && qDigits.length >= width && want >= first && want <= last) return 101
     if (n === want) return 100
     if (tail && want > 0 && String(n).endsWith(String(want))) return 80
+    // A SHORTER NUMBER THAT IS NO BOOK, BUT IS A TICKET. "3291" is not one of
+    // 2,000 books, and it is not five digits either, so neither rule above
+    // takes it — and it is exactly how somebody reads a number off a ticket.
+    // Where a book of that number exists the book still wins (above), so this
+    // only ever fills a silence. Below the book matches; above name matches.
+    if (want >= first && want <= last && !ctx.bookNums?.has(want)) return 70
     return 0
   }
 
@@ -290,6 +296,7 @@ export function searchBooks(books, {
     asBook: raw.match(/^\s*b(?:ook)?[\s-]*0*(\d+)\s*$/i),
     tail,
     agents,
+    bookNums: new Set(books.map((b) => bookNo(b.book))),
   }
   const plain = !q && !ctx.range
 
@@ -307,4 +314,44 @@ export function searchBooks(books, {
 
   hits.sort((x, y) => y.score - x.score || bookNo(x.b.book) - bookNo(y.b.book))
   return { total: hits.length, results: hits.slice(0, limit).map((h) => h.b) }
+}
+
+/**
+ * "Which book is this ticket in?" — answered from the book list alone.
+ *
+ * Every book row carries its first and last ticket, so the answer needs no
+ * ticket data and works before the tickets have loaded. Returns
+ * { ticket, book } or null, where `ticket` is the number as it is printed
+ * (KS-03291) and `book` is the row to open.
+ *
+ * WHAT COUNTS AS A TICKET, and the same rules scoreBook uses so the grid and
+ * this line never disagree:
+ *   KS-03291, ks 3291    the prefix and a number, always a ticket
+ *   03291                every digit of it (the printed width): a ticket
+ *   3291                 fewer digits: a ticket ONLY if no book has that
+ *                        number, since a book wins an ambiguous one
+ * A run (31-45) or "book 31" is about books and is never a ticket.
+ */
+export function ticketBookOf(books, query) {
+  const raw = String(query ?? '').trim()
+  const digits = raw.replace(/\D/g, '')
+  if (!digits || !books?.length) return null
+  if (parseBookRange(raw, { bare: true }) || /^\s*b(?:ook)?[\s-]*\d+\s*$/i.test(raw)) return null
+
+  const want = parseInt(digits, 10)
+  const sample = String(books[0].firstTicket ?? '')
+  const width = (sample.match(/\d+$/) || [''])[0].length
+  const prefix = sample.replace(/\d+$/, '')
+  const q = fold(raw)
+
+  if (/[a-z]/.test(q)) {
+    const p = fold(prefix)
+    if (!p || !q.startsWith(p) || !/^\s*\d+$/.test(q.slice(p.length))) return null
+  } else if (digits.length < width && books.some((b) => bookNo(b.book) === want)) {
+    return null
+  }
+
+  const book = books.find((b) => want >= bookNo(b.firstTicket) && want <= bookNo(b.lastTicket))
+  if (!book) return null
+  return { ticket: prefix + String(want).padStart(width, '0'), book }
 }

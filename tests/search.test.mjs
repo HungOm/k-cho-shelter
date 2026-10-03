@@ -9,7 +9,7 @@
  */
 import {
   fold, phoneDigits, waNumber, isDialable, closeEnough,
-  buildIndex, parseBookRange, scoreEntry, runSearch, searchBooks
+  buildIndex, parseBookRange, scoreEntry, runSearch, searchBooks, ticketBookOf
 } from '../src/lib/search.js'
 
 let pass = 0, fail = 0
@@ -224,7 +224,13 @@ console.log('searching books')
   ok(nums(sb('31'))[0] === 'Book-0031' && nums(sb('31')).includes('Book-0131'),
     'a bare number also finds the books whose number ends that way, exact one first')
   eq(sb('31', { tail: false }).total, 1, 'with tail off (the Find screen) only the exact book')
-  eq(sb('9999').total, 0, 'a book that is not in the raffle finds nothing')
+  // WAS: eq(sb('9999').total, 0, 'a book that is not in the raffle finds nothing')
+  // WHY CHANGED: 9999 is not a book but it IS a ticket (in book 1000), and a
+  // number that is no book is now read as a ticket. The case this guarded — a
+  // number the raffle does not contain finds nothing — is a number past the last
+  // ticket, 20,000 here.
+  eq(sb('99999').total, 0, 'a number past the last book and the last ticket finds nothing')
+  eq(nums(sb('9999'))[0], 'Book-1000', 'while 9999, which is no book, finds the book holding that ticket')
 
   // A run of books, with and without the word "book"
   eq(sb('31-45').total, 15, 'a bare range names books on this screen')
@@ -259,6 +265,31 @@ console.log('searching books')
   eq(sb('').total, 2000, 'nothing typed is every book')
   eq(sb('', { limit: 5 }).results.length, 5, 'limit caps what is returned')
   eq(sb('', { limit: 5 }).total, 2000, 'but the total still says how many there are')
+
+  // A ticket number, typed the way people read it off the paper
+  eq(sb('3291').results[0]?.book, 'Book-0330', 'a shorter number that is no book is read as a ticket (3291 is in book 330)')
+  eq(sb('2500').results[0]?.book, 'Book-0250', 'and 2500, past the last book, finds ticket 2500\'s book')
+  eq(nums(sb('131'))[0], 'Book-0131', 'but where a book has that number, the book still wins')
+  eq(sb('99999').total, 0, 'a number past the last ticket finds nothing')
+
+  // Which book is it in — the answer as a line, not just a narrowed list
+  const tb = (q) => { const r = ticketBookOf(books, q); return r && `${r.ticket} -> ${r.book.book}` }
+  eq(tb('KS-03291'), 'KS-03291 -> Book-0330', 'a printed ticket number names its book')
+  eq(tb('ks 3291'), 'KS-03291 -> Book-0330', 'however it is spaced or cased')
+  eq(tb('03291'), 'KS-03291 -> Book-0330', 'five digits are a ticket')
+  eq(tb('3291'), 'KS-03291 -> Book-0330', 'and so is a shorter number no book has')
+  eq(tb('2500'), 'KS-02500 -> Book-0250', 'padded to the printed width')
+  eq(tb('131'), null, 'a number that is a book is a book, not a ticket')
+  eq(tb('00131'), 'KS-00131 -> Book-0014', 'unless it is written to the full ticket width')
+  eq(tb('KS-00001'), 'KS-00001 -> Book-0001', 'the first ticket')
+  eq(tb('KS-20000'), 'KS-20000 -> Book-2000', 'and the last')
+  eq(tb('KS-20001'), null, 'a ticket past the end is in no book')
+  eq(tb('31-45'), null, 'a run of books is not a ticket')
+  eq(tb('book 31'), null, 'nor is "book 31"')
+  eq(tb('Mana'), null, 'nor a name')
+  eq(tb(''), null, 'nor nothing')
+  eq(tb('XX-00131'), null, 'a different prefix is not this raffle\'s ticket')
+  eq(ticketBookOf([], '3291'), null, 'with no books loaded there is nothing to answer from')
 
   // Shape: the same as runSearch, so a screen can treat them alike
   ok('total' in sb('1') && Array.isArray(sb('1').results), 'returns { total, results } like runSearch')

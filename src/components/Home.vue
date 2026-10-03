@@ -5,10 +5,11 @@
  */
 import { computed } from 'vue'
 import { state, overview, attention, gettingStarted, isAdmin, canWrite, go, refresh, agentMap } from '../lib/store.js'
-import { searchBooks } from '../lib/search.js'
+import { searchBooks, ticketBookOf } from '../lib/search.js'
 import Progress from './ui/Progress.vue'
 import BookGrid from './ui/BookGrid.vue'
 import BookSearchBox from './ui/BookSearchBox.vue'
+import TicketInBook from './ui/TicketInBook.vue'
 import Icon from './ui/Icon.vue'
 import Bi from './ui/Bi.vue'
 
@@ -54,6 +55,8 @@ const bookQuery = computed(() => String(state.bookQuery ?? '').trim())
 const gridBooks = computed(() => bookQuery.value
   ? searchBooks(state.books ?? [], { query: bookQuery.value, agents: agentMap.value }).results
   : (state.books ?? []))
+// A ticket number typed into the box: say which book it is in, as something to press.
+const ticketHit = computed(() => ticketBookOf(state.books ?? [], bookQuery.value))
 
 function doStep(action) {
   if (action === 'add-agent') emit('add-agent')
@@ -210,6 +213,8 @@ function doStep(action) {
       <!-- Only once there are books to look through. -->
       <template v-if="state.books?.length">
         <BookSearchBox v-model="state.bookQuery" style="margin-bottom:var(--sp-5)" />
+        <TicketInBook v-if="ticketHit" :hit="ticketHit" style="margin-bottom:var(--sp-5)"
+                      @open="b => emit('open-book', b)" />
         <p v-if="bookQuery" class="small muted" style="margin-bottom:var(--sp-5)">
           <b class="data">{{ gridBooks.length.toLocaleString() }}</b>
           of {{ state.books.length.toLocaleString() }} books match

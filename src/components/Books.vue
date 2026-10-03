@@ -6,10 +6,11 @@
 import { ref, computed, watch } from 'vue'
 import { state, isAdmin, go, agentMap } from '../lib/store.js'
 import { BOOK_WORDS, money, relative } from '../lib/format.js'
-import { searchBooks } from '../lib/search.js'
+import { searchBooks, ticketBookOf } from '../lib/search.js'
 import BookGrid from './ui/BookGrid.vue'
 import BookRow from './ui/BookRow.vue'
 import BookSearchBox from './ui/BookSearchBox.vue'
+import TicketInBook from './ui/TicketInBook.vue'
 import Pager from './ui/Pager.vue'
 import StatusPill from './ui/StatusPill.vue' // no longer used here: BookRow draws the pill. Left so the import list reads as it did.
 import Icon from './ui/Icon.vue'
@@ -57,6 +58,9 @@ const query = computed(() => String(state.bookQuery ?? '').trim())
 const shown = computed(() => query.value
   ? searchBooks(filtered.value, { query: query.value, agents: agentMap.value }).results
   : filtered.value)
+
+// A ticket number typed into the box: say which book it is in, as something to press.
+const ticketHit = computed(() => ticketBookOf(state.books ?? [], query.value))
 
 /*
  * A PAGE AT A TIME, NOT THE FIRST TWO HUNDRED. The list drew `shown.slice(0,
@@ -107,6 +111,8 @@ const ORDER = ['Unassigned', 'Out', 'Returned', 'Settled', 'Lost', 'Void']
     <!-- WAS: the input and its Clear button written out here. Now BookSearchBox,
          shared with the Home grid, so the two ask for the same things. -->
     <BookSearchBox v-model="state.bookQuery" style="margin-bottom:var(--sp-6)" />
+    <TicketInBook v-if="ticketHit" :hit="ticketHit" style="margin-bottom:var(--sp-6)"
+                  @open="b => emit('open-book', b)" />
 
     <div class="card">
       <div class="spread" style="margin-bottom:var(--sp-5)">
